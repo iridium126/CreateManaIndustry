@@ -16,6 +16,7 @@ struct BridgeTicket {
 BridgeTicket releaseQueryInput(void* bridge,unsigned slot);
 void acquireBridgeLease(void* bridge);
 void releaseBridgeLease(void* bridge);
+void validateBridgeCapacity(void* bridge,size_t bytes,unsigned slots);
 void consumeQueryOutput(void* bridge,unsigned slot,uint64_t value);
 void retireQueryWithoutOutput(void* bridge,unsigned slot,uint64_t value);
 
@@ -27,6 +28,7 @@ struct QueryView {
     bool diagnosticSort{};
     unsigned stage=1,lookupOffsetWords{};
     CUdeviceptr queryLookup{};
+    CUdeviceptr overlapDirections{};
 };
 void* createDetachedQuery(unsigned n,unsigned q,unsigned capacity,const std::string& cuda,const std::string& optix,const std::string& source,const std::string& crt,unsigned mask=31);
 CUstream detachedQueryStream(void* query);

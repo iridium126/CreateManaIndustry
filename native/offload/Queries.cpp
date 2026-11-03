@@ -37,12 +37,14 @@ static std::string compile(const std::string& path,const std::vector<std::string
     if(result!=NVRTC_SUCCESS){size_t size;nvrtcGetProgramLogSize(program,&size);std::string log(size,'\0');nvrtcGetProgramLog(program,log.data());nvrtcDestroyProgram(&program);throw std::runtime_error(log);}
     size_t size;nvrtcGetPTXSize(program,&size);std::string ptx(size,'\0');nvrtcGetPTX(program,ptx.data());nvrtcDestroyProgram(&program);std::ofstream(path+".ptx",std::ios::binary).write(ptx.data(),ptx.size());return ptx;
 }
+std::string compileOffload(const std::string& path,const std::vector<std::string>& includes,int major,int minor){return compile(path,includes,major,minor);}
 struct Experiment {
     CUcontext context{};CUstream stream{};CUgraphicsResource resources[4]{};unsigned resourceCount=2;CUmodule grid{};
-    CUfunction build{},query{},scan{},scanSums{},addSums{},bounds{},seal{},sortRows{},flattenPages{};unsigned nCapacity{},qCapacity{};CUevent begin{},end{};
+    CUfunction build{},query{},scan{},scanSums{},addSums{},bounds{},seal{},sortRows{},flattenPages{},checkCachedBounds{};unsigned nCapacity{},qCapacity{};CUevent begin{},end{};
     OptixDeviceContext optix{};OptixModule module{};OptixProgramGroup groups[3]{};OptixPipeline pipeline{};OptixShaderBindingTable sbt{};
     CUdeviceptr counts{},heads{},next{},sums{},aabbs{},scratch{},gas{},params{},records{};size_t scratchSize{},gasSize{};
     Query p{};Query* hostParams{};unsigned blocks{},hashSize{};bool built=false;bool mapped=false;bool externallyRetired=false;
+    unsigned policy{},cachedN{};float cachedRadius{};CUdeviceptr cachedPoints{},cacheDirty{};
     size_t owned{};CUmodule tensorModule{};CUfunction tensorQuery{},scalarTile{},makeInstances{};CUevent marks[5]{},extra[3]{};std::array<double,7> last{};CUdeviceptr pageHeads{},pageTails{},pageCounter{},pages{};
     OptixModule triangleModule{};OptixProgramGroup triangleGroups[3]{};OptixPipeline trianglePipeline{};OptixShaderBindingTable triangleSbt{};CUdeviceptr unitVertices{},unitGas{},unitTemporary{},instanceData{},instanceGas{};OptixTraversableHandle unitHandle{};bool triangleBuilt=false;
     void alloc(CUdeviceptr& ptr,size_t size){size=std::max<size_t>(size,16);reserveBytes(size);auto status=cuMemAlloc(&ptr,size);if(status!=CUDA_SUCCESS){offloadOwnedBytes-=size;cuda(status);}owned+=size;}
@@ -58,7 +60,7 @@ struct Experiment {
         p.counts=(unsigned*)counts;p.heads=(int*)heads;p.next=(int*)next;
         int major,minor;cuda(cuDeviceGetAttribute(&major,CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,device));cuda(cuDeviceGetAttribute(&minor,CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,device));
         auto ptx=compile(source+"/grid.cu",{cudaRoot+"/include",crtRoot+"/include",source},major,minor);cuda(cuModuleLoadData(&grid,ptx.c_str()));
-        cuda(cuModuleGetFunction(&build,grid,"build"));cuda(cuModuleGetFunction(&query,grid,"query"));cuda(cuModuleGetFunction(&scan,grid,"scan"));cuda(cuModuleGetFunction(&scanSums,grid,"scanSums"));cuda(cuModuleGetFunction(&addSums,grid,"addSums"));cuda(cuModuleGetFunction(&bounds,grid,"bounds"));cuda(cuModuleGetFunction(&seal,grid,"sealResult"));cuda(cuModuleGetFunction(&sortRows,grid,"sortRows"));cuda(cuModuleGetFunction(&flattenPages,grid,"flattenPages"));
+        cuda(cuModuleGetFunction(&build,grid,"build"));cuda(cuModuleGetFunction(&query,grid,"query"));cuda(cuModuleGetFunction(&scan,grid,"scan"));cuda(cuModuleGetFunction(&scanSums,grid,"scanSums"));cuda(cuModuleGetFunction(&addSums,grid,"addSums"));cuda(cuModuleGetFunction(&bounds,grid,"bounds"));cuda(cuModuleGetFunction(&seal,grid,"sealResult"));cuda(cuModuleGetFunction(&sortRows,grid,"sortRows"));cuda(cuModuleGetFunction(&flattenPages,grid,"flattenPages"));cuda(cuModuleGetFunction(&checkCachedBounds,grid,"checkCachedBounds"));
         if(backendMask&6u){
         rt(optixInit());OptixDeviceContextOptions contextOptions{};rt(optixDeviceContextCreate(context,&contextOptions,&optix));
         auto rtPtx=compile(source+"/rt.cu",{cudaRoot+"/include",crtRoot+"/include",optixRoot+"/include",source},major,minor);
@@ -117,20 +119,31 @@ struct Experiment {
         if(backend==0||backend==3||backend==4){cuda(cuMemsetD32Async(heads,0xffffffffu,hashSize,stream));launch(build,(p.n+255)/256,args);cuda(cuEventRecord(marks[0],stream));cuda(cuEventRecord(marks[1],stream));}
         else if(backend==2){void* descArgs[]={&p,&instanceData,&unitHandle};launch(makeInstances,(p.n+255)/256,descArgs);cuda(cuEventRecord(marks[0],stream));OptixBuildInput desc{};desc.type=OPTIX_BUILD_INPUT_TYPE_INSTANCES;desc.instanceArray.instances=instanceData;desc.instanceArray.numInstances=p.n;OptixAccelBuildOptions options{};options.buildFlags=OPTIX_BUILD_FLAG_ALLOW_UPDATE|OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;options.operation=refit&&triangleBuilt?OPTIX_BUILD_OPERATION_UPDATE:OPTIX_BUILD_OPERATION_BUILD;rt(optixAccelBuild(optix,stream,&options,&desc,1,scratch,scratchSize,instanceGas,triangleGasBytes,&p.traversable,nullptr,0));triangleBuilt=true;cuda(cuEventRecord(marks[1],stream));}
         else{
-            void* boundArgs[]={&p,&aabbs};launch(bounds,(p.n+255)/256,boundArgs);
+            bool reuse=false;
+            if((policy&128u)&&built&&cachedN==p.n&&cachedRadius==p.radius){
+                cuda(cuMemsetD32Async(cacheDirty,0,1,stream));void* checkArgs[]={&p,&aabbs,&cachedPoints,&cacheDirty};launch(checkCachedBounds,(p.n+255)/256,checkArgs);
+                unsigned dirty=1;cuda(cuMemcpyDtoHAsync(&dirty,cacheDirty,4,stream));cuda(cuStreamSynchronize(stream));reuse=dirty==0;
+            }
+            void* boundArgs[]={&p,&aabbs};if(!reuse)launch(bounds,(p.n+255)/256,boundArgs);
             cuda(cuEventRecord(marks[0],stream));unsigned flag=OPTIX_GEOMETRY_FLAG_NONE;OptixBuildInput desc{};desc.type=OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;desc.customPrimitiveArray.aabbBuffers=&aabbs;desc.customPrimitiveArray.numPrimitives=p.n;desc.customPrimitiveArray.flags=&flag;desc.customPrimitiveArray.numSbtRecords=1;
             OptixAccelBuildOptions options{};options.buildFlags=OPTIX_BUILD_FLAG_ALLOW_UPDATE|OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;options.operation=refit&&built?OPTIX_BUILD_OPERATION_UPDATE:OPTIX_BUILD_OPERATION_BUILD;
-            rt(optixAccelBuild(optix,stream,&options,&desc,1,scratch,scratchSize,gas,gasSize,&p.traversable,nullptr,0));built=true;
+            if(!reuse){rt(optixAccelBuild(optix,stream,&options,&desc,1,scratch,scratchSize,gas,gasSize,&p.traversable,nullptr,0));built=true;
+                if(policy&128u){cuda(cuMemcpyDtoDAsync(cachedPoints,(CUdeviceptr)p.points,p.n*16ull,stream));cachedN=p.n;cachedRadius=p.radius;}}
             cuda(cuEventRecord(marks[1],stream));
         }
         cuda(cuMemsetD8Async((CUdeviceptr)p.header,0,16,stream));if(p.paged){cuda(cuMemsetD32Async(pageCounter,std::min(p.q,p.pageCapacity),1,stream));cuda(cuMemsetD8Async(counts,0,p.q*4ull,stream));}
+        if(p.fused){
+            if(backend!=1)throw std::runtime_error("Fused separation requires RT AABB");
+            cuda(cuMemsetD8Async((CUdeviceptr)p.forces,0,p.q*16ull,stream));queryPass();
+            cuda(cuEventRecord(marks[2],stream));cuda(cuEventRecord(marks[3],stream));cuda(cuEventRecord(marks[4],stream));return;
+        }
         queryPass();cuda(cuEventRecord(marks[2],stream));launch(scan,blocks,sumArgs);launch(scanSums,1,scanArgs);launch(addSums,blocks,sumArgs);cuda(cuEventRecord(marks[3],stream));p.write=1;if(p.paged)launch(flattenPages,blocks,args);else queryPass();cuda(cuEventRecord(marks[4],stream));
     }
     ~Experiment(){
         if(context){cuCtxSetCurrent(context);if(mapped)cuGraphicsUnmapResources(resourceCount,resources,stream);if(stream&&!externallyRetired)cuStreamSynchronize(stream);}
         if(trianglePipeline)optixPipelineDestroy(trianglePipeline);for(auto group:triangleGroups)if(group)optixProgramGroupDestroy(group);if(triangleModule)optixModuleDestroy(triangleModule);if(pipeline)optixPipelineDestroy(pipeline);for(auto group:groups)if(group)optixProgramGroupDestroy(group);if(module)optixModuleDestroy(module);if(optix)optixDeviceContextDestroy(optix);
         for(auto resource:resources)if(resource)cuGraphicsUnregisterResource(resource);
-        for(auto ptr:{pageHeads,pageTails,pageCounter,pages,counts,heads,next,sums,aabbs,scratch,gas,params,records,unitVertices,unitGas,unitTemporary,instanceData,instanceGas,triangleRecords})if(ptr)cuMemFree(ptr);offloadOwnedBytes-=owned;
+        for(auto ptr:{cachedPoints,cacheDirty,pageHeads,pageTails,pageCounter,pages,counts,heads,next,sums,aabbs,scratch,gas,params,records,unitVertices,unitGas,unitTemporary,instanceData,instanceGas,triangleRecords})if(ptr)cuMemFree(ptr);offloadOwnedBytes-=owned;
         if(hostParams)cuMemFreeHost(hostParams);if(tensorModule)cuModuleUnload(tensorModule);if(grid)cuModuleUnload(grid);for(auto event:marks)if(event)cuEventDestroy(event);for(auto event:extra)if(event)cuEventDestroy(event);if(begin)cuEventDestroy(begin);if(end)cuEventDestroy(end);if(stream)cuStreamDestroy(stream);if(context)releaseContext();
     }
 };
@@ -150,14 +163,17 @@ void* createDetachedQuery(unsigned n,unsigned q,unsigned capacity,const std::str
 CUstream detachedQueryStream(void* h){return ((Experiment*)h)->stream;}
 void enqueueDetachedQuery(void* h,const QueryView& v,int backend,bool refit,CUexternalSemaphore done,uint64_t value){
     auto* e=(Experiment*)h;if(v.n>e->nCapacity||v.q>e->qCapacity||backend<0||backend>4||!std::isfinite(v.radius)||v.radius<=0)throw std::runtime_error("Invalid detached query dimensions");
-    auto& p=e->p;bool changed=p.n!=v.n;e->blocks=(v.q+255)/256;p.n=v.n;p.q=v.q;p.radius=v.radius;p.capacity=v.capacity;p.points=(const float4*)v.points;p.requests=(const float4*)v.requests;p.owners=(const unsigned*)v.owners;p.poolIndices=(const unsigned*)v.poolIndices;p.header=(unsigned long long*)(v.output+64);p.offsets=(unsigned long long*)(v.output+80);p.ids=(unsigned*)(v.output+v.idsOffsetWords*4ull);p.write=0;
-    e->dispatchGpu(backend,refit&&!changed);cuda(cuEventRecord(e->extra[0],e->stream));if(v.diagnosticSort){void* sortArgs[]={&p};e->launch(e->sortRows,(p.q+255)/256,sortArgs);}cuda(cuEventRecord(e->extra[1],e->stream));if(v.queryLookup)cuda(cuMemcpyDtoDAsync(v.output+v.lookupOffsetWords*4ull,v.queryLookup,131072ull*4,e->stream));CUdeviceptr envelope=v.output;unsigned lo=unsigned(v.nonce),hi=unsigned(v.nonce>>32),live=v.live,offset=v.idsOffsetWords,epochLo=unsigned(v.epoch),epochHi=unsigned(v.epoch>>32),stage=v.stage,lookup=v.lookupOffsetWords;void* args[]={&p,&envelope,&lo,&hi,&live,&offset,&epochLo,&epochHi,&stage,&lookup};e->launch(e->seal,1,args);cuda(cuEventRecord(e->extra[2],e->stream));
+    auto& p=e->p;bool changed=p.n!=v.n;e->blocks=(v.q+255)/256;p.n=v.n;p.q=v.q;p.radius=v.radius;p.capacity=v.capacity;p.points=(const float4*)v.points;p.requests=(const float4*)v.requests;p.owners=(const unsigned*)v.owners;p.poolIndices=(const unsigned*)v.poolIndices;p.header=(unsigned long long*)(v.output+64);p.offsets=(unsigned long long*)(v.output+80);p.ids=(unsigned*)(v.output+v.idsOffsetWords*4ull);p.write=0;p.overlapDirections=(const float4*)v.overlapDirections;
+    if(p.fused){if(v.stage!=1||v.queryLookup||!v.overlapDirections||v.output==0||v.q*16ull>v.capacity*4ull)throw std::runtime_error("Fused ordinary output capacity/stage invalid");p.forces=(float4*)(v.output+v.idsOffsetWords*4ull);}
+    e->dispatchGpu(backend,refit&&!changed);cuda(cuEventRecord(e->extra[0],e->stream));if(v.diagnosticSort&&!p.fused){void* sortArgs[]={&p};e->launch(e->sortRows,(p.q+255)/256,sortArgs);}cuda(cuEventRecord(e->extra[1],e->stream));if(v.queryLookup)cuda(cuMemcpyDtoDAsync(v.output+v.lookupOffsetWords*4ull,v.queryLookup,131072ull*4,e->stream));CUdeviceptr envelope=v.output;unsigned lo=unsigned(v.nonce),hi=unsigned(v.nonce>>32),live=v.live,offset=v.idsOffsetWords,epochLo=unsigned(v.epoch),epochHi=unsigned(v.epoch>>32),stage=v.stage,lookup=v.lookupOffsetWords;void* args[]={&p,&envelope,&lo,&hi,&live,&offset,&epochLo,&epochHi,&stage,&lookup};e->launch(e->seal,1,args);cuda(cuEventRecord(e->extra[2],e->stream));
     CUDA_EXTERNAL_SEMAPHORE_SIGNAL_PARAMS signal{};signal.params.fence.value=value;cuda(cuSignalExternalSemaphoresAsync(&done,&signal,1,e->stream));cuda(cuEventRecord(e->end,e->stream));
 }
 CUresult detachedQueryReady(void* h){auto* e=(Experiment*)h;return cuEventQuery(e->end);}
 std::array<double,7> detachedQueryTiming(void* h){auto* e=(Experiment*)h;float ms{};cuda(cuEventElapsedTime(&ms,e->begin,e->end));e->last[0]=ms;for(int i=0;i<5;i++){cuda(cuEventElapsedTime(&ms,i?e->marks[i-1]:e->begin,e->marks[i]));e->last[i+2]=ms;}return e->last;}
 void destroyDetachedQuery(void* h){auto* e=(Experiment*)h;cuda(cuStreamQuery(e->stream));e->externallyRetired=true;delete e;}
 
-void configureDetachedQuery(void* h,unsigned policy,unsigned pageBytes){auto* e=(Experiment*)h;cuda(cuCtxSetCurrent(e->context));e->p.paged=(policy&4u)?1:0;if(e->p.paged&&!e->pages){if(pageBytes<144||pageBytes>(64u<<20))throw std::runtime_error("R8 page pool must be 144B..64MiB");e->alloc(e->pages,pageBytes);e->alloc(e->pageHeads,e->qCapacity*4ull);e->alloc(e->pageTails,e->qCapacity*4ull);e->alloc(e->pageCounter,4);e->p.pages=(unsigned*)e->pages;e->p.pageHeads=(unsigned*)e->pageHeads;e->p.pageTails=(unsigned*)e->pageTails;e->p.pageCounter=(unsigned*)e->pageCounter;e->p.pageCapacity=pageBytes/144;}}
+void configureDetachedQuery(void* h,unsigned policy,unsigned pageBytes){auto* e=(Experiment*)h;cuda(cuCtxSetCurrent(e->context));e->policy=policy;e->p.fused=(policy&64u)?1u:0u;e->p.boundsPadding=(policy&128u)?.25f:0.f;
+if((policy&128u)&&!e->cachedPoints){e->alloc(e->cachedPoints,e->nCapacity*16ull);e->alloc(e->cacheDirty,4);}
+e->p.paged=(policy&4u)?1:0;if(e->p.paged&&!e->pages){if(pageBytes<144||pageBytes>(64u<<20))throw std::runtime_error("R8 page pool must be 144B..64MiB");e->alloc(e->pages,pageBytes);e->alloc(e->pageHeads,e->qCapacity*4ull);e->alloc(e->pageTails,e->qCapacity*4ull);e->alloc(e->pageCounter,4);e->p.pages=(unsigned*)e->pages;e->p.pageHeads=(unsigned*)e->pageHeads;e->p.pageTails=(unsigned*)e->pageTails;e->p.pageCounter=(unsigned*)e->pageCounter;e->p.pageCapacity=pageBytes/144;}}
 
 std::array<double,3> detachedQueryDetails(void* h){auto* e=(Experiment*)h;std::array<double,3> result{};float ms{};cuda(cuEventElapsedTime(&ms,e->extra[0],e->extra[1]));result[0]=ms;cuda(cuEventElapsedTime(&ms,e->extra[1],e->extra[2]));result[1]=ms;cuda(cuEventElapsedTime(&ms,e->extra[2],e->end));result[2]=ms;return result;}

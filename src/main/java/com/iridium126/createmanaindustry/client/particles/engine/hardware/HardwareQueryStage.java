@@ -9,8 +9,8 @@ import java.util.concurrent.locks.LockSupport;
 import org.lwjgl.opengl.*;
 
 /** Optional device-resident query stage. The caller owns frame publication and
- * the continuation. A late/failed native result always selects the complete GL
- * reference; it never substitutes a previous frame. All methods are render-thread only. */
+ * the continuation. A late/failed native result always selects the production spatial GL
+ * fallback; it never substitutes a previous frame. All methods are render-thread only. */
 public final class HardwareQueryStage implements AutoCloseable {
     public record Ticket(int slot,long nonce){}
     private static final AtomicLong EPOCHS=new AtomicLong(1);
@@ -32,9 +32,10 @@ public final class HardwareQueryStage implements AutoCloseable {
     }
     public HardwareQueryStage(int points,int queries,int slotBytes,String prepareSource,Path cuda,Path optix,Path source,Path crt,boolean diagnosticSort,int backend){
         this.diagnosticSort=diagnosticSort;
+        if(!RETIRING.isEmpty())throw new IllegalStateException("Prior native query resources have not retired; retain production");
         if(points<1||points>131072||queries<1||queries>262144||slotBytes<4096||slotBytes>64*1024*1024)throw new IllegalArgumentException("Bounded R7 dimensions");
         pointCapacity=points;queryCapacity=queries;bytes=slotBytes;requestOffset=aligned(64+points*16);ownerOffset=aligned(requestOffset+queries*16);mapOffset=aligned(ownerOffset+queries*4);lookupOffset=aligned(mapOffset+points*4);
-        if(lookupOffset+(262144+1)*4>bytes)throw new IllegalArgumentException("Input slot cannot hold compact query data");
+        if(lookupOffset+131072*4L+points*16L>bytes)throw new IllegalArgumentException("Input slot cannot hold compact query data");
         program=GpuShaderCompiler.compute("R7 immutable query input",prepareSource);
         activePrepare=program;
         try{
@@ -58,24 +59,26 @@ public final class HardwareQueryStage implements AutoCloseable {
      * preparation; native input and result slots retain their own stage identity. */
     public void selectPrepare(int value){activePrepare=value==0?program:value;}
     public Ticket beginBound(int continuationTexture,int strideWords,long inputGeneration,long nonce,int backend,int pointScan,int queryScan){
-        if(closing||quarantined||nonce==0)return null;reap();int index=-1;for(int i=0;i<slots.length;i++)if(!slots[i].live){index=i;break;}if(index<0){lastReason="bounded query ring busy";return null;}
+        if(closing||quarantined||nonce==0)return null;reap();if(quarantined)return null;
+        for(int i=0;i<slots.length;i++)if(slots[i].live&&!slots[i].consumed&&HardwareNative.pollAsyncQuery(worker,i,slots[i].nonce)==1){lastReason="prior query still running; production spatial fallback";return null;}
+        int index=-1;for(int i=0;i<slots.length;i++)if(!slots[i].live){index=i;break;}if(index<0){lastReason="bounded query ring busy; "+HardwareNative.asyncQueryDiagnostics(worker);return null;}
         var s=slots[index];int oldProgram=GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         try{
             GL42.glBindImageTexture(6,s.sourceTexture,0,false,0,GL15.GL_READ_WRITE,GL30.GL_R32UI);GL42.glBindImageTexture(7,continuationTexture,0,false,0,GL15.GL_READ_WRITE,GL30.GL_R32UI);
-            ui("pointCapacity",pointCapacity);ui("queryCapacity",queryCapacity);ui("strideWords",strideWords);ui("emitterStride",ParticleBuffers.VEC4_PER_EMITTER);ui("lookupOffset",lookupOffset/4);ui("diagnosticSort",diagnosticSort?1:0);pair("inputGeneration",inputGeneration);pair("nonce",nonce);pair("resourceEpoch",epoch);
+            ui("fusedQuery",(policy&64)!=0?1:0);ui("pointCapacity",pointCapacity);ui("queryCapacity",queryCapacity);ui("strideWords",strideWords);ui("emitterStride",ParticleBuffers.VEC4_PER_EMITTER);ui("lookupOffset",lookupOffset/4);ui("directionOffset",(lookupOffset+131072*4)/4);ui("diagnosticSort",diagnosticSort?1:0);pair("inputGeneration",inputGeneration);pair("nonce",nonce);pair("resourceEpoch",epoch);
             GL41.glProgramUniform4ui(activePrepare,GL20.glGetUniformLocation(activePrepare,"offsets"),64,requestOffset,ownerOffset,mapOffset);
             dispatch(0,512);dispatch(1,Math.max(1,(pointScan+255)/256));dispatch(2,Math.max(1,(queryScan+255)/256));dispatch(3,1);
             if(!HardwareNative.submitAsyncQuery(worker,index,nonce,backend,false)){lastReason="native worker rejected query";return null;}s.nonce=nonce;s.live=true;s.consumed=false;return new Ticket(index,nonce);
         }finally{GL20.glUseProgram(oldProgram);}
     }
     /** Bounded CPU consumer wait only observes worker notifications; never calls
-     * a blocking CUDA API. A zero budget immediately chooses the full GL fallback. */
+     * a blocking CUDA API. A zero budget immediately chooses the production spatial GL fallback. */
     public boolean consume(Ticket ticket,long cpuWaitNanos){
         if(ticket==null)return false;var slot=slot(ticket);long deadline=System.nanoTime()+Math.max(0,cpuWaitNanos);
         for(;;){int state=HardwareNative.pollAsyncQuery(worker,ticket.slot,ticket.nonce);
             if(state==2){HardwareNative.consumeAsyncQuery(worker,ticket.slot,ticket.nonce);GL42.glBindImageTexture(6,slot.resultTexture,0,false,0,GL15.GL_READ_ONLY,GL30.GL_R32UI);slot.consumed=true;lastReason="current native result";return true;}
             if(state==3||state==4){lastReason=HardwareNative.asyncQueryError(worker,ticket.slot,ticket.nonce);quarantined|=state==4;return false;}
-            if(System.nanoTime()>=deadline){lastReason="native query not ready at consumer; complete GL reference";return false;}
+            if(System.nanoTime()>=deadline){lastReason="native query not ready at consumer; production spatial fallback";return false;}
             if((policy&2)!=0)HardwareNative.waitAsyncQuery(worker,ticket.slot,ticket.nonce,(int)Math.max(1,Math.min(50,(deadline-System.nanoTime()+999_999)/1_000_000)));else LockSupport.parkNanos(50_000);
         }
     }
@@ -87,6 +90,7 @@ public final class HardwareQueryStage implements AutoCloseable {
      * an FPS window. Ownership must already have returned to GL. */
     public int resultBufferForValidation(Ticket ticket){var s=slot(ticket);if(!s.consumed)throw new IllegalStateException("Native result is not a GL input yet");return s.result;}
     public String lastReason(){return lastReason;}
+    public String diagnostics(){return worker==0?"retired":HardwareNative.asyncQueryDiagnostics(worker);}
     public long resourceEpoch(){return epoch;}
     public boolean quarantined(){return quarantined;}
     private void reap(){if(worker==0)return;for(int i=0;i<slots.length;i++){var s=slots[i];if(!s.live)continue;int state=HardwareNative.pollAsyncQuery(worker,i,s.nonce);quarantined|=state==4;if(state==1||state==4||state==5&&s.fence==0)continue;if(HardwareNative.recycleAsyncQuery(worker,i,s.nonce,s.fence)){if(s.fence!=0)GL32.glDeleteSync(s.fence);s.fence=0;s.live=false;s.consumed=false;}}}

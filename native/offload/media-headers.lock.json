@@ -26,5 +26,12 @@
     "sha256": "08db0887916a1044c9267a0726d83b9d565e3e32667bb68525e329455a9ddec4",
     "repo": "NVIDIA/video-sdk-samples",
     "url": "https://raw.githubusercontent.com/NVIDIA/video-sdk-samples/aa3544dcea2fe63122e4feb83bf805ea40e58dbe/Samples/NvCodec/NvDecoder/cuviddec.h"
+  },
+  {
+    "path": "Samples/NvCodec/NvDecoder/nvcuvid.h",
+    "commit": "aa3544dcea2fe63122e4feb83bf805ea40e58dbe",
+    "sha256": "3fbcde3f9926eaffff436544ad7d431185f6aac08dbbb53b2d86686ce5b09b61",
+    "repo": "NVIDIA/video-sdk-samples",
+    "url": "https://raw.githubusercontent.com/NVIDIA/video-sdk-samples/aa3544dcea2fe63122e4feb83bf805ea40e58dbe/Samples/NvCodec/NvDecoder/nvcuvid.h"
   }
 ]

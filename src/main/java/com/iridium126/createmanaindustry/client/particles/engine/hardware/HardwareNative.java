@@ -11,16 +11,31 @@ public final class HardwareNative {
         String digest;try{digest=java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(java.nio.file.Files.readAllBytes(directory.resolve("CmiHardwareOffload.dll"))));}catch(Exception failure){throw new IllegalStateException("Cannot identify optional R7 native module",failure);}
         if(loaded){if(!digest.equals(loadedDigest))throw new IllegalStateException("A different R7 native module is already loaded; restart the client before switching diagnostic distributions");return;}
         for(String file:new String[]{"nvrtc-builtins64_128.dll","nvrtc64_120_0.dll","CmiHardwareOffload.dll"})System.load(directory.resolve(file).toAbsolutePath().toString());
-        int abi;try{abi=nativeAbiVersion();}catch(UnsatisfiedLinkError old){throw new IllegalStateException("R8 native ABI unavailable in old module; install matching runtime and restart client",old);}if(abi!=8)throw new IllegalStateException("R8 native ABI mismatch; install matching diagnostic runtime and restart client");loadedDigest=digest;loaded=true;
+        int abi;try{abi=nativeAbiVersion();}catch(UnsatisfiedLinkError old){throw new IllegalStateException("ABI 10 native ABI unavailable in old module; install matching runtime and restart client",old);}if(abi!=10)throw new IllegalStateException("ABI 10 native ABI mismatch; install matching diagnostic runtime and restart client");loadedDigest=digest;loaded=true;
     }
     public static boolean loaded(){return loaded;}
     public static String digest(){return loaded?loadedDigest:"unavailable";}
     public static native int nativeAbiVersion();
+    public static native String avoidanceCapabilities();
+    public static native String avoidanceDiagnostics(long worker);
+    public static native long createAvoidance(long bridge,int capacity,long epoch,String cuda,String optix,String source,String crt);
+    public static native boolean submitAvoidance(long handle,int slot,long nonce,long sourceGeneration,long scene);
+    public static native int pollAvoidance(long handle,int slot,long nonce);
+    public static native void consumeAvoidance(long handle,int slot,long nonce);
+    public static native boolean recycleAvoidance(long handle,int slot,long nonce,long consumerFence);
+    public static native boolean closeAvoidance(long handle);
+    public static native double[] avoidanceTiming(long handle,int slot,long nonce);
+    public static native void delayAvoidance(long handle,int milliseconds);
     public static native void configureAsyncQuery(long handle,int policy,int pageBytes);
     public static native int waitAsyncQuery(long handle,int slot,long nonce,int milliseconds);
     public static native double[] asyncQueryTrace(long handle,int slot,long nonce);
     public static native String probe();
     public static native String mediaProbe();
+    public static native String asyncQueryDiagnostics(long handle);
+    /** Isolated codec experiment; metrics are accepted only after byte-exact recovery. */
+    public static native long createMedia(int width,int bytes,boolean predictive);
+    public static native String mediaRoundTrip(long handle,java.nio.ByteBuffer input,int bytes,long nonce,long epoch,int fault);
+    public static native void closeMedia(long handle);
     public static native long createQuery(int input,int output,int points,int queries,int capacity,float radius,String cuda,String optix,String source,String crt);
     public static native long createQueryRequests(int input,int output,int requests,int owners,int points,int queries,int capacity,float maxRadius,String cuda,String optix,String source,String crt);
     /** GPU total, completed wall, preparation, BVH maintenance, count, scan, write (ms). */

@@ -42,7 +42,10 @@ public final class HardwareUpdateSource {
     }
     private static String store(Field f){var s=new StringBuilder();for(int k=0;k<width(f.type);k++){String name=f.name+(width(f.type)>1?"["+k+"]":""),expr=f.type.equals("bool")?"("+name+"?1u:0u)":f.type.equals("float")||f.type.startsWith("vec")?"floatBitsToUint("+name+")":"uint("+name+")";s.append("r7State.words[r7Base+").append(f.offset+k).append("u]=").append(expr).append(';');}return s.toString();}
     private static String load(Field f){var s=new StringBuilder();for(int k=0;k<width(f.type);k++){String word="r7State.words[r7Base+"+(f.offset+k)+"u]",expr=f.type.equals("bool")?"("+word+"!=0u)":f.type.equals("float")||f.type.startsWith("vec")?"uintBitsToFloat("+word+")":f.type.equals("int")||f.type.startsWith("ivec")?"int("+word+")":word;s.append(f.name).append(width(f.type)>1?"["+k+"]":"").append('=').append(expr).append(';');}return s.toString();}
-    public static Variant build(String source){
+    public static Variant build(String source){return build(source,false,false);}
+    public static Variant buildReference(String source){return build(source,false,true);}
+    public static Variant build(String source,boolean fused){return build(source,fused,false);}
+    public static Variant build(String source,boolean fused,boolean referenceFallback){
         source=source.replace("\r\n","\n");
         int main=unique(source,MAIN)+MAIN.length(),storm=unique(source,STORM),boundary=unique(source,QUERY),end=unique(source,END);
         if(!(main<storm&&storm<boundary&&boundary<end))throw new IllegalArgumentException("R7 query source ordering changed");
@@ -70,6 +73,12 @@ public final class HardwareUpdateSource {
             +"if(r7External){uint q=r7Result(4u);r7External=q<=(size-22u)/2u;if(r7External){r7From=r7Result(20u+r7Row*2u);r7To=r7Result(22u+r7Row*2u);r7Ids=r7Result(6u);r7External=r7Result(21u+r7Row*2u)==0u&&r7Result(23u+r7Row*2u)==0u&&r7From<=r7To&&r7To<=r7Result(16u)&&r7To<=r7Result(7u)&&r7Ids<=size&&r7To<=size-r7Ids&&r7Ids>=22u+q*2u;}}}\n"
             +"if(r7External)for(uint k=r7From;k<r7To;k++)if(r7Result(r7Ids+k)>=min(prevCounter.live,uCapacity)){r7External=false;break;}if(uR7ResultsEnabled&&r7Resume&&!r7External)imageAtomicOr(r7Continuation,2,1u);\n";
         String reference="\nvec3 sepW=vec3(0);"+ranges+"if(!domeMember){if(r7External){for(uint k=r7From;k<r7To;k++){uint j=r7Result(r7Ids+k);if(j>=min(prevCounter.live,uCapacity))continue;"+narrow+"}}else for(uint j=0u;j<min(prevCounter.live,uCapacity);j++){"+narrow+"}}\n";
+        if(fused)reference="\nvec3 sepW=vec3(0);bool r9Force=false;uint r9Row=r7Resume?r7Load(r7Base+5u):r7Lane;vec3 r9Value=vec3(0);"
+            +"if(uR7ResultsEnabled&&r7Resume&&imageSize(r7QueryResult)>=24){uint size=uint(imageSize(r7QueryResult)),q=r7Result(4u),at=r7Result(6u);r9Force=r7Result(0u)==0x52375131u&&r7Result(1u)==uR7Generation.x&&r7Result(2u)==uR7Generation.y&&r7Result(3u)==1u&&r7Result(5u)==min(prevCounter.live,uCapacity)&&r7Result(8u)==0u&&r7Result(9u)==1u&&r7Result(10u)==uR7ResourceEpoch.x&&r7Result(11u)==uR7ResourceEpoch.y&&r7Result(12u)==0x46395231u&&r7Result(13u)==4u&&r9Row<q&&at>=24u&&at<=size&&q<=(size-at)/4u;if(r9Force){uint b=at+r9Row*4u;r9Value=uintBitsToFloat(uvec3(r7Result(b),r7Result(b+1u),r7Result(b+2u)));r9Force=!any(isnan(r9Value))&&!any(isinf(r9Value));}}"
+            +"if(uR7ResultsEnabled&&r7Resume&&!r9Force)imageAtomicOr(r7Continuation,2,1u);if(!domeMember){if(r9Force)sepW=r9Value;else for(uint j=0u;j<min(prevCounter.live,uCapacity);j++){"+narrow+"}}\n";
+        // Exhaustive enumeration belongs to the offline oracle. A deadline miss
+        // must execute the original bounded spatial query, not an all-pairs pass.
+        if(!referenceFallback)reference=reference.replace("else for(uint j=0u;j<min(prevCounter.live,uCapacity);j++){"+narrow+"}","else{"+source.substring(boundary+QUERY.length(),end)+"}");
         String result=globals+declarations+MAIN+setup+a.declarations+"\nif(r7Resume){"+restoreA+"}else{"+a.body+"}\n"+STORM+b.declarations+"\nif(r7Resume){"+restoreB+"}else{"+b.body+"}\n"+spill+reference+source.substring(end);
         // update.comp already uses the device's sixteen compute SSBO blocks.
         // The continuation is an optional integer image buffer, like diagnostic traces.

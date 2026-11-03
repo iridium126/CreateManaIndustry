@@ -14,8 +14,8 @@ def prepare(download=False):
             target.write_bytes(value)
         if hashlib.sha256(target.read_bytes()).hexdigest()!=record['sha256']:raise ValueError('Cached header SHA mismatch: '+str(target))
     lock=cache/'lock.json'
-    if lock.exists() and json.loads(lock.read_text())!=records:raise ValueError('Cached header lock mismatch')
-    if not lock.exists():lock.write_text(json.dumps(records,indent=2)+'\n')
+    # Refresh the cache manifest only after every pinned file was verified above.
+    if not lock.exists() or json.loads(lock.read_text())!=records:lock.write_text(json.dumps(records,indent=2)+'\n')
     return records
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--download',action='store_true');a=p.parse_args();print(json.dumps(dict(verified=len(prepare(a.download)),scope='optional native build only')))

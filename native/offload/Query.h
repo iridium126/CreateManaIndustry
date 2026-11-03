@@ -17,6 +17,11 @@ struct Query {
     unsigned *pageHeads,*pageTails,*pageCounter;
     unsigned* pages; // 36 words/page: next, 32 indices, padding
     unsigned pageCapacity,paged;
+    // ABI 9: ordinary Storm query can publish one exact force per row.
+    float4* forces;
+    unsigned fused;
+    float boundsPadding;
+    const float4* overlapDirections;
 };
 #ifdef __CUDACC__
 __device__ inline float4 origin(const Query& p,unsigned i){return p.requests?p.requests[i]:p.points[i];}

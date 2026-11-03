@@ -61,6 +61,7 @@ extern "C" JNIEXPORT void JNICALL JNI_NAME(closeCopy)(JNIEnv* e,jclass,jlong h){
 
 void acquireBridgeLease(void* h){((Bridge*)h)->leases.fetch_add(1);}
 void releaseBridgeLease(void* h){((Bridge*)h)->leases.fetch_sub(1);}
+void validateBridgeCapacity(void* h,size_t bytes,unsigned slots){auto b=(Bridge*)h;if(!b||b->bytes<bytes||b->slots.size()!=slots)throw std::runtime_error("Shared bridge capacity/slot receipt mismatch");}
 BridgeTicket releaseQueryInput(void* h,unsigned index){
     auto* b=(Bridge*)h;auto& s=b->slots.at(index);if(s.value&&s.done.fence->GetCompletedValue()<s.value)throw std::runtime_error("Shared query slot is not retired");
     ++s.value;unsigned releasing[]={s.source.gl,s.destination.gl};b->gl.semValue(s.input.gl,0x9595,&s.value);b->gl.signal(s.input.gl,2,releasing,0,nullptr,nullptr);glFlush();

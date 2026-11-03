@@ -15,7 +15,19 @@ class HardwareUpdateSourceTest {
         assertEquals(0,variant.strideWords()%4);assertTrue(variant.strideWords()>=end);assertTrue(variant.source().contains("layout(r32ui,binding=7)coherent uniform uimageBuffer"));
         assertFalse(variant.source().contains("r7State.words"));assertTrue(variant.source().contains("floatBitsToUint(separationRadius)"));
         assertTrue(variant.source().contains("if(r7Resume)"));assertTrue(variant.source().contains("floatBitsToUint(readBuf.data[saved*4u].w)"));
-        assertFalse(variant.source().contains("++sepVisits > STORM_MAX_VISITS"));assertTrue(variant.source().contains("j<min(prevCounter.live,uCapacity)"));
+        assertTrue(variant.source().contains("++sepVisits > STORM_MAX_VISITS"));
+        assertFalse(variant.source().contains("for(uint j=0u;j<min(prevCounter.live,uCapacity);j++)"));
+    }
+    @Test void allPairsEnumerationRequiresTheExplicitOfflineOracle(){
+        String text=source();
+        for(boolean fused:new boolean[]{false,true}){
+            String runtime=HardwareUpdateSource.build(text,fused).source();
+            assertTrue(runtime.contains("++sepVisits > STORM_MAX_VISITS"));
+            assertFalse(runtime.contains("for(uint j=0u;j<min(prevCounter.live,uCapacity);j++)"));
+        }
+        String oracle=HardwareUpdateSource.buildReference(text).source();
+        assertTrue(oracle.contains("for(uint j=0u;j<min(prevCounter.live,uCapacity);j++)"));
+        assertFalse(oracle.contains("++sepVisits > STORM_MAX_VISITS"));
     }
     @Test void refusesToGuessAfterTheQueryBoundaryChanges(){
         String text=source();assertThrows(IllegalArgumentException.class,()->HardwareUpdateSource.build(text.replace("vec3 sepW = vec3(0.0);","vec3 sepW;")));

@@ -616,7 +616,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             long updateFrame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),updateGeneration=committedGeneration+1;
             ParticleChainCapture.INSTANCE.inputs(java.util.Map.of("dt",dt,"time",AllayStormRuntime.INSTANCE.timeSec(),"capacity",cap,"input_generation",committedGeneration,"identity_epoch",gpu.identityEpoch(),"previous_counter_slot",lastGoodSlot,"counter_slot",slot,"damage_count",damageCount,"frame_seed",frameSeed));
             var hardware=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE;
-            hardware.beginFrame(programs,updateFrame,updateGeneration);
+            hardware.beginFrame(programs,updateFrame,updateGeneration);hardware.beginAvoidance(gpu.identityEpoch());
             shadowInput=null;
             if(ModelShadowGroups.requested()){
                 var shadowStorm=AllayStormRuntime.INSTANCE;var shadowCenter=shadowStorm.center();
@@ -752,6 +752,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 if(pass==1)ClientFrameCapture.INSTANCE.simulationInput(updateFrame,AllayStormRuntime.INSTANCE.timeSec(),dt);
                 if(pass==1)NeighborInputCapture.INSTANCE.freeze(updateProgram,updateFrame,updateGeneration);
                 if(pass==1)ParticleQuerySequence.INSTANCE.capture(updateFrame,updateGeneration,AllayStormRuntime.INSTANCE.timeSec(),dt);
+                if(pass==1)hardware.bindAvoidance();
                 ParticleRuntime.this.gpu.dispatch(0);
                 AllayAnimationGpu.barrier();
                 firstDone=true;}finally{if(pass==1&&!firstDone)ParticleQuerySequence.INSTANCE.endUpdate(false);ParticleDiagnostics.INSTANCE.endUpdate(firstDone);}
@@ -773,11 +774,15 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         private void finishSimulation(int playerCount){
             long updateFrame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),updateGeneration=committedGeneration+1;
             var hardware=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE;
+            if(hardware.avoidanceActive()){
+                hardware.correctAvoidance(gpu.particleWriteBufferId(),gpu.counterBufferId(slot),gpu.emitterBufferId(),cap,AllayStormRuntime.INSTANCE.timeSec(),dt);
+                gpu.beginBindings();gpu.bindParticleRead(0);gpu.bindParticleWrite(1);gpu.bindCounter(3,slot);gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,lastGoodSlot);
+            }
             if(StarfallGpuBuffers.INSTANCE.hasDome()){
                 ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.DOME_CONTACTS,updateFrame,updateGeneration);boolean domeDone=false;try{
                 hardware.prepareDome(ParticleRuntime.this.gpu.particleReadBufferId(),ParticleRuntime.this.gpu.counterBufferId(ParticleRuntime.this.lastGoodSlot),ParticleRuntime.this.gpu.particleWriteBufferId(),ParticleRuntime.this.gpu.counterBufferId(slot),AllayStormRuntime.INSTANCE.timeSec(),dt,playerCount,cap);
                 int domeProgram=ParticleQuerySequence.INSTANCE.domeProgram(hardware.domeProgram(ParticleRuntime.this.programs.domeContacts()));
-                if(hardware.active()){for(int part:DomeBodyContacts.related(domeProgram))com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(part);}else com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(domeProgram);
+                if(hardware.active()||hardware.avoidanceActive()){for(int part:DomeBodyContacts.related(domeProgram))com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(part);}else com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(domeProgram);
                 try{DomeBodyContacts.run(ParticleRuntime.this.programs.grid(),domeProgram,ParticleRuntime.this.gpu.particleReadBufferId(),ParticleRuntime.this.gpu.counterBufferId(ParticleRuntime.this.lastGoodSlot),ParticleRuntime.this.gpu.particleWriteBufferId(),ParticleRuntime.this.gpu.counterBufferId(slot),ParticleRuntime.this.gpu.gridBufferId(),AllayStormRuntime.INSTANCE.timeSec(),dt,playerCount,StarfallGpuBuffers.INSTANCE);}finally{hardware.finishDome();ParticleQuerySequence.INSTANCE.endDome();}
                 ParticleRuntime.this.gpu.bindParticleRead(0);ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,ParticleRuntime.this.lastGoodSlot);domeDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(domeDone);}
             }
@@ -1182,6 +1187,11 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             ParticleRuntime.this.committedGeneration++;
             ParticleRuntime.this.gpu.commitPopulation(ParticleRuntime.this.committedGeneration);
             AllayStormRuntime.INSTANCE.commitStarfall();
+            var avoidanceRuntime=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE;
+            if(avoidanceRuntime.avoidanceActive()){
+                avoidanceRuntime.publishAvoidance(gpu.particleReadBufferId(),gpu.counterBufferId(slot),gpu.emitterBufferId(),cap,AllayStormRuntime.INSTANCE.timeSec(),dt);
+                gpu.beginBindings();
+            }
             if (createsParticles) {
                 ParticleRuntime.this.lastCreationGeneration = ParticleRuntime.this.committedGeneration;
                 ParticleRuntime.this.poolMayBeAlive = true;

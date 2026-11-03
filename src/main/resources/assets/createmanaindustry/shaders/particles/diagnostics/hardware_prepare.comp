@@ -11,6 +11,8 @@ layout(r32ui,binding=7)coherent uniform uimageBuffer continuation;
 uniform uint phase,pointCapacity,queryCapacity,strideWords,emitterStride,diagnosticSort;
 uniform uvec2 inputGeneration,nonce,resourceEpoch;
 uniform uvec4 offsets; // bytes: points, requests, query owners, point -> pool mapping
+uniform uint fusedQuery;
+uniform uint directionOffset;
 uniform uint lookupOffset; // uints: stable identity -> compact point index
 uint get(uint at){return imageLoad(packet,int(at)).x;}
 void put(uint at,uint value){imageStore(packet,int(at),uvec4(value,0,0,0));}
@@ -21,7 +23,7 @@ bool populationValid(){return population.valid==1u&&population.generation==input
 void main(){uint i=gl_GlobalInvocationID.x;
  if(phase==0u){
   if(i<131072u)put(lookupOffset+i,0xffffffffu);
-  if(i==0u){for(uint k=0u;k<16u;k++)put(k,0u);put(1u,1u);put(2u,nonce.x);put(3u,nonce.y);put(4u,population.storm);put(6u,diagnosticSort);put(7u,floatBitsToUint(.000001));put(8u,offsets.x);put(9u,offsets.y);put(10u,offsets.z);put(11u,offsets.w);put(12u,previous.live);put(14u,resourceEpoch.x);put(15u,resourceEpoch.y);if(!populationValid())error(1u);if(imageLoad(continuation,3).x!=0u)error(2u);}
+  if(i==0u){for(uint k=0u;k<16u;k++)put(k,0u);put(1u,1u);put(2u,nonce.x);put(3u,nonce.y);put(4u,population.storm);put(6u,diagnosticSort|(fusedQuery!=0u?4u:0u));put(7u,floatBitsToUint(.000001));put(8u,offsets.x);put(9u,offsets.y);put(10u,offsets.z);put(11u,offsets.w);put(12u,previous.live);put(14u,resourceEpoch.x);put(15u,resourceEpoch.y);if(!populationValid())error(1u);if(imageLoad(continuation,3).x!=0u)error(2u);}
   return;
  }
  if(phase==3u){if(i==0u){memoryBarrierImage();put(0u,0x52374931u);}return;}
@@ -30,7 +32,7 @@ void main(){uint i=gl_GlobalInvocationID.x;
   if(i>=population.storm)return;uint slot=population.slots[population.modelCapacity*2u+i];if(slot>=previous.live||slot*4u+3u>=uint(pool.data.length())){error(4u);return;}
   vec4 p=pool.data[slot*4u];uint m=member(p.w),emitter=floatBitsToUint(pool.data[slot*4u+3u].w);if(m>=131072u||emitter*emitterStride+18u>=uint(emitters.data.length())||emitters.data[emitter*emitterStride+18u].x<.5||any(isnan(p.xyz))||any(isinf(p.xyz))){error(8u);return;}
   if(imageAtomicCompSwap(packet,int(lookupOffset+m),0xffffffffu,i)!=0xffffffffu){error(16u);return;}
-  for(uint k=0u;k<3u;k++)put(offsets.x/4u+i*4u+k,floatBitsToUint(p[k]));put(offsets.x/4u+i*4u+3u,m);put(offsets.w/4u+i,slot);return;
+  for(uint k=0u;k<3u;k++)put(offsets.x/4u+i*4u+k,floatBitsToUint(p[k]));put(offsets.x/4u+i*4u+3u,m);put(offsets.w/4u+i,slot);if(fusedQuery!=0u){float angle=float(m)*2.39996323;vec3 delta=normalize(vec3(cos(angle),.3,sin(angle)))*.01;for(uint k=0u;k<3u;k++)put(directionOffset+i*4u+k,floatBitsToUint(delta[k]));put(directionOffset+i*4u+3u,0u);}return;
  }
  if(i>=population.models)return;uint base=i*strideWords;if(base+strideWords>uint(imageSize(continuation))-4u){error(32u);return;}if(saved(base+4u)!=0x52374331u)return;
  uint slot=saved(base+2u),m=member(uintBitsToFloat(saved(base+3u)));
@@ -40,7 +42,7 @@ void main(){uint i=gl_GlobalInvocationID.x;
  uint row=imageAtomicAdd(packet,5,1u);if(row>=queryCapacity){error(512u);return;}
  // Outward expansion covers FP32 dot/FMA boundary differences. Exact original
  // GLSL separation still uses the unmodified radius in the continuation.
- radius=uintBitsToFloat(floatBitsToUint(radius+.000001)+1u);imageAtomicMax(packet,7,floatBitsToUint(radius));
+ float bound=uintBitsToFloat(floatBitsToUint(radius+.000001)+1u);imageAtomicMax(packet,7,floatBitsToUint(bound));if(fusedQuery==0u)radius=bound;
  for(uint k=0u;k<3u;k++)put(offsets.y/4u+row*4u+k,floatBitsToUint(origin[k]));put(offsets.y/4u+row*4u+3u,floatBitsToUint(radius));put(offsets.z/4u+row,owner);
  imageStore(continuation,int(base+5u)+4,uvec4(row,0,0,0));
 }

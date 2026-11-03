@@ -32,7 +32,7 @@ extern "C" __global__ void scanSums(Query p,unsigned long long* sums,unsigned bl
     p.offsets[p.q]=total;p.header[0]=total;atomicOr(p.header+1,total>p.capacity?1ull:0ull);
 }
 extern "C" __global__ void addSums(Query p,const unsigned long long* sums){unsigned i=blockIdx.x*256+threadIdx.x;if(i<p.q)p.offsets[i]+=sums[blockIdx.x];}
-extern "C" __global__ void bounds(Query p,float* aabbs){unsigned i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=p.n)return;float4 v=p.points[i];float r=p.radius;float INFINITY=__int_as_float(0x7f800000);
+extern "C" __global__ void bounds(Query p,float* aabbs){unsigned i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=p.n)return;float4 v=p.points[i];float r=p.radius+p.boundsPadding;float INFINITY=__int_as_float(0x7f800000);
     aabbs[i*6]=nextafterf(v.x-r,-INFINITY);aabbs[i*6+1]=nextafterf(v.y-r,-INFINITY);aabbs[i*6+2]=nextafterf(v.z-r,-INFINITY);
     aabbs[i*6+3]=nextafterf(v.x+r,INFINITY);aabbs[i*6+4]=nextafterf(v.y+r,INFINITY);aabbs[i*6+5]=nextafterf(v.z+r,INFINITY);
 }
@@ -41,7 +41,7 @@ extern "C" __global__ void sealResult(Query p,unsigned* envelope,unsigned nonceL
     envelope[9]=0;
     envelope[0]=0x52375131u;envelope[1]=nonceLo;envelope[2]=nonceHi;envelope[3]=stage;
     envelope[4]=p.q;envelope[5]=live;envelope[6]=idsOffset;envelope[7]=p.capacity;
-    envelope[8]=unsigned(p.header[1]);envelope[10]=epochLo;envelope[11]=epochHi;envelope[12]=lookupOffset;envelope[13]=lookupOffset?131072u:0u;envelope[14]=p.paged?*p.pageCounter:0u;envelope[15]=p.paged?p.pageCapacity:0u;
+    envelope[8]=unsigned(p.header[1]);envelope[10]=epochLo;envelope[11]=epochHi;envelope[12]=p.fused?0x46395231u:lookupOffset;envelope[13]=p.fused?4u:lookupOffset?131072u:0u;envelope[14]=p.paged?*p.pageCounter:0u;envelope[15]=p.paged?p.pageCapacity:0u;
     __threadfence_system();envelope[9]=1u;
 }
 // Diagnostic equivalence only: normal native queries retain their traversal
@@ -52,4 +52,12 @@ extern "C" __global__ void flattenPages(Query p){
  unsigned i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=p.q||p.header[1])return;
  unsigned page=p.pageHeads[i],count=p.counts[i],written=0;
  while(written<count){if(page>=p.pageCapacity){atomicOr(p.header+1,4ull);return;}unsigned length=min(32u,count-written);for(unsigned k=0;k<length;k++)p.ids[p.offsets[i]+written+k]=p.pages[page*36u+1u+k];written+=length;page=p.pages[page*36u];}
+}
+
+// Cached bounds must enclose every CURRENT expanded primitive, with stable identity.
+extern "C" __global__ void checkCachedBounds(Query p,const float* aabbs,const float4* cached,unsigned* dirty){
+ unsigned i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=p.n)return;float4 v=p.points[i];
+ if(__float_as_uint(v.w)!=__float_as_uint(cached[i].w)||!isfinite(v.x)||!isfinite(v.y)||!isfinite(v.z)||
+    !(v.x-p.radius>aabbs[i*6]&&v.y-p.radius>aabbs[i*6+1]&&v.z-p.radius>aabbs[i*6+2]&&
+      v.x+p.radius<aabbs[i*6+3]&&v.y+p.radius<aabbs[i*6+4]&&v.z+p.radius<aabbs[i*6+5]))atomicOr(dirty,1u);
 }

@@ -1,0 +1,75 @@
+// ABI 10 experiment. All gameplay state remains in the current production pool.
+layout(local_size_x=256) in;
+struct Row {vec4 position;vec4 velocity;uvec4 identity;vec4 preferred;};
+layout(std430,binding=0) buffer Pool {vec4 data[];} pool;
+layout(std430,binding=3) readonly buffer Count {uint live;} count;
+layout(std430,binding=5) readonly buffer Emitters {vec4 data[];} emitters;
+layout(std430,binding=6) buffer Snapshot {uint header[32];Row rows[];} snapshot;
+layout(std430,binding=7) buffer Alternate {uint header[32];Row rows[];} alternate;
+layout(std430,binding=8) buffer Metadata {uvec4 data[];} metadata;
+layout(std430,binding=9) buffer Grid {int heads[262144];int next[];} grid;
+layout(std430,binding=28) readonly buffer CurrentState {uint data[];} state;
+uniform uint phase,capacity,poolCapacity;
+uniform uvec2 nonce,epoch,generation,scene;
+uniform float timeSec,dt;
+uniform bool stateEnabled;
+layout(r32ui,binding=4) readonly uniform uimageBuffer avoidanceMotionCaps;
+uniform bool motionCapsEnabled;
+#pragma cmi_include ../chunks/storm_collision.glsl
+uint hashCell(ivec3 c){return (uint(c.x)*92837111u^uint(c.y)*689287499u^uint(c.z)*283923481u)&262143u;}
+bool finite3(vec3 p){return !any(isnan(p))&&!any(isinf(p));}
+bool clearSweep(vec3 a,vec3 b){
+ if(!uStormCollisionEnabled||!uStormCollisionOn)return false;
+ if(cmiStormAirSweep(a,b))return true;
+ ivec3 lo=ivec3(floor(min(a,b)+vec3(-.17499,.00001,-.17499))),hi=ivec3(floor(max(a,b)+vec3(.17499,.59999,.17499)));
+ for(int x=lo.x;x<=hi.x;x++)for(int y=lo.y;y<=hi.y;y++)for(int z=lo.z;z<=hi.z;z++){
+  ivec3 cell=ivec3(x,y,z);int page=cmiStormLookupPage(cell>>4);
+  if(page==-1||page==-3||(page>=0&&cmiStormSolidInPage(cell,page)))return false;
+ }
+ return true;
+}
+void main(){
+ uint i=gl_GlobalInvocationID.x;
+ if(phase==0u){
+  if(i<capacity){snapshot.rows[i]=Row(vec4(0),vec4(0),uvec4(i,0,0,0),vec4(0));metadata.data[i]=uvec4(0);}
+  if(i==0u){for(uint k=0u;k<32u;k++)snapshot.header[k]=0u;snapshot.header[0]=0x41313049u;snapshot.header[1]=10u;snapshot.header[2]=nonce.x;snapshot.header[3]=nonce.y;snapshot.header[4]=epoch.x;snapshot.header[5]=epoch.y;snapshot.header[6]=generation.x;snapshot.header[7]=generation.y;uvec2 target=generation+uvec2(1,0);if(target.x==0u)target.y++;snapshot.header[8]=target.x;snapshot.header[9]=target.y;snapshot.header[10]=capacity;snapshot.header[12]=floatBitsToUint(timeSec);snapshot.header[13]=floatBitsToUint(dt);snapshot.header[14]=floatBitsToUint(.1);snapshot.header[16]=scene.x;snapshot.header[17]=scene.y;}
+  return;
+ }
+ if(phase==1u){
+  if(i>=min(count.live,poolCapacity))return;uint at=i*4u,eid=floatBitsToUint(pool.data[at+3u].w),hb=eid*VEC4_PER_EMITTER;
+  if(hb+18u>=uint(emitters.data.length())||emitters.data[hb+18u].x<.5||emitters.data[hb+7u].x<1.5||emitters.data[hb+7u].x>=2.5||pool.data[at+3u].y<=0.)return;
+  uint id=uint(pool.data[at].w+.5)&MEMBER_IDX_MASK;if(id==0u||id>capacity)return;uint member=id-1u;
+  if(atomicCompSwap(metadata.data[member].x,0u,i+1u)!=0u){atomicOr(snapshot.header[11],4u);return;}
+  uint attack=stateEnabled?state.data[member*2u]:0u,tag=stateEnabled?state.data[member*2u+1u]&255u:0u;
+  metadata.data[member].y=attack;metadata.data[member].z=tag;
+  if(!finite3(pool.data[at].xyz)||!finite3(pool.data[at+1u].xyz)){atomicOr(snapshot.header[11],2u);metadata.data[member].w|=8u;return;}
+  float speedCap=128.;if(motionCapsEnabled){uint base=member*8u;if(imageLoad(avoidanceMotionCaps,int(base+7u)).x!=1u||imageLoad(avoidanceMotionCaps,int(base+4u)).x!=floatBitsToUint(pool.data[at+3u].z))return;speedCap=uintBitsToFloat(imageLoad(avoidanceMotionCaps,int(base+3u)).x);if(isnan(speedCap)||isinf(speedCap)||speedCap<0.||speedCap>128.)return;}
+  snapshot.rows[member]=Row(vec4(pool.data[at].xyz,.34),vec4(pool.data[at+1u].xyz,speedCap),uvec4(member,floatBitsToUint(pool.data[at+3u].z),eid,1u|(tag<<8u)),vec4(pool.data[at+1u].xyz,uintBitsToFloat(attack)));
+  return;
+ }
+ if(phase==2u){if(i==0u){snapshot.header[18]=1u;for(uint k=0u;k<32u;k++)alternate.header[k]=snapshot.header[k];}return;}
+ if(phase==3u){if(i<262144u)grid.heads[i]=0;return;}
+ if(i>=capacity)return;
+ Row row=snapshot.rows[i];
+ if(phase==8u){if(metadata.data[i].x!=0u&&(snapshot.header[11]!=0u||(row.identity.w&1u)==0u))metadata.data[i].w|=8u;return;}
+ if(phase==4u){if((row.identity.w&1u)==0u)return;uint h=hashCell(ivec3(floor(row.position.xyz/.5)));grid.next[i]=atomicExchange(grid.heads[h],int(i)+1);return;}
+ if(phase==5u||phase==7u){
+  alternate.rows[i]=row;if((row.identity.w&1u)==0u||snapshot.header[11]!=0u)return;
+  uint nearest[16];float distances[16];uint n=0u,visits=0u,status=0u;ivec3 cell=ivec3(floor(row.position.xyz/.5));
+  for(int x=-1;x<=1&&visits<128u;x++)for(int y=-1;y<=1&&visits<128u;y++)for(int z=-1;z<=1&&visits<128u;z++){
+   int s=grid.heads[hashCell(cell+ivec3(x,y,z))];while(s!=0&&visits<128u){uint j=uint(s-1);s=grid.next[j];visits++;if(j==i)continue;Row other=snapshot.rows[j];if(any(notEqual(ivec3(floor(other.position.xyz/.5)),cell+ivec3(x,y,z))))continue;
+    float d2=dot(row.position.xyz-other.position.xyz,row.position.xyz-other.position.xyz);if(d2>=.16)continue;
+    uint at=min(n,15u);if(n==16u&&d2>=distances[15])continue;while(at>0u&&d2<distances[at-1u]){if(at<16u){distances[at]=distances[at-1u];nearest[at]=nearest[at-1u];}at--;}distances[at]=d2;nearest[at]=j;n=min(16u,n+1u);
+   }if(s!=0)status|=2u;
+  }
+  if(visits>=128u)status|=2u;
+  vec3 correction=vec3(0);for(uint k=0u;k<n;k++){vec3 d=row.position.xyz-snapshot.rows[nearest[k]].position.xyz;float len=sqrt(distances[k]);if(len<1e-6){uint a=min(i,nearest[k]),h=a*1664525u+1013904223u;d=normalize(vec3(float(h&1023u)-511.,float((h>>10u)&1023u)-511.,float((h>>20u)&1023u)-511.))*(i<nearest[k]?1.:-1.);len=0.;}else d/=len;correction+=d*(.4-len)*.5;if(len<.34)status|=4u;}
+  if(phase==7u){metadata.data[i].w=(metadata.data[i].w&~4u)|status;return;}
+  float size=length(correction),limit=min(.015,max(0.,row.velocity.w)*dt*.5);if(size>limit)correction*=limit/max(size,1e-8);
+  vec3 end=row.position.xyz+correction;
+  if(motionCapsEnabled){uint base=i*8u;vec3 origin=uintBitsToFloat(uvec3(imageLoad(avoidanceMotionCaps,int(base)).x,imageLoad(avoidanceMotionCaps,int(base+1u)).x,imageLoad(avoidanceMotionCaps,int(base+2u)).x));float cap=row.velocity.w*dt,travel=distance(end,origin);if(distance(row.position.xyz,origin)>cap+.0001){end=row.position.xyz;status|=8u;}else if(travel>cap)end=origin+(end-origin)*(cap/max(travel,1e-8));}
+  if(!finite3(end)||!clearSweep(row.position.xyz,end)){status|=8u;end=row.position.xyz;}
+  alternate.rows[i].position.xyz=end;metadata.data[i].w|=status;return;
+ }
+ if(phase==6u){if(snapshot.header[11]==0u&&(row.identity.w&1u)!=0u&&metadata.data[i].x>0u)pool.data[(metadata.data[i].x-1u)*4u].xyz=row.position.xyz;return;}
+}
