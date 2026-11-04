@@ -18,7 +18,7 @@ public final class DomeBodyContacts {
     private static void indirect(long offset) { ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchComputeIndirect(offset);barrier(); }
     public static void run(int gridProgram,int program,int original,int previous,int pool,int counter,int grid,float time,float dt,int players,StarfallGpuBuffers stars) {
         if(!stars.hasDome()||!stars.domeReady())return;
-        int[] timing=null;if(Boolean.getBoolean("cmi.storm.profile")&&++diagnosticRuns==120){timing=new int[7];for(int k=0;k<timing.length;k++)timing[k]=GL15.glGenQueries();}stamp(timing,0);
+        int[] timing=null;if(Boolean.getBoolean("cmi.storm.profile")&&++diagnosticRuns==120){timing=new int[6];for(int k=0;k<timing.length;k++)timing[k]=GL15.glGenQueries();}stamp(timing,0);
         var passes=programs.getOrDefault(program,new Programs(program,program,program,program));
         boolean legacy=passes.control()==passes.solve(); // Frozen before-build GPU fixtures only.
         stars.bind(program,true);int state=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,28);
@@ -38,9 +38,6 @@ public final class DomeBodyContacts {
             GL20.glUseProgram(passes.apply());indirect(full);stamp(timing,4);
             if(legacy)GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uMode"),5);
             GL20.glUseProgram(passes.audit());indirect(full);stamp(timing,5);
-            // Publish counters from the final masks after all independent audit
-            // invocations have finished. Feedback must use one exact snapshot.
-            GL20.glUseProgram(passes.control());GL41.glProgramUniform1ui(passes.control(),GpuUniforms.loc(passes.control(),"uMode"),6);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(4,1,1);barrier();stamp(timing,6);
             if(timing!=null){long before=GL33.glGetQueryObjectui64(timing[0],GL15.GL_QUERY_RESULT);for(int k=1;k<timing.length;k++){long after=GL33.glGetQueryObjectui64(timing[k],GL15.GL_QUERY_RESULT);System.out.println("Dome body GPU pass "+k+" ms="+(after-before)/1e6);before=after;}for(int query:timing)GL15.glDeleteQueries(query);}
         } finally { GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,oldIndirect); }
     }

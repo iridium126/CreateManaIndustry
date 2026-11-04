@@ -135,21 +135,17 @@ public final class CMIParticleCommand {
                                 .executes(CMIParticleCommand::profile)
                                 .then(Commands.literal("details").executes(CMIParticleCommand::profileDetails))
                                 .then(Commands.literal("hardware").then(Commands.literal("status").executes(ctx->{
-                                    for(String line:com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareExperiments.status().split("\n"))tell(ctx,line);return 1;
+                                    for(String line:com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.status().split("\n"))tell(ctx,line);return 1;
                                 })))
                                 .then(hardwareBackends())
-                                .then(Commands.literal("querysequence").then(Commands.argument("name",StringArgumentType.word()).then(Commands.argument("frames",IntegerArgumentType.integer(16,128)).executes(ctx->{
-                                    boolean queued=com.iridium126.createmanaindustry.client.particles.engine.ParticleQuerySequence.INSTANCE.request(StringArgumentType.getString(ctx,"name"),IntegerArgumentType.getInteger(ctx,"frames"));
-                                    tell(ctx,queued?"Contiguous read-pool/local-query and post-MODEL Dome input capture queued. Instrumented: exclude from FPS. Output: logs/cmi-particle-query-sequences":"Query sequence unavailable: invalid name or another capture is pending.");return queued?1:0;
-                                }))))
-                                .then(Commands.literal("frames").then(Commands.argument("seconds",IntegerArgumentType.integer(1,300)).executes(ctx->{
+                                .then(Commands.literal("frames").then(Commands.argument("seconds",IntegerArgumentType.integer(1,900)).executes(ctx->{
                                     boolean queued=com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.request(IntegerArgumentType.getInteger(ctx,"seconds"));
                                     tell(ctx,queued?"Whole-client frame capture queued; close menus and keep the scene/settings fixed. Results: logs/cmi-particle-frames":"A frame capture is already pending.");return queued?1:0;
                                 })))
                                 .then(Commands.literal("capture").then(Commands.argument("name",StringArgumentType.word()).executes(ctx->{
                                     String name=StringArgumentType.getString(ctx,"name");
-                                    boolean queued=com.iridium126.createmanaindustry.client.particles.engine.NeighborInputCapture.INSTANCE.request(name);
-                                    tell(ctx,queued?"Asynchronous complete GPU command-chain freeze queued for the next frame. Instrumented: exclude from FPS. Output: logs/cmi-neighbor-inputs":"Capture name must match [A-Za-z0-9_-]{1,64}, with no pending capture.");return queued?1:0;
+                                    boolean queued=com.iridium126.createmanaindustry.client.particles.engine.ParticleChainCapture.INSTANCE.request(name);
+                                    tell(ctx,queued?"Asynchronous complete GPU command-chain freeze queued for the next frame. Instrumented: exclude from FPS. Output: logs/cmi-particle-captures":"Capture name must match [A-Za-z0-9_-]{1,64}, with no pending capture.");return queued?1:0;
                                 })))
                                 .then(Commands.literal("on").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(true); tell(ctx,"Particle profiling enabled"); return 1; }))
                                 .then(Commands.literal("off").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(false); tell(ctx,"Particle profiling disabled"); return 1; })))
@@ -340,9 +336,9 @@ public final class CMIParticleCommand {
 
     private static LiteralArgumentBuilder<CommandSourceStack> hardwareBackends(){
         var root=Commands.literal("backend");
-        for(String name:com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.qualified())root.then(Commands.literal(name).executes(ctx->{
-            boolean accepted=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.request(name);
-            tell(ctx,accepted?"Backend "+name+" queued for the next complete particle-frame boundary. Active FPS capture will be invalidated; check hardware status for actual backend and fallback.":"Backend unavailable, autoThrottle must be false, or a query/input capture is pending. Check config/createmanaindustry-client.toml [particles] autoThrottle and hardware status.");return accepted?1:0;
+        for(String name:com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.backends())root.then(Commands.literal(name).executes(ctx->{
+            boolean accepted=com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.request(name);
+            tell(ctx,accepted?"Backend "+name+" queued for the next complete particle-frame boundary. Active FPS capture will be invalidated; check hardware status for actual backend and fallback.":"Unknown backend; choose auto, gl or rt.");return accepted?1:0;
         }));return root;
     }
     private static int profile(CommandContext<CommandSourceStack> ctx) {

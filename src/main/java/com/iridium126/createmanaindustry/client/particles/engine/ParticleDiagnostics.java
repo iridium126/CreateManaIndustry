@@ -117,7 +117,7 @@ public final class ParticleDiagnostics {
         var path=com.iridium126.createmanaindustry.client.particles.shaderpack.ParticleProfileSnapshot.write(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current(),net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable());return path==null?"unavailable":path.toString();
     }
     /** Active pipeline identity for opt-in whole-frame captures; optional Iris remains guarded. */
-    public String measurementContext(){return (com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?irisCaptureContext():"pack=none; source=none; options=unavailable")+"; backend="+com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE.identity()+"; engine="+ParticlePrograms.INSTANCE.diagnosticSourceDigest()+"; shadow_quality="+ShadowQualityFrame.current().label()+"; auto_throttle="+com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle;}
+    public String measurementContext(){return (com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?irisCaptureContext():"pack=none; source=none; options=unavailable")+"; backend="+com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.identity()+"; engine="+ParticlePrograms.INSTANCE.diagnosticSourceDigest()+"; shadow_quality="+ShadowQualityFrame.current().label()+"; auto_throttle="+com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle;}
     private Frame current;
     private long start, allocatedStart, cpuNanos, allocatedBytes, uploads, calls, draws, readbackLag;
     private long lastUploads, lastCalls, lastDraws, lastReadbackLag;

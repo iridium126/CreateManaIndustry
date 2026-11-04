@@ -4,6 +4,14 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class GpuFrameCoordinatorTest {
+    @Test void aNewDisplayScopeDoesNotInventASimulationGeneration() {
+        var f=new GpuFrameCoordinator();prepare(f);publish(f,9);var simulation=f.publication();
+        f.draw();f.finishDraw();f.begin(0);
+        var display=f.display(simulation,99);
+        assertEquals(9,display.generation());assertEquals(99,display.pool());
+        assertEquals(simulation.counter(),display.counter());assertTrue(display.frame()>simulation.frame());
+        f.draw();f.finishDraw();assertNull(f.publication());
+    }
     private void prepare(GpuFrameCoordinator frame) { frame.begin(0);frame.simulate();frame.generate();frame.cullSort(); }
     private void publish(GpuFrameCoordinator frame,long generation) { frame.publish(frame.candidate(generation,1,2,3,4,5,generation,generation,-1)); }
 

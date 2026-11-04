@@ -1,6 +1,7 @@
 layout(local_size_x=64) in;
 layout(std430,binding=0) readonly buffer Inputs{vec4 entries[];} inputData;
 layout(std430,binding=1) readonly buffer Jobs{vec4 entries[];} jobs;
+layout(std430,binding=2) readonly buffer PreviousState{vec4 entries[];} previous;
 layout(std430,binding=5) buffer OutputPool{vec4 data[];} particles;
 layout(std430,binding=6) buffer RibbonNodes{vec4 data[];} nodes;
 layout(std430,binding=7) readonly buffer DebrisRead{vec4 data[];} debrisRead;
@@ -11,6 +12,7 @@ uniform mat4 uView,uProjection;
 #pragma cmi_include chunks/shared_fate.glsl
 #pragma cmi_include chunks/shared_fate_sampling.glsl
 #pragma cmi_include chunks/shared_fate_ribbon.glsl
+#pragma cmi_include chunks/external_history.glsl
 shared float arcTable[33];
 vec3 spiral(uint jb,float f,uint lane){
     float arc=jobs.entries[jb+7u].w;
@@ -25,7 +27,8 @@ vec3 nodePosition(uint jb,uint index,uint segments,uint lane){
     }
     return p;
 }
-void particle(uint index,vec3 position,float diameter,vec3 color,float intensity,float roll,uint seed,uint emitter){
+void particle(uint index,vec3 position,float diameter,vec3 color,float intensity,float roll,uint seed,uint emitter,uint prior){
+    cmiExternalHistory(index,prior);
     uint base=index*4u;
     particles.data[base]=vec4(position,diameter);particles.data[base+1u]=vec4(0,0,0,roll);
     particles.data[base+2u]=vec4(color,intensity);
@@ -40,6 +43,11 @@ void main(){
     uint nodeOffset=floatBitsToUint(jobs.entries[jb+9u].x),seed=uint(jobs.entries[jb+3u].z+.5);
     vec4 counts=jobs.entries[jb+19u],style=jobs.entries[jb+3u];
     uint body=uint(counts.x+.5),glow=uint(counts.y+.5),stars=uint(counts.z+.5),fragments=uint(counts.w+.5);
+    uint sb=floatBitsToUint(inputData.entries[ib+3u].x)*CMI_FATE_VECTORS;
+    bool history=jobs.entries[jb+9u].z>.5&&uSimulationGeneration!=0u&&floatBitsToUint(previous.entries[sb+9u].z)+1u==uSimulationGeneration;
+    uvec4 oldCounts=uvec4(previous.entries[sb+19u]+.5);
+    uint oldOffset=floatBitsToUint(previous.entries[sb+9u].w),oldNodes=floatBitsToUint(previous.entries[sb+9u].x);
+    bool sameNodes=history&&oldCounts.x==body&&body>0u;
     bool stopping=inputData.entries[ib+2u].z>.5;float arc=jobs.entries[jb+7u].w;
     float envelope=style.x*jobs.entries[jb+5u].w;
     uint perLane=segments+1u;
@@ -59,7 +67,7 @@ void main(){
         nodes.data[base]=vec4(p,max(width,1.25*pixel));
         nodes.data[base+1u]=vec4(0,0,0,max(glowWidth,2.0*pixel));
         nodes.data[base+2u]=vec4(cmiFateBlue(s,uTime,lane,shade),(.68+.15*pulse)*opacity*scale);
-        nodes.data[base+3u]=vec4(.055*(.6+1.3*pulse)*opacity*min(1.0,glowWidth/max(.0001,2.0*pixel)),s,0,0);
+        nodes.data[base+3u]=vec4(.055*(.6+1.3*pulse)*opacity*min(1.0,glowWidth/max(.0001,2.0*pixel)),s,uintBitsToFloat(sameNodes?oldNodes+index+1u:0u),0);
     }
     memoryBarrierBuffer();barrier();
     // Compute camera-facing sides from the actual morphed nodes, not the centre catenary.
@@ -93,6 +101,7 @@ void main(){
         particles.data[base+1u]=vec4(uintBitsToFloat(a),uintBitsToFloat(b),0,0);
         particles.data[base+2u]=vec4(0);
         particles.data[base+3u]=vec4(0,0,0,uintBitsToFloat(halo?uRibbonEmitter:uRibbonAlphaEmitter));
+        cmiExternalHistory(offset+index,sameNodes&&(!halo||oldCounts.y==glow)?oldOffset+(halo?oldCounts.x:0u)+ordinal+1u:0u);
     }
     for(uint i=gl_LocalInvocationID.x;i<stars;i+=64u){
         uint key=cmiFateMix(seed^i*0x9e3779b9u);float r=cmiFateRandom(key),r2=cmiFateRandom(key+7u);
@@ -103,7 +112,7 @@ void main(){
         vec3 p=cmiFateCurve(jobs.entries[jb].xyz,jobs.entries[jb+1u].xyz,jobs.entries[jb+2u].xyz,t)+(u*cos(theta)+v*sin(theta))*(.035+.065*r2)*pow(max(0.0,sin(t*3.14159265)),.65);
         float cycle=fract(uTime*(.16+.08*r2)+r),glint=smoothstep(0.0,.18,cycle)*(1.0-smoothstep(.65,1.0,cycle));
         float depth=max(.05,-(uView*vec4(p,1)).z),pixel=2.0*depth/(max(.01,abs(uProjection[1][1]))*max(1.0,uViewportHeight));
-        particle(offset+body+glow+i,p,max((.008+.01*r2)*exp(-.3*cycle),.9*pixel),cmiFateBlue(s,uTime,i%4u,.8),.25*glint*envelope*smoothstep(.2,.75,length(p)),r*6.2831853+uTime*.3,key,uEmitter);
+        particle(offset+body+glow+i,p,max((.008+.01*r2)*exp(-.3*cycle),.9*pixel),cmiFateBlue(s,uTime,i%4u,.8),.25*glint*envelope*smoothstep(.2,.75,length(p)),r*6.2831853+uTime*.3,key,uEmitter,history&&i<oldCounts.z?oldOffset+oldCounts.x+oldCounts.y+i+1u:0u);
     }
     uint cacheSlot=floatBitsToUint(inputData.entries[ib+3u].w);
     if(stopping&&cacheSlot>0u&&cacheSlot<=uDebrisSlots){
@@ -113,6 +122,7 @@ void main(){
             uint cache=((cacheSlot-1u)*2048u+i)*4u,key=cmiFateMix(seed^i*0x85ebca6bu);
             vec4 pose=debrisRead.data[cache],motion=debrisRead.data[cache+1u],color=debrisRead.data[cache+2u],meta=debrisRead.data[cache+3u];
             bool released=floatBitsToUint(meta.z)==generation&&meta.w>.5;
+            bool previouslyReleased=released;
             if(released)pose.xyz+=inputData.entries[ib+4u].xyz; // Camera-relative storage retains precision at distant world coordinates.
             if(!released&&uTime>=birth&&(jobs.entries[jb+20u].w<birth||jobs.entries[jb+9u].z<.5)){
                 float blend=clamp((birth-jobs.entries[jb+20u].w)/max(.000001,uTime-jobs.entries[jb+20u].w),0.0,1.0);
@@ -134,7 +144,7 @@ void main(){
                 float age=max(0.0,uTime-pose.w),life=max(.001,motion.w-pose.w);
                 float fade=released?smoothstep(0.0,.18,age)*(1.0-smoothstep(0.0,life,age)):0.0;
                 vec3 p=pose.xyz+motion.xyz*age;
-                particle(offset+body+glow+stars+i,p,meta.x*(1.0-.8*smoothstep(0.0,life,age)),color.rgb,.65*color.a*fade*jobs.entries[jb+5u].w,meta.y+age*.4,key,uEmitter);
+                particle(offset+body+glow+stars+i,p,meta.x*(1.0-.8*smoothstep(0.0,life,age)),color.rgb,.65*color.a*fade*jobs.entries[jb+5u].w,meta.y+age*.4,key,uEmitter,history&&previouslyReleased&&i<oldCounts.w?oldOffset+oldCounts.x+oldCounts.y+oldCounts.z+i+1u:0u);
             }
         }
     }

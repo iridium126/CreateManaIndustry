@@ -29,6 +29,9 @@ public final class SharedFateGpu implements AutoCloseable {
     private int input,jobs,read,write,prepare,reserve,emit,inputCapacity,stateCapacity;
     private ByteBuffer staging;
     private int nodeRead,nodeWrite,nodeWriteCapacity,nodeReadCapacity,debrisRead,debrisWrite,debrisCapacity;
+    private int displayProgram,displayNodes,displayCapacity;
+    private boolean displayActive;
+    private Vec3 currentCamera=Vec3.ZERO,previousCamera=Vec3.ZERO;
     private final Map<UUID,Integer> debrisSlots=new HashMap<>();
     private List<SharedFateClient.Frame> frames=List.of();
     private Vec3 camera=Vec3.ZERO;
@@ -120,10 +123,12 @@ public final class SharedFateGpu implements AutoCloseable {
         ParticleDiagnostics.INSTANCE.mark("fate_prepare");
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((frames.size()+63)/64,1,1);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL20.glUseProgram(reserve);uint(reserve,"uCount",frames.size());uint(reserve,"uCapacity",output.capacity());
+        uint(reserve,"uSimulationGeneration",(int)output.historyGeneration());
         uint(reserve,"uBudget",Math.max(0,(int)(ClientConfig.sameFateMaxParticles*Math.max(0,Math.min(1,throttle)))));
         ParticleDiagnostics.INSTANCE.mark("fate_reserve");
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         GL20.glUseProgram(emit);uint(emit,"uEmitter",emitter);uint(emit,"uRibbonAlphaEmitter",alphaEmitter);uint(emit,"uRibbonEmitter",ribbonEmitter);uint(emit,"uDebrisSlots",debrisCapacity);scalar(emit,"uTime",SharedFateClient.now());
+        output.bindHistory(emit);uint(emit,"uSimulationGeneration",(int)output.historyGeneration());
         matrix(emit,"uView",view);matrix(emit,"uProjection",projection);
         scalar(emit,"uViewportHeight",net.minecraft.client.Minecraft.getInstance().getWindow().getHeight());
         ParticleDiagnostics.INSTANCE.mark("fate_emit");
@@ -133,15 +138,32 @@ public final class SharedFateGpu implements AutoCloseable {
     }
     public void bindDrawInputs(){
         if(nodeRead==0)nodeRead=buffer(64);
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,RIBBON_BINDING,nodeRead);
+        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,RIBBON_BINDING,displayActive?displayNodes:nodeRead);
+    }
+    public void clearDisplay(){displayActive=false;}
+    public void publishDisplay(float alpha,Vec3 displayCamera){
+        displayActive=false;if(nodeRead==0||nodeReadCapacity==0)return;
+        if(displayProgram==0)displayProgram=compile("shared_fate_display.comp");
+        if(displayCapacity<nodeReadCapacity){displayNodes=reallocate(displayNodes,(long)nodeReadCapacity*64);displayCapacity=nodeReadCapacity;}
+        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,nodeRead);
+        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,nodeWrite==0?nodeRead:nodeWrite);
+        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,2,displayNodes);
+        GL20.glUseProgram(displayProgram);uint(displayProgram,"uCount",nodeReadCapacity);scalar(displayProgram,"uAlpha",alpha);
+        Vec3 now=currentCamera.subtract(displayCamera),before=previousCamera.subtract(displayCamera);
+        GL20.glUniform3f(uniforms.location(displayProgram,"uCurrentCameraDelta"),(float)now.x,(float)now.y,(float)now.z);
+        GL20.glUniform3f(uniforms.location(displayProgram,"uPreviousCameraDelta"),(float)before.x,(float)before.y,(float)before.z);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((nodeReadCapacity+255)/256,1,1);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+        displayActive=true;
     }
     public void commit(){
         if(!staged)return;staged=false;int previous=read;read=write;write=previous;
+        previousCamera=currentCamera;currentCamera=camera;displayActive=false;
         previous=nodeRead;nodeRead=nodeWrite;nodeWrite=previous;int oldCapacity=nodeReadCapacity;nodeReadCapacity=nodeWriteCapacity;nodeWriteCapacity=oldCapacity;
         if(!debrisSlots.isEmpty()){previous=debrisRead;debrisRead=debrisWrite;debrisWrite=previous;}
         frames.forEach(f->f.wire().lastCamera=camera);
     }
-    public void reset(){staged=false;frames=List.of();debrisSlots.clear();if(read!=0)zero(read);if(write!=0)zero(write);if(debrisRead!=0)zero(debrisRead);if(debrisWrite!=0)zero(debrisWrite);}
+    public void reset(){staged=false;displayActive=false;currentCamera=previousCamera=Vec3.ZERO;frames=List.of();debrisSlots.clear();if(read!=0)zero(read);if(write!=0)zero(write);if(debrisRead!=0)zero(debrisRead);if(debrisWrite!=0)zero(debrisWrite);}
     private static void copy(int source,int target,long bytes){
         GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,target);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,bytes);
@@ -164,7 +186,9 @@ public final class SharedFateGpu implements AutoCloseable {
     private void matrix(int p,String name,Matrix4fc value){uniforms.matrix(p,name,value);}
     public void close(){
         uniforms.clear();
-        for(int buffer:new int[]{input,jobs,read,write,nodeRead,nodeWrite,debrisRead,debrisWrite})if(buffer!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(buffer);
+        for(int buffer:new int[]{input,jobs,read,write,nodeRead,nodeWrite,debrisRead,debrisWrite,displayNodes})if(buffer!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(buffer);
+        if(displayProgram!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(displayProgram);
+        displayProgram=displayNodes=displayCapacity=0;displayActive=false;
         if(prepare!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(prepare);if(reserve!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(reserve);if(emit!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(emit);
         nodeRead=nodeWrite=nodeReadCapacity=nodeWriteCapacity=debrisRead=debrisWrite=debrisCapacity=0;debrisSlots.clear();
         disabled=false;staged=false;input=jobs=read=write=prepare=reserve=emit=inputCapacity=stateCapacity=0;staging=null;frames=List.of();

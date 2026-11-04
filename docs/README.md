@@ -10,9 +10,9 @@
 
 ## 文档索引
 
-GPU 粒子最近三次提交归因、新诊断采集及 +20% FPS 验收见 [2026-11-03 整帧归因](benchmarks/particle-frame-attribution-2026-11-03.md)。
+GPU 粒子当前采用固定 20 Hz 调度与独立显示发布，GL/RT 候选和玩法边界见 [当前引擎](particle-engine-dev.md)。
 
-当前裂口裁剪／三档剔除、计算缓存复测结果和 `runClient` 定向采集见 [R6 实施报告](benchmarks/particle-frame-attribution-r6-2026-11-03.md)。历史严格等价标准下的拒绝证据及计算链首次分歧见 [R5 报告](benchmarks/particle-frame-attribution-r5-2026-11-03.md)。
+统一工具、固定场景和噪声门槛见 [性能验证](particle-engine-performance.md)，候选包及冻结基线回退见 [安装说明](particle-engine-install.md)。旧实验报告已进入带校验清单的源码与结果归档；新候选待客户端验收。
 
 | 文档 | 内容 | 状态 |
 | --- | --- | --- |
@@ -56,6 +56,8 @@ GPU 粒子最近三次提交归因、新诊断采集及 +20% FPS 验收见 [2026
 | [testing.md](testing.md) | 单元、GameTest、GPU 和 benchmark 运行入口 | 🟡 |
 
 `benchmarks/` 只保留影响实现选择的 Markdown 结论。原始数据、截图、测试报告和完整日志统一输出到忽略的 `build/benchmarks/`；运行器、元数据及复现规则见 [性能结果规则](benchmarks/README.md)。日期报告表示当时的测量，当前验证以实际运行结果为准。
+
+RT 单次计算重构的 [实现状态与剩余工作](rt-single-step-status.md) 和 [本次诊断与离屏证据](benchmarks/rt-single-step-2026-11-04.md) 单独记录；基础修复候选尚未完成原生运动所有权及在线 RT 渲染接入。
 
 ## 维护规则
 

@@ -78,10 +78,10 @@ foreach ($completionRound in 100,101,102) {
 }
 python scripts/particles/summarize_shadow_completion.py 100
 .\gradlew.bat test check build -I scripts/particles/validation.init.gradle validateModelMaterialGpu validateModelShadowGpu validateModelShadowIrisGpu validateModelPopulationGpu validateParticleProgramsGpu --no-configuration-cache
-python scripts/particles/package_shadow_completion.py
+python scripts/particles/particle_tool.py package
 ```
 
-复现请使用新轮次目录，保留原数据；汇总脚本参数为首轮编号。安装候选及证据包使用 `shadow-completion-candidate` 名称，不覆盖上一轮交付。
+本页记录既有阴影契约和历史夹具结果。旧专用交付器已归档；当前安装与回退统一见 [安装说明](particle-engine-install.md)，不会覆盖历史采集。
 
 最终本机自动化记录：`test check build` 成功，JUnit 1,027 项、0 失败／错误／跳过；原生深度内核 33,013 项，CPU 直传／布局候选 8,935,990 项，八包材质入口 1,468 项，含生产分组双 bank 的人口索引回归 1,099 项。程序生命周期 GPU 回归 694 项通过，其中失败重载日志来自预期的失败注入。深度及输入性能汇总继续固定使用 10–12 轮；后续 13 轮只复核最终深度边界修正，不替换三轮资格数据。
 

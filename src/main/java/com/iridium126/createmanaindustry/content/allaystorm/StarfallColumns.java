@@ -21,7 +21,7 @@ public final class StarfallColumns {
     private static final class Active {
         final ClientboundStormColumnPacket packet;
         final BitSet completed=new BitSet();
-        final Map<UUID,BitSet> reported=new HashMap<>();
+        final java.util.Set<UUID> reported=new java.util.HashSet<>();
         Active(ClientboundStormColumnPacket packet){this.packet=packet;}
     }
     private final LinkedHashMap<Integer,Active> columns=new LinkedHashMap<>();
@@ -123,7 +123,7 @@ public final class StarfallColumns {
         var p=a.packet;if(!p.dimension().equals(player.level().dimension().location())||p.epoch()!=epoch||member<0||member>=data.count||data.dead.get(member))return false;
         int rank=-1;for(int i=0;i<p.members().length;i++)if(p.members()[i]==member){rank=i;break;}if(rank<0||a.completed.get(rank))return false;
         if(!Double.isFinite(contact.x)||!Double.isFinite(contact.y)||!Double.isFinite(contact.z))return false;
-        BitSet reported=a.reported.computeIfAbsent(player.getUUID(),k->new BitSet());if(reported.get(rank))return false;reported.set(rank);
+        if(!a.reported.add(player.getUUID()))return false;
         var source=new DamageSource(player.registryAccess().registryOrThrow(Registries.DAMAGE_TYPE).getHolderOrThrow(CMIDamageTypes.STORM_PECK),contact);
         player.hurt(source,(float)ServerConfig.stormWaveDamage);return true;
     }

@@ -1,0 +1,25 @@
+// One display publication for both ribbon materials. No simulation writes.
+layout(local_size_x=256) in;
+layout(std430,binding=0) readonly buffer CurrentNodes {vec4 rows[];} currentNodes;
+layout(std430,binding=1) readonly buffer PreviousNodes {vec4 rows[];} previousNodes;
+layout(std430,binding=2) writeonly buffer DisplayNodes {vec4 rows[];} displayNodes;
+uniform uint uCount;
+uniform float uAlpha;
+uniform vec3 uCurrentCameraDelta,uPreviousCameraDelta;
+void main(){
+    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+    uint b=i*4u;vec4 pose=currentNodes.rows[b],side=currentNodes.rows[b+1u],color=currentNodes.rows[b+2u],detail=currentNodes.rows[b+3u];
+    pose.xyz+=uCurrentCameraDelta;
+    uint prior=floatBitsToUint(detail.z);
+    if(uAlpha<1.&&prior>0u&&prior<=uint(previousNodes.rows.length())/4u){
+        uint p=(prior-1u)*4u;vec4 beforePose=previousNodes.rows[p],beforeSide=previousNodes.rows[p+1u];
+        beforePose.xyz+=uPreviousCameraDelta;pose=mix(beforePose,pose,uAlpha);
+        // Strand-side signs are a representation choice, never an identity.
+        if(dot(beforeSide.xyz,side.xyz)<0.)beforeSide.xyz=-beforeSide.xyz;
+        side=mix(beforeSide,side,uAlpha);float size=length(side.xyz);
+        if(size>1e-6)side.xyz/=size;
+        color=mix(previousNodes.rows[p+2u],color,uAlpha);
+        detail.xy=mix(previousNodes.rows[p+3u].xy,detail.xy,uAlpha);
+    }
+    displayNodes.rows[b]=pose;displayNodes.rows[b+1u]=side;displayNodes.rows[b+2u]=color;displayNodes.rows[b+3u]=detail;
+}

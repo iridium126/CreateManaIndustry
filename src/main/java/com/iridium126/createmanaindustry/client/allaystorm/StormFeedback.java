@@ -186,7 +186,7 @@ public final class StormFeedback {
             if(member== -3){StormCollisionRuntime.arrived(id,Math.round(entries[o+2]));continue;}
             if(member== -2){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<384){var mask=completions.computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
             if(member<0){if(w!=null)AllayStormRuntime.INSTANCE.columnTouchSound(id,entries[o+2],entries[o+3],entries[o+4]);continue;}
-            if(w==null||!reported.computeIfAbsent(w,k->new it.unimi.dsi.fastutil.ints.IntOpenHashSet()).add(member))continue;
+            if(w==null||!AllayStormRuntime.INSTANCE.acceptsContactNow(id,entries[o+5])||!reported.add(w))continue;
             PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
         }
         var mc=Minecraft.getInstance();
@@ -229,7 +229,7 @@ public final class StormFeedback {
     public static final StormFeedback INSTANCE=new StormFeedback(com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime.INSTANCE);
     private final StormParticlePort particles;
     private boolean waveContactPending;
-    private final java.util.Map<AllayStormRuntime.ContactAuthority,it.unimi.dsi.fastutil.ints.IntOpenHashSet> reported=new java.util.HashMap<>();
+    private final java.util.Set<AllayStormRuntime.ContactAuthority> reported=new java.util.HashSet<>();
     public StormFeedback(StormParticlePort particles) {this.particles=java.util.Objects.requireNonNull(particles);}
     public void reset() {outerReported.clear();stormPosPending=false;stormPosIdentity=null;correctionClock.reset();lastSnapshotGameTime=Long.MIN_VALUE;waveContactPending=false;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
     public void retireWaves() {
@@ -241,7 +241,7 @@ public final class StormFeedback {
         completions.keySet().removeIf(id->AllayStormRuntime.INSTANCE.contactAuthority(id)==null);
         flowRevisions.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
         gathered.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
-        reported.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
+        reported.removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
     }
     private long attackSequence;
     public void reportHit(int member, Vec3 hit) {

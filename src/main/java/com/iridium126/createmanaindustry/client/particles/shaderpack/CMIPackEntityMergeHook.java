@@ -103,7 +103,7 @@ public final class CMIPackEntityMergeHook {
     private static GpuComputeState shadowComputeState;
     private static PackageRenderState shadowDrawState;
     private static final com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState mergedTboState=
-            new com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState(10,6);
+            new com.iridium126.createmanaindustry.client.gpu.state.GpuTextureBufferState(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_COUNT);
     public static void invalidateShadow(){ShadowDepthResources.INSTANCE.close();if(MODEL_SHADOW!=null)MODEL_SHADOW.close();MODEL_SHADOW=null;SHADOW_TIMING.close();SHADOW_PREPARE.close();SHADOW_DRAW.close();MERGE_TIMER.close();DRAW_TIMING.close();DRAW_TIMING.configure(detailed);}
     public static void invalidatePrograms(){
         invalidateShadow();COMPILER.reset();com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clear();
@@ -236,12 +236,12 @@ public final class CMIPackEntityMergeHook {
                 SHADOW_TIMING.begin(timingEnabled,detailed,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
                 boolean shadowSucceeded=false;
                 try{var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;SHADOW_PREPARE.poll();SHADOW_DRAW.poll();SHADOW_PREPARE.begin(timingEnabled,detailed,scene.renderFrameToken(),scene.publication().generation());boolean prepared=false;
-                    try{MODEL_SHADOW.starfall(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer());var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleReadBufferId(),gpu.emitterBufferId(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().counter(),SHADOW_CULLING,
-                        (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec(),null,null,null,gpu.populationBufferId(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
+                    try{MODEL_SHADOW.starfall(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());var p=camera.getPosition();MODEL_SHADOW.prepare(gpu.particleDrawBufferId(),gpu.particleDrawEmitterBufferId(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().counter(),SHADOW_CULLING,
+                        (float)p.x,(float)p.y,(float)p.z,EntityType.ALLAY.getWidth(),EntityType.ALLAY.getHeight(),(float)net.minecraft.world.entity.Entity.getViewScale(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec(),null,null,null,gpu.populationBufferId(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation()),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
                     prepared=true;}finally{SHADOW_PREPARE.end(prepared);}
                 SHADOW_DRAW.begin(timingEnabled,detailed,scene.renderFrameToken(),scene.publication().generation());boolean drawn=false;
                 try{
-                gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleReadBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
+                gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleDrawBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
                 ShaderInstance shader=COMPILER.shadowShader();boolean applied=false;
                 try(var textures=com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.withSamplerRange(net.irisshaders.iris.gl.IrisRenderSystem::bindSamplerToUnit,net.irisshaders.iris.gl.sampler.SamplerLimits.get().getMaxTextureUnits(),0,1,2,COMPILER.shadowGtextureUnit())){
                     try{bindAtlas(COMPILER.shadowGtextureUnit());applied=true;shader.apply();uploadShadowUniforms(shader.getId());setInt(shader.getId(),"cmi_ShadowPass",1);
@@ -283,7 +283,7 @@ public final class CMIPackEntityMergeHook {
         setFloat(progId, "cmi_FadeDist", (float) ClientConfig.particleFadeDistance);
         // the shared simulation clock — without it the wave-claim window test
         // (chunks/allay_storm.glsl) never fires and swords drop out of shadows
-        setFloat(progId, "uTimeSec", com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
+        setFloat(progId, "uTimeSec", com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec());
         // Round-trip insurance for packs whose merged program is the plain
         // terrain-fallback shadow variant (no shadow_entities source): its
         // vertex stage routes positions through the NAMED matrices
@@ -297,6 +297,7 @@ public final class CMIPackEntityMergeHook {
         setSamplers(progId);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindPose(progId);
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindRenderClock(progId,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
         ParticleBuffers.INSTANCE.bindAllayAnimation(progId);
         setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         uploadStormItemUniforms(progId);
@@ -463,7 +464,7 @@ public final class CMIPackEntityMergeHook {
         // where interface blocks demonstrably do not.
         int permId = com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().permutation();
         gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,
-                gpu.particleReadBufferId(),
+                gpu.particleDrawBufferId(),
                 permId >= 0 ? permId : gpu.sortBuffer(0));
         gpu.bindVao();
     }
@@ -503,9 +504,10 @@ public final class CMIPackEntityMergeHook {
         var camPos = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
         setFloat3(progId, "cmi_CameraPos", (float) camPos.x, (float) camPos.y, (float) camPos.z);
         setFloat(progId, "cmi_FadeDist", (float) ClientConfig.particleFadeDistance);
-        setFloat(progId, "uTimeSec", com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
+        setFloat(progId, "uTimeSec", com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec());
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindPose(progId);
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindRenderClock(progId,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
         ParticleBuffers.INSTANCE.bindAllayAnimation(progId);
         setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         uploadStormItemUniforms(progId);

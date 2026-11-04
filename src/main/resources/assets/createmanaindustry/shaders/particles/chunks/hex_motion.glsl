@@ -15,7 +15,7 @@ bool updateHexParticle(uint emitterBase,vec4 p0,vec4 p1,vec4 p2,vec4 p3){
     advanceHexTicks(position,velocity,p2.w<0.,max(0,ticks));
     uint slot=cmiReserveParticle();
     if(slot<uCapacity){
-        uint base=slot*4u;
+        cmiHistoryContinue(slot);uint base=slot*4u;
         writeBuf.data[base]=vec4(position,p0.w);writeBuf.data[base+1u]=vec4(velocity,p1.w);
         writeBuf.data[base+2u]=p2;writeBuf.data[base+3u]=vec4(age,p3.y,uHexTickReady?uintBitsToFloat(uHexCurrentTick):p3.z,p3.w);
     }

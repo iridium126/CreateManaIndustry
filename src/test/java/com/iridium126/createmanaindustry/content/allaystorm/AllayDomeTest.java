@@ -29,6 +29,7 @@ class AllayDomeTest {
  @Test void sameMemberIndependentVictimsAndWaves(){
   var contacts=new AllayDome.Contacts();UUID a=UUID.randomUUID(),b=UUID.randomUUID();
   assertTrue(contacts.add(a,123));assertFalse(contacts.add(a,123));assertTrue(contacts.add(b,123));assertFalse(contacts.add(b,123));
+  assertFalse(contacts.add(a,124));assertFalse(contacts.add(b,125));
   assertTrue(new AllayDome.Contacts().add(a,123));
  }
  @Test void lockedAreaOutlivesOriginalTarget(){

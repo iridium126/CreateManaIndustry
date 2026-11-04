@@ -12,7 +12,7 @@ class ClientFrameCaptureTest {
         assertEquals(java.util.Map.of("samples",0),ClientFrameCapture.statistics(new double[]{Double.NaN},1));
     }
     @Test void captureNamesCannotEscapeLocalDirectory(){
-        var capture=com.iridium126.createmanaindustry.client.particles.engine.NeighborInputCapture.INSTANCE;
+        var capture=ParticleChainCapture.INSTANCE;
         assertFalse(capture.request("../outside"));assertFalse(capture.request("a\\b"));assertFalse(capture.request(""));assertFalse(capture.request("x".repeat(65)));
     }
 }

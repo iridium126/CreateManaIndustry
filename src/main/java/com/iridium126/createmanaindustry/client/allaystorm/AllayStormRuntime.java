@@ -202,6 +202,7 @@ public final class AllayStormRuntime {
     private int stormSeed = 0;
     /** Total member population of the current storm (alive + dead). */
     private int stormCount = 0;
+    public int generatedMemberCount(){return stormCount;}
     /**
      * Generated-population threshold between the two spawn styles: indices
      * BELOW it existed at ACTIVATE time and spawn ANALYTICALLY (settled at
@@ -825,6 +826,13 @@ public final class AllayStormRuntime {
         int mask=0;for(int i=0;i<MAX_WAVES;i++)if(locallyRelevant(waveSlots[i]))mask|=i<4?1<<i:16;
         if((stormAuthority&&anyWaveActive())||StormCollisionRuntime.returning()||starfallGpu.hasOuter()||ColumnSnapshotClient.INSTANCE.restoring())mask|=31;
         return new FeedbackState(stormActive,stormAuthority,stormCorrectionHz,center,timeSec,lastPlayerCount,mask);
+    }
+    boolean acceptsContactNow(int id,float hitTime){
+        var wave=findWaveById(id);var level=Minecraft.getInstance().level;
+        if(wave==null||wave.packet.abort()||level==null||!Float.isFinite(hitTime))return false;
+        float now=clockSeconds(level.getGameTime());
+        return com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(hitTime,wave.packet.startSec())>=0
+            &&com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(hitTime,wave.packet.diveUntilSec())<=0;
     }
     public record ContactAuthority(int id,long epoch) {}
     ContactAuthority contactAuthority(int id) {var wave=findWaveById(id);return wave==null||wave.packet.abort()?null:wave.feedbackIdentity;}

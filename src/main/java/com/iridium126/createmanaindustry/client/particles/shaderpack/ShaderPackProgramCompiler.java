@@ -97,8 +97,8 @@ public final class ShaderPackProgramCompiler {
     /** Texture units the merged programs' TBO samplers are pinned to. Reserved
      * inside Iris's sampler allocator by mixin/iris/MixinProgramSamplers,
      * so pack samplers can never collide with them; unbound after every draw. */
-    public static final int MERGED_SAMPLER_UNIT_BASE = 10;
-    public static final int MERGED_SAMPLER_UNIT_COUNT = 6;
+    public static final int MERGED_SAMPLER_UNIT_BASE = 9;
+    public static final int MERGED_SAMPLER_UNIT_COUNT = 7;
 
     private final java.util.function.Function<String,String> mergedSources;
     public ShaderPackProgramCompiler(){this(ParticlePrograms::loadParticlePlain);}

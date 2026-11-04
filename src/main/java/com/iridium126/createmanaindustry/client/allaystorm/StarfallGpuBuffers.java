@@ -203,7 +203,7 @@ public final class StarfallGpuBuffers implements AutoCloseable {
     for(int g=0;g<2;g++){int first=g==0?0:p.groupEnds()[0];put(b+56+g*8,0,0,0,h.thrust());put(b+60+g*8,h.finish(),p.groupEnds()[g]-first,h.radius(),h.charge());}
    }
    var finished=completed.get(p.waveId());words[b+19]=Float.floatToRawIntBits(p.members().length-(finished==null?0:finished.cardinality()));
-   if(slot<4&&!p.locked()&&!p.abort()&&(p.dome()||p.helixAttack()))for(int rank=0;rank<p.members().length;rank++)if(finished==null||!finished.get(rank)){words[GATHER_SOURCE+slot*4+1]++;words[GATHER_SOURCE+16+1536+slot*384+rank/32]|=1<<(rank&31);}
+   if(slot<4&&!p.locked()&&!p.abort()&&p.helixAttack())for(int rank=0;rank<p.members().length;rank++)if(finished==null||!finished.get(rank)){words[GATHER_SOURCE+slot*4+1]++;words[GATHER_SOURCE+16+1536+slot*384+rank/32]|=1<<(rank&31);}
    if(rosterChanged&&!p.abort())for(int rank=0,group=0;rank<p.members().length;rank++){
     while(rank>=p.groupEnds()[group])group++;
     int first=group==0?0:p.groupEnds()[group-1];
@@ -270,10 +270,9 @@ public final class StarfallGpuBuffers implements AutoCloseable {
   com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.state_copy",()->{
   if(allocatedStateWords>=STATE_WORDS){
 
-   var hardware=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.INSTANCE;
-   GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,state[read]);if(!hardware.copyState(DOME_FLOW_STATE*4L,DOME_FLOW_STATE*4L,DOME_FLOW_WORDS*4L))com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,DOME_FLOW_STATE*4L,DOME_FLOW_STATE*4L,DOME_FLOW_WORDS*4L);
-   if(!hardware.copyState(DOME_PATH_BASE*4L,DOME_PATH_BASE*4L,(OUTER_ARRIVALS-DOME_PATH_BASE)*4L))com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,DOME_PATH_BASE*4L,DOME_PATH_BASE*4L,(OUTER_ARRIVALS-DOME_PATH_BASE)*4L);
-   if(hasOuter()&&!hardware.copyState(OUTER_ARRIVALS*4L,OUTER_ARRIVALS*4L,ROSTER*4L))com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,OUTER_ARRIVALS*4L,OUTER_ARRIVALS*4L,ROSTER*4L);
+   GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,state[read]);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,DOME_FLOW_STATE*4L,DOME_FLOW_STATE*4L,DOME_FLOW_WORDS*4L);
+   com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,DOME_PATH_BASE*4L,DOME_PATH_BASE*4L,(OUTER_ARRIVALS-DOME_PATH_BASE)*4L);
+   if(hasOuter())com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,OUTER_ARRIVALS*4L,OUTER_ARRIVALS*4L,ROSTER*4L);
    com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL31.GL_COPY_WRITE_BUFFER,GL30.GL_R32UI,(DOME_PATH_CONTROL+24)*4L,8,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.IntBuffer)null);
    for(int slot=0;slot<4;slot++){int id=words[DOME_FLOW_SOURCE+slot*132];if(flowBankIds[read][slot]!=id||clearStates){upload.clear();upload.put(words,DOME_FLOW_SOURCE+slot*132,132).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL31.GL_COPY_WRITE_BUFFER,(DOME_FLOW_STATE+slot*132)*4L,upload);uploadedBytes+=528;}flowBankIds[write][slot]=id;}
   }
@@ -313,8 +312,13 @@ public final class StarfallGpuBuffers implements AutoCloseable {
  }
  /** Native MODEL, shadow and GLSL 330 Iris all read the same committed bank. */
  public void bindPose(int program){bindDomeClock(program,read);bindPoseState(program);}
+ /** Display clock is derived from the frozen simulation publication; never feeds gameplay. */
+ public void bindRenderClock(int program,float offset){
+  bindDomeClock(program,read);
+  if(domeClockValid[read]){float[] elapsed=domeElapsed[read].clone();for(int i=0;i<elapsed.length;i++)elapsed[i]+=offset;GL41.glProgramUniform4fv(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uDomeElapsed"),elapsed);}
+ }
  private void bindPoseState(int program){GL41.glProgramUniform1ui(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormStateBase"),0);int location=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"cmi_DomePose");if(location<0)return;
-  int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);bindPoseTexture(15);GL41.glProgramUniform1i(program,location,15);GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"cmi_DomePoseBase"),DOME_POSE);GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uDomePoseEnabled"),poseReady()?1:0);GL13.glActiveTexture(active);
+  int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);bindPoseTexture(14);GL41.glProgramUniform1i(program,location,14);GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"cmi_DomePoseBase"),DOME_POSE);GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uDomePoseEnabled"),poseReady()?1:0);GL13.glActiveTexture(active);
  }
  private boolean poseReady(){return allocatedStateWords>=DOME_POSE+DOME_POSE_WORDS&&generations[read]>=0;}
  public void bindPoseTexture(int unit){int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);GL13.glActiveTexture(GL13.GL_TEXTURE0+unit);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,poseReady()?stateTextures[read]:0);GL13.glActiveTexture(active);}

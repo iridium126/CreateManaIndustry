@@ -66,7 +66,7 @@
             uint phase=0u;vec3 attackTarget,attackVelocity;
             uint assignment=cmiStarAssignment(p0.w);
             if(cmiColumnAssignment(assignment)){
-                if(cmiColumnConsumeRecovery(assignment,pos,vel)){uint arc=328128u+((cmiStarSlot(assignment)-4u)*64u+cmiStarRank(assignment))*CMI_COLUMN_ARC_WORDS;phase=CMI_STATE(starStateWrite,arc+43u);if(phase==0u)phase=1u;attackTarget=pos;attackVelocity=vec3(0);columnMarker=0.;waveEngaged=true;p0.xyz=pos;}
+                if(cmiColumnConsumeRecovery(assignment,pos,vel)){cmiHistorySource=0xffffffffu;uint arc=328128u+((cmiStarSlot(assignment)-4u)*64u+cmiStarRank(assignment))*CMI_COLUMN_ARC_WORDS;phase=CMI_STATE(starStateWrite,arc+43u);if(phase==0u)phase=1u;attackTarget=pos;attackVelocity=vec3(0);columnMarker=0.;waveEngaged=true;p0.xyz=pos;}
                 else waveEngaged=cmiColumnSteer(assignment,pos,vel,target,vT,attackTarget,attackVelocity,phase,columnMarker);
                 columnEngaged=waveEngaged;columnPhase=phase;
                 roll=columnMarker;
@@ -151,40 +151,11 @@
         // ordinary grid remains the sole runtime fallback for actual deviations,
         // moving terrain, other attacks and ordinary returning storm members.
         float separationRadius=STORM_SEP_R;if(waveEngaged&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);if(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))separationRadius=domeMember?.45:1.4;}
-        vec3 sepW = vec3(0.0);
-        int sepVisits = 0;
-        bool sepBudgetGone = false;
-        ivec3 pc = ivec3(floor(pos / CELL_SIZE));
-        // Dome uses the single post-integration candidate hash and swept-contact
-        // pass. It must not also receive an earlier boids position correction.
-        for (int x = 0; x < 3 && !sepBudgetGone && !domeMember; x++)
-        for (int y = 0; y < 3 && !sepBudgetGone; y++)
-        for (int z = 0; z < 3 && !sepBudgetGone; z++) {
-            ivec3 offset=domeMember?ivec3(x==0?0:x==1?1:-1,y==0?0:y==1?1:-1,z==0?0:z==1?1:-1):ivec3(x-1,y-1,z-1);
-            ivec3 c3 = pc + offset;
-            uint hcell = (uint(c3.x) * 92837111u ^ uint(c3.y) * 689287499u ^ uint(c3.z) * 283923481u)
-                    & (GRID_TABLE - 1u);
-            int sN = grid.heads[int(hcell)];
-            while (sN != 0) {
-                int j = sN - 1;
-                sN = grid.next[j];
-                if (++sepVisits > STORM_MAX_VISITS) {
-                    sepBudgetGone = true;
-                    break;
-                }
-                if (j == int(idx))
-                    continue;
-                vec3 op = readBuf.data[uint(j) * 4u].xyz;
-                vec3 d = pos-op;
-                float d2 = dot(d, d);
-                if(d2>=separationRadius*separationRadius)continue;
-                if(d2<=1e-8){d=cmiStormSeparationDelta(d,cmiStarMember(p0.w),cmiStarMember(readBuf.data[uint(j)*4u].w));d2=dot(d,d);}
-                if (d2 < separationRadius * separationRadius && d2 > 1e-8) {
-                    float dl = sqrt(d2);
-                    sepW += d * ((separationRadius - dl) / (dl * separationRadius));
-                }
-            }
-        }
+        cmiSpatialAnalytic=domeMember&&(domeFlow||(CMI_STATE(starStateWrite,cmiStarMember(p0.w)*2u+1u)&0x40000000u)!=0u);
+        cmiSpatialDesired=cmiSpatialAnalytic?vec3(0):vT;
+        uint queryMember=cmiStarMember(p0.w),queryPhase=uStarfallEnabled&&queryMember<131072u?CMI_STATE(starStateWrite,queryMember*2u+1u)&255u:0u;
+        uint queryAttack=uStarfallEnabled&&queryMember<131072u?CMI_STATE(starStateWrite,queryMember*2u):0u;
+        vec3 sepW=cmiSpatialAnalytic?vec3(0):cmiSpatialPreference(queryMember,pos,vel,floatBitsToUint(p3.z),floatBitsToUint(p3.w),queryAttack,queryPhase);
         sepW *= STORM_W_SEP;
         vec3 repW = vec3(0.0);
         // every synced player repels (all-client-consistent force set).

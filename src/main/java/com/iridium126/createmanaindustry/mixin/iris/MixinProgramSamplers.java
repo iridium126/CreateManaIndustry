@@ -22,12 +22,12 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
  * reservation, a pack sampler landing on units 10-15 would silently fight
  * the particle TBO fetches within the same draw.
  *
- * <p>Retains the six-unit reservation under iris-veil-compat. In an
+ * <p>Retains the seven-unit reservation under iris-veil-compat. In an
  * Iris-only environment only package program construction reserves three units;
  * unrelated native programs retain the pack's entire sampler budget.
  *
  * <p>Gated on Iris presence by {@code CMIMixinPlugin}. Packages use the first
- * three units; MODEL uses all six. The two passes never run concurrently.
+ * three units; MODEL uses all seven. The two passes never run concurrently.
  */
 @Mixin(value = ProgramSamplers.class, remap = false)
 public class MixinProgramSamplers {
@@ -41,7 +41,7 @@ public class MixinProgramSamplers {
         // MERGED_SAMPLER_UNIT_BASE is a compile-time constant, so referencing it
         // here neither loads the compiler class nor risks drift between the two.
         for (int i = 0; i < (CreateManaIndustry.IRISVEIL_ACTIVE ? ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_COUNT : PackageSamplerReservation.units()); i++)
-            units.add(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE + i);
+            units.add((!CreateManaIndustry.IRISVEIL_ACTIVE && PackageSamplerReservation.units()<=3?com.iridium126.createmanaindustry.client.packages.render.PackageShaderCompiler.SAMPLER_BASE:ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE) + i);
         return units;
     }
 }

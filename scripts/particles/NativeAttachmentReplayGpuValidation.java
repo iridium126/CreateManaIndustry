@@ -14,7 +14,7 @@ public class NativeAttachmentReplayGpuValidation {
             Path root=Path.of(System.getProperty("cmi.benchmark.output"));Files.createDirectories(root);
             Path snapshots=root.resolve("synthetic-snapshots");Files.createDirectories(snapshots);ModelMergeGpuValidation.output=root;
             var data=new TreeMap<String,Object>();data.put("synthetic_test_snapshot",true);data.put("pack","fixture.zip");data.put("source_sha256","0123456789abcdef");
-            data.put("world","minecraft:overworld");data.put("options_available",true);data.put("options",Map.of("CMI_REPLAY_TEST","true"));String optionHash=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.sha("{CMI_REPLAY_TEST=true}").substring(0,12);data.put("options_hash",optionHash);
+            data.put("world","minecraft:overworld");data.put("options_available",true);data.put("options",Map.of("CMI_REPLAY_TEST","true"));String optionHash=ModelMergeGpuValidation.sha("{CMI_REPLAY_TEST=true}").substring(0,12);data.put("options_hash",optionHash);
             data.put("model_environment_macros",List.copyOf(ModelMaterialGpuValidation.DEFINES));data.put("model_draw_buffers",new int[]{0,1});
             data.put("color_attachment_formats_gl",Map.of("0",GL11.GL_RGBA8,"1",GL30.GL_RGBA16F));data.put("depth_format_gl",GL30.GL_DEPTH24_STENCIL8);
             Files.writeString(snapshots.resolve("fixture.json"),new com.google.gson.Gson().toJson(data));

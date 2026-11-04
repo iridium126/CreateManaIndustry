@@ -103,4 +103,4 @@ CMI 阴影入口直接传入当前 `ShadowRenderTargets.getDepthTexture()`，不
 
 最终自动验证：1,021 项 JUnit 全部通过；`check build` 成功；MODEL 阴影 4,133,204、Iris 阴影 4,133,620、程序生命周期 694、八包材质链接 1,022、实际 keygen 分组及人口索引 1,072、LOD 2,230,509 项 GPU 断言通过。原生阴影上下文三轮各 489,037,848 项输出检查通过；Solas 保留原上下文，不冒称栅格对照。程序重载中的 ERROR 是预期失败注入，随后恢复断言通过。
 
-交付 [安装 JAR](../build/distributions/createmanaindustry-0.2.7-shadow-quality-20261102.jar)、[首方源码与数据证据包](../build/distributions/shadow-quality-20261102-results.zip) 和 [SHA-256／测试溯源](../build/distributions/shadow-quality-20261102-provenance.json)。证据包包含 CSV、完成元数据、冻结清单、编译阶段哈希、源码及 JUnit；不包含提取的第三方光影源文件。可运行 `python scripts/particles/package_shadow_quality.py` 重新打包。安装时使用该安装 JAR，避免与旧版本重复加载；开发运行不把它放入 run/mods。
+历史阴影专项交付和数据保留在冻结归档中。当前使用 `python scripts/particles/particle_tool.py package` 生成候选、回退与校验证据，安装见 [安装说明](particle-engine-install.md)；不分发第三方光影源码。

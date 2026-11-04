@@ -119,6 +119,8 @@ public final class StormCollisionRuntime implements AutoCloseable {
     private static int surfaceUploadBudget=131072;
     public static int surfaceUploadBudget(){return surfaceUploadBudget;}
     public static Page surfacePage(Section section){return current==null?null:current.cache.fresh(section);}
+    public static long spatialVersion(){return current==null?-1:current.cache.version();}
+    public static Map<Section,Page> spatialPages(){return current==null?Map.of():current.cache.ready();}
     public static void prepare(int program){
         long surfaceBegin=StormSurfaceCapture.enabled()?System.nanoTime():0;surfaceUploadBudget=131072;
         if(current==null){org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionEnabled"),0);StormSurfaceCapture.captureRemaining(1_000_000);return;}

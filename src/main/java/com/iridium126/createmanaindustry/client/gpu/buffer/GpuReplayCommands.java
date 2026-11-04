@@ -24,6 +24,18 @@ public final class GpuReplayCommands {
     public static void texture3d(int target,int level,int x,int y,int z,int width,int height,int depth,int format,int type,ByteBuffer data){if(sink!=null)before("texture-upload",new long[]{target,level,x,y,z,width,height,depth,format,type},data);}
     public static void dispatchCompute(int x,int y,int z){if(sink!=null)before("dispatch",new long[]{x,y,z},null);GL43.glDispatchCompute(x,y,z);}
     public static void memoryBarrier(int bits){if(sink!=null)before("barrier",new long[]{Integer.toUnsignedLong(bits)},null);GL42.glMemoryBarrier(bits);}
+    public static void copyNamedBufferSubData(int read,int write,long from,long to,long size){
+        if(sink!=null){int oldRead=GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER),oldWrite=GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,read);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,write);before("copy",new long[]{GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,from,to,size},null);GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,oldRead);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,oldWrite);}
+        GL45.glCopyNamedBufferSubData(read,write,from,to,size);
+    }
+    public static void clearNamedBufferData(int buffer,int internal,int format,int type,IntBuffer data){
+        if(sink!=null){int old=GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,buffer);before("clear",new long[]{GL31.GL_COPY_WRITE_BUFFER,internal,format,type},bytes(data));GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,old);}
+        GL45.glClearNamedBufferData(buffer,internal,format,type,data);
+    }
+    public static void namedBufferSubData(int buffer,long offset,ByteBuffer data){
+        if(sink!=null){int old=GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,buffer);upload(GL31.GL_COPY_WRITE_BUFFER,offset,data,false,0);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,old);}
+        GL45.glNamedBufferSubData(buffer,offset,data);
+    }
     public static void dispatchComputeIndirect(long offset){if(sink!=null)before("dispatch-indirect",new long[]{offset},null);GL43.glDispatchComputeIndirect(offset);}
     public static void copyBufferSubData(int read,int write,long from,long to,long bytes){if(sink!=null)before("copy",new long[]{read,write,from,to,bytes},null);GL31.glCopyBufferSubData(read,write,from,to,bytes);}
     public static void clearBufferData(int target,int internal,int format,int type,IntBuffer data){if(sink!=null)before("clear",new long[]{target,internal,format,type},bytes(data));GL43.glClearBufferData(target,internal,format,type,data);}

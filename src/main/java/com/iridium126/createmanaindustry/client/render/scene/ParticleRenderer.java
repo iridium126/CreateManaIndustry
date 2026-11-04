@@ -141,7 +141,8 @@ public final class ParticleRenderer {
                 return;
             GL20.glUseProgram(prog);
             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(prog,false);
-            setFloatUniform(prog,"uTimeSec",AllayStormRuntime.INSTANCE.timeSec());
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindRenderClock(prog,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
+            setFloatUniform(prog,"uTimeSec",ClientGpuScene.INSTANCE.displayTimeSec());
             gpu.bindModelDrawInputs(mainPermutation());
             gpu.bindAllayAnimation(prog);
 
@@ -150,7 +151,7 @@ public final class ParticleRenderer {
             Vec3 pos = camera.getPosition();
             setFloatUniform(prog, "uCamPos", (float) pos.x, (float) pos.y, (float) pos.z);
             setFloatUniform(prog, "uFadeDist", (float) ClientConfig.particleFadeDistance);
-            setFloatUniform(prog, "uTimeSec", AllayStormRuntime.INSTANCE.timeSec());
+            setFloatUniform(prog, "uTimeSec", ClientGpuScene.INSTANCE.displayTimeSec());
             // fixed base of the held-item carrier region inside the sort buffer
             setUIntUniform(prog, "uCarrierBase", gpu.carrierBase());
             uploadStormItemUniforms(prog);
@@ -185,6 +186,7 @@ public final class ParticleRenderer {
          */
         private void uploadStormItemUniforms(int prog) {
             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(prog,false);
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindRenderClock(prog,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.uploadUniforms(prog);
             setVec4ArrayUniform(prog, "uHeldItemUV", com.iridium126.createmanaindustry.client.particles.engine.HeldItemGeometry.uvTable());
         }
@@ -205,7 +207,8 @@ public final class ParticleRenderer {
                 return;
             GL20.glUseProgram(prog);
             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(prog,false);
-            setFloatUniform(prog,"uTimeSec",AllayStormRuntime.INSTANCE.timeSec());
+        com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindRenderClock(prog,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
+            setFloatUniform(prog,"uTimeSec",ClientGpuScene.INSTANCE.displayTimeSec());
             gpu.bindBillboardDrawInputs(mode, mainPermutation());
             sharedFate.bindDrawInputs();
 
@@ -275,7 +278,7 @@ public final class ParticleRenderer {
         }
 
         private int mainPermutation() {
-            return frame.sorted() ? frame.permutation() : gpu.sortBuffer(0);
+            return gpu.displayPermutation()!=0?gpu.displayPermutation():frame.sorted() ? frame.permutation() : gpu.sortBuffer(0);
         }
 
         // ------------------------------------------------------------------

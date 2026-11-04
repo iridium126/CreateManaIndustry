@@ -1,106 +1,57 @@
-# GPU 粒子引擎：实现与测量记录
+# 性能验证与客户端采集
 
-七档合并阴影、Iris 语义、整体剔除、八包逐位验证与未启用候选见[阴影质量与性能](particle-shadow-quality.md)。深度档当前回退几何测试，客户端整帧验收由用户执行。
+状态：[完整计划尚未实现](rt-single-step-status.md)。离屏通过仅证明对应代码路径；尚未进入客户端三轮验收。默认 GL，RT 未获准进入 `auto`。不将探针、压缩率或回放微基准换算成 FPS。
 
-2026-10-30：悦灵风暴合并片元优化、八包逐位对照、状态输出及用户实机检查见[合并路径报告](benchmarks/model-merge-fragment-2026-10-30.md)。片元收益与完整模型／游戏整帧收益分别记录。
+冻结基线位于 `build/particle-engine/baseline/manifest.json`，包括修改前源码、可运行包、实际捕获与历史实机结果，逐文件 SHA-256。清理依赖记录在同级 `cleanup-dependencies.json`。归档不替代当前验证，也不改写旧实机记录。旧五个窗口同进程且攻击阶段不同，只能说明 Dome 卡顿与回退连锁，不能作为三轮对照验收。
 
-2026-10-30：悦灵风暴合并片元优化、八包逐位对照、状态输出及用户实机检查见[合并路径报告](benchmarks/model-merge-fragment-2026-10-30.md)。片元收益与完整模型／游戏整帧收益分别记录。
+## 工具
 
-日期：2026-09-28。状态：代码、独立 OpenGL 回归与微基准已完成；游戏内整帧性能和渲染集成验收尚未完成，不能据此认定整个优化计划已经验收。
-
-2026-10-24的风暴首次冷编译、星柱恢复拆分、完整身体脱嵌及三轮固定输入性能对照另见[冷编译与脱嵌报告](benchmarks/allay-storm-cold-escape-2026-10-24.md)。下文保留原粒子引擎／排序测量范围，不与该报告的风暴管线时间混合。
-
-## 已实现
-
-- 单调申请计数与阶段末容量钳制；更新、剔除、排序使用 GPU 生成的 indirect dispatch，覆盖死亡链和 Hex 新生粒子。空 dispatch 为零组，容量受设备工作组上限约束。
-- 四槽独立 staging/fence/generation 读回；槽满跳过快照，已有位置快照和波次队列保留。局部 MODEL 伤害通过身份 sidecar 匹配，Storm 使用成员身份；生命周期边界使旧身份失效。
-- 粒子池、排列、材质索引和 indirect draw 数据按提交代配对，未提交的绘制输出不会替代上一代。存储访问、间接命令、TBO、复制分别覆盖对应 barrier。
-- header 脏区合并、请求容器复用、pass 内绑定缓存与批量解绑、静态 capacity uniform、一次相机/视锥准备；无 Storm 时跳过玩家收集和相关计算。
-- 透明排序保持三材质分区和 256 深度带；65536 项以下保留原 kernel，大负载采用每组 1024 项局部直方图与分组预留 scatter，全局单桶直接复制。不需要 subgroup 扩展。
-- Java 侧分出上传、调度准备、读回、统计组件以及绘制职责；GLSL 分出运动、碰撞、Storm、Hex、伤害和死亡链模块。类型注册表及编译期 hook 保留 64 字节粒子和 20 vec4 header。程序整组编译成功后才替换。
-
-工作有效树扫描候选实测较慢，保存在 `.local/particle-baselines/reference/radix_scan_tree_candidate.comp` 供研究，未进入默认路径。默认扫描保留原算法并增加单桶识别，符合“未测得收益不默认启用”的门槛。
-
-## 测量环境与复现
-
-同一台 NVIDIA GeForce RTX 4070 Laptop GPU，OpenGL 4.5.0 NVIDIA 581.15。隐藏 GLFW 上下文运行实际生产 GLSL。旧排序来自本次修改前的 shader 快照，保存在 `.local/particle-baselines/reference/`。
+唯一公开 GPU 工具入口：
 
 ```powershell
-.\gradlew.bat validateHexGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle
-.\gradlew.bat validateHexGpu --offline --no-configuration-cache -I scripts/particles/validation.init.gradle -PparticleBenchmark
+python scripts/particles/particle_tool.py verify --gl-only
+python scripts/particles/particle_tool.py verify --suite DomeGatherGpuValidation --suite StormCollisionGpuValidation --suite AllayAnimationGpuValidation
+python scripts/particles/particle_tool.py replay --capture <完整捕获目录>
+python scripts/particles/particle_tool.py bench --a <基线捕获> --b <候选捕获>
+python scripts/particles/particle_tool.py analyze --a <三份帧CSV> --aa <三份重复基线CSV> --b <三份候选CSV>
+python scripts/particles/particle_tool.py topology --seconds 900 --members 65536
+python scripts/particles/particle_tool.py lifecycle --capture <spatial.csv> --require-drained
+python scripts/particles/particle_tool.py package
 ```
 
-排序固定随机种子 28；混合分布为 768 个材质/深度 key，单桶分布固定 key 42。每个变体预热 20 次，三组各 30 次 GPU 计时；下表为三组均值的中位数，单位毫秒。包含直方图、扫描、scatter 的 GPU 区间，不包含模拟、碰撞、剔除、实际绘制。零负载仍测固定扫描提交，不能解读为引擎空场景耗时。
+`verify` 覆盖固定时钟、身份、显示不连续状态、独立 FP64 扫掠接触、GL/RT 最近距离、65536 成员、ABI 错配、NaN、不完整输入及 10/50/500 ms 原生延迟。Dome 生产审核、地形、动画、阴影、物流和 Hex 继续由共享夹具验证；测试通过不代表视觉和所有密集初态已经验收。
 
-| 项数 | 混合旧 | 混合新 | 单桶旧 | 单桶新 |
-| ---: | ---: | ---: | ---: | ---: |
-| 0 | 0.024781 | 0.014814 | 0.014370 | 0.014950 |
-| 10000 | 0.017579 | 0.017271 | 0.017237 | 0.016862 |
-| 100000 | 0.045431 | 0.033417 | 0.018637 | 0.016998 |
-| 1000000 | 0.406733 | 0.186470 | 0.060791 | 0.046899 |
-| 2000000 | 0.679868 | 0.258150 | 0.089566 | 0.063351 |
+`replay` 只接受校验完整的 schema 3 命令日志，保留记录时的真实程序和资源。回放范围为 GL compute/copy/upload/clear/barrier，排除未记录的世界绘制及外部 CUDA 任务；RT 活动时命令捕获明确作废，避免遗漏原生成本。正式 RT 比较使用整帧采集。`bench` 使用三轮独立进程交错 A/A、A/B；它不能仅凭 GL 日志证明 GPU 重叠或 RT 整帧收益。
 
-100 万混合项排序约下降 54%，200 万约下降 62%；小负载差异接近测量噪声，不认定收益。单桶快速路径避免了最初分组方案在均匀分布下的回退。这是排序微基准结果，不能等同于 FPS 或整帧提升。
+`frames` 的帧间隔包含交换与限帧；GPU 范围为 runTick HEAD 到 updateDisplay 前。缺失 GPU 样本是未知，不能填零。`-spatial.csv` 将原生 ABI 12 与统计 schema 2 分列；原生完成后才读取事件计时，分别报告外部输入等待、验证及实例整理、IAS、探针和发布。等待不能全部归为互操作成本，也不能把 GL 与 CUDA 区间相加声称整帧时间。
 
-CPU 微基准预热 5000 次，三组各 5000 次：128 个 header 中一个改变，上传从 40960 B 降至 320 B，提交中位数从 0.002585 ms 降至 0.000336 ms；解绑从 29 次 GL 调用降至 1 次，0.000855 ms 降至 0.000041 ms。绝对节省为微秒级；该场景不代表所有帧的 CPU 收益。
+`topology` 仅做串行 AB/BA 固定输入查询对照，refit 是离屏参考入口。它不包含完整 Storm 模拟、姿态、材质和世界绘制，不能代替完整场景长时回放或整帧性能门槛。`lifecycle` 审计提交/消费/退休；窗口停止后仍收齐该窗口提交的退休回执，导出时报告未退休数。
 
-原始数据：排序 CSV（本地运行结果）、CPU 提交 CSV（本地运行结果）。CSV 中 variant 0 是旧实现，1 是新实现；distribution 0 是混合，1 是单桶。未进行跨驱动或跨 GPU 推断。
+## 固定客户端场景
 
-## 正确性证据
+客户端启动和操作由用户执行，不自动启动游戏。每个进程从同一份世界/初态备份开始，固定相机坐标、朝向、FOV、分辨率、风暴数量、光影和电源模式。正常飞行、Dome 集结、释放与结束后的恢复分别采集；不要把不同阶段混为一组。
 
-原有 46,639 项 Hex pigment、路径、生命周期等断言保留。新增实际 GPU 验证包括零负载、64/1024 工作组尾部、容量哨兵、超量发射、死亡链饱和、全部死亡再生成、可见输出唯一性和材质分区；局部 MODEL 压缩后按身份伤害；四槽连续八次不消费且源缓冲复用；队列确认前保留波次事件、重叠波次去重；未提交绘制资源不发布；重复释放；重载失败保留旧程序并删除候选。
+测试规模：65536 Storm 成员、约146000 总粒子；Dome 12288 成员。另检查交叉流、轻微重叠、出生死亡、尸体恢复、传送、区块变动和未知地形。攻击次数、人数和伤害配置保留；按新的批次/目标去重及 Dome 计划截止 tick 核对结算。正常可达场景必须完成攻击；病态密集初态报告残留重叠，不无界提高预算。
 
-常规测试覆盖小边界，基准模式补充 1 万、10 万、100 万及有效容量 200 万排序正确性。基准执行通过 37,367,111 项断言。最终常规运行通过 135,474 项断言（包括后补的重叠波次回归）。重载失败测试中的 ERROR 日志是主动注入失败，随后应输出 PASS。
-
-本次没有新增对所有碰撞、颜色、姿态和积分路径的独立 CPU 数值参考；已有 Hex 参考之外的这些路径仍需要更完整的差分验证。环槽测试通过主动延迟消费模拟背压，并非驱动真实持续八帧不发信号的故障注入。
-
-## 成本、范围与待验收项
-
-提交代独立绘制数据、身份 sidecar 和波次 stamp 增加约 48 B/容量槽；200 万容量约增加 96 MB，另有约 1.3 MB staging 和小型元数据。用显存换取失败帧隔离与身份安全；粒子本体及 shaderpack 粒子 ABI 不变。要求 OpenGL 4.5 和至少 32 个 SSBO 绑定点，不满足时走原有禁用/回退流程。
-
-波次保留队列有 16384 条容量，覆盖四个波次各 4096 成员；本次验证覆盖八帧延迟。无限期背压期间连续更换多批波次的无损保证尚未验证，应补充溢出压力测试与溢出恢复策略，不能将有限队列声称为无限事件日志。
-
-游戏内尚未执行：无 shaderpack 与 Iris、阴影、手持物、多人 Storm、视角切换、F3+T、换维度，以及所有运动/碰撞/姿态的视觉对照。完整场景基线尚缺：空场景、纯 additive、透明密集、Storm、Hex、混合，分别 1 万/10 万/100 万/有效容量边界；固定种子、相机和画质，关闭 autoThrottle，预热后重复三次。
-
-`/cmi particle profile on` 开启统计，`/cmi particle profile` 查看 CPU 提交 p50/p95、分配量、已插桩上传字节/GL 调用、GPU pass 时间和读回代差；`/cmi particle profile off` 关闭。GL 调用/字节仅计已插桩路径，GPU 显示最近完成样本，尚不是完整场景自动导出器；这些限制须在整帧验收报告中保留。
-
-## 2026-10-25：性能统计按需采集
-
-详细帧账本、队列诊断计数、CPU/分配量及 GPU pass 百分位仅由 `profile on/off` 控制。`stats` 仅保留一行粒子数量、容量、流数、发射倍率和自动节流结果，不再附加包裹或风暴报告。`profile` 查看性能摘要，`profile details` 展开已整理的完整诊断。渲染路径不再每帧生成百分位报告，开关在主渲染帧边界生效。
-
-`stats` 格式示例：
+固定场景加载和数量仍使用现有服务器业务命令与同一世界备份，避免测试工具直接修改 HP、攻击或结算。客户端共同命令：
 
 ```text
-[CMI particles] live=39954/2000000  streams=0  emission=100%  throttle gpu=3.67ms (budget 15.0ms)
+/cmi particle profile backend gl
+/cmi particle profile off
+/cmi particle profile hardware status
+/cmi particle profile frames 60
 ```
 
-两档 `profile` 共用一次 CPU/GPU、上传/读回及队列报告；统一使用毫秒和 B/KiB/MiB，隐藏未采样模块与空项，不重复打印整份帧账本。摘要显示最慢的 5 个 GPU 阶段、3 个包裹 CPU 阶段和 3 个 Hex 阶段；`details` 展开全部已测阶段，CPU/GPU 统一使用 p50/p95，额外保留样本量、跳过次数、实际线程 CPU 和分配量。逐区域传输记录合并为总量加各区域 p95，风暴诊断按波次、寻路、脱嵌、碰撞和异常原因分行，以具名字段替代原始数组。没有主采样帧时，两档均只显示一条开关/等待提示。
+RT 组只将第一条改为 `backend rt`。采集期间关闭聊天、不移动、不切换光影或后端。关闭 VSync、帧率限制和自动粒子节流；先预热编译及加载。每窗至少30秒且1000帧，不足时使用120或300秒。三轮独立进程；每轮 A、相同 A、B 交错运行。提交同前缀 JSON、所有 CSV、profile context 和 debug.log，并注明场景初态及攻击阶段。
 
-GPU 数值为异步最近完成样本，各阶段不保证来自同一帧；包裹传输总量和风暴运行态诊断标注为实时信息，不与停止后保留的采样窗口混淆。
+分别比较冻结旧基线、新 GL20Hz、新 RT20Hz；新 GL/RT 两侧使用相同插值策略和预算，再独立开关插值。降频收益归于调度，不能归于 RT。30/60/144/240 FPS、变帧率和暂停恢复检查阶段、伤害、生命周期和结算一致。
 
-| 手动 profile | autoThrottle | 采集内容 |
-| --- | --- | --- |
-| 关闭 | 关闭 | 不采集性能数据，不提交或轮询计时查询 |
-| 关闭 | 开启 | 每帧轻量 GPU 计时；首个 GPU 样本完成前使用 CPU 提交耗时 |
-| 开启 | 关闭 | 详细统计；发射倍率保持 100% |
-| 开启 | 开启 | 详细统计与轻量节流共用相应 pass 的计时查询 |
+完整链改善必须超过匹配 A/A 噪声、1% 和0.1ms，且 p95/p99 无稳定退化。旧“三轮都提升20%”门槛不再使用。未匹配相机、初态、阶段或配置的窗口仅作诊断。用户确认玩法与画面后，才决定是否将具体 RT 模块纳入 `auto`。
 
-轻量模式不记录 CPU/GPU 百分位窗口、分配量、队列接受/延迟/拒绝诊断计数或详细账本。功能性的队列长度、背压、碰撞、伤害、身份反馈、粒子 census 和包裹同步读回保留。自动节流预算、EMA 和倍率调整规则不变；关闭节流时在下一主渲染帧开始前恢复 100% 发射倍率。
+## 当前离屏结果与限制
 
-`profile off` 停止采集并保留上次报告，报告标记为 `stopped; last capture`；再次开启开始新一轮统计。模式切换时丢弃旧的待完成计时查询，不阻塞等待 GPU，因此轻量样本不会进入后续详细统计。换世界和关闭引擎清除旧计时、节流状态和统计窗口。
+`verify-final/gpu.json` 和 `verify-portable/gpu.json` 分别验证原生及无原生路径，具体检查数、设备、驱动和案例记录在交付证据中。500 ms 注入时提交、环满和重载不得等待任务完成；旧资源安全退休后才能重用。模型阴影、Dome 生产集结、地形和动画夹具保留独立结果。
 
-自动验证：相关 JUnit 测试及 `validateHexGpu`、`validatePackageGpu`、`validateSceneFrameGpu` 通过；对应 GPU 断言分别为 130,528、14,680,645 和 72,764，另有共享 Hex 5,288 项。新增覆盖四种采集模式、关闭账本、查询槽满、失败样本、停止/重启和外部 `GL_TIME_ELAPSED` 所有权。这些是正确性验证，不代表游戏内帧率收益。
+`baseline-aa/bench.json` 为冻结实际捕获的九个独立进程控制实验，三轮 A、AA、B 全部使用相同输入和旧程序。A/AA 均值差约为 0.004、0.074、0.205 ms，整体门槛未通过；其中单轮假性改善不构成采用证据。此结果校准回放噪声，不是新旧引擎性能对比，也不能换算客户端 FPS。
 
-实机检查交由用户完成，需重启客户端加载本次编译结果。在无光影及 Iris 光影两种环境分别检查：
-
-1. 默认 `profile off` 下执行 `stats`，确认只有上述一行；执行 `profile` 或 `profile details`，确认只显示未采集提示。
-2. 发射粒子后执行 `profile on`，等待数帧再查看 `profile`，确认 CPU/GPU 和上传/读回摘要出现，队列非零时显示队列行；`profile details` 应展开已测阶段且不重复主账本。有 MODEL/包裹时检查对应计时，不应出现未采样模块占位行。
-3. 执行 `profile off`，再次查询确认标记停止、历史值不再更新；重新开启确认新窗口开始采样。
-4. 在客户端配置中切换 `particles.autoThrottle`，分别检查四种组合；关闭时确认 `stats` 显示 `auto throttle=off` 且发射倍率恢复 100%。
-5. 换世界后确认旧统计与节流状态清除，并检查粒子、MODEL 阴影、包裹及碰撞/伤害反馈正常。
-
-本轮实机日志驱动的 MODEL 着色器优化、替换门槛与待验收清单见 [2026-10-30 测量报告](benchmarks/model-draw-client-log-2026-10-30.md)。
-
-下一轮实体比较折叠、计算子阶段诊断、旧性能结论更正及用户待验收项目见 [R2 测量报告](benchmarks/shader-efficiency-client-log-r2-2026-10-30.md)。
-
-当前未提交优化的证据分级、验证工具风险和后续优先级见 [2026-10-31 审阅](benchmarks/particle-uncommitted-review-2026-10-31.md)；冻结输入位置见 [本地基线说明](../scripts/particles/baselines.md)。
+当前没有新架构的客户端完整场景捕获，不能完成旧基线、新 GL20Hz、新 RT20Hz 的整帧对照，也未证明 CUDA 与渲染实际重叠。RT 遮挡内核尚未启用在线剔除。保留这些限制，交付显式候选和回退，等待客户端画面、玩法与性能验收。

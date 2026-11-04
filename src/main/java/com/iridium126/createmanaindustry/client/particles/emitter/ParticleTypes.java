@@ -18,17 +18,51 @@ public final class ParticleTypes {
     }
 
     public enum Feature { SPRITE_ATLAS, MODEL_ATLAS, COLLISION, STORM, PACKAGE }
+    /** Only continuous fields belong here. Identity, frames and lifecycle stay discrete. */
+    public enum InterpolationField {
+        POSITION(1),VELOCITY(2),ROTATION(4),COLOR(8),CLOCK(16),BRIGHTNESS(32),SIZE(64),OPACITY(128);
+        final int bit;
+        InterpolationField(int bit){this.bit=bit;}
+    }
+    public enum Coordinates { WORLD, CAMERA_RELATIVE }
     public record Type(int id, String name, Material material,
-                       String spawnModule, String updateModule, Set<Feature> features) {
+                       String spawnModule, String updateModule, Set<Feature> features,
+                       Set<InterpolationField> interpolation, Coordinates coordinates) {
+        public Type(int id,String name,Material material,String spawnModule,String updateModule,Set<Feature> features,Set<InterpolationField> interpolation){
+            this(id,name,material,spawnModule,updateModule,features,interpolation,Coordinates.WORLD);
+        }
+        public Type(int id,String name,Material material,String spawnModule,String updateModule,Set<Feature> features){
+            this(id,name,material,spawnModule,updateModule,features,defaultInterpolation(id,material),Coordinates.WORLD);
+        }
         public Type {
             if (id < 0 || id > 65535 || !name.matches("[a-z][a-z0-9_]*"))
                 throw new IllegalArgumentException("Invalid particle type id/name");
             Objects.requireNonNull(material);
+            Objects.requireNonNull(coordinates);
             features = Set.copyOf(features);
+            interpolation = Set.copyOf(interpolation);
             for (String module : new String[] {spawnModule, updateModule})
                 if (module != null && !module.matches("chunks/[a-z0-9_/]+\\.glsl"))
                     throw new IllegalArgumentException("Invalid shader module: " + module);
         }
+    }
+    private static Set<InterpolationField> defaultInterpolation(int id,Material material){
+        if(material==Material.PACKAGE)return Set.of(); // The package producer publishes its own two-pose layout.
+        var fields=EnumSet.of(InterpolationField.POSITION,InterpolationField.VELOCITY,InterpolationField.ROTATION,InterpolationField.COLOR,InterpolationField.CLOCK);
+        if(material==Material.MODEL)fields.remove(InterpolationField.ROTATION);
+        if(id==AllayFeatherLayout.TYPE||id==AllayGoldSpecs.TYPE)fields.remove(InterpolationField.COLOR);
+        if(id==AllayGoldSpecs.TYPE)fields.add(InterpolationField.BRIGHTNESS);
+        return fields;
+    }
+    public static synchronized String interpolationShader(){
+        var code=new StringBuilder("uint cmiDisplayFields(uint type){\n");
+        for(var type:TYPES.values()){
+            int mask=0;for(var field:type.interpolation())mask|=field.bit;
+            code.append("if(type==").append(type.id()).append("u)return ").append(mask).append("u;\n");
+        }
+        code.append("return 0u;}\nbool cmiDisplayCameraRelative(uint type){return ");
+        for(var type:TYPES.values())if(type.coordinates()==Coordinates.CAMERA_RELATIVE)code.append("type==").append(type.id()).append("u||");
+        return code.append("false;}\n").toString();
     }
     private static final Map<Integer, Type> TYPES = new LinkedHashMap<>();
     private static final Map<Material, Type> STANDARD_TYPES = new EnumMap<>(Material.class);
@@ -42,6 +76,12 @@ public final class ParticleTypes {
         register(new Type(AllayGoldSpecs.TYPE,"allay_gold",Material.ADDITIVE,"chunks/gold_spawn.glsl",null,Set.of()));
         register(new Type(AllayFeatherLayout.TYPE, "allay_feather", Material.OPAQUE,
                 "chunks/feather_spawn.glsl", null, Set.of(Feature.MODEL_ATLAS,Feature.COLLISION)));
+        register(new Type(10,"external_conjure",Material.ADDITIVE,null,null,Set.of(),
+                Set.of(InterpolationField.POSITION,InterpolationField.ROTATION,InterpolationField.COLOR,InterpolationField.SIZE,InterpolationField.OPACITY),Coordinates.CAMERA_RELATIVE));
+        register(new Type(11,"fate_ribbon_glow",Material.ADDITIVE,null,null,Set.of(),
+                Set.of(InterpolationField.POSITION,InterpolationField.SIZE),Coordinates.CAMERA_RELATIVE));
+        register(new Type(12,"fate_ribbon_alpha",Material.ALPHA,null,null,Set.of(),
+                Set.of(InterpolationField.POSITION,InterpolationField.SIZE),Coordinates.CAMERA_RELATIVE));
     }
     private ParticleTypes() {}
     private static void registerStandard(Type type) {
@@ -64,6 +104,8 @@ public final class ParticleTypes {
     }
     public static Type allayGold(){return TYPES.get(AllayGoldSpecs.TYPE);}
     public static Type allayFeather() { return TYPES.get(AllayFeatherLayout.TYPE); }
+    public static Type externalConjure(){return TYPES.get(10);}
+    public static Type fateRibbon(boolean alpha){return TYPES.get(alpha?12:11);}
     public static synchronized void requireRegistered(Type type) {
         if (!type.equals(TYPES.get(type.id()))) throw new IllegalArgumentException("Unregistered particle type");
     }

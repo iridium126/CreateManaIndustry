@@ -1,0 +1,65 @@
+allprojects {
+    afterEvaluate {
+        def kotlin=configurations.create('particleValidationKotlin')
+        dependencies.add(kotlin.name,'org.jetbrains.kotlin:kotlin-stdlib:2.3.0')
+        tasks.register('writeParticlePackage'){
+            dependsOn 'build'
+            doLast{
+                def output=file(project.findProperty('particleOutput')?:'build/particle-engine/package')
+                output.mkdirs()
+                new File(output,'artifact.json').text=groovy.json.JsonOutput.toJson([jar:tasks.named('distributionJar').get().archiveFile.get().asFile.absolutePath])
+            }
+        }
+        tasks.register('compileParticleGpu',JavaCompile){
+            dependsOn 'classes'
+            def available=fileTree('scripts/particles'){include '*.java'}.files.collectEntries{[(it.name.substring(0,it.name.length()-5)):it]}
+            def chosen=['ParticleEngineGpuValidation','ParticleReplayGpu'] as Set
+            if(project.hasProperty('particleSuite'))chosen.add(project.property('particleSuite'))
+            boolean expanding=true
+            while(expanding){expanding=false;chosen.toList().each{key->
+                if(!available.containsKey(key))throw new GradleException('Unknown particle fixture: '+key)
+                def text=available[key].getText('UTF-8')
+                available.each{name,path->if(!chosen.contains(name)&&java.util.regex.Pattern.compile('\\b'+name+'\\b').matcher(text).find()){chosen.add(name);expanding=true}}
+            }}
+            source=files(chosen.collect{available[it]})
+            classpath=sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            destinationDirectory=layout.buildDirectory.dir('particle-gpu')
+            options.encoding='UTF-8'
+        }
+        tasks.register('verifyParticleGpu',JavaExec){
+            dependsOn 'compileParticleGpu'
+            classpath=files(layout.buildDirectory.dir('particle-gpu'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+            mainClass='ParticleEngineGpuValidation'
+            maxHeapSize='4g'
+            systemProperty 'cmi.particle.output',file(project.findProperty('particleOutput')?:'build/particle-engine/verify').absolutePath
+            if(project.hasProperty('particleGlOnly'))args '--gl-only'
+            workingDir=project.projectDir
+        }
+        ['replayParticleGpu':'ParticleReplayGpu','runParticleSuite':project.findProperty('particleSuite')?:'ParticleEngineGpuValidation'].each{taskName,entry->
+            tasks.register(taskName,JavaExec){
+                dependsOn 'compileParticleGpu'
+                classpath=files(layout.buildDirectory.dir('particle-gpu'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
+                mainClass=entry
+                if(entry=='ModelMaterialGpuValidation'){
+                    def services=layout.buildDirectory.dir('particle-offscreen-platform')
+                    classpath=files(services)+classpath.filter{!it.name.startsWith('glsl-transformer-')}+files(services.map{it.file('jcpp-1.4.14.jar')},services.map{it.file('glsl-transformer-3.0.0-pre3.jar')})
+                    doFirst{
+                        def service=new File(services.get().asFile,'META-INF/services/net.irisshaders.iris.platform.IrisPlatformHelpers')
+                        service.parentFile.mkdirs();service.text='OffscreenIrisPlatform\n'
+                        def iris=configurations.compileClasspath.files.find{it.name.startsWith('irisshaders-')}
+                        if(iris==null)throw new GradleException('Iris archive is required for the material fixture')
+                        copy{from zipTree(iris);include 'META-INF/jarjar/jcpp-1.4.14.jar','META-INF/jarjar/glsl-transformer-3.0.0-pre3.jar';eachFile{path=name};includeEmptyDirs=false;into services}
+                    }
+                }
+                maxHeapSize='5g';workingDir=project.projectDir
+                doFirst{file(project.findProperty('particleOutput')?:'build/particle-engine/verify').mkdirs()}
+                systemProperty 'cmi.benchmark.output',file(project.findProperty('particleOutput')?:'build/particle-engine/verify').absolutePath
+                if(project.hasProperty('particleCapture'))systemProperty 'cmi.particle.capture',file(project.property('particleCapture')).absolutePath
+                if(project.hasProperty('particleSamples'))systemProperty 'cmi.particle.samples',project.property('particleSamples')
+                if(project.hasProperty('particleReplaySeconds'))systemProperty 'cmi.replay.seconds',project.property('particleReplaySeconds')
+                if(project.hasProperty('particleReplayMembers'))systemProperty 'cmi.replay.members',project.property('particleReplayMembers')
+                if(project.hasProperty('particleReplayFaultPeriod'))systemProperty 'cmi.replay.faultPeriod',project.property('particleReplayFaultPeriod')
+            }
+        }
+    }
+}

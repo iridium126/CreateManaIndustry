@@ -1,8 +1,0 @@
-cmake_minimum_required(VERSION 3.24)
-project(CmiNeighborExperiment LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 17)
-find_package(JNI REQUIRED)
-add_library(CmiNeighborExperiment SHARED NeighborExperiment.cpp)
-target_include_directories(CmiNeighborExperiment PRIVATE ${JNI_INCLUDE_DIRS} "${CUDA_ROOT}/include" "${NVRTC_ROOT}/include" "${CRT_ROOT}/include" "${OPTIX_ROOT}/include")
-target_link_libraries(CmiNeighborExperiment PRIVATE "${CUDA_ROOT}/lib/x64/cuda.lib" "${NVRTC_ROOT}/lib/x64/nvrtc.lib")
-target_compile_definitions(CmiNeighborExperiment PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

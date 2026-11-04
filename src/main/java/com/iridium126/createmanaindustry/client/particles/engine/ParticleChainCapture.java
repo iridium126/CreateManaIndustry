@@ -26,7 +26,10 @@ public final class ParticleChainCapture implements GpuReplayCommands.Sink,com.ir
     private final Map<String,Object> resources=new LinkedHashMap<>(),programData=new LinkedHashMap<>(),manifest=new LinkedHashMap<>();
     private final Map<String,byte[]> host=new LinkedHashMap<>();private final List<Part> parts=new ArrayList<>();private final List<Map<String,Object>> commands=new ArrayList<>();
     private boolean active;private volatile boolean exporting;private long bytes,fence;private Path output;private String failure="";
+    private volatile String requested;
     private ParticleChainCapture(){}
+    public synchronized boolean request(String name){if(name==null||!name.matches("[A-Za-z0-9_-]{1,64}")||busy()||requested!=null||ClientFrameCapture.INSTANCE.busy())return false;requested=name;return true;}
+    public void beginRequested(long frame,long generation,Map<String,Object> inputs){String name=requested;if(name==null)return;requested=null;ClientFrameCapture.INSTANCE.invalidate("instrumented command capture");start(name,frame,generation,inputs);}
     public boolean busy(){return active||fence!=0||exporting;}
     public boolean active(){return active;}
     public void inputs(Map<String,Object> values){if(active)manifest.put("cpu_inputs",Map.copyOf(values));}
@@ -37,7 +40,7 @@ public final class ParticleChainCapture implements GpuReplayCommands.Sink,com.ir
     /** Isolated fixtures declare their real compiled source; no production ID substitution. */
     public void sourceForValidation(int id,String name,String plain){if(!active||!Boolean.TRUE.equals(((Map<?,?>)manifest.get("cpu_inputs")).get("synthetic_fixture")))throw new IllegalStateException("Only active isolated fixtures can declare sources");validationSources.put(id,new DeclaredSource(name,plain));}
     public void start(String name,long frame,long generation,Map<String,Object> inputs){
-        startAt(Minecraft.getInstance().gameDirectory.toPath().resolve("logs/cmi-neighbor-inputs").resolve(name+"-"+UUID.randomUUID()),frame,generation,inputs);
+        startAt(Minecraft.getInstance().gameDirectory.toPath().resolve("logs/cmi-particle-captures").resolve(name+"-"+UUID.randomUUID()),frame,generation,inputs);
         manifest.put("context",ParticleDiagnostics.INSTANCE.measurementContext());manifest.put("profile_context_file",ParticleDiagnostics.INSTANCE.exportActiveProfileContext());
         var level=Minecraft.getInstance().level;manifest.put("dimension",level==null?"none":level.dimension().location().toString());
         manifest.put("require_publication",true);

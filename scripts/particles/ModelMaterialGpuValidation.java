@@ -13,6 +13,7 @@ import org.lwjgl.opengl.*;
 import org.lwjgl.glfw.GLFW;
 
 /** Actual eight-pack entity fragments and CMI/Iris vertex merge; hidden driver context only. */
+// OffscreenIrisPlatform supplies the standalone loader services via gpu.init.gradle.
 public final class ModelMaterialGpuValidation {
     static int checks;
     static int layers=1;
@@ -214,6 +215,7 @@ public final class ModelMaterialGpuValidation {
         }finally{GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);GL20.glUseProgram(0);GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);for(int t:new int[]{poolTex,stateTex})GL11.glDeleteTextures(t);for(int b:new int[]{pool,state,feedback})GL15.glDeleteBuffers(b);}
     }
     static void run()throws Exception{
+        OffscreenIrisPlatform.initialize();
         com.mojang.blaze3d.systems.RenderSystem.initRenderThread();DEFINES.add(new StringPair("MC_NORMAL_MAP","1"));DEFINES.add(new StringPair("MC_SPECULAR_MAP","1"));for(var phase:net.irisshaders.iris.pipeline.WorldRenderingPhase.values())DEFINES.add(new StringPair("MC_RENDER_STAGE_"+phase.name(),Integer.toString(phase.ordinal())));
         atlasBindings();
         var compiler=new ShaderPackProgramCompiler(name->com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{return Files.readString(Path.of("src/main/resources/assets/createmanaindustry",path));}catch(Exception e){throw new RuntimeException(e);}}));

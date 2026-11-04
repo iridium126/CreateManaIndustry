@@ -10,4 +10,7 @@ public interface ParticleAppendTarget {
     void flushHeaders();
     Range reserveOutput();
     void bind(Range reservation,int counterSlot,int counterBinding,int particleBinding);
+    /** Optional for isolated producer fixtures; production supplies the compaction edge arena. */
+    default void bindHistory(int program) {}
+    default long historyGeneration(){return 0;}
 }

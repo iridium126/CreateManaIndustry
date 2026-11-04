@@ -13,6 +13,7 @@ compile either experimental class at runtime. Early experiment measurements
 used a checker background in unused atlas space; the final fixture clears it
 to transparent, so old and new measurements are not interchangeable.
 
-See `docs/benchmarks/feather-merge-client-log-2026-10-31.md` and the retained raw
-records for regressions and loading costs. Do not promote local stage wins to
+Historical measurements are retained in the frozen particle-engine source and
+evidence archive. Current commands and scope are documented in
+`docs/particle-engine-performance.md`. Local stage timings do not qualify
 whole-frame or client performance claims.

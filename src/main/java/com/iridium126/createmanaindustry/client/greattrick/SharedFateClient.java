@@ -10,7 +10,7 @@ import java.util.*;
 /** Lifecycle and unique endpoint snapshots only. The GPU owns every intermediate point. */
 public final class SharedFateClient {
     public static final float DISSOLVE_SECONDS=1.2f;
-    private static final long EPOCH=System.nanoTime();
+    private static final com.iridium126.createmanaindustry.client.particles.engine.ParticleEffectClock CLOCK=new com.iridium126.createmanaindustry.client.particles.engine.ParticleEffectClock();
     private static ClientLevel world;
     private static final Map<UUID,Wire> WIRES=new LinkedHashMap<>();
     private static final Map<UUID,Endpoint> POSES=new HashMap<>();
@@ -48,7 +48,7 @@ public final class SharedFateClient {
         }
     }
     public record Frame(Wire wire,Pose a,Pose b) {}
-    public static float now(){return (System.nanoTime()-EPOCH)*1e-9f;}
+    public static float now(){return CLOCK.now();}
     public static void install(){
         ClientboundSharedFatePacket.installClientHandler(SharedFateClient::receive);
         net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(SharedFateClient::tick);

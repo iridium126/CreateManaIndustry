@@ -35,14 +35,6 @@ class ParticleRenderLifecycleContractTest {
         assertTrue(selected>=0&&selected<capacity&&capacity<identities&&identities<dispatch,
                 "Late-compiled update programs must not publish an empty pool with default uCapacity=0");
     }
-    @Test void shadowEntrySubmitsWithoutJoiningAndFirstConsumerJoins()throws IOException{
-        var scene=read(SCENE+"ClientGpuScene");var entry=method(scene,"prepareCurrentFrame");
-        assertFalse(calls(entry,SCENE+"ClientGpuScene","currentFrameReady"),"Submission entry must not immediately consume its pending continuation");
-        assertFalse(calls(entry,SCENE+"ClientGpuScene","completePendingHardwareFrame"));
-        assertTrue(calls(entry,SCENE+"ClientGpuScene","preparedFrameReady"));
-        assertTrue(calls(method(scene,"currentFrameReady"),SCENE+"ClientGpuScene","completePendingHardwareFrame"));
-        assertTrue(calls(method(scene,"leaveLevelFrame"),SCENE+"ClientGpuScene","completePendingHardwareFrame"));
-    }
     @Test void goldManualCommandsArmTheSharedAmbientOwner()throws IOException{
         var runtime=method(read(ENGINE+"ParticleRuntime"),"ensureEmitterRuntime");
         assertTrue(calls(runtime,ENGINE+"AllayFeatherGpu","source"));boolean gold=false;
@@ -197,17 +189,6 @@ class ParticleRenderLifecycleContractTest {
         for(String entry:new String[]{"computeFrameInternal","prepareCurrentFrame","close"})
             assertTrue(calls(method(scene,entry),coordinator,"abort"),entry);
     }
-    @Test void experimentalContinuationFinishesBeforeAnyCurrentPublicationConsumer()throws IOException{
-        var scene=read(SCENE+"ClientGpuScene");var ready=method(scene,"currentFrameReady");int resume=-1,publication=-1;
-        for(int i=0;i<ready.instructions.size();i++)if(ready.instructions.get(i) instanceof MethodInsnNode call){if(call.name.equals("completePendingHardwareFrame"))resume=i;if(call.name.equals("preparedFrameReady"))publication=i;}
-        assertTrue(resume>=0&&publication>resume);
-        var continuation=method(scene,"completePendingHardwareFrame");int simulation=-1,finish=-1;
-        for(int i=0;i<continuation.instructions.size();i++)if(continuation.instructions.get(i) instanceof MethodInsnNode call){if(call.name.equals("resumeSimulation"))simulation=i;if(call.name.equals("finishComputedFrame"))finish=i;}
-        assertTrue(simulation>=0&&finish>simulation);
-        assertTrue(calls(continuation,ENGINE+"ParticleRuntime$FrameCandidate","close"));
-        assertTrue(calls(method(scene,"close"),SCENE+"ClientGpuScene","abortPendingHardwareFrame"));
-    }
-
     @Test void lateSharedFateHeaderIsUploadedBeforeItsFirstGpuDispatch() throws IOException {
         var generate=method(read("com/iridium126/createmanaindustry/client/greattrick/sharedfate/SharedFateGpu"),"generate");
         int allocation=-1,upload=-1,dispatch=-1;

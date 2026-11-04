@@ -7,6 +7,6 @@ void cmiGoldUpdate(vec4 p0,vec4 p1,vec4 p2,vec4 p3){
     vec3 delta=vec3(next.x-p2.x,p2.z*uDt,next.y-p2.y);
     p0.xyz+=delta;p1.xyz=delta/max(uDt,.000001);p1.w+=p2.w*uDt*.2;p2.xy=next;
     p3.x+=uDt;p3.z=.8+.2*next.x*inversesqrt(max(dot(next,next),.000001));
-    uint slot=cmiReserveParticle();if(slot>=uCapacity)return;uint b=slot*4u;
+    uint slot=cmiReserveParticle();if(slot>=uCapacity)return;cmiHistoryContinue(slot);uint b=slot*4u;
     writeBuf.data[b]=p0;writeBuf.data[b+1u]=p1;writeBuf.data[b+2u]=p2;writeBuf.data[b+3u]=p3;
 }

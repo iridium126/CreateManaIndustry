@@ -41,7 +41,7 @@ public final class ModelShadowGroups implements AutoCloseable {
         if(bank<0||bank>1)throw new IllegalArgumentException("Shadow group bank");
         generations[bank]=-1;candidate=-1;
         enabled=enabled&&snapshot!=null&&snapshot.matches(generation);
-        if(!enabled){if(wasEnabled)GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uShadowGroupsWrite"),0);wasEnabled=false;return;}
+        if(!enabled){GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uShadowGroupsWrite"),0);wasEnabled=false;return;}
         if(modelCapacity<1)throw new IllegalArgumentException("Shadow group capacity");
         float radius=snapshot.radius(),low=snapshot.low(),high=snapshot.high();
         GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uShadowGroupsWrite"),enabled?1:0);

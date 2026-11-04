@@ -42,9 +42,9 @@ public final class AllayDome {
         return (float)(Math.ceil(Math.max(8,seconds)*20)/20);
     }
     public static float warningStart(float lock,float radius,int group){return lock;}
-    /** Independent victims can receive the same member's contact once. */
+    /** One attack owns one ledger; each target settles the batch once. */
     public static final class Contacts {
-        private final Map<UUID,IntOpenHashSet> victims=new HashMap<>();
-        public boolean add(UUID player,int member){return victims.computeIfAbsent(player,k->new IntOpenHashSet()).add(member);}
+        private final java.util.Set<UUID> victims=new java.util.HashSet<>();
+        public boolean add(UUID player,int member){return victims.add(player);}
     }
 }

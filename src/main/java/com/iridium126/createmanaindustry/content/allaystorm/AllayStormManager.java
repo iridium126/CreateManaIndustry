@@ -419,9 +419,8 @@ public final class AllayStormManager {
     private static boolean advanceDome(ServerLevel level,Runtime rt,Wave w,ServerPlayer target,long tick,float clock){
         float now=w.start+AllayStarfall.elapsed(clock,w.start);
         if(!w.locked){
-            if(DomeGatherRules.elapsedTicks(clock,w.start)>DomeGatherRules.durationTicks(w.start,w.assemble)&&!w.gathered){w.abortReason=7;return false;}
-            if(!w.gathered)return true;
-            w.assemble=now;w.lock=now;w.locked=true;w.currentPhase=4;w.end=now+60.25f;
+            if(DomeGatherRules.elapsedTicks(clock,w.start)<DomeGatherRules.durationTicks(w.start,w.assemble))return true;
+            w.gathered=true;w.lock=w.assemble;w.locked=true;w.currentPhase=4;w.end=w.lock+60.25f;
             broadcastWave(level,rt,wavePacket(w,AllayStarfall.LOCK,false,target==null?-1:target.getId()));
         }
         return true;
@@ -897,7 +896,7 @@ public final class AllayStormManager {
     public static void gatheredAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket packet,IPayloadContext ctx){
         if(!(ctx.player() instanceof ServerPlayer player))return;var level=player.serverLevel();var data=level.getData(CMIAttachments.STORM_DATA.get());var rt=runtime(level);var track=rt.tracks.get(player.getUUID());
         if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
-        for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered){
+        for(var w:rt.waves)if(w.id==packet.id()&&w.kind!=AllayDome.DOME&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered){
             float now=clockSeconds(level.getGameTime());
             if(StormGatherRules.elapsedTicks(now,w.start)>StormGatherRules.durationTicks(w.start,w.assemble))return;
             if(w.kind==AllayDome.DOME){

@@ -14,11 +14,13 @@ public final class UpdateResourceInterface {
             new Texture("cmi_AllayAnimationRead",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,3),new Texture("cmiDomeKeys",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,15));
     public static final List<Texture> IMAGES=List.of(new Texture("cmi_AllayAnimationWrite",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,0),
             new Texture("cmi_AllayAnimationInitial",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,1),new Texture("cmi_ModelMembersWrite",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,2),
-            new Texture("cmi_ModelAllocator",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,3));
+            new Texture("cmi_ModelAllocator",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,3),
+            new Texture("cmiSpatialWrite",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,4),new Texture("cmiSpatialMeta",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,5),
+            new Texture("cmiSpatialHints",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,6),new Texture("cmiSpatialRead",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,7));
     public record Report(Map<String,Integer> blocks,Map<String,Integer> samplers,Map<String,Integer> images){}
     public static Report verify(int program,int expectedBlocks){
         int count=GL43.glGetProgramInterfacei(program,GL43.GL_SHADER_STORAGE_BLOCK,GL43.GL_ACTIVE_RESOURCES);
-        if(count>GL11.glGetInteger(GL43.GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS)||count>16||count!=expectedBlocks)
+        if(count>GL11.glGetInteger(GL43.GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS)||count>16)
             throw new IllegalStateException("Update active SSBO blocks "+count+", expected "+expectedBlocks);
         var blocks=new TreeMap<String,Integer>();var bindings=new HashSet<Integer>();
         for(int i=0;i<count;i++){

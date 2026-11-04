@@ -174,6 +174,7 @@ public final class ParticlePrograms {
         sb.append("#define CMI_DOME_HANDOFF_SECONDS ").append(com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.HANDOFF_SECONDS).append("\n");
         sb.append("#define CMI_DOME_POSE (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_POSE).append("u)\n");
         sb.append("// ==== CMI particle engine common constants ====\n");
+        sb.append(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.interpolationShader());
         sb.append("// ==== GENERATED from ParticleBuffers by ParticlePrograms -- edit THERE, not here ====\n");
         sb.append("#define BIND_IDENTITY ").append(ParticleBuffers.IDENTITY_BB).append('\n');
         sb.append("#define BIND_POPULATION_READ ").append(ParticleBuffers.POPULATION_READ_BB).append('\n');
@@ -314,8 +315,7 @@ public final class ParticlePrograms {
     private volatile boolean dirty = true;
     private Map<String,String> committedSources=Map.of();
     private String committedDigest;
-    /** Published include-expanded source only. Experimental continuations must
-     * not combine a pending resource reload with the active program set. */
+    /** Captures use published include-expanded source, never a pending resource reload. */
     public String committedPlain(String file){String value=committedSources.get(GLSL_DIR+file);if(value==null)throw new IllegalStateException("Particle source is not published: "+file);return value;}
     public String diagnosticProgramName(int id){
         if(id==update)return "update.comp";if(id==grid)return "gridbuild.comp";if(id==prepareDispatch)return "prepare_dispatch.comp";if(id==reset)return "reset.comp";
@@ -338,7 +338,7 @@ public final class ParticlePrograms {
     public void requestRebuild() {
         ParticleChainCapture.INSTANCE.invalidate("resource reload requested");
         ClientFrameCapture.INSTANCE.invalidate("resource reload requested");
-        ParticleQuerySequence.INSTANCE.invalidate("resource reload requested");
+        ParticleChainCapture.INSTANCE.invalidate("resource reload requested");
         this.dirty = true;
     }
 

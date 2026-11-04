@@ -19,9 +19,10 @@ import java.util.regex.*;
  * Raster inputs are synthetic instanced surfaces, not a live Minecraft pipeline.
  * Production CMI+pack stages are separately linked before fragment isolation. */
 public final class ModelMergeGpuValidation {
+    static String sha(String value)throws Exception{return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));}
     static final int W=1920,H=1080;
     static final List<String> firstDrawRows=new ArrayList<>(List.of("pack,width,height,count,workload,baseline_ms,candidate_ms,baseline_cpu_ms,candidate_cpu_ms"));
-    static final boolean R7=Boolean.getBoolean("cmi.r7.draw");
+    static final boolean PRODUCTION_DRAW=Boolean.getBoolean("cmi.draw.production");
     static final boolean FEATHER=Boolean.getBoolean("cmi.feather.merge");
     static final boolean ROUND2=Boolean.getBoolean("cmi.shader.round2");
     static final boolean READONLY_EXPERIMENT=Boolean.getBoolean("cmi.readonly.draw");
@@ -39,7 +40,7 @@ public final class ModelMergeGpuValidation {
                 var macros=new ArrayList<StringPair>();
                 for(var entry:json.getAsJsonArray("model_environment_macros")){var macro=entry.getAsJsonObject();macros.add(new StringPair(macro.get("key").getAsString(),macro.get("value").getAsString()));}
                 var options=new TreeMap<String,String>();json.getAsJsonObject("options").entrySet().forEach(entry->options.put(entry.getKey(),entry.getValue().getAsString()));
-                String actual=com.iridium126.createmanaindustry.client.particles.engine.hardware.HardwareBackendRuntime.sha(options.toString()).substring(0,12);if(!json.get("options_available").getAsBoolean()||!actual.equals(json.get("options_hash").getAsString()))throw new IllegalStateException("Captured option map/hash unavailable or inconsistent: "+file);replayOptionHash=actual;ModelMaterialGpuValidation.OPTION_OVERRIDES=Map.copyOf(options);ModelMaterialGpuValidation.STRICT_CAPTURE_OPTIONS=true;
+                String actual=sha(options.toString()).substring(0,12);if(!json.get("options_available").getAsBoolean()||!actual.equals(json.get("options_hash").getAsString()))throw new IllegalStateException("Captured option map/hash unavailable or inconsistent: "+file);replayOptionHash=actual;ModelMaterialGpuValidation.OPTION_OVERRIDES=Map.copyOf(options);ModelMaterialGpuValidation.STRICT_CAPTURE_OPTIONS=true;
                 DEFINES.clear();DEFINES.addAll(macros);return;
             }
         }
@@ -408,7 +409,7 @@ public final class ModelMergeGpuValidation {
         var compiler=new FrozenModelProgramCompiler(frozenLoader);
         Object delivered=ROUND2?new EfficiencyBaselineCompiler(frozenLoader):new DeliveredModelProgramCompiler(frozenLoader);
         if(READONLY_EXPERIMENT)delivered=Class.forName("com.iridium126.createmanaindustry.client.particles.shaderpack.ReadonlyBaselineCompiler").getConstructor(java.util.function.Function.class).newInstance(frozenLoader);
-        if(R7)delivered=new ShaderPackProgramCompiler(sourceLoader);
+        if(PRODUCTION_DRAW)delivered=new ShaderPackProgramCompiler(sourceLoader);
         var deliveredBuild=delivered.getClass().getDeclaredMethod("buildMergedSource",boolean.class);deliveredBuild.setAccessible(true);
         var build=FrozenModelProgramCompiler.class.getDeclaredMethod("buildMergedSource",boolean.class);build.setAccessible(true);
         String variant=System.getProperty("cmi.model.draw.variant","full");
@@ -465,11 +466,11 @@ public final class ModelMergeGpuValidation {
                 if(FEATHER){var frozen=FeatherBaselineOptimization.prepare(new FeatherBaselineOptimization.Stages(candidateStages.vertex(),candidateStages.geometry(),candidateStages.tessControl(),candidateStages.tessEval(),candidateStages.fragment()),id,64,64).stages();
                     check(plan.stages().equals(new ModelShaderOptimization.Stages(frozen.vertex(),frozen.geometry(),frozen.tessControl(),frozen.tessEval(),frozen.fragment())),"Feather baseline body/carrier source drift");}
                 if(context==0)unguardedBodyStages=plan.stages();
-                if((R7||FEATHER&&featherBranch())&&(context==0||plan.stages().equals(unguardedBodyStages))){
+                if((PRODUCTION_DRAW||FEATHER&&featherBranch())&&(context==0||plan.stages().equals(unguardedBodyStages))){
                     var feather=ModelShaderOptimization.prepareFeatherBranches(plan.stages(),exact);
                     plan=new ModelShaderOptimization.Plan(feather.stages(),java.util.stream.Stream.concat(plan.applied().stream(),feather.applied().stream()).toList(),java.util.stream.Stream.concat(plan.skipped().stream(),feather.skipped().stream()).toList());
                 }
-                baselineStages[context]=R7?plan.stages():FEATHER?frozenFeatherPlan(stages,id):drawOptimization?(ROUND2?oldPlan(stages,id):candidate(stages,id).stages()):stages;long start=System.nanoTime();var original=transform(baselineStages[context],alpha,"merge-baseline");if(context==0)baselineBody=original;productionBaseline[context]=ModelMaterialGpuValidation.link(original,"baseline-"+context,root);double baselineCompile=(System.nanoTime()-start)/1e6;
+                baselineStages[context]=PRODUCTION_DRAW?plan.stages():FEATHER?frozenFeatherPlan(stages,id):drawOptimization?(ROUND2?oldPlan(stages,id):candidate(stages,id).stages()):stages;long start=System.nanoTime();var original=transform(baselineStages[context],alpha,"merge-baseline");if(context==0)baselineBody=original;productionBaseline[context]=ModelMaterialGpuValidation.link(original,"baseline-"+context,root);double baselineCompile=(System.nanoTime()-start)/1e6;
                 start=System.nanoTime();var optimized=transform(plan.stages(),alpha,"merge-candidate");if(ROUND2&&variant.equals("aa"))check(baselineStages[context].equals(plan.stages()),"A/A stage sources differ");productionCandidate[context]=ModelMaterialGpuValidation.link(optimized,"candidate-"+context,root);double optimizedCompile=(System.nanoTime()-start)/1e6;
                 baselineTimes[context]=baselineCompile;candidateTimes[context]=optimizedCompile;
                 if(context==0){candidateBody=optimized;bodyStages=plan.stages();}else carrierStages=plan.stages();
@@ -482,13 +483,13 @@ public final class ModelMergeGpuValidation {
                 try{differential(a,b,inputs,id,root);if(benchmark&&context==0&&!drawOptimization)benchmark(pack,a,b,inputs,id,csv);}finally{GL20.glDeleteProgram(a);GL20.glDeleteProgram(b);}
             }
             Files.write(output.resolve("compile.csv"),compilation);
-            long baselineGhostStart=System.nanoTime();int baselineGhost=drawOptimization?ModelMaterialGpuValidation.link(R7?transform(unguardedBodyStages,alpha,"r7-native-ghost"):baselineBody,"baseline-ghost",root):0;
+            long baselineGhostStart=System.nanoTime();int baselineGhost=drawOptimization?ModelMaterialGpuValidation.link(PRODUCTION_DRAW?transform(unguardedBodyStages,alpha,"production-native-ghost"):baselineBody,"baseline-ghost",root):0;
             double baselineGhostMs=drawOptimization?(System.nanoTime()-baselineGhostStart)/1e6:0;
-            long ghostStart=System.nanoTime();int candidateGhost=ModelMaterialGpuValidation.link((R7||FEATHER&&featherBranch())?transform(unguardedBodyStages,alpha,"native-ghost"):candidateBody,"candidate-ghost",root);double ghostMs=(System.nanoTime()-ghostStart)/1e6;
+            long ghostStart=System.nanoTime();int candidateGhost=ModelMaterialGpuValidation.link((PRODUCTION_DRAW||FEATHER&&featherBranch())?transform(unguardedBodyStages,alpha,"native-ghost"):candidateBody,"candidate-ghost",root);double ghostMs=(System.nanoTime()-ghostStart)/1e6;
             boolean shared=bodyStages.equals(carrierStages);
             startupCsv.add(String.format(Locale.ROOT,"%s,%d,%d,%.3f,%.3f,%.3f",pack,drawOptimization?(baselineStages[0].equals(baselineStages[1])?2:3):2,shared?2:3,
                     baselineTimes[0]+(drawOptimization&&baselineStages[0].equals(baselineStages[1])?0:baselineTimes[1])+baselineGhostMs,candidateTimes[0]+(shared?0:candidateTimes[1])+ghostMs,optimizationMs));
-            if(ROUND2&&!FEATHER&&!R7){
+            if(ROUND2&&!FEATHER&&!PRODUCTION_DRAW){
                 var loadRows=new ArrayList<String>();loadRows.add("round,order,baseline_ms,candidate_ms");
                 for(int loadRound=-1;loadRound<Integer.getInteger("cmi.model.load.rounds",3);loadRound++){
                     double[] costs=new double[2];
@@ -530,7 +531,7 @@ public final class ModelMergeGpuValidation {
                 if(benchmark)production.benchmark(originalDraw,candidateDraw,pack,productionCsv);
             }
             }finally{if(baselineGhost!=0)GL20.glDeleteProgram(baselineGhost);for(int p:productionBaseline)GL20.glDeleteProgram(p);for(int p:productionCandidate)GL20.glDeleteProgram(p);GL20.glDeleteProgram(candidateGhost);GL30.glBindVertexArray(vao);}
-            if(!R7&&!FEATHER&&g==null&&(!drawOptimization||ROUND2&&!benchmark))optionVariants(root,base,allay,ROUND2?delivered:compiler,ROUND2?deliveredBuild:build,inputs,alpha);
+            if(!PRODUCTION_DRAW&&!FEATHER&&g==null&&(!drawOptimization||ROUND2&&!benchmark))optionVariants(root,base,allay,ROUND2?delivered:compiler,ROUND2?deliveredBuild:build,inputs,alpha);
             packs++;System.out.println(pack+": original/candidate body+carrier stages and MRT differences passed");
             Files.write(output.resolve("compile.csv"),compilation);Files.write(output.resolve("draw.csv"),csv);
             Files.write(output.resolve("production.csv"),productionCsv);

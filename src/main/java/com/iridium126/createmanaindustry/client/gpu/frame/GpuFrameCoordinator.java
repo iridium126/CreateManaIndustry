@@ -29,6 +29,16 @@ public final class GpuFrameCoordinator {
         published=candidate;phase=Phase.PUBLISHED;
     }
     public void simulate() { advance(Phase.INPUT,Phase.SIMULATION); }
+    /** A display frame can borrow an already committed simulation without running it again. */
+    public Publication display(Publication source,int pool) {
+        return display(source,pool,source.commands(),source.counter(),source.permutation());
+    }
+    public Publication display(Publication source,int pool,int commands,int counter,int permutation) {
+        require(Phase.INPUT);
+        var display=new Publication(frame,source.generation(),pool,permutation,commands,
+                counter,source.population(),source.populationGeneration(),source.stormGeneration(),source.packageGeneration());
+        phase=Phase.CULL_SORT;publish(display);return display;
+    }
     public void generate() { advance(Phase.SIMULATION,Phase.GENERATION); }
     public void cullSort() { advance(Phase.GENERATION,Phase.CULL_SORT); }
 

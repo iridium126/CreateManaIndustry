@@ -3,6 +3,7 @@ gradle.projectsEvaluated {
     p.apply from: p.file('scripts/testing/common.gradle')
     p.configureCmiGameTests(name: 'allaystorm', sources: 'src/test/gametest/allaystorm/java',
             structure: 'storm_combat_test', size: 8, trickster: false)
+    p.neoForge.runs.gameTestServer.logLevel = org.slf4j.event.Level.INFO
     if (p.hasProperty('domeEvidence')) {
         p.tasks.named('runGameTestServer', JavaExec).configure {
             systemProperty 'cmi.dome.evidence', p.file(p.property('domeEvidence')).absolutePath

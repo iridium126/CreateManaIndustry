@@ -6,6 +6,7 @@ layout(std430,binding=2) readonly buffer PreviousState{vec4 entries[];} previous
 layout(std430,binding=3) buffer NextState{vec4 entries[];} nextState;
 layout(std430,binding=4) buffer Counter{uint live;uint spare;uint census;uint sorted;} counter;
 uniform uint uCount,uCapacity,uBudget;
+uniform uint uSimulationGeneration;
 #pragma cmi_include chunks/shared_fate_sampling.glsl
 void main(){
     uint available=min(uBudget,uCapacity-min(counter.live,uCapacity)),nodes=0u;
@@ -46,6 +47,10 @@ void main(){
         nextState.entries[sb+5u].w=jobs.entries[jb+5u].w;
         nextState.entries[sb+8u].x=jobs.entries[jb+8u].x;
         nextState.entries[sb+6u].w=jobs.entries[jb+6u].w;
+        nextState.entries[sb+9u].x=jobs.entries[jb+9u].x;
+        nextState.entries[sb+9u].z=uintBitsToFloat(uSimulationGeneration);
+        nextState.entries[sb+9u].w=jobs.entries[jb].w;
+        nextState.entries[sb+19u]=counts;
     }
     counter.live=offset;
 }

@@ -8,13 +8,13 @@ public final class GreatTrickParticleSpecs {
     public static EmitterSpec conjure() {
         return EmitterSpec.builder().shape(EmitterShape.POINT).speed(0,0).life(1,1)
                 .sizeOverLife(1,1,1).colors(new float[]{1,1,1,1}).glow(1)
-                .type(ParticleTypes.standard(ParticleTypes.Material.ADDITIVE))
+                .type(ParticleTypes.externalConjure())
                 .shaderColorMode(5).spawnStyle(8).build();
     }
     public static EmitterSpec ribbon(boolean alpha) {
         return EmitterSpec.builder().shape(EmitterShape.POINT).speed(0,0).life(0,0)
                 .sizeOverLife(1,1,1).colors(new float[]{1,1,1,1}).glow(1)
-                .type(ParticleTypes.standard(alpha?ParticleTypes.Material.ALPHA:ParticleTypes.Material.ADDITIVE))
+                .type(ParticleTypes.fateRibbon(alpha))
                 .shaderColorMode(5).spawnStyle(9).build();
     }
 }

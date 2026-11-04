@@ -35,7 +35,22 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     private final AllayAnimationGpu allayAnimation=new AllayAnimationGpu();
     private boolean allayAnimationRequested;
     public AllayAnimationGpu allayAnimation(){return allayAnimation;}
-    public void bindAllayAnimation(int program){allayAnimation.bindDraw(program);}
+    private int displayEmitter,displayAnimation;
+    private int displayPool,displayCommands,displayAdd,displayOpaque,displayPermutation,displayGroups;
+    private float displayAlpha=-1;
+    public void bindAllayAnimation(int program){if(displayAnimation!=0){org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uAllayAnimationEnabled"),1);org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"cmi_AllayAnimation"),15);int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);GL13.glActiveTexture(GL13.GL_TEXTURE15);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,displayAnimation);GL13.glActiveTexture(active);}else allayAnimation.bindDraw(program);if(displayAlpha>=0)org.lwjgl.opengl.GL41.glProgramUniform1f(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uAllayAnimationAlpha"),displayAlpha);}
+    public void displayFrozenInputs(int emitters,int animation){displayEmitter=emitters;displayAnimation=animation;beginBindings();}
+    public int particleDrawEmitterBufferId(){return displayEmitter!=0?displayEmitter:emitterSSBO;}
+    public void clearDisplayResources(){AllayFeatherGpu.INSTANCE.clearDisplay();com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu.INSTANCE.clearDisplay();displayEmitter=displayAnimation=0;displayPool=displayCommands=displayAdd=displayOpaque=displayPermutation=displayGroups=0;displayAlpha=-1;beginBindings();}
+    public void setDisplayResources(int pool,int commands,int add,int opaque,int permutation,int groups,float alpha){displayPool=pool;displayCommands=commands;displayAdd=add;displayOpaque=opaque;displayPermutation=permutation;displayGroups=groups;displayAlpha=alpha;beginBindings();}
+    public int particleDrawBufferId(){return displayPool!=0?displayPool:particleReadBufferId();}
+    public int displayPermutation(){return displayPermutation;}
+    public int previousParticleBufferId(){return particleSSBOs[1-readIndex];}
+    private net.minecraft.world.phys.Vec3 currentCameraOrigin=net.minecraft.world.phys.Vec3.ZERO,previousCameraOrigin=net.minecraft.world.phys.Vec3.ZERO;
+    public void commitCameraOrigin(net.minecraft.world.phys.Vec3 origin){previousCameraOrigin=currentCameraOrigin;currentCameraOrigin=origin;}
+    public net.minecraft.world.phys.Vec3 currentCameraOrigin(){return currentCameraOrigin;}
+    public net.minecraft.world.phys.Vec3 previousCameraOrigin(){return previousCameraOrigin;}
+    public int modelIndexCapacity(){return modelIndexCapacity;}
     public static final ParticleBuffers INSTANCE=new ParticleBuffers();
 
     public static final int VEC4_PER_PARTICLE = com.iridium126.createmanaindustry.client.particles.emitter.ParticleLayout.PARTICLE_VEC4;  // 4 vec4 = 16 floats
@@ -414,7 +429,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
             return false;
         }
         this.capacity = cap;
-        this.identitySSBO = createBuffer(4L + cap * 8L+8L*DAMAGE_QUEUE_CAP, null);
+        this.identitySSBO = createBuffer(4L + cap * 12L+8L*DAMAGE_QUEUE_CAP, null);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
                 GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (java.nio.IntBuffer) null);
         this.waveStampSSBO = -1; // stable Storm identities, allocated only on first contact query
@@ -555,7 +570,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
      * mean "fresh data"). Callers choose generation, this class owns buffers.
      */
     public void bindNewestPool(int binding) {
-        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.particleSSBOs[this.readIndex]);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, particleDrawBufferId());
     }
 
     public int capacity() {
@@ -606,7 +621,14 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
 
     /** Call after a full frame: the freshly written buffer becomes the next read source. */
     public void beginComputeFrame(){beginComputeFrame(0);}
-    public void beginComputeFrame(float dt) { beginBindings();if(allayAnimationRequested)allayAnimation.ensure(AllayAnimationGpu.CAPACITY);allayAnimation.beginFrame(dt);selectRenderFrame(1-this.readIndex);populationGenerations[1-readIndex]=-1; }
+    public int historyBufferId(){return identitySSBO;}
+    public int historyWordBase(){return 1+2*capacity+2*DAMAGE_QUEUE_CAP;}
+    public void beginComputeFrame(float dt) {
+        // Birth is the default for every producer. Compaction alone writes an edge.
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,identitySSBO);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,historyWordBase()*4L,capacity*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.IntBuffer)null);
+        beginBindings();if(allayAnimationRequested)allayAnimation.ensure(AllayAnimationGpu.CAPACITY);allayAnimation.beginFrame(dt);selectRenderFrame(1-this.readIndex);populationGenerations[1-readIndex]=-1; }
     public void bindModelMembers(int program){
         allayAnimation.bindCompute(program);
         org.lwjgl.opengl.GL41.glProgramUniform1ui(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uPopulationModelCapacity"),modelIndexCapacity);
@@ -623,7 +645,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     int candidatePopulationBuffer(){return populationSSBOs[1-readIndex];}
     public final ModelShadowGroups shadowGroups=new ModelShadowGroups();
     public void commitPopulation(long generation){populationGenerations[readIndex]=generation;shadowGroups.commit(readIndex,generation);}
-    public int shadowGroupsBuffer(long generation){return shadowGroups.buffer(readIndex,generation);}
+    public int shadowGroupsBuffer(long generation){return displayPool!=0?displayGroups:shadowGroups.buffer(readIndex,generation);}
     public void beginShadowGroups(int program,long generation,StormShadowSnapshot snapshot,float[] planes,net.minecraft.world.phys.Vec3 camera){shadowGroups.begin(program,1-readIndex,modelIndexCapacity,generation,snapshot,planes,camera);bound[ModelShadowGroups.BINDING]=-1;}
     public int populationBufferId(long generation){return populationGenerations[readIndex]==generation?populationSSBOs[readIndex]:0;}
     public long populationStorageBytes(){return populationSSBOs[0]>0?2L*(POPULATION_HEADER_BYTES+4L*(2L*modelIndexCapacity+stormIndexCapacity)):0;}
@@ -683,7 +705,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     }
 
     public void bindEmitters(int binding) {
-        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, this.emitterSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, binding, displayEmitter!=0?displayEmitter:this.emitterSSBO);
     }
 
     /** Advances the emit-command ring and returns the next buffer id. */
@@ -750,7 +772,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
             return;
         ensureMergedTbo(0, GL30.GL_R32F, this.modelGeoSSBO);
         ensureMergedTbo(1, GL30.GL_RGBA32F, poolReadBufferId);
-        ensureMergedTbo(2, GL30.GL_RGBA32F, this.emitterSSBO);
+        ensureMergedTbo(2, GL30.GL_RGBA32F, particleDrawEmitterBufferId());
         ensureMergedTbo(3, GL32.GL_RG32UI, permBufferId);
         for (int i = 0; i < 4; i++) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + baseUnit + i);
@@ -770,12 +792,12 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
 
     /** Binds the additive-permutation buffer at its fixed binding for keygen/draw. */
     public void bindOrderAdd() {
-        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, ORDERADD_BINDING, this.orderAddSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, ORDERADD_BINDING, displayAdd!=0?displayAdd:this.orderAddSSBO);
     }
 
     /** Binds the OPAQUE cutout-billboard permutation at its fixed binding. */
     public void bindOrderOpaque() {
-        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, ORDEROPAQUE_BINDING, this.orderOpaqueSSBO);
+        bindBase(GL43.GL_SHADER_STORAGE_BUFFER, ORDEROPAQUE_BINDING, displayOpaque!=0?displayOpaque:this.orderOpaqueSSBO);
     }
 
     /** Binds the static model geometry for the model draw pass (must be re-bound every frame — see {@link #unbindShaders()}). */
@@ -992,7 +1014,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
 
     /** Binds the wave-contact staging buffer at its fixed binding. */
     public void bindWaveContact() {
-        if(waveStampSSBO<0){waveStampSSBO=createBuffer(131072L*16,null);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.IntBuffer)null);clearWaveContactCount();}
+        if(waveStampSSBO<0){waveStampSSBO=createBuffer(68L*4,null);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.IntBuffer)null);clearWaveContactCount();}
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, WAVE_STAMP_BB, this.waveStampSSBO);
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, WAVECONTACT_BB, this.waveContactSSBO);
     }
@@ -1139,6 +1161,8 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     }
 
     public void bindIdentities(int program) {
+        org.lwjgl.opengl.GL41.glProgramUniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uHistoryEnabled"),1);
+        org.lwjgl.opengl.GL41.glProgramUniform1ui(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uHistoryBase"),historyWordBase());
         if(com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uModelMembersEnabled")>=0)bindModelMembers(program);
         else if(com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uAllayAnimationWriteEnabled")>=0)allayAnimation.bindCompute(program);
         if(uniforms==null)uniforms=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
@@ -1196,7 +1220,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     }
 
     public void bindDrawIndirect() {
-        GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, this.indirectSSBO);
+        GL30.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER, displayCommands!=0?displayCommands:this.indirectSSBO);
     }
 
     /** Draws draw-command {@code cmd} (offset in the indirect buffer). */
@@ -1251,6 +1275,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     }
 
     public void free() {
+        clearDisplayResources();
         if (this.modelIndexBuffer > 0) {
             // detach the element binding from the VAO before deleting (the
             // ELEMENT_ARRAY binding is VAO state)

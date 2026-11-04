@@ -25,6 +25,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
     private final Set<StormCollisionPages.Section> requests=new LinkedHashSet<>();
     private final Set<StormCollisionPages.Section> prewarmKeys=new LinkedHashSet<>();
     private final Set<Integer> armedPrograms=new HashSet<>();
+    private int displayBuffer;
     private int bank,candidate,featherId=-1,goldId=-1,spawn,goldSpawn,frames;
     private long generation,lastCreationGeneration,lastGoldCreationGeneration;
     private double remainder,candidateRemainder,goldRemainder,candidateGoldRemainder;
@@ -174,13 +175,21 @@ public final class AllayFeatherGpu implements AutoCloseable {
             StormCollisionRuntime.retainFeathers(requests,80);
         }
     }
+    public void publishDisplay(int program,int display){
+        displayBuffer=display;nativeDrawn=false;
+        GL41.glProgramUniform1i(program,loc(program,"uFeatherEnabled"),hasFeathers()?1:0);
+        GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,BINDING,display,0,BYTES);
+    }
+    public void clearDisplay(){displayBuffer=0;nativeDrawn=false;}
+    private int drawBuffer(){return displayBuffer!=0?displayBuffer:buffer();}
+    private long drawOffset(){return displayBuffer!=0?0:offset(bank);}
     public void drawMerged(int program){
         if(!mayFeathers||state[bank]==0)return;var gpu=ParticleBuffers.INSTANCE;
-        gpu.bindMergedTbos(10,gpu.particleReadBufferId(),buffer());setIntUniform(program,"cmi_FeatherWordBase",state[bank]);gpu.bindVao();
+        gpu.bindMergedTbos(com.iridium126.createmanaindustry.client.particles.shaderpack.ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleDrawBufferId(),drawBuffer());setIntUniform(program,"cmi_FeatherWordBase",displayBuffer!=0?0:state[bank]);gpu.bindVao();
         Camera camera=Minecraft.getInstance().gameRenderer.getMainCamera();camera(program,camera);
         setIntUniform(program,"cmi_FeatherPass",1);setIntUniform(program,"cmi_LodPass",0);
-        try{GL11.glDisable(GL11.GL_CULL_FACE);GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,buffer());
-            GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,offset(bank)+11L*4);nativeDrawn=true;
+        try{GL11.glDisable(GL11.GL_CULL_FACE);GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,drawBuffer());
+            GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,drawOffset()+11L*4);nativeDrawn=true;
         }finally{setIntUniform(program,"cmi_FeatherPass",0);GL11.glEnable(GL11.GL_CULL_FACE);}
     }
     private static void camera(int program,Camera camera){
@@ -191,13 +200,13 @@ public final class AllayFeatherGpu implements AutoCloseable {
     public void draw(long frameGeneration,Matrix4fc view,Matrix4fc projection,Camera camera){
         if(nativeDrawn||!mayFeathers||generation!=frameGeneration||state[bank]==0)return;
         int p=ParticlePrograms.INSTANCE.featherRender();GL20.glUseProgram(p);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,ParticleBuffers.INSTANCE.particleReadBufferId());GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,20,buffer(),offset(bank),BYTES);
+        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,ParticleBuffers.INSTANCE.particleDrawBufferId());GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,20,drawBuffer(),drawOffset(),BYTES);
         setMat4Uniform(p,"ModelViewMat",view);setMat4Uniform(p,"ProjMat",projection);var pos=camera.getPosition();setFloatUniform(p,"uCamPos",(float)pos.x,(float)pos.y,(float)pos.z);camera(p,camera);
         ParticleAtlas.ALLAY.bind(1);setIntUniform(p,"uSprite",1);setIntUniform(p,"uMode",1);setFloatUniform(p,"uFadeDist",ClientConfig.particleFadeDistance);
         com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();com.mojang.blaze3d.systems.RenderSystem.depthMask(true);com.mojang.blaze3d.systems.RenderSystem.disableBlend();GL11.glDisable(GL11.GL_CULL_FACE);
-        ParticleBuffers.INSTANCE.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,buffer());GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,offset(bank)+11L*4);GL11.glEnable(GL11.GL_CULL_FACE);
+        ParticleBuffers.INSTANCE.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,drawBuffer());GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,drawOffset()+11L*4);GL11.glEnable(GL11.GL_CULL_FACE);
     }
-    public void reset(){StormCollisionRuntime.releaseFeathers();surface.reset();mayFeathers=mayGold=manual=manualGold=enabled=candidateBirth=candidateGoldBirth=nativeDrawn=false;spawn=goldSpawn=0;remainder=candidateRemainder=goldRemainder=candidateGoldRemainder=0;lastCreationGeneration=lastGoldCreationGeneration=generation=0;warmRadius=-1;prewarmTick=Long.MIN_VALUE;frames=0;world=null;warmX=warmY=warmZ=warmLow=Integer.MAX_VALUE;prewarmKeys.clear();requests.clear();}
+    public void reset(){clearDisplay();StormCollisionRuntime.releaseFeathers();surface.reset();mayFeathers=mayGold=manual=manualGold=enabled=candidateBirth=candidateGoldBirth=nativeDrawn=false;spawn=goldSpawn=0;remainder=candidateRemainder=goldRemainder=candidateGoldRemainder=0;lastCreationGeneration=lastGoldCreationGeneration=generation=0;warmRadius=-1;prewarmTick=Long.MIN_VALUE;frames=0;world=null;warmX=warmY=warmZ=warmLow=Integer.MAX_VALUE;prewarmKeys.clear();requests.clear();}
     @Override public void close(){state[0]=state[1]=0;reset();armedPrograms.clear();featherId=goldId=-1;surface.close();}
     private static void barrier(){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);}
 }

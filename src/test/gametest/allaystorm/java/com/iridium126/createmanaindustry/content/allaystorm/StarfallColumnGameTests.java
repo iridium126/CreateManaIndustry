@@ -105,8 +105,9 @@ public final class StarfallColumnGameTests {
         h.assertTrue(f.hit(f.other),"Armored bloom contact rejected");float health=f.other.getHealth();
         h.assertTrue(health>13&&health<20,"Vanilla armor did not reduce bloom damage");
         float now=StarfallColumns.clock(h.getLevel().getGameTime());
-        // A distinct member is admitted independently; vanilla i-frames suppress its equal damage.
-        h.assertTrue(f.hit(f.other,1,now,f.contact,f.packet.epoch()),"Second member not admitted");
+        // Batch settlement remains once per target even after vanilla i-frames expire.
+        f.other.invulnerableTime=0;
+        h.assertTrue(!f.hit(f.other,1,now,f.contact,f.packet.epoch()),"Second member settled the same attack twice");
         h.assertTrue(f.other.getHealth()==health,"Concurrent members bypassed vanilla i-frames");h.succeed();
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40)

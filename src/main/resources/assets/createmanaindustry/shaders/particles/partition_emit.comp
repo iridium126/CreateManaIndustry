@@ -2,6 +2,9 @@ layout(local_size_x=64) in;
 layout(std430,binding=0) readonly buffer Inputs {vec4 data[];} inputs;
 layout(std430,binding=1) readonly buffer Jobs {vec4 data[];} jobs;
 layout(std430,binding=5) buffer OutputPool {vec4 data[];} particles;
+layout(std430,binding=6) readonly buffer PreviousJobs {vec4 data[];} previousJobs;
+uniform bool uHistoryConsecutive;
+#pragma cmi_include chunks/external_history.glsl
 uniform uint uEmitter;
 uniform float uFadeDistance,uViewportHeight;
 uniform mat4 uView,uProjection;
@@ -14,6 +17,11 @@ void main(){
     float age=stopping?timing.x-timing.y:timing.x;
     float envelope=glowAt(age,timing.z>.5)*(stopping?1.0-smoothstep(0.0,.8,timing.y):1.0);
     uint count=floatBitsToUint(jobs.data[base+2u].w),offset=floatBitsToUint(jobs.data[base+1u].w);
+    uint previousDomain=floatBitsToUint(inputs.data[domain*4u+3u].w);
+    uint previousBase=(previousDomain*18u+idx%18u-18u)*4u;
+    bool history=uHistoryConsecutive&&previousDomain>0u&&previousBase+3u<uint(previousJobs.data.length());
+    uint previousCount=history?floatBitsToUint(previousJobs.data[previousBase+2u].w):0u;
+    uint previousOffset=history?floatBitsToUint(previousJobs.data[previousBase+1u].w):0u;
     for(uint i=gl_LocalInvocationID.x;i<count;i+=64u){
         float key=timing.w+float(idx%18u)*71.7+float(i)*1.37;
         vec2 uv=edge?vec2((float(i)+.5)/float(count),0):vec2((float(i)+.5)/float(count),fract(float(i)*.61803398875));
@@ -29,5 +37,6 @@ void main(){
         particles.data[dst]=vec4(pos,diameter);particles.data[dst+1u]=vec4(0,0,0,hash(key+5.0)*6.2831853);
         particles.data[dst+2u]=vec4(color,envelope*fade*highlight*(edge?.65:.07));
         particles.data[dst+3u]=vec4(0,0,key,uintBitsToFloat(uEmitter));
+        cmiExternalHistory(offset+i,history&&i<previousCount?previousOffset+i+1u:0u);
     }
 }

@@ -18,8 +18,8 @@ public final class PartitionClient {
     private static final Map<UUID,Field> FIELDS=new LinkedHashMap<>();
     private static final List<ClientboundPartitionPacket> PENDING=new ArrayList<>();
     private PartitionClient(){}
-    public static float now(){return (System.nanoTime()-START)*1e-9f;}
-    private static final long START=System.nanoTime();
+    private static final com.iridium126.createmanaindustry.client.particles.engine.ParticleEffectClock CLOCK=new com.iridium126.createmanaindustry.client.particles.engine.ParticleEffectClock();
+    public static float now(){return CLOCK.now();}
     public static void install(){ClientboundPartitionPacket.installClientHandler(PartitionClient::receive);net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(PartitionClient::tick);net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingOut e)->clear());}
     public static void clear(){if(level!=null)PartitionCollision.clear(level);level=null;FIELDS.clear();PENDING.clear();}
     private static void tick(ClientTickEvent.Post event) {
