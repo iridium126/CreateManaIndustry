@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms;
@@ -34,33 +36,33 @@ public final class AllayAnimationGpu implements AutoCloseable {
         if(4L*CAPACITY>GL11.glGetInteger(GL31.GL_MAX_TEXTURE_BUFFER_SIZE))throw new IllegalStateException("Allay animation texture capacity");
         int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE),old=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER),storage=GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_BINDING);
         try{for(int i=0;i<2;i++){
-            buffers[i]=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffers[i]);
+            buffers[i]=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffers[i]);
             GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,(long)CAPACITY*BYTES,GL15.GL_DYNAMIC_DRAW);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);
             textures[i]=texture(buffers[i],GL30.GL_RGBA32UI);
-            allocators[i]=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,allocators[i]);
+            allocators[i]=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,allocators[i]);
             GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,ALLOCATOR_WORDS*4L,GL15.GL_DYNAMIC_DRAW);
             allocatorTextures[i]=texture(allocators[i],GL30.GL_R32UI);
         }allocated=true;resetAllocators();}catch(RuntimeException|Error failure){close();throw failure;}
-        finally{GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,old);GL13.glActiveTexture(active);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,storage);}
+        finally{GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,old);GL13.glActiveTexture(active);GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,storage);}
     }
     private static int texture(int buffer,int format){int texture=GL11.glGenTextures();GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,texture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,format,buffer);return texture;}
     private void resetAllocators(){
         IntBuffer initial=BufferUtils.createIntBuffer(ALLOCATOR_WORDS);
         for(int i=FREE;i<ROOT;i++)initial.put(i,-1);initial.put(ROOT,255);
-        for(int buffer:allocators){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,initial);}
+        for(int buffer:allocators){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,initial);}
     }
     public void clear(){
-        if(allocated){barrier();for(int buffer:buffers){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);}resetAllocators();}
+        if(allocated){barrier();for(int buffer:buffers){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);}resetAllocators();}
         read=allocatorRead=0;time=candidateTime=0;tick=candidateTick=version=0;pending=tickPending=false;
     }
     public void beginFrame(float dt){
         pending=true;candidateTime=time+Math.max(0,dt);candidateTick=(long)Math.floor(candidateTime*20+1e-7);tickPending=candidateTick>tick;
     }
     public void prepareAllocator(int program){
-        if(!allocated)return;barrier();GL20.glUseProgram(program);
-        GL42.glBindImageTexture(1,allocatorTextures[allocatorRead],0,false,0,GL15.GL_READ_ONLY,GL30.GL_R32UI);
-        GL42.glBindImageTexture(3,allocatorTextures[1-allocatorRead],0,false,0,GL15.GL_WRITE_ONLY,GL30.GL_R32UI);
+        if(!allocated)return;barrier();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);
+        GpuBindings.image(1,allocatorTextures[allocatorRead],0,false,0,GL15.GL_READ_ONLY,GL30.GL_R32UI);
+        GpuBindings.image(3,allocatorTextures[1-allocatorRead],0,false,0,GL15.GL_WRITE_ONLY,GL30.GL_R32UI);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((ALLOCATOR_WORDS+63)/64,1,1);barrier();
     }
     public void commit(){if(!pending)return;if(allocated){allocatorRead=1-allocatorRead;if(tickPending){read=1-read;version++;}}time=candidateTime;if(tickPending)tick=candidateTick;pending=false;}
@@ -69,30 +71,29 @@ public final class AllayAnimationGpu implements AutoCloseable {
     /** Production binding, using the animation clock and allocator's own generation. */
     public void bindCompute(int program){
         bindCompute(program,read);
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uModelAllocatorEnabled"),allocated?1:0);
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uAllayAnimationClockEnabled"),1);
-        GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uAllayAnimationTick"),(int)candidateTick);
-        GL41.glProgramUniform1f(program,GpuUniforms.loc(program,"uAllayAnimationFraction"),(float)Math.clamp(candidateTime*20-candidateTick,0,1));
-        GL41.glProgramUniform1f(program,GpuUniforms.loc(program,"uAllayAnimationAlpha"),alpha());
-        if(allocated&&GpuUniforms.loc(program,"cmi_ModelAllocator")>=0)GL42.glBindImageTexture(3,allocatorTextures[1-allocatorRead],0,false,0,GL15.GL_READ_WRITE,GL30.GL_R32UI);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"uModelAllocatorEnabled"),allocated?1:0);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"uAllayAnimationClockEnabled"),1);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uAllayAnimationTick"),(int)candidateTick);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(program,GpuUniforms.loc(program,"uAllayAnimationFraction"),(float)Math.clamp(candidateTime*20-candidateTick,0,1));
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(program,GpuUniforms.loc(program,"uAllayAnimationAlpha"),alpha());
+        if(allocated&&GpuUniforms.loc(program,"cmi_ModelAllocator")>=0)GpuBindings.image(3,allocatorTextures[1-allocatorRead],0,false,0,GL15.GL_READ_WRITE,GL30.GL_R32UI);
     }
     /** Explicit-bank binding for standalone numerical oracles. */
     public void bindCompute(int program,int bank){
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uAllayAnimationWriteEnabled"),allocated?1:0);
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"cmi_AllayAnimationRead"),3);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"uAllayAnimationWriteEnabled"),allocated?1:0);
+        GpuUniforms.sampler(program,"cmi_AllayAnimationRead",com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_ANIMATION_READ);
         if(!allocated)return;
         boolean sample=GpuUniforms.loc(program,"cmi_AllayAnimationRead")>=0,write=GpuUniforms.loc(program,"cmi_AllayAnimationWrite")>=0,initialize=GpuUniforms.loc(program,"cmi_AllayAnimationInitial")>=0;
         if(sample||write||initialize)barrier();
-        if(sample){int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);GL13.glActiveTexture(GL13.GL_TEXTURE3);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,textures[bank]);GL13.glActiveTexture(active);}
-        if(write)GL42.glBindImageTexture(0,textures[1-bank],0,false,0,GL15.GL_READ_WRITE,GL30.GL_RGBA32UI);
-        if(initialize)GL42.glBindImageTexture(1,textures[bank],0,false,0,GL15.GL_READ_WRITE,GL30.GL_RGBA32UI);
+        if(sample)GpuBindings.texture(3,GL31.GL_TEXTURE_BUFFER,textures[bank]);
+        if(write)GpuBindings.image(0,textures[1-bank],0,false,0,GL15.GL_READ_WRITE,GL30.GL_RGBA32UI);
+        if(initialize)GpuBindings.image(1,textures[bank],0,false,0,GL15.GL_READ_WRITE,GL30.GL_RGBA32UI);
     }
-    public void bindDraw(int program){bindDraw(program,read);GL41.glProgramUniform1f(program,GpuUniforms.loc(program,"uAllayAnimationAlpha"),alpha());}
+    public void bindDraw(int program){bindDraw(program,read);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(program,GpuUniforms.loc(program,"uAllayAnimationAlpha"),alpha());}
     public void bindDraw(int program,int bank){
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uAllayAnimationEnabled"),allocated?1:0);
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"cmi_AllayAnimation"),15);
-        if(!allocated)return;barrier();int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
-        GL13.glActiveTexture(GL13.GL_TEXTURE15);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,textures[bank]);GL13.glActiveTexture(active);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"uAllayAnimationEnabled"),allocated?1:0);
+        GpuUniforms.sampler(program,"cmi_AllayAnimation",com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_ANIMATION_DRAW);
+        if(!allocated)return;barrier();GpuBindings.texture(15,GL31.GL_TEXTURE_BUFFER,textures[bank]);
     }
     @Override public void close(){for(int i=0;i<2;i++){
         if(textures[i]!=0)GpuObjectNames.deleteTexture(textures[i]);if(allocatorTextures[i]!=0)GpuObjectNames.deleteTexture(allocatorTextures[i]);

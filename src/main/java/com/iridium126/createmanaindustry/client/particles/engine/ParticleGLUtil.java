@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL15;
@@ -48,7 +50,7 @@ public final class ParticleGLUtil {
 
 
     public static void prepareClientUpload() {
-        GL30.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
+        GpuBindings.bind(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
         GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
         GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
         GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);

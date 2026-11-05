@@ -196,81 +196,14 @@ def lifecycle(args):
 
 
 def package(args):
-    baseline = ROOT / "build/particle-engine/baseline"
-    manifest = json.loads((baseline / "manifest.json").read_text(encoding="utf-8"))
-    for name, expected in manifest["files"].items():
-        if digest(baseline / name) != expected:
-            raise ValueError(f"Frozen baseline changed: {name}")
-    current_freeze = ROOT / 'build/particle-engine/rt-single-step-baseline'
-    current_manifest = current_freeze / 'manifest.json'
-    if current_manifest.is_file():
-        for name, expected in json.loads(current_manifest.read_text(encoding='utf-8'))['files'].items():
-            if digest(current_freeze / name) != expected:
-                raise ValueError(f'Frozen current candidate changed: {name}')
-    gradle(["writeParticlePackage"], args.output / "build")
-    artifact=Path(json.loads((args.output/"build/artifact.json").read_text(encoding="utf-8"))["jar"])
-    if not artifact.is_file() or not artifact.resolve().is_relative_to((ROOT/"build").resolve()):
-        raise ValueError(f"Invalid Gradle distribution artifact: {artifact}")
-    args.output.mkdir(parents=True, exist_ok=True)
-    current_rollback = current_freeze / 'rollback' / artifact.name
-    rollback = current_rollback if current_rollback.is_file() else next(p for p in baseline.glob('*.jar') if 'diagnostics' not in p.name)
-    files = {"mods/" + artifact.name: artifact, "rollback/" + artifact.name: rollback}
-    if not args.gl_only:
-        for name in ("CmiParticleRt.dll", "spatial.fatbin", "spatial.optixir"):
-            files["cmi-particle-rt/" + name] = args.modules / name
-    for name in ("particle-engine-dev.md", "particle-engine-performance.md", "particle-engine-install.md", "rt-single-step-status.md"):
-        files["docs/" + name] = ROOT / "docs" / name
-    files['docs/benchmarks/rt-single-step-2026-11-04.md'] = ROOT / 'docs/benchmarks/rt-single-step-2026-11-04.md'
-    for name in ('particle_tool.py', 'spatial_audit.py', 'topology_summary.py'):
-        files['analysis/' + name] = ROOT / 'scripts/particles' / name
-    for name in ("rt-single-step-verification.json","cleanup-dependencies.json","validation-preserved-tasks.json"):
-        path=ROOT/"build/particle-engine"/name
-        if path.exists(): files["evidence/"+name]=path
-    receipt = {"abi": 12, "default": "gl", "auto_rt_qualified": False,
-               "implementation_complete": False, "native_motion_owner": False, "online_rt_visibility": False,
-               "acceptance": "工程检查候选；核心迁移尚未完成；客户端实机验收由用户执行",
-               "files": {name: digest(path) for name, path in files.items()}}
-    target = args.output / "particle-engine-candidate.zip"
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name, path in files.items():
-            archive.write(path, name)
-        archive.writestr("manifest.json", json.dumps(receipt, ensure_ascii=False, indent=2))
-    write(args.output / "manifest.json", receipt)
-    previous_package = current_freeze / 'previous-client-package.zip'
-    with zipfile.ZipFile(args.output / 'particle-engine-rollback.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
-        rollback_files = {}
-        if previous_package.is_file():
-            with zipfile.ZipFile(previous_package) as previous:
-                for name in previous.namelist():
-                    if name.startswith('mods/') or (not args.gl_only and name.startswith('cmi-particle-rt/')):
-                        data = previous.read(name);archive.writestr(name, data);rollback_files[name] = hashlib.sha256(data).hexdigest()
-        else:
-            name = 'mods/' + artifact.name;archive.write(rollback, name);rollback_files[name] = digest(rollback)
-        archive.writestr('manifest.json', json.dumps({'scope': 'previous frozen candidate; restore matched modules together', 'files': rollback_files}, indent=2))
-    # Source and historical evidence are separate from the small install/rollback package.
-    source=args.output/"particle-engine-source.zip"
-    source_files=subprocess.check_output(["git","ls-files","-z","--cached","--others","--exclude-standard"],cwd=ROOT).decode("utf-8").split("\0")
-    with zipfile.ZipFile(source,"w",zipfile.ZIP_DEFLATED) as archive:
-        for name in source_files:
-            path=(ROOT/name).resolve()
-            if path.is_file() and path.is_relative_to(ROOT): archive.write(path,name)
-    evidence={"candidate-source.zip":source}
-    for path in baseline.iterdir():
-        if path.is_file(): evidence["frozen-baseline/"+path.name]=path
-    if current_freeze.is_dir():
-        for path in current_freeze.rglob('*'):
-            if path.is_file(): evidence['frozen-current-candidate/'+path.relative_to(current_freeze).as_posix()]=path
-    for path in (ROOT/"build/particle-engine").rglob("*"):
-        if not path.is_file() or path.is_relative_to(args.output.resolve()) or path.is_relative_to(baseline) or path.is_relative_to(current_freeze):continue
-        if path.suffix in (".json",".csv",".log") and path.stat().st_size<16<<20:
-            evidence["current/"+path.relative_to(ROOT/"build/particle-engine").as_posix()]=path
-    for path in (ROOT/"build/test-results/test").glob("TEST-*.xml"): evidence["junit/"+path.name]=path
-    evidence_receipt={"acceptance":"pending","files":{name:digest(path) for name,path in evidence.items()}}
-    with zipfile.ZipFile(args.output/"particle-engine-evidence.zip","w",zipfile.ZIP_DEFLATED) as archive:
-        for name,path in evidence.items(): archive.write(path,name)
-        archive.writestr("manifest.json",json.dumps(evidence_receipt,ensure_ascii=False,indent=2))
-    write(args.output/"evidence-manifest.json",evidence_receipt)
-    print(target.resolve())
+    """Build and audit the ordinary distribution; never produce alternate install ZIPs."""
+    gradle(["writeParticlePackage"], args.output)
+    artifact = Path(json.loads((args.output / "artifact.json").read_text(encoding="utf-8"))["jar"])
+    if not artifact.is_file() or not artifact.resolve().is_relative_to((ROOT / "build/libs").resolve()):
+        raise ValueError(f"Invalid distribution artifact: {artifact}")
+    subprocess.run([__import__("sys").executable, str(ROOT / "scripts/particles/audit_storm_package.py"), str(artifact)],
+                   cwd=ROOT, check=True)
+    print(artifact.resolve())
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -294,9 +227,6 @@ def main():
         elif name in ("bench", "analyze"):
             for label in ("a", "b") + (("aa",) if name == "analyze" else ()):
                 p.add_argument("--" + label, type=Path, nargs="+" if name == "analyze" else None, required=True)
-        else:
-            p.add_argument("--modules", type=Path, default=ROOT / ".gradle/particle-rt/build")
-            p.add_argument("--gl-only",action="store_true")
         if name in ("replay","bench"): p.add_argument("--samples",type=int,default=32)
     args = parser.parse_args()
     args.action(args)

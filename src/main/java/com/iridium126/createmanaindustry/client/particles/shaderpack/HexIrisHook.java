@@ -6,6 +6,7 @@ import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStat
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.accessor.*;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
+import com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms;
 import com.iridium126.createmanaindustry.client.hex.pattern.*;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.mojang.blaze3d.shaders.Uniform;
@@ -95,16 +96,16 @@ public final class HexIrisHook {
                 if(batch==null){status="native fallback: budget/bank";return;}
                 boolean applied=false;try{
                     com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0,at.petrak.hexcasting.client.render.VCDrawHelper.getWHITE());
-                    applied=true;shader.apply();int id=shader.getId();
+                    applied=true;GpuPrograms.applyExternal(shader);int id=shader.getId();
                     int white=mc.getTextureManager().getTexture(at.petrak.hexcasting.client.render.VCDrawHelper.getWHITE()).getId();
                     for(String name:new String[]{"gtexture","tex","texture0"}){int location=uniforms.location(id,name);if(location>=0){int unit=GL20.glGetUniformi(id,location);GL13.glActiveTexture(GL13.GL_TEXTURE0+unit);GL11.glBindTexture(GL11.GL_TEXTURE_2D,white);}}HexPatternService.bindBatch(batch,id);
                     var view=new Matrix4f(ShadowRenderer.MODELVIEW);var projection=new Matrix4f(ShadowRenderer.PROJECTION);
                     matrix(id,"iris_ModelViewMat",view);matrix(id,"iris_ProjMat",projection);matrix(id,"iris_ModelViewMatInverse",new Matrix4f(view).invert());matrix(id,"iris_ProjMatInverse",new Matrix4f(projection).invert());
                     matrix(id,"shadowModelView",view);matrix(id,"shadowModelViewInverse",new Matrix4f(view).invert());
-                    int cp=uniforms.location(id,"cameraPosition");if(cp>=0)GL20.glUniform3f(cp,(float)position.x,(float)position.y,(float)position.z);
+                    int cp=uniforms.location(id,"cameraPosition");if(cp>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current3f(cp,(float)position.x,(float)position.y,(float)position.z);
                     HexPassState.nativeState();if(tessellation)GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,3);batch.draw(tessellation);
                     if(!accepted.isEmpty())accepted.peek().addAll(owners);status="active: current-frame, "+batch.count()+" patterns";
-                }finally{if(applied)shader.clear();}
+                }finally{if(applied)GpuPrograms.clearExternal(shader);}
             }
         }catch(RuntimeException|LinkageError error){if(!accepted.isEmpty())accepted.peek().clear();status="native fallback: "+error;CreateManaIndustry.LOGGER.warn("[CMI Hex] Shadow batch failed",error);}
         finally{CapturedRenderingState.INSTANCE.setCurrentAlphaTest(alpha);ImmediateState.usingTessellation=oldTessellation;}

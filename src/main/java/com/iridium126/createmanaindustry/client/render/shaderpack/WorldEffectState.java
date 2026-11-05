@@ -32,7 +32,7 @@ public final class WorldEffectState implements AutoCloseable {
     public void close(){
         for(int i=0;i<6;i++){RenderSystem.activeTexture(GL13.GL_TEXTURE0+i);GL11.glBindTexture(GL11.GL_TEXTURE_2D,textures[i]);GL33.glBindSampler(i,samplers[i]);}
         RenderSystem.activeTexture(active);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,draw);GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);
-        GL20.glUseProgram(program);GL30.glBindVertexArray(vao);RenderSystem.viewport(viewport[0],viewport[1],viewport[2],viewport[3]);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);GL30.glBindVertexArray(vao);RenderSystem.viewport(viewport[0],viewport[1],viewport[2],viewport[3]);
         if(blend)RenderSystem.enableBlend();else RenderSystem.disableBlend();
         RenderSystem.blendFuncSeparate(src,dst,srcA,dstA);GL20.glBlendEquationSeparate(eq,eqA);
         if(depth)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();

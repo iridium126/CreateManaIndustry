@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.shaderpack;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.mixin.iris.ModelBlendStorageAccessor;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -17,7 +19,7 @@ final class ModelRenderState implements AutoCloseable {
     @Override public void close(){
         // The programs release their temporary lock before the MRT boundary
         // restores GL. Releasing it here would overwrite that restored GL state.
-        GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,indirect);GlStateManager._glUseProgram(program);
+        GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,indirect);GlStateManager._glUseProgram(program);
         RenderSystem.depthMask(mask);if(depth)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();
         net.irisshaders.iris.uniforms.CapturedRenderingState.INSTANCE.setCurrentAlphaTest(alpha);net.irisshaders.iris.vertices.ImmediateState.usingTessellation=tessellation;
         ModelBlendStorageAccessor.cmi$enabled(enabled);ModelBlendStorageAccessor.cmi$mode(blend);ModelBlendStorageAccessor.cmi$locked(locked);

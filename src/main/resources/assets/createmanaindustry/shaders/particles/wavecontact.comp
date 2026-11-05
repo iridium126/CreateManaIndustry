@@ -1,15 +1,5 @@
-// Wave-contact self-report detection (dive-wave AI, docs/allay-storm-ai.md §7).
-// Dispatched every frame while a wave is live: one thread per live pool
-// particle tests whether a wave-squad member in its pursuit window is touching
-// THIS client's local player. The GPU holds the exact positions, so the
-// contact lands on the visual moment with zero quantization delay; the result
-// rides the frame fence back and the runtime ships a
-// ServerboundStormWaveContactPacket (deduped per member per wave) for the
-// server to validate and adjudicate. The contact point is the member's world
-// position — the runtime re-frames it rel-to-center before sending, the same
-// reconstruction convention the melee hit reports use (+8 reach margin).
-// Cost: one distance test per member per live wave; only the handful of
-// members actually touching the player reach the atomic append.
+// One invocation per live Storm member. Attack stamps reduce contact with the
+// local moving target to one event per attack; auxiliary records carry state.
 layout(local_size_x = 64) in;
 #pragma cmi_include chunks/population_read.glsl
 
@@ -17,7 +7,7 @@ layout(std430, binding = BIND_POOL_WRITE) readonly buffer Pool { vec4 data[]; } 
 layout(std430, binding = BIND_COUNTER) readonly buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; } counter;
 layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } emitters;
 // {uint count; float entries[];} — entries begin at byte 4 (std430 stride 4).
-// Entry stride 5: {memberIdx, waveId, pos.xyz} (world space; Java reframes).
+// Production stride 6: {eventKind, waveId, worldPosition.xyz, sampleTime}.
 layout(std430, binding = BIND_WAVECONTACT) buffer WaveContactBuf { uint count; float entries[]; } result;
 
 layout(std430, binding = BIND_WAVE_STAMP) buffer WaveStamps { uint wave[]; } stamps;
@@ -32,6 +22,12 @@ uniform uint uLocalWaveMask;
 uniform bool uStormNavigationDiagnostics;
 uniform bool uDomePoseStorageEnabled;
 uniform vec3 uLocalPlayerPos; // local player aim point (feet + 0.5), world space
+uniform vec3 uLocalPlayerPrevious;
+uniform bool uLocalPlayerSweepEnabled;
+uniform bool uContactHistoryEnabled;
+uniform bool uContactMemberEvidence;
+uniform bool uContactTargetEnabled;
+uniform uint uContactBatchStamp;
 // uTimeSec / uWave / uWaveTarget are declared by chunks/allay_storm.glsl
 // (included below) next to the membership function that reads them
 
@@ -39,11 +35,80 @@ const float CONTACT_R = 1.6;
 
 // the membership test needs no pose math — the pose-free storm chunk suffices
 #pragma cmi_include chunks/allay_storm.glsl
+#pragma cmi_include chunks/storm_trajectory.glsl
 #pragma cmi_include chunks/dome_motion_budget.glsl
 #pragma cmi_include chunks/dome_path_state.glsl
 
 uniform bool uStormOuterEnabled;
 uniform uint uStormOuterData,uStormOuterArrivals;
+
+bool cmiContactPrevious(uint member,uint emitter,vec4 life,out uint slot,out vec4 position){
+ if(member>=uint(memberMap.slots.length()))return false;
+ uint encoded=floatBitsToUint(memberMap.slots[member]);
+ if(encoded==0u||encoded>previousCount.live||encoded>uint(previous.data.length())/4u)return false;
+ slot=(encoded-1u)*4u;
+ position=previous.data[slot];
+ vec4 oldLife=previous.data[slot+3u];
+ return cmiStarMember(position.w)==member&&oldLife.y>0.&&floatBitsToUint(oldLife.w)==emitter&&
+        floatBitsToUint(oldLife.z)==floatBitsToUint(life.z);
+}
+
+void cmiContactAppend(uint key,uint id,uint member,vec3 contact,float time){
+ if(uContactBatchStamp!=0u&&!uContactTargetEnabled)return;
+ // Production stamps are local to a candidate tick; a rolled-back tick
+ // cannot suppress a contact in the next committed batch.
+ uint stamp=uContactBatchStamp==0u?id:uContactBatchStamp;
+ if(key>=uint(stamps.wave.length())||atomicExchange(stamps.wave[key],stamp)==stamp)return;
+ uint index=atomicAdd(result.count,1u);
+ if(index>=WAVECONTACT_CAP){atomicCompSwap(stamps.wave[key],stamp,0u);return;}
+ uint stride=uStarfallEnabled?6u:5u,o=index*stride;
+ result.entries[o]=uContactMemberEvidence||!uContactHistoryEnabled?float(member):0.;
+ result.entries[o+1u]=float(id);
+ result.entries[o+2u]=contact.x;result.entries[o+3u]=contact.y;result.entries[o+4u]=contact.z;
+ if(uStarfallEnabled)result.entries[o+5u]=time<0.?time+104857.6:time;
+}
+
+vec3 cmiContactReference(uint assignment,bool dome,float seed,float alpha,vec3 fallback){
+ if(!dome)return cmiStarPoint(assignment,seed,uTimeSec+(alpha-1.)*uDt,fallback);
+ vec3 position,tangent;cmiDomeSampleOffset(assignment,(alpha-1.)*uDt,position,tangent);
+ return position;
+}
+vec3 cmiContactCurve(uint assignment,bool dome,float seed,float alpha,vec3 before,vec3 after,vec3 first,vec3 last){
+ vec3 position=mix(before,after,alpha);
+ return position+(cmiContactReference(assignment,dome,seed,alpha,position)-mix(first,last,alpha));
+}
+
+// Follow the same analytic reference as display, retaining the endpoint
+// corrections applied by the simulator. Chords produce candidates only;
+// report a contact only at a sample on the corrected curve.
+bool cmiContactCurvedHit(uint assignment,bool dome,float seed,vec3 before,vec3 after,
+                         vec3 targetBefore,vec3 targetAfter,vec2 interval,out float alpha,out vec3 position){
+ vec3 first=cmiContactReference(assignment,dome,seed,0.,before);
+ vec3 last=cmiContactReference(assignment,dome,seed,1.,after);
+ float previousTime=interval.x;
+ vec3 prior=cmiContactCurve(assignment,dome,seed,previousTime,before,after,first,last);
+ vec3 initial=prior-mix(targetBefore,targetAfter,previousTime);
+ if(dot(initial,initial)<=CONTACT_R*CONTACT_R){alpha=previousTime;position=prior;return true;}
+ for(int step=1;step<=8;step++){
+  float sampleTime=mix(interval.x,interval.y,float(step)*.125);
+  vec3 curvePoint=cmiContactCurve(assignment,dome,seed,sampleTime,before,after,first,last);
+  vec3 target0=mix(targetBefore,targetAfter,previousTime),target1=mix(targetBefore,targetAfter,sampleTime);
+  float nearest;
+  vec3 relative0=prior-target0,relative1=curvePoint-target1;
+  vec3 shortest=cmiContactClosest(relative0,relative1,vec3(0),vec2(0,1),nearest);
+  if(dot(shortest,shortest)<=CONTACT_R*CONTACT_R){
+   alpha=mix(previousTime,sampleTime,nearest);
+   position=cmiContactCurve(assignment,dome,seed,alpha,before,after,first,last);
+   vec3 difference=position-mix(targetBefore,targetAfter,alpha);
+   if(dot(difference,difference)<=CONTACT_R*CONTACT_R)return true;
+  }
+  vec3 end=curvePoint-target1;
+  if(dot(end,end)<=CONTACT_R*CONTACT_R){alpha=sampleTime;position=curvePoint;return true;}
+  previousTime=sampleTime;prior=curvePoint;
+ }
+ return false;
+}
+
 void main() {
     if(gl_GlobalInvocationID.x==0u&&uDomePoseStorageEnabled&&uStormNavigationDiagnostics)
       for(uint record=0u;record<2u;record++){
@@ -60,7 +125,7 @@ void main() {
       uint invocation=gl_GlobalInvocationID.x;
       if(invocation==0u&&uStormNavigationDiagnostics){uint o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=-11.;result.entries[o+1u]=0.;result.entries[o+2u]=float(CMI_STATE(state,CMI_DOME_PATH_CONTROL+10u));result.entries[o+3u]=float(CMI_STATE(state,CMI_DOME_PATH_CONTROL+9u));result.entries[o+4u]=float(CMI_STATE(state,CMI_DOME_PATH_CONTROL+24u));result.entries[o+5u]=float(CMI_STATE(state,CMI_DOME_PATH_CONTROL+25u));}o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=-12.;result.entries[o+1u]=0.;result.entries[o+2u]=uintBitsToFloat(CMI_STATE(state,CMI_DOME_PATH_CONTROL+11u));result.entries[o+3u]=float(CMI_STATE(state,CMI_DOME_PATH_CONTROL+8u));uint domain=cmiStarWord(0u);result.entries[o+4u]=float(domain&65535u);result.entries[o+5u]=float(domain>>16u);}}
 
-      if(invocation<4u){uint b=cmiStarBase(invocation),c=CMI_GATHER_COUNTS+invocation*4u;if(cmiHelix(b)&&cmiStarVec(b+20u).y<3.&&cmiStarVec(b).y<1.5&&cmiStarVec(b).x>.5){uint o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=-6.;result.entries[o+1u]=cmiStarVec(b).x;for(uint j=0u;j<4u;j++)result.entries[o+2u+j]=float(CMI_STATE(state,c+j));}}}
+      if(invocation<4u){uint b=cmiStarBase(invocation),c=CMI_GATHER_COUNTS+invocation*4u;if((cmiHelix(b)||cmiDome(b))&&cmiStarVec(b+20u).y<3.&&cmiStarVec(b).y<1.5&&cmiStarVec(b).x>.5){uint o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=-6.;result.entries[o+1u]=cmiStarVec(b).x;for(uint j=0u;j<4u;j++)result.entries[o+2u+j]=float(CMI_STATE(state,c+j));}}}
       if(invocation<4u){uint b=cmiStarBase(invocation),id=uint(cmiStarVec(b).x+.5);if(cmiDome(b)&&id>0u&&cmiStarVec(b).y<1.5&&cmiStarVec(b+20u).y<3.){
        uint revision=0u;for(uint f=0u;f<66u;f++){uint key=invocation*66u+f,at=CMI_DOME_FLOW_STATE+key*2u;float pause=uintBitsToFloat(cmiStarWord(CMI_DOME_FLOW_SOURCE+key*2u+1u));if(isinf(pause))pause=uintBitsToFloat(CMI_STATE(state,at+1u));if(CMI_STATE(state,at)==id&&!isinf(pause))revision++;}
        uint o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=-8.;result.entries[o+1u]=float(id);result.entries[o+2u]=float(revision);result.entries[o+3u]=0.;uint domain=cmiStarWord(0u);result.entries[o+4u]=float(domain&65535u);result.entries[o+5u]=float(domain>>16u);}
@@ -75,13 +140,14 @@ void main() {
       // Bitmaps come from the same committed frame as the aggregate. Never merge readiness across frames.
       for(uint word=invocation;word<1536u;word+=gl_NumWorkGroups.x*64u){uint slot=word/384u,b=cmiStarBase(slot),c=CMI_GATHER_COUNTS+slot*4u,eligible=CMI_STATE(state,c+1u),ready=CMI_STATE(state,c);
         bool gathered=cmiDomeGatherReady(ready,eligible,uTimeSec,cmiStarVec(b+4u).x,cmiStarVec(b+4u).y);
-        if(!cmiHelix(b)||cmiStarVec(b).x<.5||cmiStarVec(b).y>=1.5||cmiStarVec(b+20u).y>=3.||!gathered)continue;
+        if(cmiStarVec(b).x<.5||cmiStarVec(b).y>=1.5||cmiStarVec(b+20u).y>=3.||!gathered)continue;
         for(uint k=0u;k<2u;k++){uint bits=CMI_STATE(state,(k==0u?CMI_GATHER_READY:CMI_GATHER_ELIGIBLE)+word);if(bits==0u)continue;uint o=atomicAdd(result.count,1u);if(o<WAVECONTACT_CAP){o*=6u;result.entries[o]=k==0u?-4.:-5.;result.entries[o+1u]=cmiStarVec(b).x;result.entries[o+2u]=float(word-slot*384u);result.entries[o+3u]=float(bits&65535u);result.entries[o+4u]=float(bits>>16u);result.entries[o+5u]=uTimeSec;}}
       }
       for(uint word=invocation;word<CMI_COMPLETION_WORDS;word+=gl_NumWorkGroups.x*64u){uint bits=CMI_STATE(state,CMI_COMPLETIONS+word);if(bits==0u)continue;uint slot=word<1536u?word/384u:4u+(word-1536u)/2u,b=cmiStarBase(slot),id=uint(cmiStarVec(b).x+.5);if(id==0u||cmiStarVec(b).y>2.5)continue;
         uint outIndex=atomicAdd(result.count,1u);if(outIndex<WAVECONTACT_CAP){uint o=outIndex*6u;result.entries[o]=-2.;result.entries[o+1u]=float(id);result.entries[o+2u]=float(word-cmiCompletionOffset(slot));result.entries[o+3u]=float(bits&65535u);result.entries[o+4u]=float(bits>>16u);result.entries[o+5u]=uTimeSec;}
       }
     }
+    if(uContactBatchStamp!=0u&&uLocalWaveMask==0u)return; // Aggregate diagnostics only.
     uint liveCount=min(counter.writeSlot,uint(pool.data.length())/VEC4_PER_PARTICLE),rank=gl_GlobalInvocationID.x;
     if(rank>=cmiPopulationCount(liveCount,true))return;
     uint idx=cmiPopulationSlot(rank,liveCount,true);if(idx>=liveCount)return;
@@ -119,21 +185,34 @@ void main() {
         uint recoveryArc=328128u+((cmiStarSlot(assignment)-4u)*64u+cmiStarRank(assignment))*CMI_COLUMN_ARC_WORDS;
         if(CMI_STATE(state,recoveryArc+CMI_COLUMN_RECOVER_GENERATION)==(uStormFrame|0x80000000u))return;
         uint slot=cmiStarSlot(assignment),b=cmiStarBase(slot),member=cmiStarMember(p0.w),id=uint(cmiStarVec(b).x+.5);
-        if((uLocalWaveMask&16u)==0u||cmiStarClaim(p0.w,uTimeSec)<0||member>=131072u)return;
-        if(CMI_STATE(state,member*2u)!=id||(CMI_STATE(state,member*2u+1u)&255u)!=4u)return;
-        float marker=pool.data[base+1u].w;if(marker> -1.||marker<= -2.)return;
+        if((uLocalWaveMask&16u)==0u||id==0u||cmiStarVec(b).y>=2.5||member>=131072u||CMI_STATE(state,member*2u)!=id)return;
         uint record=262592u+(slot-4u)*1024u;
-        if(distance(p0.xyz,uLocalPlayerPos)<32.&&atomicCompSwap(CMI_STATE(state,record+11u),0u,id)==0u){
+        uint motion=record+cmiStarRank(assignment)*16u;
+        float now=cmiStarTime(b,uTimeSec),begin=uintBitsToFloat(CMI_STATE(state,motion+1u)),release=uintBitsToFloat(CMI_STATE(state,motion+3u));
+        if(CMI_STATE(state,motion)!=id||begin<0.)return;
+        uint phase=CMI_STATE(state,member*2u+1u)&255u;
+        if(phase==4u&&distance(p0.xyz,uLocalPlayerPos)<32.&&atomicCompSwap(CMI_STATE(state,record+11u),0u,id)==0u){
             uint soundSlot=atomicAdd(result.count,1u);if(soundSlot<WAVECONTACT_CAP){
                 uint so=soundSlot*6u;result.entries[so]=-1.;result.entries[so+1u]=float(id);result.entries[so+2u]=p0.x;result.entries[so+3u]=p0.y;result.entries[so+4u]=p0.z;result.entries[so+5u]=uTimeSec;
             }
         }
-        vec3 landing=cmiStarLanding(b,0u).xyz;float radius=length(p0.xz-landing.xz);
-        if(radius>4.0001||distance(p0.xyz,uLocalPlayerPos)>CONTACT_R)return;
-        uint stamp=slot;if(stamp>=uint(stamps.wave.length())||atomicExchange(stamps.wave[stamp],id)==id)return;
-        uint contactSlot=atomicAdd(result.count,1u);if(contactSlot>=WAVECONTACT_CAP){atomicCompSwap(stamps.wave[stamp],id,0u);return;}
-        stamps.wave[stamp]=id;uint o=contactSlot*6u;
-        result.entries[o]=float(member);result.entries[o+1u]=float(id);result.entries[o+2u]=p0.x;result.entries[o+3u]=p0.y;result.entries[o+4u]=p0.z;result.entries[o+5u]=uTimeSec;return;
+        vec3 landing=cmiStarLanding(b,0u).xyz;
+        if(!uContactHistoryEnabled){
+            if(phase==4u&&length(p0.xz-landing.xz)<=4.0001&&distance(p0.xyz,uLocalPlayerPos)<=CONTACT_R)
+                cmiContactAppend(slot,id,member,p0.xyz,uTimeSec);
+            return;
+        }
+        float end=min(cmiStarVec(b+4u).w,release>=0.?release:cmiStarVec(b+4u).w);
+        vec2 interval;uint old;vec4 before;
+        if(!cmiContactInterval(now,uDt,begin,end,interval)||!cmiContactPrevious(member,eid,p3,old,before))return;
+        vec3 travel=p0.xyz-before.xyz;float maxTravel=6.*uDt+.015;
+        if(dot(travel,travel)>maxTravel*maxTravel)return;
+        vec3 targetBefore=uLocalPlayerSweepEnabled?uLocalPlayerPrevious:uLocalPlayerPos;
+        if(!cmiContactClipSphere(vec3(before.xz-landing.xz,0),vec3(p0.xz-landing.xz,0),4.0001,interval)||
+           !cmiContactClipSphere(before.xyz-targetBefore,p0.xyz-uLocalPlayerPos,CONTACT_R,interval))return;
+        float elapsed=now-uDt*(1.-interval.x);
+        if(elapsed<end)cmiContactAppend(slot,id,member,mix(before.xyz,p0.xyz,interval.x),uTimeSec-uDt*(1.-interval.x));
+        return;
     }
     for (uint k = 0u; k < 4u; k++) {
         if(uStarfallEnabled&&uLocalWaveMask!=0u&&(uLocalWaveMask&(1u<<k))==0u)continue;
@@ -146,39 +225,40 @@ void main() {
         if (uStarfallEnabled ? cmiStarAssignment(p0.w)==0u || cmiStarSlot(cmiStarAssignment(p0.w))!=k : !cmiStormWaveMember(p3.z, w.x, w.y))
             continue;
         uint member = (uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1u;
-        vec3 contact=p0.xyz;float hitTime=uTimeSec;
+        vec3 contact=p0.xyz,hitTarget=uLocalPlayerPos;float hitTime=uTimeSec;
         if(uStarfallEnabled){
-            uint b=cmiStarBase(k);if(member>=uint(memberMap.slots.length())||(CMI_STATE(state,member*2u+1u)&0x80000000u)!=0u)continue;
-            uint old= floatBitsToUint(memberMap.slots[member]);if(old==0u||old>previousCount.live||old>uint(previous.data.length())/4u)continue;
-            vec4 before=previous.data[(old-1u)*4u],beforeLife=previous.data[(old-1u)*4u+3u];
-            if(cmiStarMember(before.w)!=member||beforeLife.y<=0.||floatBitsToUint(beforeLife.w)!=eid||floatBitsToUint(beforeLife.z)!=floatBitsToUint(p3.z))continue;
-            vec3 segment=p0.xyz-before.xyz;uint ownerAssignment=cmiStarAssignment(p0.w);float distance2=dot(segment,segment),limit=max(max(length(pool.data[base+1u].xyz),length(previous.data[(old-1u)*4u+1u].xyz)),cmiDome(b)?CMI_DOME_MOTION_LIMIT(state,ownerAssignment,4u):cmiAttackSpeed(p0.w,uTimeSec,6.))*uDt+.01;
+            uint b=cmiStarBase(k);if(member>=131072u||(CMI_STATE(state,member*2u+1u)&0x80000000u)!=0u)continue;
+            uint old;vec4 before;if(!cmiContactPrevious(member,eid,p3,old,before))continue;
+            vec3 segment=p0.xyz-before.xyz;uint ownerAssignment=cmiStarAssignment(p0.w);float distance2=dot(segment,segment),limit=max(max(length(pool.data[base+1u].xyz),length(previous.data[old+1u].xyz)),cmiDome(b)?CMI_DOME_MOTION_LIMIT(state,ownerAssignment,4u):cmiAttackSpeed(p0.w,uTimeSec,6.))*uDt+.01;
             if(distance2>limit*limit)continue;
             vec4 times=cmiStarVec(b+4u);float now=cmiStarTime(b,uTimeSec),start=cmiStarLanding(b,cmiStarGroup(ownerAssignment)).w,end=cmiStarColumn(b,cmiStarGroup(ownerAssignment)).x;
             if(cmiDome(b)){if(cmiStarVec(b+20u).y<3.||cmiStarVec(b).y>2.5)continue;now=cmiDomeElapsed(b,uTimeSec);start=times.z-times.x;end=times.w-times.x;}
             else if(cmiHelix(b)){if(cmiStarVec(b+20u).y<3.||cmiStarVec(b).y>2.5)continue;start=times.y;end=times.w;}
             vec2 interval;if(!cmiContactInterval(now,uDt,start,end,interval))continue;
-            float alpha;if(!cmiContactHit(before.xyz,p0.xyz,uLocalPlayerPos,CONTACT_R,interval,alpha)||now-uDt*(1.-alpha)>=end)continue;
-            contact=mix(before.xyz,p0.xyz,alpha);hitTime=uTimeSec-uDt*(1.-alpha);
+            if(CMI_STATE(state,member*2u)!=uint(wt.w)||(CMI_STATE(state,member*2u+1u)&255u)<4u)continue;
+            vec3 targetBefore=uLocalPlayerSweepEnabled?uLocalPlayerPrevious:uLocalPlayerPos;
+            float alpha;
+            bool curved=uContactHistoryEnabled&&(cmiDome(b)||cmiHelix(b));
+            if(curved){
+                float nearest;
+                vec3 chord=cmiContactClosest(before.xyz-targetBefore,p0.xyz-uLocalPlayerPos,vec3(0),interval,nearest);
+                // The endpoint travel limit provides a broad-phase allowance.
+                // It does not authorize a contact; the corrected curve does.
+                float envelope=CONTACT_R+2.*limit;
+                if(dot(chord,chord)>envelope*envelope||!cmiContactCurvedHit(ownerAssignment,cmiDome(b),p3.z,before.xyz,p0.xyz,targetBefore,uLocalPlayerPos,interval,alpha,contact))continue;
+            }else{
+                if(!cmiContactMovingHit(before.xyz,p0.xyz,targetBefore,uLocalPlayerPos,CONTACT_R,interval,alpha))continue;
+                contact=mix(before.xyz,p0.xyz,alpha);
+            }
+            if(now-uDt*(1.-alpha)>=end)continue;
+            hitTime=uTimeSec-uDt*(1.-alpha);
+            hitTarget=mix(targetBefore,uLocalPlayerPos,alpha);
 
         }
-        vec3 d = contact - uLocalPlayerPos;
+        vec3 d = contact - hitTarget;
         if (dot(d, d) > CONTACT_R * CONTACT_R)
             continue;
-        if(uStarfallEnabled&&(member>=131072u||CMI_STATE(state,member*2u)!=uint(wt.w)||(CMI_STATE(state,member*2u+1u)&255u)<4u))continue;
-        uint stampIndex = k;
-        if (stampIndex >= uint(stamps.wave.length()) || atomicExchange(stamps.wave[stampIndex],uint(wt.w)) == uint(wt.w)) continue;
-        uint slot = atomicAdd(result.count, 1u);
-        if (slot >= WAVECONTACT_CAP){atomicCompSwap(stamps.wave[stampIndex],uint(wt.w),0u);return;}
-        stamps.wave[stampIndex] = uint(wt.w);
-        uint stride=uStarfallEnabled?6u:5u;
-        uint o = slot * stride;
-        result.entries[o + 0u] = float(uint(p0.w + 0.5) & MEMBER_IDX_MASK) - 1.0; // memberIdx
-        result.entries[o + 1u] = wt.w;       // waveId (float-exact counter value)
-        result.entries[o + 2u] = contact.x;
-        result.entries[o + 3u] = contact.y;
-        result.entries[o + 4u] = contact.z;
-        if(uStarfallEnabled)result.entries[o+5u]=hitTime;
+        cmiContactAppend(k,uint(wt.w),member,contact,hitTime);
         return; // one report per member thread
     }
 }

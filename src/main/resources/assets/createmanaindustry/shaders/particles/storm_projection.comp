@@ -1,0 +1,173 @@
+// Projects the native owner's sealed records into the existing GL model publication.
+layout(local_size_x=64) in;
+layout(std430,binding=BIND_POOL_READ) readonly buffer OldPool {vec4 data[];} oldPool;
+layout(std430,binding=BIND_POOL_WRITE) writeonly buffer NewPool {vec4 data[];} writeBuf;
+layout(std430,binding=BIND_EMITTER) readonly buffer Emitters {vec4 u[];} emitters;
+layout(std430,binding=BIND_COUNTER) buffer Counter {
+    uint writeSlot,spare,translucentCensus,sortItems;
+} counter;
+layout(std430,binding=BIND_PREV_COUNTER) readonly buffer PreviousCount {uint live;} previous;
+struct NativeMember {
+    vec4 position,previous,velocity,appearance;
+    uvec4 key;
+};
+layout(std430,binding=CMI_RESOURCE_STORM_PROJECTION_INPUT_BINDING) readonly buffer NativePublication {
+    uvec4 header;
+    uvec2 sequence,tick,identity;
+    uint ready;
+    uint reserved[5];
+    uvec4 rows[];
+} nativeFrame;
+layout(std430,binding=CMI_RESOURCE_STORM_PROJECTION_DISPATCH_BINDING) buffer NativeDispatch {uint groups,y,z;} nativeDispatch;
+layout(std430,binding=CMI_RESOURCE_STORM_PROJECTION_MAP_BINDING) buffer ProjectionMap {uvec4 rows[];} mapping;
+layout(std430,binding=BIND_MEMBERMAP) buffer Members {float rows[];} memberMap;
+layout(std430,binding=CMI_RESOURCE_STORM_PROJECTION_STATE_READ_BINDING) readonly buffer PriorStormPose {uint words[];} priorPose;
+layout(std430,binding=CMI_RESOURCE_STORM_PROJECTION_STATE_WRITE_BINDING) writeonly buffer NextStormPose {uint words[];} nextPose;
+uniform uint uCapacity,uPhase,uProjectionStamp,uEmitter;
+uniform bool uProjectionPresent,uProjectionReuse,uProjectionContinuous;
+uniform bool uProjectionPoseReady;
+uniform float uProjectionPoseStep;
+uniform uvec2 uProjectionSequence,uProjectionTick,uProjectionIdentity,uProjectionShown;
+#pragma cmi_include chunks/population_read.glsl
+#pragma cmi_include chunks/particle_identity.glsl
+#pragma cmi_include chunks/allay_animation_state.glsl
+#define CMI_MODEL_APPEND
+#pragma cmi_include chunks/model_members_write.glsl
+#pragma cmi_include chunks/pool_reservation.glsl
+#pragma cmi_include chunks/storm_home.glsl
+#pragma cmi_include chunks/death_spawn.glsl
+#pragma cmi_include chunks/dome_pose_math.glsl
+
+bool validNativeFrame(){
+    uint columns=uint(CMI_RESOURCE_STORM_COLUMN_SLOTS*CMI_RESOURCE_STORM_COLUMN_MEMBERS*CMI_RESOURCE_STORM_DISPLAY_COLUMN_BYTES/16);
+    return uProjectionPresent&&nativeFrame.ready==1u&&nativeFrame.header.x==uint(CMI_RESOURCE_STORM_DISPLAY_MAGIC)
+        &&nativeFrame.header.y==uint(CMI_RESOURCE_ABI)&&nativeFrame.header.z<=nativeFrame.header.w
+        &&uint(nativeFrame.rows.length())>=columns
+        &&nativeFrame.header.w<=(uint(nativeFrame.rows.length())-columns)/5u&&nativeFrame.sequence==uProjectionSequence
+        &&nativeFrame.tick==uProjectionTick&&nativeFrame.identity==uProjectionIdentity;
+}
+void previousMember(uint rank){
+    if(!cmiPopulationIndexed(previous.live,true)||rank>=populationRead.stormCount)return;
+    uint slot=cmiPopulationSlot(rank,previous.live,true);
+    if(slot>=previous.live||slot>=uint(oldPool.data.length())/4u)return;
+    uint member=(uint(oldPool.data[slot*4u].w+.5)&MEMBER_IDX_MASK)-1u;
+    if(member>=uint(mapping.rows.length()))return;
+    uint animation=cmiPopulationStormAnimation(rank);
+    if(uPhase==0u){
+        mapping.rows[member]=uvec4(animation+1u,slot+1u,uProjectionStamp,0u);
+        if(member<uint(memberMap.rows.length()))memberMap.rows[member]=uintBitsToFloat(slot+1u);
+    }else if(mapping.rows[member].z==uProjectionStamp&&mapping.rows[member].w==0u){
+        cmiModelRetire(animation);
+    }
+}
+void publishColumn(NativeMember record){
+    uint slot=(record.key.w>>uint(CMI_RESOURCE_STORM_DISPLAY_SLOT_SHIFT))&63u;
+    uint rank=record.key.z;
+    uint index=slot*uint(CMI_RESOURCE_STORM_COLUMN_MEMBERS)+rank;
+    if(slot>=uint(CMI_RESOURCE_STORM_COLUMN_SLOTS)||rank>=uint(CMI_RESOURCE_STORM_COLUMN_MEMBERS))return;
+    uint source=nativeFrame.header.w*5u+index*uint(CMI_RESOURCE_STORM_DISPLAY_COLUMN_BYTES/16);
+    uint state=CMI_COLUMN_STATE_BASE+index*16u,arc=CMI_COLUMN_ARC_BASE+index*CMI_COLUMN_ARC_WORDS;
+    if(arc+CMI_COLUMN_ARC_WORDS>uint(nextPose.words.length()))return;
+    uvec4 key=nativeFrame.rows[source+2u];
+    nextPose.words[state]=key.x==record.key.y?key.x:0u;
+    if(key.x==0u||key.x!=record.key.y)return;
+    uvec4 origin=nativeFrame.rows[source],direction=nativeFrame.rows[source+1u];
+    nextPose.words[state+15u]=origin.w;
+    nextPose.words[arc+CMI_COLUMN_PHASE]=key.y;
+    if(key.y==4u){
+        nextPose.words[arc+CMI_COLUMN_BLOOM_RADIUS]=direction.w;
+        nextPose.words[arc+CMI_COLUMN_BLOOM_ANGLE]=key.z;
+    }else if(key.y==2u){
+        for(uint axis=0u;axis<3u;axis++){
+            nextPose.words[arc+CMI_COLUMN_ORIGIN+axis]=origin[axis];
+            nextPose.words[arc+CMI_COLUMN_DIRECTION+axis]=direction[axis];
+        }
+        uint knots=source+uint(CMI_RESOURCE_STORM_DISPLAY_COLUMN_ARC_OFFSET/16);
+        for(uint node=0u;node<uint(CMI_RESOURCE_STORM_DISPLAY_COLUMN_ARC_NODES);node++){
+            uint offset=node<33u?node:node+15u;
+            nextPose.words[arc+offset]=nativeFrame.rows[knots+node/4u][node&3u];
+        }
+    }
+}
+void publishPose(uint member,NativeMember record,bool stable){
+    if(!uProjectionPoseReady||member*2u+1u>=uint(nextPose.words.length()))return;
+    uint phase=(record.key.w>>uint(CMI_RESOURCE_STORM_DISPLAY_PHASE_SHIFT))&15u;
+    uint kind=(record.key.w>>uint(CMI_RESOURCE_STORM_DISPLAY_KIND_SHIFT))&15u;
+    uint actual=phase==3u?4u:phase==4u?6u:phase;
+    uint base=member*2u;
+    nextPose.words[base]=record.key.y;
+    nextPose.words[base+1u]=actual|((record.key.w&uint(CMI_RESOURCE_STORM_DISPLAY_TERRAIN_CLIPPED))!=0u?0x80000000u:0u);
+    if(kind==3u)publishColumn(record);
+    uint at=CMI_DOME_POSE+base;
+    if(at+1u>=uint(nextPose.words.length()))return;
+    uint flags=stable?priorPose.words[at+1u]:0u;
+    bool previousPose=(flags&0x80000000u)!=0u;
+    bool dome=kind==1u&&phase!=0u;
+    if(!dome&&!previousPose){nextPose.words[at+1u]=0u;return;}
+    vec3 motion=record.velocity.xyz;
+    float speed=length(motion),yaw=length(motion.xz)>.05?atan(motion.x,motion.z):-cmiHash1(record.appearance.w*3.7)*6.28318530718;
+    vec2 angles=previousPose?cmiDomeUnpackPose(priorPose.words[at]):
+        vec2(yaw,speed>.0001?asin(clamp(motion.y/speed,-1.,1.)):0.);
+    if(previousPose)angles=cmiDomeAdvancePose(angles,motion,uProjectionPoseStep);
+    float carry=dome&&phase==3u&&record.velocity.w< -3.5&&record.velocity.w> -4.5?1.:0.;
+    if(previousPose){
+        float blend=1.-exp(-uProjectionPoseStep/.12);
+        carry=mix(float(flags&65535u)/65535.,carry,blend);
+        speed=mix(float((flags>>16u)&32767u)*(64./32767.),speed,blend);
+    }
+    float yawDifference=abs(atan(sin(angles.x-yaw),cos(angles.x-yaw)));
+    bool keep=record.appearance.x>0.&&(dome||carry>.001||yawDifference>.01);
+    nextPose.words[at]=cmiDomePackPose(angles);
+    nextPose.words[at+1u]=(keep?0x80000000u:0u)|uint(round(carry*65535.))|
+        (uint(round(clamp(speed/64.,0.,1.)*32767.))<<16u);
+}
+void main(){
+    uint i=gl_GlobalInvocationID.x;
+    if(uPhase==0u||uPhase==3u){previousMember(i);return;}
+    if(uPhase==1u){
+        if(i==0u){
+            nativeDispatch.groups=validNativeFrame()?(nativeFrame.header.z+63u)/64u:0u;
+            nativeDispatch.y=1u;nativeDispatch.z=1u;
+        }
+        return;
+    }
+    if(i>=nativeFrame.header.z)return;
+    uint inputAt=i*5u;
+    NativeMember record=NativeMember(uintBitsToFloat(nativeFrame.rows[inputAt]),uintBitsToFloat(nativeFrame.rows[inputAt+1u]),
+        uintBitsToFloat(nativeFrame.rows[inputAt+2u]),uintBitsToFloat(nativeFrame.rows[inputAt+3u]),nativeFrame.rows[inputAt+4u]);
+    uint member=record.key.x;
+    if(member>=uint(mapping.rows.length()))return;
+    if((record.key.w&uint(CMI_RESOURCE_STORM_DISPLAY_POOF))!=0u){
+        uint lo=floatBitsToUint(record.position.w),hi=floatBitsToUint(record.previous.w);
+        if(hi>uProjectionShown.y||(hi==uProjectionShown.y&&lo>uProjectionShown.x)){
+            spawnDeathPoof(uEmitter*VEC4_PER_EMITTER,vec4(record.position.xyz,float(member+1u)),
+                record.velocity,vec4(record.appearance.y,record.appearance.x,record.appearance.w,0.));
+        }
+        return;
+    }
+    uvec4 before=mapping.rows[member];
+    bool stable=uProjectionReuse&&before.z==uProjectionStamp&&before.x>0u;
+    uint animation=stable?before.x-1u:cmiModelAllocate();
+    if(animation>=CMI_MODEL_LIMIT)return;
+    uint slot=cmiReserveParticle();
+    if(slot>=uCapacity){
+        if(!stable)cmiModelRestore(animation);
+        return;
+    }
+    if(stable)mapping.rows[member].w=1u;
+    else {
+        cmiInitializeModelAnimation(animation,record.position.xyz,record.velocity.xyz,record.appearance.w);
+        if(uAllayAnimationCountWrites)imageAtomicAdd(cmi_ModelAllocator,0,2u);
+    }
+    if(stable&&uProjectionContinuous&&(record.key.w&uint(CMI_RESOURCE_STORM_DISPLAY_DISCONTINUITY|CMI_RESOURCE_STORM_DISPLAY_BIRTH))==0u){
+        cmiHistorySource=before.y-1u;
+        cmiHistoryContinue(slot);
+    }
+    publishPose(member,record,stable);
+    uint base=slot*4u;
+    writeBuf.data[base]=vec4(record.position.xyz,float(member+1u));
+    writeBuf.data[base+1u]=record.velocity;
+    writeBuf.data[base+2u]=vec4(1.,1.,1.,record.appearance.z);
+    writeBuf.data[base+3u]=vec4(record.appearance.y,record.appearance.x,record.appearance.w,uintBitsToFloat(uEmitter));
+    cmiModelAppend(slot,animation,true);
+}

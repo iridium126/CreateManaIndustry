@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.render;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
@@ -70,11 +72,11 @@ public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
             // Base bindings report SIZE=0: they follow future buffer resizes.
             // Passing these to BindBuffersRange is invalid and would lose that
             // behavior even if replaced with today's allocation size.
-            GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(ssbo));
+            GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(ssbo));
             for(int i=0;i<ssbo.length;i++)if(ssbo[i]!=0 && sizes[i]>0)
-                GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,i,ssbo[i],offsets[i],sizes[i]);
+                GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER,i,ssbo[i],offsets[i],sizes[i]);
         }
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,storage);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,storage);
         if(resources)for(int i=0;i<3;i++) {
             GL13.glActiveTexture(GL13.GL_TEXTURE0+i);GL11.glBindTexture(GL11.GL_TEXTURE_2D,textures[i]);
         }
@@ -83,7 +85,7 @@ public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
             GL13.glActiveTexture(GL13.GL_TEXTURE10+i);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,tbo[i]);
         }
         GL13.glActiveTexture(active);
-        GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,array);GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,indirect);
+        GL30.glBindVertexArray(vao);GpuBindings.bind(GL15.GL_ARRAY_BUFFER,array);GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,indirect);
         GL40.glPatchParameteri(GL40.GL_PATCH_VERTICES,patchVertices);
         if(cull)GL11.glEnable(GL11.GL_CULL_FACE);else GL11.glDisable(GL11.GL_CULL_FACE);
         if(depth)GL11.glEnable(GL11.GL_DEPTH_TEST);else GL11.glDisable(GL11.GL_DEPTH_TEST);
@@ -93,6 +95,6 @@ public final class PackageRenderState implements GpuBufferRetirement.Snapshot {
             GL40.glBlendFuncSeparatei(i,blend[i][0],blend[i][1],blend[i][2],blend[i][3]);
             GL40.glBlendEquationSeparatei(i,blend[i][4],blend[i][5]);
         }
-        GL20.glUseProgram(program);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);
     }
 }

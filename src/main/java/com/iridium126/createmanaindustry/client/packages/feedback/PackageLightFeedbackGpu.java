@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.feedback;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import com.iridium126.createmanaindustry.client.packages.world.PackageCollisionCache;
 
@@ -24,16 +26,16 @@ public final class PackageLightFeedbackGpu implements AutoCloseable {
             ring=new PackageReadbackRing(PackageLightRequests.BYTES);
         }catch(RuntimeException failure){close();throw failure;}
     }
-    private static int buffer(long bytes){int b=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,b);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_DRAW);return b;}
+    private static int buffer(long bytes){int b=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,b);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_DRAW);return b;}
     /** Clear GPU counters, not CPU census. Shader/copy writes must finish before buffer updates. */
     public void begin() {
         open();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         try(MemoryStack stack=MemoryStack.stackPush()) {
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,winners);
+            GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,winners);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(-1));
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,requests);
+            GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,requests);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,PackageLightRequests.HEADER_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(ByteBuffer)null);
-            GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,9,stack.ints(missing,winners,requests));
+            GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,9,stack.ints(missing,winners,requests));
         }
     }
     /** Run the representative gather before this copy. A full ring does not acknowledge requests. */

@@ -44,7 +44,9 @@ public final class ClientGpuScene {
     private final ModelRenderPublication modelDisplay=new ModelRenderPublication();
     private com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator.Publication previousSimulation;
     private float displayTimeSec;
+    private long displayPublicationId=-1;
     public float displayTimeSec(){return displayTimeSec;}
+    public long displayPublicationId(){return displayPublicationId;}
 
     // Fixed owners keep independent clocks; this root sequences their render transaction.
     private long lastErrorTime = 0;
@@ -92,7 +94,6 @@ public final class ClientGpuScene {
     private final ParticleFrameLatch levelFrame = new ParticleFrameLatch();
     private final com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator frameCoordinator =
             new com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator();
-    private final GpuComputeState earlyComputeState = new GpuComputeState();
     private final GpuComputeState computeState = new GpuComputeState(false,true);
     private final org.joml.Matrix4f levelView = new org.joml.Matrix4f();
     private final org.joml.Matrix4f levelProjection = new org.joml.Matrix4f();
@@ -157,12 +158,7 @@ public final class ClientGpuScene {
         if(!ClientConfig.shaderPackIntegration||!dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse())return false;
         if(!levelFrame.claim())return preparedFrameReady();
         try {
-            earlyComputeState.capture();
-            try {
-                computeFrame(levelCamera, levelView, levelProjection, levelDelta);
-            } finally {
-                earlyComputeState.restore();
-            }
+            computeFrame(levelCamera,levelView,levelProjection,levelDelta);
         } catch (RuntimeException | LinkageError failure) {
             frameArmed = false;
             frameCoordinator.abort();
@@ -190,8 +186,11 @@ public final class ClientGpuScene {
     private void computeFrameInternal(Camera camera, Matrix4fc view, Matrix4fc projectionMatrix, DeltaTracker deltaTracker) {
         this.frameAttempted = false;
         this.frameArmed = false;
+        this.displayPublicationId = -1;
         this.frameCoordinator.abort();
         budgets.begin(renderFrameToken(),frameDetails);
+        com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.poll();
+        particles.pollCommittedAttackBatches();
         if(!ClientConfig.particleEnabled) { particles.clearParticles();return; }
         if(Minecraft.getInstance().level==null)return;
         ParticleBuffers.INSTANCE.clearDisplayResources();
@@ -213,7 +212,7 @@ public final class ClientGpuScene {
                 try{
                     if(work.hasWork()){
                         frameCoordinator.simulate();work.simulate();
-                        finishComputedFrame(work,camera,view,projectionMatrix,deltaTracker);
+                        finishComputedFrame(work);
                     }else frameCoordinator.abort();
                 }finally{if(work.committed()||!work.hasWork())simulationClock.commit(tick);work.close();}
             }
@@ -222,10 +221,13 @@ public final class ClientGpuScene {
                 float alpha=Boolean.getBoolean("cmi.particle.noInterpolation")?1:simulationClock.alpha();displayTimeSec=AllayStormRuntime.INSTANCE.timeSec()-.05f+alpha*.05f;
                 var display=modelDisplay.prepare(ParticleBuffers.INSTANCE,ParticlePrograms.INSTANCE,lastSimulation,previousSimulation,alpha,displayTimeSec,camera,view,projectionMatrix);
                 displayTimeSec=display.timeSec();
+                displayPublicationId=display.id();
+                com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.freezeDisplay(display.id());
                 frameCoordinator.display(lastSimulation,display.pool(),display.commands(),display.counter(),display.permutation());frameArmed=true;
-                ClientFrameCapture.INSTANCE.displayPublication(renderFrameToken(),lastSimulation.generation());
-                StormLodGpu.INSTANCE.prepare(particles.currentGeneration(),camera,view,projectionMatrix,deltaTracker.getGameTimeDeltaPartialTick(false));
+                ClientFrameCapture.INSTANCE.displayPublication(renderFrameToken(),display.id(),lastSimulation.generation());
+                StormLodGpu.INSTANCE.prepare(particles.currentGeneration(),camera,view,projectionMatrix,simulationClock.completedTick()-1,display.alpha());
                 StormLodGpu.INSTANCE.commit(particles.currentGeneration());
+                modelDisplay.captureCounts();
             }
             computeSucceeded=true;
         } catch (RuntimeException | LinkageError e) {
@@ -245,12 +247,11 @@ public final class ClientGpuScene {
             ParticleDiagnostics.INSTANCE.pauseCpu();
         }
     }
-    private void finishComputedFrame(ParticleRuntime.FrameCandidate work,Camera camera,Matrix4fc view,Matrix4fc projectionMatrix,DeltaTracker deltaTracker){
+    private void finishComputedFrame(ParticleRuntime.FrameCandidate work){
         frameCoordinator.generate();work.generate();frameCoordinator.cullSort();work.cullSort();
-        ParticleDiagnostics.INSTANCE.mark("storm_lod_compute");StormLodGpu.INSTANCE.prepare(particles.currentGeneration()+1,camera,view,projectionMatrix,deltaTracker.getGameTimeDeltaPartialTick(false));
-        ParticleDiagnostics.INSTANCE.mark("storm_lod_publish");ParticleBuffers.INSTANCE.beginBindings();var publication=work.preparePublication();
+        var publication=work.preparePublication();
         ScenePublicationPolicy.validate(publication,publication.generation(),StarfallGpuBuffers.INSTANCE.candidateGeneration(),work.packageVersion());
-        renderInput=work.commit();StormLodGpu.INSTANCE.commit(publication.generation());frameCoordinator.publish(publication);previousSimulation=lastSimulation;lastSimulation=publication;work.consumeInputs();
+        renderInput=work.commit();frameCoordinator.publish(publication);previousSimulation=lastSimulation;lastSimulation=publication;work.consumeInputs();
         ParticleChainCapture.INSTANCE.publication(publication);
         com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualFrame.publish(AllayStormRuntime.INSTANCE.visualFrame(renderFrameToken(),publication.generation()));frameArmed=true;
     }

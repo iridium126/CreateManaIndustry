@@ -1,0 +1,30 @@
+// One declarative contract feeds standalone GLSL, Java and the precompiled native release.
+def gpuDescription = file('gpu/particle-resources.json')
+def gpuJava = layout.buildDirectory.dir('generated/sources/gpuResources/java')
+def gpuResources = layout.buildDirectory.dir('generated/resources/gpuResources')
+def generateGpuResources = tasks.register('generateGpuResources') {
+    inputs.file(gpuDescription)
+    outputs.dirs(gpuJava, gpuResources)
+    doLast {
+        def contract = new groovy.json.JsonSlurper().parse(gpuDescription)
+        def constants = contract.constants
+        def javaText = new StringBuilder('package com.iridium126.createmanaindustry.client.gpu;\n\n/** Generated from gpu/particle-resources.json. */\npublic final class GpuResourceConstants {\n private GpuResourceConstants() {}\n')
+        def glslText = new StringBuilder('// Generated from gpu/particle-resources.json.\n')
+        constants.each { key, value ->
+            javaText.append(" public static final int ${key}=${value};\n")
+            glslText.append("#define CMI_RESOURCE_${key} ${value}\n")
+        }
+        javaText.append(' public static String glsl(){return "')
+        javaText.append(glslText.toString().replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n'))
+        javaText.append('";}\n}\n')
+        def javaFile = new File(gpuJava.get().asFile, 'com/iridium126/createmanaindustry/client/gpu/GpuResourceConstants.java')
+        javaFile.parentFile.mkdirs(); javaFile.setText(javaText.toString(), 'UTF-8')
+        def resource = new File(gpuResources.get().asFile, 'assets/createmanaindustry/shaders/particles/generated/resources.glsl')
+        resource.parentFile.mkdirs(); resource.setText(glslText.toString(), 'UTF-8')
+        def description = new File(gpuResources.get().asFile, 'assets/createmanaindustry/gpu-resource-contract.json')
+        description.setText(gpuDescription.getText('UTF-8'), 'UTF-8')
+    }
+}
+sourceSets.main.java.srcDir(gpuJava)
+tasks.named('compileJava') { dependsOn(generateGpuResources) }
+tasks.named('processResources') { dependsOn(generateGpuResources); from(gpuResources) }

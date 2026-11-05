@@ -1,3 +1,10 @@
+vec2 cmiGauss2(float s) {
+    float u1 = max(cmiHash1(s), 1e-6);
+    float u2 = cmiHash1(s + 17.17);
+    float r = sqrt(-2.0 * log(u1));
+    return vec2(r * cos(6.2831853 * u2), r * sin(6.2831853 * u2));
+}
+
 void spawnDeathPoof(uint hb, vec4 p0, vec4 p1, vec4 p3) {
     float chain = emitters.u[hb + 16u].x; // deathEmitId (0 = none)
     if (chain < 0.5)

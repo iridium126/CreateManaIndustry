@@ -180,10 +180,20 @@
         // hand ONE acceleration to the integrator
         vec3 aW = (target - pos) * STORM_VORTEX_K + (vT - vel) * STORM_VORTEX_C + sepW + repW;
         if(domeFlow){
-            uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a)),j=CMI_DOME_JOIN+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u,id=uint(cmiStarVec(b).x+.5);
+            uint member=cmiStarMember(p0.w),a=cmiStarAssignment(p0.w),b=cmiStarBase(cmiStarSlot(a));
+            uint joinRank=cmiStarSlot(a)*12288u+cmiMajorRank(a),j=CMI_DOME_JOIN+joinRank*8u,id=uint(cmiStarVec(b).x+.5);
             bool fresh=CMI_STATE(starStateRead,j)!=id;vec3 offset=vec3(0),delta=vec3(0);float started,initialSpeed;
-            if(fresh){offset=pos-domePreviousPoint;delta=vel-domePreviousVelocity;started=cmiDomeElapsed(b,uTimeSec)-uDt;initialSpeed=length(vel);}else{offset=vec3(uintBitsToFloat(CMI_STATE(starStateRead,j+1u)),uintBitsToFloat(CMI_STATE(starStateRead,j+2u)),uintBitsToFloat(CMI_STATE(starStateRead,j+3u)));vec2 xy=unpackHalf2x16(CMI_STATE(starStateRead,j+4u));delta=vec3(xy,uintBitsToFloat(CMI_STATE(starStateRead,j+5u)));initialSpeed=uintBitsToFloat(CMI_STATE(starStateRead,j+6u));started=uintBitsToFloat(CMI_STATE(starStateRead,j+7u));}
-            CMI_STATE(starStateWrite,j)=id;for(uint k=0u;k<3u;k++)CMI_STATE(starStateWrite,j+1u+k)=floatBitsToUint(offset[k]);CMI_STATE(starStateWrite,j+4u)=packHalf2x16(delta.xy);CMI_STATE(starStateWrite,j+5u)=floatBitsToUint(delta.z);CMI_STATE(starStateWrite,j+6u)=floatBitsToUint(initialSpeed);CMI_STATE(starStateWrite,j+7u)=floatBitsToUint(started);
+            if(fresh){offset=pos-domePreviousPoint;delta=vel-domePreviousVelocity;started=cmiDomeElapsed(b,uTimeSec)-uDt;initialSpeed=length(vel);}
+            else{
+                offset=vec3(uintBitsToFloat(CMI_STATE(starStateRead,j+1u)),uintBitsToFloat(CMI_STATE(starStateRead,j+2u)),uintBitsToFloat(CMI_STATE(starStateRead,j+3u)));
+                delta=vec3(uintBitsToFloat(CMI_STATE(starStateRead,j+4u)),uintBitsToFloat(CMI_STATE(starStateRead,CMI_DOME_JOIN_DELTA_Y+joinRank)),uintBitsToFloat(CMI_STATE(starStateRead,j+5u)));
+                initialSpeed=uintBitsToFloat(CMI_STATE(starStateRead,j+6u));started=uintBitsToFloat(CMI_STATE(starStateRead,j+7u));
+            }
+            CMI_STATE(starStateWrite,j)=id;
+            for(uint k=0u;k<3u;k++)CMI_STATE(starStateWrite,j+1u+k)=floatBitsToUint(offset[k]);
+            CMI_STATE(starStateWrite,j+4u)=floatBitsToUint(delta.x);CMI_STATE(starStateWrite,j+5u)=floatBitsToUint(delta.z);
+            CMI_STATE(starStateWrite,CMI_DOME_JOIN_DELTA_Y+joinRank)=floatBitsToUint(delta.y);
+            CMI_STATE(starStateWrite,j+6u)=floatBitsToUint(initialSpeed);CMI_STATE(starStateWrite,j+7u)=floatBitsToUint(started);
             float age=clamp(cmiDomeElapsed(b,uTimeSec)-started,0.,1.),previousAge=clamp(age-uDt,0.,1.);
             float h=1.-age*age*age*(10.-15.*age+6.*age*age),g=age-age*age*age*(6.-8.*age+3.*age*age);
             float ph=1.-previousAge*previousAge*previousAge*(10.-15.*previousAge+6.*previousAge*previousAge),pg=previousAge-previousAge*previousAge*previousAge*(6.-8.*previousAge+3.*previousAge*previousAge);

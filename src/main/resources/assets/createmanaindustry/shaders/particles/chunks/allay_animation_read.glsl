@@ -2,10 +2,11 @@
 uniform usamplerBuffer cmi_AllayAnimation;
 uniform bool uAllayAnimationEnabled;
 uniform float uAllayAnimationAlpha=-1.;
+#pragma cmi_include chunks/allay_pose_cache.glsl
 bool cmiAllayAnimationValid=false;
 float cmiAnimationBodyYaw=0.,cmiAnimationPitch=0.,cmiAnimationHeadYaw=0.,cmiAnimationAmount=0.,cmiAnimationPhase=0.,cmiAnimationCarry=0.,cmiAnimationDance=-1.,cmiAnimationSpinProgress=0.;
 void cmiLoadAllayAnimation(uint slot,float age){
- cmiAllayAnimationValid=false;if(!uAllayAnimationEnabled)return;
+ cmiAllayAnimationValid=false;if(cmiLoadCachedAllayPose(slot))return;if(!uAllayAnimationEnabled)return;
  int at=int(slot)*4;if(at+3>=textureSize(cmi_AllayAnimation))return;
  uvec4 a=texelFetch(cmi_AllayAnimation,at),b=texelFetch(cmi_AllayAnimation,at+1),c=texelFetch(cmi_AllayAnimation,at+2);
  if((c.z&0x80000000u)==0u)return;

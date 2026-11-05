@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.allaystorm.rift;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView;
 import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
@@ -57,21 +59,21 @@ public final class JuliaProjection {
             var rift=AllaySkyProvider.rift(mc.gameRenderer.getMainCamera().getPosition(),partial);
             var snapshot=AllaySkyProvider.rift();var frame=StormCenterView.timeline().sample(mc.level.getGameTime(),partial);
             if(rift.w<0||snapshot==null||frame==null)return;
-            GL20.glUseProgram(program);GL30.glBindVertexArray(vao);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,segmentTexture);
-            GL20.glUniform1i(GL20.glGetUniformLocation(program,"Segments"),0);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);GL30.glBindVertexArray(vao);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,segmentTexture);
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1i(GL20.glGetUniformLocation(program,"Segments"),0);
             try(var stack=MemoryStack.stackPush()) {
                 FloatBuffer values=stack.mallocFloat(16);
                 GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"View"),false,view.get(values));
                 GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"Projection"),false,projection.get(values));
             }
-            GL20.glUniform4f(GL20.glGetUniformLocation(program,"Shape"),rift.x,rift.y,rift.z,(float)shape.scale(frame.radius(),frame.y(),snapshot.planeY(),rift.w));
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current4f(GL20.glGetUniformLocation(program,"Shape"),rift.x,rift.y,rift.z,(float)shape.scale(frame.radius(),frame.y(),snapshot.planeY(),rift.w));
             var style=JuliaShape.projection(Math.sqrt((double)rift.x*rift.x+(double)rift.y*rift.y+(double)rift.z*rift.z));
-            GL20.glUniform2f(GL20.glGetUniformLocation(program,"ProjectionStyle"),style.weak(),style.gain());
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current2f(GL20.glGetUniformLocation(program,"ProjectionStyle"),style.weak(),style.gain());
             GL31.glDrawArraysInstanced(GL11.GL_TRIANGLE_STRIP,0,258,shape.segments.length/4);
             published=RiftRenderFrame.current();
         } finally {
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldFbo);GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL11.glViewport(viewport[0],viewport[1],viewport[2],viewport[3]);
-            GL20.glUseProgram(oldProgram);GL30.glBindVertexArray(oldVao);GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,oldBuffer);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(oldProgram);GL30.glBindVertexArray(oldVao);GpuBindings.bind(GL31.GL_TEXTURE_BUFFER,oldBuffer);
             GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,oldTexture);com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.bind(0,old2d);GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER,oldRbo);com.mojang.blaze3d.systems.RenderSystem.activeTexture(active);GL13.glActiveTexture(active);
             enabled(GL11.GL_CULL_FACE,cull);enabled(GL11.GL_DEPTH_TEST,test);enabled(GL11.GL_SCISSOR_TEST,scissor);GL11.glDepthMask(mask);GL11.glDepthFunc(oldFunction);
         }
@@ -79,7 +81,7 @@ public final class JuliaProjection {
     private static void enabled(int flag,boolean value){if(value)GL11.glEnable(flag);else GL11.glDisable(flag);}
     private static void prepare(int w,int h) {
         if(segments==0) {
-            segments=GL15.glGenBuffers();GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,segments);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,shape.segments,GL15.GL_STATIC_DRAW);
+            segments=GL15.glGenBuffers();GpuBindings.bind(GL31.GL_TEXTURE_BUFFER,segments);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,shape.segments,GL15.GL_STATIC_DRAW);
             segmentTexture=GL11.glGenTextures();GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,segmentTexture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_RGBA32F,segments);
             vao=GL30.glGenVertexArrays();fbo=GL30.glGenFramebuffers();color=GL11.glGenTextures();depth=GL30.glGenRenderbuffers();
         }

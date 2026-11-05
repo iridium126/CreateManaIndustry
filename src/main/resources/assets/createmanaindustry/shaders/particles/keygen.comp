@@ -1,8 +1,9 @@
-layout(std430,binding=28) buffer StarStateWrite {uint words[];} starState;
+#ifndef CMI_SIMULATION_CENSUS
 uniform uint uCarrierLimit;
 layout(std430,binding=21) buffer LodNearCoverage { uint members[]; } lodNear;
 uniform int uLodCapture;
 uniform float uOpaqueCutoff;
+#endif
 // Partition pass for the draw permutations -- runs EVERY frame (it is also the
 // fast path's cull pass). Three buckets:
 //   - ADDITIVE particles    -> orderAdd[]   (dense uint permutation, unsorted)
@@ -50,12 +51,16 @@ layout(local_size_x = 64) in;
 #pragma cmi_include chunks/feather_state.glsl
 
 layout(std430, binding = BIND_POOL_READ) readonly buffer ParticleRead { vec4 data[]; } pool;
-layout(std430, binding = BIND_INDIRECT) buffer IndirectBuf { uint cmd[INDIRECT_UINTS]; } indirect;
 // 4th word sortItems = translucent-item append cursor for THIS frame's initial
 // sort array (the other compute passes declare only the first three members;
 // offsets of those are unchanged by appending a 4th).
 layout(std430, binding = BIND_COUNTER) buffer CounterBuf { uint writeSlot; uint spare; uint translucentCensus; uint sortItems; } counter;
 layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } emitters;
+uniform uint uPackageStaged; // counter.spare is the pre-package boundary until capture
+uniform uint uUpper;      // physical capacity; dispatch size comes from the GPU live count
+
+#ifndef CMI_SIMULATION_CENSUS
+layout(std430, binding = BIND_INDIRECT) buffer IndirectBuf { uint cmd[INDIRECT_UINTS]; } indirect;
 layout(std430, binding = BIND_SORT_WRITE) buffer SortWrite { uvec2 kv[]; } sortOut;
 // Dual-write sink for the held-item carrier region: the committed permutation
 // buffer is sortBuffer(0) on the fast path but sortBuffer(1) on the sorted
@@ -65,8 +70,6 @@ layout(std430, binding = BIND_CARRIERSINK) buffer CarrierSink { uvec2 kv[]; } ca
 layout(std430, binding = BIND_ORDER_ADD) buffer OrderAddW { uint order[]; } orderAdd;
 layout(std430, binding = BIND_ORDER_OPAQUE) buffer OrderOpaqueW { uint order[]; } orderOpaque;
 
-uniform uint uPackageStaged; // counter.spare is the pre-package boundary until capture
-uniform uint uUpper;      // physical capacity; dispatch size comes from the GPU live count
 uniform uint uCarrierBase; // fixed sort-buffer base of the held-item carrier region
 uniform vec3 uCamPos;
 uniform mat4 uView;
@@ -76,14 +79,30 @@ uniform vec4 uFrustum[6]; // normalized planes, distances vs camera-relative poi
 
 // the carrier sweep needs the shared claim predicate + the wave uniforms it
 // reads (uTimeSec / uWave / uWaveTarget live in the chunk)
+#if !defined(CMI_KEYGEN_DOMAIN) || CMI_KEYGEN_DOMAIN == 2
 #pragma cmi_include chunks/model_carrier.glsl
+#pragma cmi_include chunks/model_shadow_groups_write.glsl
+#pragma cmi_include chunks/rt_visibility_read.glsl
+#endif
 
 #pragma cmi_include chunks/frustum_culling.glsl
-#pragma cmi_include chunks/population_write.glsl
-#pragma cmi_include chunks/population_read.glsl
-uniform uint uModelPass;
-#pragma cmi_include chunks/model_shadow_groups_write.glsl
+#endif
 
+#ifndef CMI_KEYGEN_DOMAIN
+#pragma cmi_include chunks/population_write.glsl
+#endif
+#if defined(CMI_KEYGEN_DOMAIN) && CMI_KEYGEN_DOMAIN == 1
+#pragma cmi_include chunks/ordinary_roster.glsl
+#else
+#pragma cmi_include chunks/population_read.glsl
+#endif
+#ifdef CMI_KEYGEN_DOMAIN
+const uint uModelPass=uint(CMI_KEYGEN_DOMAIN);
+#else
+uniform uint uModelPass;
+#endif
+
+#ifndef CMI_SIMULATION_CENSUS
 bool sphereVisible(vec3 rel, float r) {
     for (int i = 0; i < 6; i++) {
         vec4 pl = uFrustum[i];
@@ -101,12 +120,18 @@ uint depthKey(vec3 position,bool relative) {
     uint band = min(DEPTH_BANDS - 1u, uint(t * float(DEPTH_BANDS)));
     return (DEPTH_BANDS - 1u) - band; // far -> small key -> drawn first
 }
+#endif
 
 void main() {
     uint rank=gl_GlobalInvocationID.x;
+#if defined(CMI_KEYGEN_DOMAIN) && CMI_KEYGEN_DOMAIN == 1
+    if(rank>=cmiOrdinaryCount(counter.writeSlot))return;
+    uint g=cmiOrdinarySlot(rank);
+#else
     if(uModelPass==2u&&rank>=populationRead.modelCount)return;
     uint g=uModelPass==2u?populationRead.slots[rank*2u]:rank;
     uint animationSlot=uModelPass==2u?populationRead.slots[rank*2u+1u]:g;
+#endif
     uint ordinary = uPackageStaged!=0u ? min(counter.spare,counter.writeSlot) : counter.writeSlot;
     if (g >= uUpper || g >= ordinary)
         return;
@@ -121,6 +146,9 @@ void main() {
     if(uModelPass==1u&&material>=1.5&&material<2.5)return;
     if(uModelPass==2u&&(material<1.5||material>=2.5))return;
     if (uint(material + .5) == CMI_MATERIAL_PACKAGE) return;
+#if defined(CMI_SIMULATION_CENSUS) && defined(CMI_KEYGEN_DOMAIN) && CMI_KEYGEN_DOMAIN == 1
+    cmiOrdinaryRecord(g);
+#endif
 
 
 
@@ -130,33 +158,60 @@ void main() {
     // partially-offscreen allay never pops at the screen edge.
     // STORM members carry their identity (memberIdx+1) in p0.w instead — the
     // header's storm slot 18.x selects the constant 1.0 multiplier for them.
+#if defined(CMI_KEYGEN_DOMAIN) && CMI_KEYGEN_DOMAIN == 2
+    const float matId=2.;
+#else
     float matId = emitters.u[hb + 7u].x;
+#endif
+#if defined(CMI_KEYGEN_DOMAIN) && CMI_KEYGEN_DOMAIN == 1
+    const bool storm=false;
+#else
     bool storm = emitters.u[hb + 18u].x > 0.5;
+#endif
     // Capture ALL MODEL records before camera/distance culling, including corpses.
+#ifndef CMI_KEYGEN_DOMAIN
     if(uModelPass==0u&&matId>=1.5&&matId<2.5)cmiPopulationRecord(g,storm);
+#endif
+#if defined(CMI_KEYGEN_DOMAIN) && CMI_KEYGEN_DOMAIN == 2
+    const bool isFeather=false;
+#else
     bool isFeather=uint(emitters.u[hb].x)==CMI_FEATHER_TYPE;
+#endif
+#if !defined(CMI_KEYGEN_DOMAIN) || CMI_KEYGEN_DOMAIN == 1
     if(uFeatherEnabled){
         if(isFeather){
             if(p0.w<0.){uint at=uint(atomicAdd(CMI_FEATHER_WORD(2),1));if(at<CMI_FEATHER_MAX)CMI_FEATHER_WORD(CMI_FEATHER_GROUND+at)=int(g);}
             atomicAdd(CMI_FEATHER_WORD(0),1);
         }else if(uint(emitters.u[hb].x)==CMI_GOLD_TYPE)atomicAdd(CMI_FEATHER_WORD(1),1);
     }
-    float keySize = max(emitters.u[hb + 5u].z, emitters.u[hb + 5u].w) * (storm ? 1.0 : (isFeather?abs(p0.w):p0.w));
-    if(matId>=1.5 && matId<2.5)cmiShadowGroupRecord(g,animationSlot,p0.xyz,8.*keySize+1.,storm);
-    float radius = matId >= 1.5 && matId < 2.5 ? keySize * 1.5 : keySize;
-    if(isFeather)radius+=.02;
-
+#endif
     // translucent census BEFORE the cull test: every live ALPHA/MODEL particle
     // counts (off-screen included) so the dual-mode decision and the radix
     // dispatch sizing can never undersize when the camera swings
+#ifndef CMI_KEYGEN_DOMAIN
     if (matId >= 0.5 && matId < 2.5)
         atomicAdd(counter.translucentCensus, 1u);
+#endif
+
+    // The 20 Hz census has no camera, draw lists or sort buffers.
+#ifndef CMI_SIMULATION_CENSUS
+    float keySize = max(emitters.u[hb + 5u].z, emitters.u[hb + 5u].w) * (storm ? 1.0 : (isFeather?abs(p0.w):p0.w));
+#if !defined(CMI_KEYGEN_DOMAIN) || CMI_KEYGEN_DOMAIN == 2
+    if(matId>=1.5 && matId<2.5)cmiShadowGroupRecord(g,animationSlot,p0.xyz,8.*keySize+1.,storm);
+#endif
+    float radius = matId >= 1.5 && matId < 2.5 ? keySize * 1.5 : keySize;
+    if(isFeather)radius+=.02;
 
     float centreDistance=length(p0.xyz-uCamPos);
+#if !defined(CMI_KEYGEN_DOMAIN) || defined(CMI_DISPLAY_LOD_COVERAGE)
     if(uLodCapture!=0 && storm && p3.y>0.0 && centreDistance<uOpaqueCutoff){
-        uint member=uint(p0.w+.5)-1u;
+        uint member=(uint(p0.w+.5)&MEMBER_IDX_MASK)-1u;
         if(member<131072u)atomicOr(lodNear.members[member>>5u],1u<<(member&31u));
     }
+#endif
+#if !defined(CMI_KEYGEN_DOMAIN) || CMI_KEYGEN_DOMAIN == 2
+    if(matId>=1.5&&matId<2.5&&(cmiRtVisibility(p0.xyz)&1u)==0u)return;
+#endif
     bool sharedFate = (abs(emitters.u[hb + 17u].y - 8.0) < .25 || abs(emitters.u[hb + 17u].y - 9.0) < .25);
     if (!sphereVisible(sharedFate ? p0.xyz : p0.xyz - uCamPos, radius))
         return;
@@ -180,6 +235,7 @@ void main() {
                                  (g << 2) | 1u);
         atomicAdd(indirect.cmd[IDX_CNT_ALPHA], 1u);
     } else {
+#if !defined(CMI_KEYGEN_DOMAIN) || CMI_KEYGEN_DOMAIN == 2
         // MODEL -> sort-type 0 (lower partition). Both body segments cover
         // this same partition (only their element ranges differ), so both
         // count fields receive N_model; textured.vsh also reads IDX_CNT_MODELOP
@@ -214,5 +270,7 @@ void main() {
                 carrierSink.kv[uCarrierBase + cpos] = entry;
             }
         }
+    #endif
     }
+#endif
 }

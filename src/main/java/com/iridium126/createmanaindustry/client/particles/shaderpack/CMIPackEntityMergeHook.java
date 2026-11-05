@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.client.particles.shaderpack;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+import com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms;
+
 import com.iridium126.createmanaindustry.client.particles.engine.ShadowQualityFrame;
 
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport;
@@ -232,6 +235,7 @@ public final class CMIPackEntityMergeHook {
                 var gpu=ParticleBuffers.INSTANCE;
                 if(MODEL_SHADOW==null||MODEL_SHADOW.capacity()!=gpu.capacity()||MODEL_SHADOW.carrierCapacity()!=gpu.carrierCapacity()){invalidateShadow();MODEL_SHADOW=new ModelShadowGpu(gpu.capacity(),gpu.carrierCapacity(),ParticlePrograms::loadParticlePlain);}
                 configureShadowCulling(gpu);
+                MODEL_SHADOW.visibility(gpu.displayVisibility());
                 com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.addExternalGpuMs(SHADOW_TIMING.poll());
                 SHADOW_TIMING.begin(timingEnabled,detailed,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication().generation());
                 boolean shadowSucceeded=false;
@@ -241,17 +245,17 @@ public final class CMIPackEntityMergeHook {
                     prepared=true;}finally{SHADOW_PREPARE.end(prepared);}
                 SHADOW_DRAW.begin(timingEnabled,detailed,scene.renderFrameToken(),scene.publication().generation());boolean drawn=false;
                 try{
-                gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleDrawBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
+                gpu.bindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleDrawBufferId(),MODEL_SHADOW.instances());gpu.bindVao();GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,MODEL_SHADOW.commands());
                 ShaderInstance shader=COMPILER.shadowShader();boolean applied=false;
                 try(var textures=com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.withSamplerRange(net.irisshaders.iris.gl.IrisRenderSystem::bindSamplerToUnit,net.irisshaders.iris.gl.sampler.SamplerLimits.get().getMaxTextureUnits(),0,1,2,COMPILER.shadowGtextureUnit())){
-                    try{bindAtlas(COMPILER.shadowGtextureUnit());applied=true;shader.apply();uploadShadowUniforms(shader.getId());setInt(shader.getId(),"cmi_ShadowPass",1);
+                    try{bindAtlas(COMPILER.shadowGtextureUnit());applied=true;GpuPrograms.applyExternal(shader);uploadShadowUniforms(shader.getId());setInt(shader.getId(),"cmi_ShadowPass",1);
                     RenderSystem.enableDepthTest();RenderSystem.disableBlend();RenderSystem.depthMask(true);RenderSystem.enableCull();bindAtlas(COMPILER.shadowGtextureUnit());
                     uploadSegmentMode(shader.getId(),0);gpu.drawModelCutout();uploadSegmentMode(shader.getId(),2);COMPILER.entityContext().upload(shader.getId(),true);gpu.drawModelCarrier();uploadSegmentMode(shader.getId(),0);COMPILER.entityContext().upload(shader.getId(),false);gpu.drawModelGhost();
-                    }finally{if(applied)shader.clear();}
+                    }finally{if(applied)GpuPrograms.clearExternal(shader);}
                 }
                 drawn=true;}finally{SHADOW_DRAW.end(drawn);}
                 shadowSucceeded=true;
-                com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.shadowSubmitted(scene.renderFrameToken(),scene.publication().generation(),MODEL_SHADOW.commands());
+                com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.shadowSubmitted(scene.renderFrameToken(),scene.displayPublicationId(),scene.publication().generation(),MODEL_SHADOW.commands());
                 }finally{SHADOW_TIMING.end(shadowSucceeded);}
                 com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="active (current frame, age=0); "+ShadowQualityFrame.current().label()+geometricFallback+depthFallback();
             }finally{
@@ -344,7 +348,7 @@ public final class CMIPackEntityMergeHook {
         // inherits the pack's entity directives wholesale.
         ShaderInstance shader = COMPILER.entitiesShader();
         bindAtlas(COMPILER.gtextureUnit());
-        try {shader.apply();
+        try {GpuPrograms.applyExternal(shader);
         int progId = shader.getId();
         uploadSegmentUniforms(progId);
         // Nearest-first cutout: early-Z rejects occluded fragments before the
@@ -380,20 +384,20 @@ public final class CMIPackEntityMergeHook {
             gpu.beginBindings();bindSharedResources(gpu);gpu.bindDrawIndirect();uploadSegmentUniforms(progId);
             drawCarrier(gpu,progId,COMPILER.gtextureUnit());
         }
-        }finally{shader.clear();}
+        }finally{GpuPrograms.clearExternal(shader);}
         // A separate apply is necessary only for a distinct neutral specialization.
         ShaderInstance carrier=COMPILER.carrierShader();
         if(carrier!=shader){
             gpu.beginBindings();bindSharedResources(gpu);gpu.bindDrawIndirect();bindAtlas(COMPILER.carrierGtextureUnit());
-            try{carrier.apply();int progId=carrier.getId();uploadSegmentUniforms(progId);drawCarrier(gpu,progId,COMPILER.carrierGtextureUnit());}
-            finally{carrier.clear();}
+            try{GpuPrograms.applyExternal(carrier);int progId=carrier.getId();uploadSegmentUniforms(progId);drawCarrier(gpu,progId,COMPILER.carrierGtextureUnit());}
+            finally{GpuPrograms.clearExternal(carrier);}
         }
 
         // Native MRT blend directives keep encoded metadata as overwrite outputs.
         // Packs without an attachment contract retain the legacy alpha fallback.
         ShaderInstance ghost = COMPILER.ghostShader();
         bindAtlas(COMPILER.ghostGtextureUnit());
-        try {ghost.apply();
+        try {GpuPrograms.applyExternal(ghost);
         int progId = ghost.getId();
         uploadSegmentUniforms(progId);
         // Ghost keeps forward reads: back-to-front order is load-bearing for
@@ -409,13 +413,13 @@ public final class CMIPackEntityMergeHook {
         bindAtlas(COMPILER.ghostGtextureUnit());
         DRAW_TIMING.begin(ModelMergeTelemetry.Segment.GHOST);boolean ghostDrawn=false;
         try{gpu.drawModelGhost();ghostDrawn=true;}finally{DRAW_TIMING.end(ModelMergeTelemetry.Segment.GHOST,ghostDrawn);}
-        }finally{ghost.clear();}
+        }finally{GpuPrograms.clearExternal(ghost);}
 
         RenderSystem.depthMask(true);
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableBlend();
         GL30.glBindVertexArray(0);
-        GL20.glUseProgram(0);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(0);
 
         gpu.unbindMergedTbos(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE);
         RenderSystem.activeTexture(GL13.GL_TEXTURE0);
@@ -478,8 +482,8 @@ public final class CMIPackEntityMergeHook {
     private static void uploadNeutralEntityUniforms(int progId) {
         COMPILER.entityContext().upload(progId,false);
         var atlas=com.iridium126.createmanaindustry.client.particles.engine.ParticleAtlas.ALLAY;
-        int size=loc(progId,"atlasSize");if(size>=0)GL20.glUniform2i(size,atlas.width(),atlas.height());
-        size=loc(progId,"gtextureSize");if(size>=0)GL20.glUniform2i(size,atlas.width(),atlas.height());
+        int size=loc(progId,"atlasSize");if(size>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current2i(size,atlas.width(),atlas.height());
+        size=loc(progId,"gtextureSize");if(size>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current2i(size,atlas.width(),atlas.height());
     }
 
     private static void uploadIrisMatrices(int progId, Matrix4f projection, Matrix4f modelView) {
@@ -573,22 +577,22 @@ public final class CMIPackEntityMergeHook {
 
     private static void setInt(int prog, String name, int v) {
         int l = loc(prog, name);
-        if (l >= 0) GL20.glUniform1i(l, v);
+        if (l >= 0) com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1i(l, v);
     }
 
     private static void setFloat(int prog, String name, float v) {
         int l = loc(prog, name);
-        if (l >= 0) GL20.glUniform1f(l, v);
+        if (l >= 0) com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1f(l, v);
     }
 
     private static void setFloat3(int prog, String name, float x, float y, float z) {
         int l = loc(prog, name);
-        if (l >= 0) GL20.glUniform3f(l, x, y, z);
+        if (l >= 0) com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current3f(l, x, y, z);
     }
 
     private static void setFloat4(int prog, String name, float x, float y, float z, float w) {
         int l = loc(prog, name);
-        if (l >= 0) GL20.glUniform4f(l, x, y, z, w);
+        if (l >= 0) com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current4f(l, x, y, z, w);
     }
 
     private static void setVec4Array(int prog, String name, float[] values) {

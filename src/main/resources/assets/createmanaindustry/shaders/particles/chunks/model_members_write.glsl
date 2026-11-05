@@ -3,6 +3,10 @@ layout(r32ui,binding=2)coherent uniform uimageBuffer cmi_ModelMembersWrite;
 layout(r32ui,binding=3)coherent uniform uimageBuffer cmi_ModelAllocator;
 uniform bool uModelMembersEnabled;
 uniform uint uPopulationModelCapacity,uPopulationStormCapacity;
+#ifndef CMI_POPULATION_STORM_PAIRS_DECLARED
+#define CMI_POPULATION_STORM_PAIRS_DECLARED
+uniform bool uPopulationStormPairs;
+#endif
 const uint CMI_MODEL_LIMIT=262144u,CMI_MODEL_FREE=8u,CMI_MODEL_SUMMARY=8200u,CMI_MODEL_TOP=8456u,CMI_MODEL_ROOT=8464u,CMI_MODEL_RETIRED=8465u;
 uint cmiModelWord(uint at){return imageAtomicOr(cmi_ModelAllocator,int(at),0u);}
 void cmiModelRestore(uint slot){
@@ -48,7 +52,8 @@ void cmiModelAppend(uint slot,uint animation,bool storm){
  imageStore(cmi_ModelMembersWrite,int(8u+row*2u),uvec4(slot));
  imageStore(cmi_ModelMembersWrite,int(9u+row*2u),uvec4(animation));
  if(storm){uint r=atomicAdd(counter.sortItems,1u);
-  if(r<uPopulationStormCapacity)imageStore(cmi_ModelMembersWrite,int(8u+2u*uPopulationModelCapacity+r),uvec4(slot));}
+  if(r<uPopulationStormCapacity){uint at=8u+2u*uPopulationModelCapacity+r*(uPopulationStormPairs?2u:1u);imageStore(cmi_ModelMembersWrite,int(at),uvec4(slot));
+   if(uPopulationStormPairs)imageStore(cmi_ModelMembersWrite,int(at+1u),uvec4(animation));}}
 }
 
 #endif

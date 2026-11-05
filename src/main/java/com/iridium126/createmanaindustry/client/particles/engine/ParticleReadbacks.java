@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.nio.ByteBuffer;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer;
 import org.lwjgl.BufferUtils;
@@ -7,21 +9,18 @@ import org.lwjgl.opengl.*;
 
 /** Independent staging storage: simulation counters may be reused while a snapshot is pending. */
 final class ParticleReadbacks {
-    static final int PROFILE_OFFSET = 48;
-    static final int PROFILE_LOD_OFFSET = PROFILE_OFFSET + ParticleBuffers.INDIRECT_COMMANDS * ParticleBuffers.INDIRECT_STRIDE;
-    static final int PROFILE_SIM_OFFSET = PROFILE_LOD_OFFSET + 40;
+    static final int PROFILE_SIM_OFFSET = 48;
     static final int STORM_OFFSET = PROFILE_SIM_OFFSET + 48;
-    static final int WAVE_OFFSET = STORM_OFFSET + 4 + ParticleBuffers.STORMPOS_CAP * ParticleBuffers.STORMPOS_ENTRY_FLOATS * 4;
-    static final int FEATHER_REQUEST_OFFSET = WAVE_OFFSET + 4 + ParticleBuffers.WAVECONTACT_CAP * ParticleBuffers.WAVECONTACT_ENTRY_FLOATS * 4;
+    static final int FEATHER_REQUEST_OFFSET = STORM_OFFSET + 4 + ParticleBuffers.STORMPOS_CAP * ParticleBuffers.STORMPOS_ENTRY_FLOATS * 4;
     static final int GOLD_SURFACE_OFFSET=FEATHER_REQUEST_OFFSET + com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.READBACK_BYTES;
     static final int BYTES = GOLD_SURFACE_OFFSET+StormSurfaceCache.FEEDBACK_BYTES;
     static final class Slot {
         int buffer;
         GpuReadbackBuffer storage;
         long fence, generation, epoch, gameTime;
-        boolean profile,profileLod;
+        boolean profile;
         long profileFrame;
-        boolean positions, waves,published,feathers,featherRequests,goldSurface;
+        boolean positions,published,feathers,featherRequests,goldSurface;
         long goldSurfaceEpoch;
         ByteBuffer goldData;
         final ByteBuffer featherData=BufferUtils.createByteBuffer(com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.READBACK_BYTES);
@@ -35,7 +34,7 @@ final class ParticleReadbacks {
             if (slot.buffer == 0) {
                 slot.storage = new GpuReadbackBuffer(BYTES);
                 slot.buffer = slot.storage.id();
-                GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, 0);
+                GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER, 0);
             }
             return slot;
         }
@@ -53,7 +52,7 @@ final class ParticleReadbacks {
             throw new IllegalStateException("Particle readback fence failed; failed slot retired");
         }
         oldest.data.clear();
-        oldest.data.limit(oldest.waves ? FEATHER_REQUEST_OFFSET : oldest.positions ? WAVE_OFFSET : STORM_OFFSET);
+        oldest.data.limit(oldest.positions ? FEATHER_REQUEST_OFFSET : STORM_OFFSET);
         oldest.storage.readCompleted(0,oldest.data.remaining(),oldest.data);
         oldest.data.position(0);
         if(oldest.featherRequests){oldest.featherData.clear();oldest.storage.readCompleted(FEATHER_REQUEST_OFFSET,oldest.featherData.remaining(),oldest.featherData);oldest.featherData.position(0);}

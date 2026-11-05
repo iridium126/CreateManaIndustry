@@ -3,7 +3,7 @@
 layout(local_size_x=64) in;
 layout(std430,binding=0) readonly buffer Before {vec4 data[];} beforePool;
 layout(std430,binding=1) buffer Pool {vec4 data[];} pool;
-layout(std430,binding=3) readonly buffer Counter {uint live;} counter;
+layout(std430,binding=3) readonly buffer Counter {uint live,spare,models,storms;} counter;
 layout(std430,binding=5) readonly buffer Emitters {vec4 u[];} emitters;
 layout(std430,binding=13) readonly buffer Grid {int heads[GRID_TABLE];int next[];} grid;
 layout(std430,binding=14) readonly buffer Previous {uint live;} previous;
@@ -18,6 +18,9 @@ const uint uMode=uint(CMI_DOME_PASS);
 #endif
 uniform float uDt;
 uniform int uPlayerCount;
+uniform bool uCandidateStormRoster;
+#pragma cmi_include chunks/population_read.glsl
+#pragma cmi_include chunks/candidate_storm_roster.glsl
 #define CMI_DOME_RUNTIME_FLOW
 uint cmiDomeFlowWord(uint at){return CMI_STATE(starStateRead,at);}
 #pragma cmi_include chunks/allay_storm.glsl
@@ -49,16 +52,21 @@ float cmiDomeSweepFraction(vec3 delta,vec3 relative){
  float aa=dot(relative,relative),bb=dot(delta,relative),cc=dot(delta,delta)-CMI_BODY_RADIUS*CMI_BODY_RADIUS,disc=bb*bb-aa*cc;
  if(cc>=0.&&aa>.00000001&&bb<0.&&disc>=0.){float hit=(-bb-sqrt(disc))/aa;if(hit>=0.&&hit<=1.)return max(0.,hit-.0001);}return 1.;
 }
+shared uint gatherReady,gatherEligible;
 #pragma cmi_include chunks/dome_completion.glsl
+#pragma cmi_include chunks/dome_gather_audit.glsl
 void main(){
+ if(uMode==6u){uint slot=gl_WorkGroupID.x,lane=gl_LocalInvocationID.x;if(slot>=4u)return;if(lane==0u){gatherReady=0u;gatherEligible=0u;}barrier();uint ready=0u,eligible=0u;for(uint k=lane;k<384u;k+=64u){ready+=uint(bitCount(CMI_STATE(state,CMI_GATHER_READY+slot*384u+k)));eligible+=uint(bitCount(CMI_STATE(state,CMI_GATHER_ELIGIBLE+slot*384u+k)));}atomicAdd(gatherReady,ready);atomicAdd(gatherEligible,eligible);barrier();if(lane==0u){CMI_STATE(state,CMI_GATHER_COUNTS+slot*4u)=gatherReady;CMI_STATE(state,CMI_GATHER_COUNTS+slot*4u+1u)=gatherEligible;}return;}
 
- if(uMode==4u){if(gl_GlobalInvocationID.x==0u){CMI_STATE(state,CMI_DOME_CONTACT_ARGS)=0u;CMI_STATE(state,CMI_DOME_CONTACT_ARGS+7u)=0u;CMI_STATE(state,CMI_DOME_CONTACT_ARGS+4u)=(min(counter.live,uint(pool.data.length())/4u)+63u)/64u;CMI_STATE(state,CMI_DOME_CONTACT_ARGS+5u)=1u;CMI_STATE(state,CMI_DOME_CONTACT_ARGS+6u)=1u;}return;}
+ if(uMode==4u){if(gl_GlobalInvocationID.x==0u){CMI_STATE(state,CMI_DOME_CONTACT_ARGS)=0u;CMI_STATE(state,CMI_DOME_CONTACT_ARGS+7u)=0u;uint count=uCandidateStormRoster?cmiCandidateStormCount(counter.storms):min(counter.live,uint(pool.data.length())/4u);CMI_STATE(state,CMI_DOME_CONTACT_ARGS+4u)=(count+63u)/64u;CMI_STATE(state,CMI_DOME_CONTACT_ARGS+5u)=1u;CMI_STATE(state,CMI_DOME_CONTACT_ARGS+6u)=1u;}return;}
  if(uMode==1u){if(gl_GlobalInvocationID.x==0u){CMI_STATE(state,CMI_DOME_CONTACT_ARGS+1u)=(min(CMI_STATE(state,CMI_DOME_CONTACT_ARGS),131072u)+63u)/64u;CMI_STATE(state,CMI_DOME_CONTACT_ARGS+2u)=1u;CMI_STATE(state,CMI_DOME_CONTACT_ARGS+3u)=1u;}return;}
 #if CMI_DOME_PASS == 4
  return;
 #else
  uint rank=gl_GlobalInvocationID.x;
- uint i=rank;if(i>=min(counter.live,uint(pool.data.length())/4u))return;
+ if(uCandidateStormRoster&&rank>=cmiCandidateStormCount(counter.storms))return;
+ uint i=uCandidateStormRoster?cmiCandidateStormSlot(rank):rank;
+ if(i>=min(counter.live,uint(pool.data.length())/4u))return;
  uint at=i*4u;vec4 p=pool.data[at],life=pool.data[at+3u];uint emitter=floatBitsToUint(life.w);
  if(emitter*VEC4_PER_EMITTER+18u>=uint(emitters.u.length())||emitters.u[emitter*VEC4_PER_EMITTER+18u].x<.5)return;
  float material=emitters.u[emitter*VEC4_PER_EMITTER+7u].x;if(material<1.5||material>=2.5)return;
@@ -69,8 +77,23 @@ void main(){
  float neighborBudget=max(CMI_STORM_INTERCEPT,uintBitsToFloat(cmiStarWord(3u)));
  vec3 old;if(!cmiDomeOld(member,old))return;uint record=CMI_DOME_CONTACT_DELTA+member*4u;
  if(uMode==5u){
-  // Gathering ends on the planned server tick. It has no member readiness
-  // audit, terrain re-query or client authority to retire an unready member.
+  if(phase==1u){
+   vec3 target,motion;cmiDomeSampleOffset(assignment,0.,target,motion);int terrain=uStormCollisionEnabled?cmiDomeBodyTerrain(target):0;
+   if(cmiDomeGatherAudit(assignment,member,p.xyz,target,terrain,pool.data[at+1u].w))return;
+   uint flow=uint(owner)*66u+cmiDomeFlow(assignment),flowAt=CMI_DOME_FLOW_STATE+flow*2u,window=CMI_DOME_GATHER_WINDOW+(uint(owner)*12288u+cmiMajorRank(assignment))*8u;
+   uint word=uint(owner)*384u+cmiMajorRank(assignment)/32u,bit=1u<<(cmiMajorRank(assignment)&31u);
+   float published=uintBitsToFloat(cmiStarWord(CMI_DOME_FLOW_SOURCE+flow*2u+1u));bool changed=isinf(published)&&uintBitsToFloat(CMI_STATE(state,flowAt+1u))<cmiDomePause(assignment);
+   // The baked lane spacing assumes that near-reference following has taken
+   // ownership. A merely close interceptor still carries a C2 join offset.
+   // A contact correction can preserve acquisition when its final body still
+   // lies in the near-reference band; navigation mode alone cannot reject it.
+   bool following=(CMI_STATE(state,member*2u+1u)&0x40000000u)!=0u||distance(p.xyz,target)<.04;
+   bool valid=following&&cmiStarWord(2u)!=0u&&!changed&&(CMI_STATE(state,window+7u)&6u)==0u&&terrain==0&&distance(p.xyz,target)<=.4&&distance(pool.data[at+1u].xyz,motion)<=1.;
+   bool same=CMI_STATE(starStateRead,member*2u)==CMI_STATE(state,member*2u)&&(CMI_STATE(starStateRead,member*2u+1u)&255u)==1u&&CMI_STATE(starStateRead,window+5u)==floatBitsToUint(cmiDomePause(assignment));
+   uint streak=valid?(same?min(3u,CMI_STATE(starStateRead,CMI_GATHER_STREAK+member)+1u):1u):0u;CMI_STATE(state,CMI_GATHER_STREAK+member)=streak;
+   if(streak==3u)atomicOr(CMI_STATE(state,CMI_GATHER_READY+word),bit);else atomicAnd(CMI_STATE(state,CMI_GATHER_READY+word),~bit);
+   if(valid&&distance(p.xyz,target)<.04)CMI_STATE(state,member*2u+1u)|=0x40000000u;else CMI_STATE(state,member*2u+1u)&=~0x40000000u;
+  }
   if(phase==4u){uint a=cmiStarAssignment(p.w),b=cmiStarBase(uint(owner)),mapped=cmiDomeMappedRank(a);vec4 record=cmiDomeRecord(a),ring=cmiStarVec(CMI_DOME_DATA+8u+mapped*16u),end=cmiStarVec(CMI_DOME_DATA+16u+mapped*16u);
    if(CMI_STATE(state,member*2u)!=uint(cmiStarVec(b).x+.5))return;
    vec3 delta=p.xyz+vec3(0,.3,0)-cmiStarVec(b+24u).xyz;float heading=cmiStarVec(b+20u).z,c=cos(heading),s=sin(heading);vec3 local=vec3(c*delta.x+s*delta.z,delta.y,-s*delta.x+c*delta.z);

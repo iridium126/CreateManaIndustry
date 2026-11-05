@@ -17,6 +17,6 @@ public interface StormParticlePort {
     void collisionColumn(double x, double y, double z);
     boolean collisionWindow(double x, double y, double z, boolean prefetch);
     boolean capturePositions(int counterSlot, Vec3 anchor, int players);
-    boolean captureWaveContacts(int counterSlot, int localMask, Vec3 aim, float time, float dt,
+    boolean captureWaveContacts(int counterSlot, int localMask, Vec3 aim,Vec3 previous,float time, float dt,
                                 StarfallGpuBuffers state);
 }

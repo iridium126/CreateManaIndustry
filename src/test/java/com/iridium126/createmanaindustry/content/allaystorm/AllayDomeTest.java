@@ -26,11 +26,11 @@ class AllayDomeTest {
   reserved.set(0,10000);assertEquals(0,AllayDome.select(10000,dead,reserved,768,0).length);
   for(int member:a)reserved.clear(member);assertEquals(2000,AllayDome.select(10000,dead,reserved,3000,0).length);
  }
- @Test void sameMemberIndependentVictimsAndWaves(){
+ @Test void independentVictimsAndWaves(){
   var contacts=new AllayDome.Contacts();UUID a=UUID.randomUUID(),b=UUID.randomUUID();
-  assertTrue(contacts.add(a,123));assertFalse(contacts.add(a,123));assertTrue(contacts.add(b,123));assertFalse(contacts.add(b,123));
-  assertFalse(contacts.add(a,124));assertFalse(contacts.add(b,125));
-  assertTrue(new AllayDome.Contacts().add(a,123));
+  assertTrue(contacts.add(a));assertFalse(contacts.add(a));assertTrue(contacts.add(b));assertFalse(contacts.add(b));
+  assertFalse(contacts.add(a));assertFalse(contacts.add(b));
+  assertTrue(new AllayDome.Contacts().add(a));
  }
  @Test void lockedAreaOutlivesOriginalTarget(){
   assertFalse(AllayDome.targetRequired(AllayDome.DOME,false));

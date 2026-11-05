@@ -59,9 +59,13 @@ layout(std430, binding = BIND_DAMAGE) readonly buffer DamageBuf {
 
 layout(binding = 0) uniform sampler3D uCollision;
 
+#ifdef CMI_SIMULATION_PARAMETERS_UBO
+#pragma cmi_include chunks/simulation_parameters.glsl
+#else
 uniform uint uCapacity;
 uniform float uDt;
 uniform int  uCollisionOn; // 1 = collision texture/SSBO bound & valid
+#endif
 
 // ---- storm swarm (separation spatial hash) --------------------------------
 // Spatial hash built by gridbuild.comp earlier THIS frame against the same
@@ -75,7 +79,9 @@ layout(std430, binding = BIND_GRID) buffer GridBuf {
 // client repels against the SAME set (each seeing others 1-2 blocks lagged
 // by interpolation), so the force field stays near-identical across clients.
 layout(std430, binding = BIND_PLAYERS) readonly buffer PlayersBuf { vec4 pl[]; } players;
+#ifndef CMI_SIMULATION_PARAMETERS_UBO
 uniform int   uPlayerCount;
+#endif
 #pragma cmi_include chunks/storm_players.glsl
 // Network correction slots, indexed by MEMBER identity (p0.w - 1): two vec4
 // per member -- {target.xyz, arrivalTime}, {targetVel.xyz, strengthScale}.
@@ -93,11 +99,13 @@ layout(std430, binding = BIND_CORRECTION) readonly buffer CorrectionBuf { vec4 c
 // member-keyed origin tracking survives pool recompaction across frames.
 // Sized like the correction slots (2 vec4 there, 1 float here per slot).
 layout(std430, binding = BIND_MEMBERMAP) buffer MemberMapBuf { float m[]; } memberMap;
+#ifndef CMI_SIMULATION_PARAMETERS_UBO
 uniform uint  uKillEmit;   // emitter id force-expired this frame (none = ~0u)
 uniform float uStormOmegaNow; // SIGNED spin rate omega = SPIN_K/R_now (vortex; 0 = n/a)
 uniform float uStormRotPhase;  // rotation phase (radians) — CPU growth-law integral
 uniform float uStormConvPhase; // shared conveyor phase scalar (per-member scale rate/a)
 uniform float uStormConvRate;  // d(convPhase)/dt — drives the target-velocity conveyor term
+#endif
 
 // Dive-wave squads (server brain, event-driven — docs/allay-storm-ai.md).
 // 4 concurrent slots; membership/steering are pure functions of these
@@ -150,13 +158,6 @@ uint cmiDomeFlowWord(uint at){return CMI_STATE(starStateRead,at);}
 
 #pragma cmi_include chunks/collision_queries.glsl
 
-vec2 cmiGauss2(float s) {
-    float u1 = max(cmiHash1(s), 1e-6);
-    float u2 = cmiHash1(s + 17.17);
-    float r = sqrt(-2.0 * log(u1));
-    return vec2(r * cos(6.2831853 * u2), r * sin(6.2831853 * u2));
-}
-
 // Pure-pursuit follower for one wave corridor: projects the member onto the
 // smoothed polyline, then aims LOOKAHEAD further along it — the servo turns
 // the corner cuts into continuous arcs (no right angles anywhere). Past the
@@ -182,10 +183,18 @@ vec2 cmiGauss2(float s) {
 #pragma cmi_types update
 
 #pragma cmi_include chunks/hex_motion.glsl
+#if defined(CMI_UPDATE_DOMAIN) && CMI_UPDATE_DOMAIN == 1
+#pragma cmi_include chunks/ordinary_roster.glsl
+#else
 #pragma cmi_include chunks/population_read.glsl
+#endif
 #define CMI_MODEL_APPEND
 #pragma cmi_include chunks/model_members_write.glsl
+#ifdef CMI_UPDATE_DOMAIN
+const uint uModelPass=uint(CMI_UPDATE_DOMAIN);
+#else
 uniform uint uModelPass;
+#endif
 
 #pragma cmi_include chunks/spatial_motion.glsl
 
@@ -193,12 +202,21 @@ uniform bool uStormOuterEnabled;
 uniform uint uStormOuterData,uStormOuterArrivals;
 void main() {
     uint idx=gl_GlobalInvocationID.x,animationSlot=idx;
-    if(uModelPass==2u){
-        uint live=min(prevCounter.live,uCapacity);
-        if(!cmiPopulationIndexed(live,false)||idx>=populationRead.modelCount)return;
-        animationSlot=cmiPopulationAnimation(idx);idx=cmiPopulationSlot(idx,live,false);
+    uint live=min(prevCounter.live,uCapacity);
+    // Declare only the active roster. Constant branches can still exhaust
+    // the driver's per-stage storage-block allocation during linking.
+#if defined(CMI_UPDATE_DOMAIN) && CMI_UPDATE_DOMAIN == 1
+    if(idx>=cmiOrdinaryCount(live))return;
+    idx=cmiOrdinarySlot(idx);
+#else
+    if(uModelPass>=2u){
+        bool stormOnly=uModelPass==3u;
+        if(!cmiPopulationIndexed(live,stormOnly)||idx>=(stormOnly?populationRead.stormCount:populationRead.modelCount))return;
+        if(stormOnly&&(populationRead.valid&2u)==0u)return;
+        animationSlot=stormOnly?cmiPopulationStormAnimation(idx):cmiPopulationAnimation(idx);idx=cmiPopulationSlot(idx,live,stormOnly);
     }
-    if (idx >= min(prevCounter.live, uCapacity))
+#endif
+    if (idx >= live)
         return;
 
     cmiHistorySource=idx;
@@ -213,11 +231,10 @@ void main() {
     bool waveContactLatched = false;
 
     uint eid = floatBitsToUint(p3.w);
-    if (eid == uKillEmit) {if(uModelPass==2u)cmiModelRetire(animationSlot);return;} // storm stopped: drop out of the compacted output immediately
     uint hb = eid * VEC4_PER_EMITTER;
     bool modelMaterial=emitters.u[hb+7u].x>=1.5&&emitters.u[hb+7u].x<2.5;
     if(uModelPass==1u&&modelMaterial)return;
-    if(uModelPass==2u&&!modelMaterial){cmiModelRetire(animationSlot);return;}
+    if(uModelPass>=2u&&!modelMaterial){cmiModelRetire(animationSlot);return;}
     // Package poses are imported after ordinary emission from dedicated GPU physics.
     // Replacing the previous frame's records avoids lifetime/death-chain integration
     // and makes common-pool compaction independent of persistent package identities.
@@ -229,9 +246,17 @@ void main() {
     // hoisting the vec4 loads keeps every consumer on one SSBO read instead
     // of depending on the compiler to CSE across the early-return ladder.
 
-    cmiStormVoxel=emitters.u[hb+18u].x>.5&&uStormCollisionEnabled;
     vec4 stormA = emitters.u[hb + 18u]; // x storm gate (0 none | 2 vortex), y radius, z reserved (was wander), w maxSpeed
-    if(stormA.x>.5)cmiSpatialRestore(cmiStarMember(p0.w),floatBitsToUint(p3.z),eid,p0.xyz,p1.xyz);
+#if defined(CMI_UPDATE_DOMAIN) && CMI_UPDATE_DOMAIN == 2
+    if(stormA.x>.5)return;
+    stormA=vec4(0);
+#elif defined(CMI_UPDATE_DOMAIN) && CMI_UPDATE_DOMAIN == 1
+    stormA=vec4(0);
+#elif defined(CMI_UPDATE_DOMAIN) && CMI_UPDATE_DOMAIN == 3
+    if(stormA.x<=.5)return;
+#endif
+    if (eid == uKillEmit) {if(uModelPass>=2u)cmiModelRetire(animationSlot);return;}
+    cmiStormVoxel=stormA.x>.5&&uStormCollisionEnabled;
     vec4 matMotion = emitters.u[hb + 7u]; // x matId, y collide mode, z flutter
     // identity map write (see the buffer declaration). Header-flag gate
     // matches gridbuild/stormpos/hit (the storm spec dedupes to its own
@@ -244,12 +269,22 @@ void main() {
         if (mi < uint(memberMap.m.length()))
             memberMap.m[mi] = uintBitsToFloat(idx + 1u);
     }
-    if(!modelMaterial&&updateHexParticle(hb,p0,p1,p2,p3))return;
     float matId = matMotion.x;
+#if defined(CMI_UPDATE_DOMAIN) && CMI_UPDATE_DOMAIN == 1
+    const bool isModel=false;
+#elif defined(CMI_UPDATE_DOMAIN) && CMI_UPDATE_DOMAIN >= 2
+    const bool isModel=true;
+#else
     bool isModel = matId >= 1.5 && matId < 2.5;
+#endif
+#if !defined(CMI_UPDATE_DOMAIN) || CMI_UPDATE_DOMAIN == 1
+    if(!modelMaterial&&updateHexParticle(hb,p0,p1,p2,p3))return;
     bool isFeather = uint(emitters.u[hb].x)==CMI_FEATHER_TYPE;
     if(uint(emitters.u[hb].x)==CMI_GOLD_TYPE){cmiGoldUpdate(p0,p1,p2,p3);return;}
     if(isFeather&&cmiFeatherEarly(p0,p1,p2,p3))return;
+#else
+    const bool isFeather=false;
+#endif
     if(isFeather){
         cmiStormVoxel=uStormCollisionEnabled;
         if(!cmiStormKnown(p0.xyz)||!cmiStormKnown(p0.xyz+p1.xyz*uDt+vec3(0,-.02,0))){
@@ -266,7 +301,7 @@ void main() {
         // frame it crosses spawns the vanilla death poof burst first (exactly
         // once: the particle compacts away right after).
         if (hp <= -1.0) {
-            spawnDeathPoof(hb, p0, p1, p3);if(uModelPass==2u)cmiModelRetire(animationSlot);
+            spawnDeathPoof(hb, p0, p1, p3);if(uModelPass>=2u)cmiModelRetire(animationSlot);
             return;
         }
     } else if (age >= hp) {
@@ -371,49 +406,65 @@ void main() {
     if(cmiColumnRecoveryFrame)roll=0.;
 
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&cmiStarSlot(a)<4u){
-        uint b=cmiStarBase(cmiStarSlot(a));if(cmiHelix(b)){
+        uint b=cmiStarBase(cmiStarSlot(a));if(cmiHelix(b)||cmiDome(b)){
             uint streak=0u;float phase=float(CMI_STATE(starStateWrite,member*2u+1u)&255u);
+            // A pending resource has no motion phase yet, but must still count
+            // as unknown during gathering. Never revive a finished member.
+            if(phase==0.&&cmiDome(b)&&cmiStarWord(2u)==0u&&cmiStarPhase(a,uTimeSec)==1.)phase=1.;
             bool same=CMI_STATE(starStateRead,member*2u)==uint(cmiStarVec(b).x+.5);
             float blockedSeconds=same?uintBitsToFloat(CMI_STATE(starStateRead,CMI_GATHER_BLOCKED+member)):0.;
-            if(phase==1.){bool resourceUnknown=!cmiHelixReferenceValid(b,uTimeSec);vec3 target=pos,motion=vec3(0);
+            if(phase==1.){bool resourceUnknown=(cmiDome(b)&&cmiStarWord(2u)==0u)||(cmiHelix(b)&&!cmiHelixReferenceValid(b,uTimeSec));vec3 target=pos,motion=vec3(0);
                 if(!resourceUnknown){
-                    if(cmiHelixHasReference(b))cmiHelixGatherSample(a,uTimeSec,target,motion);
+                    if(cmiDome(b)&&cmiDomeGatherSampleValid){target=cmiDomeFollowingPoint;motion=cmiDomePoseTangent;}
+                    else if(cmiHelix(b)&&cmiHelixHasReference(b))cmiHelixGatherSample(a,uTimeSec,target,motion);
                     else{target=cmiStarPoint(a,p3.z,uTimeSec,vec3(0));vec3 next=cmiStarPoint(a,p3.z,uTimeSec+.02,vec3(0));motion=(next-target)/.02;}
                 }
                 bool unknown=resourceUnknown||(cmiStormVoxel&&(cmiStormMissing||!cmiStormKnown(target)||!cmiStormKnown(target+vec3(0,.6,0))));
-                bool occupied=!unknown&&cmiStormVoxel&&(cmiStormSolid(target)||cmiStormSolid(target+vec3(0,.6,0)));
+                int bodyTerrain=cmiDome(b)&&cmiStormVoxel?cmiDomeBodyTerrain(target):0;
+                unknown=unknown||bodyTerrain<0||(cmiDome(b)&&cmiDomeNavigationUnknown);
+                bool occupied=!unknown&&cmiStormVoxel&&(cmiDome(b)?bodyTerrain==1:(cmiStormSolid(target)||cmiStormSolid(target+vec3(0,.6,0))));
                 vec3 towards=target-p0.xyz;
                 bool stalled=cmiTerrainClipped&&length(towards)>.4&&dot(pos-p0.xyz,normalize(towards))<max(0.,dot(cmiBeforeSweepVelocity*uDt,normalize(towards)))*.1;
-                blockedSeconds=stalled?blockedSeconds+uDt:0.;
+                if(cmiDome(b)){
+                    uint flow=cmiDomeFlow(a),at=CMI_DOME_FLOW_STATE+(cmiStarSlot(a)*66u+flow)*2u;
+                    // Only the first obstructed frame contends on a flow clock.
+                    // Published clocks are immutable and need no repeated writes.
+                    float published=cmiDomePause(a);
+                    if(occupied&&isinf(published))atomicMin(CMI_STATE(starStateWrite,at+1u),floatBitsToUint(max(0.,cmiDomeElapsed(b,uTimeSec)-uDt)));
+                    uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;
+                    CMI_STATE(starStateWrite,window+7u)=(cmiTerrainClipped||cmiDomeNavigationBlocked||cmiDomeNavigationClipped?1u:0u)|(unknown?2u:0u)|(!cmiContactSweepValid?4u:0u);
+                    blockedSeconds=0.;
+                }else blockedSeconds=stalled?blockedSeconds+uDt:0.;
                 bool blocked=occupied||blockedSeconds>=.5;uint counts=CMI_GATHER_COUNTS+cmiStarSlot(a)*4u,word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
                 if(unknown||blocked){
                     atomicAdd(CMI_STATE(starStateWrite,counts+(unknown?3u:2u)),1u);
                     // Unknown/blocked members remain in the denominator until an explicit exit.
                 }
-                else{
+                else if(cmiDome(b)){
+                    if(distance(pos,target)<.04&&distance(vel,motion)<=1.)CMI_STATE(starStateWrite,member*2u+1u)|=0x40000000u;
+                }else{
                     if(!cmiStormEmbedded&&distance(pos,target)<=.4&&distance(vel,motion)<=1.)streak=same?min(3u,CMI_STATE(starStateRead,CMI_GATHER_STREAK+member)+1u):1u;
                     if(streak==3u){atomicAdd(CMI_STATE(starStateWrite,counts),1u);atomicOr(CMI_STATE(starStateWrite,CMI_GATHER_READY+word),bit);}
                 }
+            }else if(cmiDome(b)&&phase>=6.&&cmiStarVec(b+20u).y==1.){
+                uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
+                atomicAnd(CMI_STATE(starStateWrite,CMI_GATHER_READY+word),~bit);
+                if((atomicAnd(CMI_STATE(starStateWrite,CMI_GATHER_ELIGIBLE+word),~bit)&bit)!=0u)atomicAdd(CMI_STATE(starStateWrite,CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u),0xffffffffu);
+            }else if(cmiDome(b)&&phase==4.){
+                streak=CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member);
+                blockedSeconds=cmiTerrainClipped?blockedSeconds+uDt:0.;
+                if(blockedSeconds>=.5){
+                    uint rank=cmiMajorRank(a),word=cmiStarSlot(a)*384u+rank/32u;
+                    CMI_DOME_COMPLETE(starStateWrite,member,word,1u<<(rank&31u),false,roll);
+                    blockedSeconds=0.;streak=0u;
+                }
             }
             // Released members own this scratch for velocity/pose handoff.
-            if(phase<6.){CMI_STATE(starStateWrite,CMI_GATHER_BLOCKED+member)=floatBitsToUint(blockedSeconds);CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=streak;}
+            if(phase<6.){CMI_STATE(starStateWrite,CMI_GATHER_BLOCKED+member)=floatBitsToUint(blockedSeconds);if(!cmiDome(b)||phase!=1.)CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=streak;}
         }
     }}
 
-    if(corpse&&stormA.x>.5&&uStarfallEnabled){
-        uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);
-        if(a!=0u&&cmiStarSlot(a)<4u){
-            uint b=cmiStarBase(cmiStarSlot(a));
-            if(cmiHelix(b)&&cmiStarVec(b+20u).y<3.){
-                uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
-                if((atomicAnd(CMI_STATE(starStateWrite,CMI_GATHER_ELIGIBLE+word),~bit)&bit)!=0u)atomicAdd(CMI_STATE(starStateWrite,CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u),0xffffffffu);
-            }
-            if(cmiDome(b)){
-                CMI_STATE(starStateWrite,cmiDomePathRecord(a)+1u)=0u;
-                if((atomicAnd(CMI_STATE(starStateWrite,CMI_DOME_PATH_REQUESTS+member/32u),~(1u<<(member&31u)))&(1u<<(member&31u)))!=0u)atomicAdd(CMI_STATE(starStateWrite,CMI_DOME_PATH_CONTROL+1u),0xffffffffu);
-            }
-        }
-    }
+    if(corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&cmiStarSlot(a)<4u){uint b=cmiStarBase(cmiStarSlot(a));if((cmiHelix(b)||cmiDome(b))&&cmiStarVec(b+20u).y<3.){uint word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);if((atomicAnd(CMI_STATE(starStateWrite,CMI_GATHER_ELIGIBLE+word),~bit)&bit)!=0u)atomicAdd(CMI_STATE(starStateWrite,CMI_GATHER_COUNTS+cmiStarSlot(a)*4u+1u),0xffffffffu);if(cmiDome(b)){CMI_STATE(starStateWrite,cmiDomePathRecord(a)+1u)=0u;if((atomicAnd(CMI_STATE(starStateWrite,CMI_DOME_PATH_REQUESTS+member/32u),~(1u<<(member&31u)))&(1u<<(member&31u)))!=0u)atomicAdd(CMI_STATE(starStateWrite,CMI_DOME_PATH_CONTROL+1u),0xffffffffu);uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;for(uint component=0u;component<8u;component++)CMI_STATE(starStateWrite,window+component)=0u;}}}}
 
     // DIE_ON_GROUND (cherry): vanilla removes the particle in the same tick it
     // touches ground — BEFORE the frame renders, so the landing position is
@@ -488,13 +539,13 @@ void main() {
         }
     }
     uint slot = cmiReserveParticle();
-    if (slot >= uCapacity) {if(uModelPass==2u)cmiModelRetire(animationSlot);return;}
+    if (slot >= uCapacity) {if(uModelPass>=2u)cmiModelRetire(animationSlot);return;}
     if(isModel&&!corpse&&stormA.x>.5){uint member=cmiStarMember(p0.w);uint phase=uStarfallEnabled&&member<131072u?CMI_STATE(starStateWrite,member*2u+1u)&255u:0u,attack=uStarfallEnabled&&member<131072u?CMI_STATE(starStateWrite,member*2u):0u;cmiSpatialStore(member,slot,p0.xyz,pos,vel,cmiStormFrameCap,floatBitsToUint(p3.z),eid,attack,phase);}
 
     cmiHistoryContinue(slot);
     if(isModel&&(hp>0.)!=(p3.y>0.))cmiHistorySnap(slot);
     if (isModel && stormA.x < 0.5) cmiCopyIdentity(idx, slot);
-    if(uModelPass==2u)cmiModelAppend(slot,animationSlot,stormA.x>.5);
+    if(uModelPass>=2u)cmiModelAppend(slot,animationSlot,stormA.x>.5);
     if(isModel&&stormA.x>.5&&uDomePoseStorageEnabled){
         uint member=cmiStarMember(p0.w);
         if(member<131072u){uint extra=cmiNavigationExtra(member),mask=CMI_DEPEN_MASK+member/32u,bit=1u<<(member&31u);

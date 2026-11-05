@@ -4,15 +4,17 @@
 // the installable distribution embeds the main jar and exposes it via CMIModLocator.
 // Stable input identity for development runs and installed distributions alike.
 def identityDirectory = layout.buildDirectory.dir('generated/performanceIdentity')
+def identityRoot = layout.projectDirectory.asFile
 def performanceInputs = files(fileTree('src/main'), fileTree('src/bootstrap'), fileTree('src/generated'),
-        fileTree('gradle') { exclude('**/.gradle/**') }, 'build.gradle', 'settings.gradle', 'gradle.properties')
+        fileTree('gradle') { exclude('**/.gradle/**') }, 'build.gradle', 'settings.gradle', 'gradle.properties',
+        'gpu/particle-resources.json', 'native/prebuilt/windows-x86_64/manifest.json')
 def performanceIdentity = tasks.register('generatePerformanceIdentity') {
     inputs.files(performanceInputs)
     outputs.dir(identityDirectory)
     doLast {
         def digest = java.security.MessageDigest.getInstance('SHA-256')
-        performanceInputs.files.findAll { it.isFile() }.sort { project.relativePath(it).replace('\\', '/') }.each { input ->
-            digest.update(project.relativePath(input).replace('\\', '/').getBytes('UTF-8'))
+        performanceInputs.files.findAll { it.isFile() }.sort { identityRoot.toPath().relativize(it.toPath()).toString().replace(java.io.File.separatorChar, '/' as char) }.each { input ->
+            digest.update(identityRoot.toPath().relativize(input.toPath()).toString().replace(java.io.File.separatorChar, '/' as char).getBytes('UTF-8'))
             digest.update((byte) 0)
             digest.update(input.bytes)
             digest.update((byte) 0)

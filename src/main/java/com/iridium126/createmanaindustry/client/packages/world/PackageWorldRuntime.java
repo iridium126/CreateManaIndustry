@@ -120,6 +120,7 @@ public final class PackageWorldRuntime {
     private String waitingInput="none";
     private int statusRegions=-1,statusBodies=-1,statusActive=-1;
     private float interpolation=1;
+    private boolean freeDisplayClock,chainDisplayClock;
 
     /** False means the caller must explicitly refuse the offered ownership. */
     public static boolean enqueue(ClientboundPackagePacket packet) {
@@ -165,6 +166,13 @@ public final class PackageWorldRuntime {
             +(runtime.worldPrefetch==null?"":"; "+runtime.worldPrefetch.stats())
             +(runtime.forceGpu==null?"":"; force upload bytes="+runtime.forceGpu.uploadedBytes());}
     public float interpolation(){return interpolation;}
+    public float displayInterpolation(long now){
+        if(freeDisplayClock)return clock.displayInterpolation(now);
+        return chainDisplayClock?chainClock.displayInterpolation(now):interpolation;
+    }
+    public float displayChainInterpolation(long now){
+        return chainDisplayClock?chainClock.displayInterpolation(now):Float.NaN;
+    }
     /** The master switch can prevent the engine from submitting any more frames. Revoke its
      * claims here too, so disabling rendering cannot leave invisible retained Create entities. */
     @SubscribeEvent(priority=net.neoforged.bus.api.EventPriority.LOWEST) public static void tick(ClientTickEvent.Post event) {
@@ -326,6 +334,7 @@ public final class PackageWorldRuntime {
             if(chainFrames!=null)chainFrames.prepare(pool);
             pool.lightSource(PackageCollisionRuntime.forLevel(level).lightGpu());
             interpolation=freeActive>0?clock.interpolation():chainClock.interpolation();
+            freeDisplayClock=freeActive>0;chainDisplayClock=chainActive>0;
             pool.chainInterpolation(chainActive>0?chainClock.interpolation():Float.NaN);
             if(!mc.isPaused() && heartbeatTick!=level.getGameTime()) {
                 heartbeatTick=level.getGameTime();
@@ -574,7 +583,7 @@ public final class PackageWorldRuntime {
             if(chainChannel!=null)chainChannel.close();else if(chainTracks!=null)chainTracks.close();chainChannel=null;chainTracks=null;
             if(pool!=null)pool.chainFrames(0,0);
             if(chainFrames!=null)chainFrames.close();chainFrames=null;
-            packets.clear();chainPackets.clear();environmentUplink.clear();environmentOwners.clear();regions.clear();clock.reset();chainClock.reset();styles=Map.of();level=null;shaderBoundary=null;interpolation=1;
+            packets.clear();chainPackets.clear();environmentUplink.clear();environmentOwners.clear();regions.clear();clock.reset();chainClock.reset();styles=Map.of();level=null;shaderBoundary=null;interpolation=1;freeDisplayClock=chainDisplayClock=false;
             if(pool!=null){pool.chainInterpolation(Float.NaN);pool.reset();}pool=null;
             if(worldPrefetch!=null)worldPrefetch.close();worldPrefetch=null;
             if(physics!=null)physics.close();physics=null;

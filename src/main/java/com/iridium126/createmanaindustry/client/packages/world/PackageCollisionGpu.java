@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.world;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
 
@@ -114,7 +116,7 @@ public final class PackageCollisionGpu implements AutoCloseable {
         }catch(RuntimeException failure){close();throw failure;}
     }
     private static ByteBuffer map(int buffer,int bytes) {
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,MAP_FLAGS);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,MAP_FLAGS);
         ByteBuffer mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,bytes,MAP_FLAGS);
         if(mapped==null)throw new IllegalStateException("Persistent world mapping unavailable");
         return mapped.order(ByteOrder.nativeOrder());
@@ -408,7 +410,7 @@ public final class PackageCollisionGpu implements AutoCloseable {
         try{mapped=map(replacement,Math.max(16,slots*slotBytes));}
         catch(RuntimeException failure){com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(replacement);throw failure;}
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,data);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,replacement);
+        GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,data);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,replacement);
         if(remap!=null)for(var row:remap.entrySet())com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,
                 (long)row.getKey()*slotBytes,(long)row.getValue()*slotBytes,slotBytes);
         else {int copied=Math.min(allocatedSlots,slots)*slotBytes;
@@ -497,12 +499,12 @@ public final class PackageCollisionGpu implements AutoCloseable {
         public boolean bind(int[] locations,int first,boolean bindBuffers) {
             open();if(ended)throw new IllegalStateException("World view ended");
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-            if(bindBuffers)try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,4,stack.ints(bank==null?banks[0].buffer:bank.buffer,data));}
-            GL20.glUniform1i(locations[first],ready()?1:0);
-            GL20.glUniform3i(locations[first+1],x,y,z);
-            GL30.glUniform1ui(locations[first+2],tableSize-1);
-            GL30.glUniform1ui(locations[first+3],slotBytes/4);
-            GL30.glUniform1ui(locations[first+4],shapeCapacity);
+            if(bindBuffers)try(var stack=MemoryStack.stackPush()){GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,4,stack.ints(bank==null?banks[0].buffer:bank.buffer,data));}
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1i(locations[first],ready()?1:0);
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current3i(locations[first+1],x,y,z);
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[first+2],tableSize-1);
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[first+3],slotBytes/4);
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[first+4],shapeCapacity);
             return ready();
         }
         @Override public void close() {

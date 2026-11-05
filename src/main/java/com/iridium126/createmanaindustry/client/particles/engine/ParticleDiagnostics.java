@@ -51,7 +51,8 @@ public final class ParticleDiagnostics {
     private long captureCensusFrame=-1;
     public void simulationCounts(long frame,long generation,int live,int models){
         captureCensusFrame=frame;captureLive=live;captureModels=models;
-        if(enabled&&frame>=firstFrame){simulationLive=live;simulationModel=models;simulationFrame=frame;simulationGeneration=generation-1;}
+        ClientFrameCapture.INSTANCE.simulationCensus(frame,generation,live,models);
+        if(enabled&&frame>=firstFrame){simulationLive=live;simulationModel=models;simulationFrame=frame;simulationGeneration=generation;}
     }
     private int cursor, samples;
     private long firstFrame=-1,lastFrame=-1,countFrame=-1,countGeneration=-1;
@@ -67,7 +68,14 @@ public final class ParticleDiagnostics {
     }
     public void modelCounts(long frame,long generation,int body,int carrier,int ghost,int feather,int lod1,int lod2,int additive,int sprite,int alpha){
         if(captureCensusFrame==frame)com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.census(frame,generation,captureLive,captureModels,body,carrier,ghost,feather,lod1,lod2,additive,sprite,alpha);
-        if(!enabled||frame<firstFrame)return;
+        updateDisplayCounts(frame,generation,body,carrier,ghost,feather,lod1,lod2);
+    }
+    public void displayCounts(long frame,long generation,int body,int carrier,int ghost,int feather,int lod1,int lod2,int additive,int sprite,int alpha){
+        ClientFrameCapture.INSTANCE.displayCensus(frame,generation,body,carrier,ghost,feather,lod1,lod2,additive,sprite,alpha);
+        updateDisplayCounts(frame,generation,body,carrier,ghost,feather,lod1,lod2);
+    }
+    private void updateDisplayCounts(long frame,long generation,int body,int carrier,int ghost,int feather,int lod1,int lod2){
+        if(!enabled||frame<firstFrame||frame<countFrame)return;
         countFrame=frame;countGeneration=generation;bodyCount=body;carrierCount=carrier;ghostCount=ghost;featherCount=feather;lod1Count=lod1;lod2Count=lod2;
     }
     private void captureContext(){
@@ -223,11 +231,11 @@ public final class ParticleDiagnostics {
             report.append("\nCapture frames=").append(firstFrame).append("..").append(lastFrame).append("; ").append(captureContext);
             report.append(updateReport());
             report.append("\nUpdate linked resources: ").append(ParticlePrograms.INSTANCE.updateInterface());
-            report.append("\nSimulation input counts: ");
+            report.append("\nSimulation publication counts: ");
             if(simulationLive<0)report.append("unmeasured");
             else report.append("live=").append(simulationLive).append("; MODEL=").append(simulationModel<0?"unavailable":Integer.toString(simulationModel))
                     .append("; non-model=").append(simulationModel<0?"unavailable":Integer.toString(Math.max(0,simulationLive-simulationModel)))
-                    .append("; frame=").append(simulationFrame).append("; input generation=").append(simulationGeneration);
+                    .append("; frame=").append(simulationFrame).append("; generation=").append(simulationGeneration);
             report.append("\nMODEL submitted counts: ");
             if(countFrame<0)report.append("unmeasured");
             else report.append("body/carrier/ghost/feather/LOD1/LOD2=").append(bodyCount).append('/').append(carrierCount).append('/').append(ghostCount).append('/').append(featherCount).append('/').append(lod1Count).append('/').append(lod2Count)

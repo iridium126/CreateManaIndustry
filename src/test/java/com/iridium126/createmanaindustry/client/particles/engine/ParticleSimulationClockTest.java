@@ -35,6 +35,8 @@ class ParticleSimulationClockTest {
         c.beginFrame(world, 100, .25f, false); assertEquals(100, c.nextTick());
         c.beginFrame(world, 100, .25f, false); assertEquals(100, c.nextTick()); c.commit(100);
         c.beginFrame(world, 101, .25f, true); assertFalse(c.hasStep());
+        assertEquals(.25f,c.alpha());
+        c.beginFrame(world,101,.9f,true);assertFalse(c.hasStep());assertEquals(.25f,c.alpha());
         c.beginFrame(world, 101, .25f, false); assertEquals(101, c.nextTick());
         assertThrows(IllegalStateException.class, () -> c.commit(102));
     }

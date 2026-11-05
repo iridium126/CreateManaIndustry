@@ -1,0 +1,3 @@
+#define CMI_UPDATE_DOMAIN 2
+#define CMI_SIMULATION_PARAMETERS_UBO 1
+#pragma cmi_include update.comp

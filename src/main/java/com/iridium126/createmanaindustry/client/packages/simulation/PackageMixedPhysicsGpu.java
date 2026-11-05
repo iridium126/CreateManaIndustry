@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.simulation;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import com.iridium126.createmanaindustry.client.packages.world.PackageCollisionGpu;
 import com.iridium126.createmanaindustry.client.packages.world.PackageMovingCollisionGpu;
@@ -79,7 +81,7 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
             throw new IllegalArgumentException("Mixed package buffer exceeds device limit");
         int id=GL15.glGenBuffers();if(id==0)throw new IllegalStateException("Mixed package buffer allocation failed");
         try {
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);
+            GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,id);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);
             if(org.lwjgl.opengl.GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)
                 throw new IllegalStateException("Mixed package buffer storage allocation failed");
@@ -189,8 +191,8 @@ public final class PackageMixedPhysicsGpu implements AutoCloseable {
     }
     private static void copy(int source,int target,long first,int count,int stride) {
         if(count==0)return;
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);
-        GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,target);
+        GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,source);
+        GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,target);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,first*stride,(long)count*stride);
     }
     public int freeBodyIndex(int local) {open();if(local<0 || local>=free.count())throw new IndexOutOfBoundsException();return local;}

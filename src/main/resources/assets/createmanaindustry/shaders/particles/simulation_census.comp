@@ -1,0 +1,3 @@
+// Simulation owns census/grounding/LOD inputs. Visibility and sorting belong to display.
+#define CMI_SIMULATION_CENSUS 1
+#pragma cmi_include keygen.comp

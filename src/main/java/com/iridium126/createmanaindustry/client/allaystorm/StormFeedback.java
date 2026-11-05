@@ -108,7 +108,6 @@ public final class StormFeedback {
     public boolean positionSnapshotPending() { return this.stormPosPending; }
     public long positionSnapshotTime() { return this.stormPosGameTime; }
     public com.iridium126.createmanaindustry.content.allaystorm.StormIdentity positionSnapshotIdentity() { return stormPosIdentity; }
-    public boolean waveSnapshotPending() { return this.waveContactPending; }
 
     public void acceptPositionSnapshot(com.iridium126.createmanaindustry.content.allaystorm.StormIdentity identity, long gameTime, float[] entries) {
         var level = Minecraft.getInstance().level;
@@ -130,36 +129,95 @@ public final class StormFeedback {
      * additionally audit members. The tiny staging buffer rides the
      * frame fence back and {@link #acceptWaveSnapshot} ships the reports.
      */
-    public void dispatchWaveContactReadback(int slot, int upper,float dt) {
-        if(!AllayStormRuntime.INSTANCE.active())return;
+    public boolean dispatchWaveContactReadback(int slot,Vec3 aim,Vec3 previous,int target,float dt) {
+        if(aim==null||!AllayStormRuntime.INSTANCE.active())return false;
         var state=AllayStormRuntime.INSTANCE.feedbackState();
-        if (!state.active() || (state.waveMask()==0&&!StarfallGpuBuffers.INSTANCE.navigationReady()))
-            return;
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || mc.player == null)
-            return;
-        int localMask=state.waveMask();
-        Vec3 aim = mc.player.position().add(0.0, 0.5, 0.0);
-        if (!particles.captureWaveContacts(slot, localMask, aim, state.time(), dt,
-                StarfallGpuBuffers.INSTANCE)) return;
-        this.waveContactPending = true;
+        int mask=AllayStormRuntime.INSTANCE.waveFeedbackMask(previous==null?aim:previous,aim,target);
+        if (!state.active() || (mask==0&&!StarfallGpuBuffers.INSTANCE.navigationReady()))
+            return false;
+        return particles.captureWaveContacts(slot,mask,aim,previous,state.time(),dt,StarfallGpuBuffers.INSTANCE);
     }
 
     /**
-     * Consumes a pending wave-contact readback at the fence poll: dedupes per
-     * member per wave and ships one ServerboundStormWaveContactPacket per new
-     * contact. The contact point rides rel-to-the-interpolated-center, the
-     * same frame the melee hit reports use (the server's +8 reach margin
-     * absorbs the sub-2-block anchor skew).
+     * Consumes one fenced publication. The contact batch contains at most
+     * one entry per attack for this client and uses world-space hit points.
      */
     private final java.util.Map<Integer,Integer> outerReported=new java.util.HashMap<>();
     public void clearOuterReports(){outerReported.clear();}
     public void outerReleased(com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket packet){for(int i=0;i<packet.members().length;i++)outerReported.remove(packet.members()[i],packet.cycles()[i]);}
+    public void acceptNativeOuter(java.util.List<com.iridium126.createmanaindustry.content.allaystorm.StormOuterLoop.Flight> flights){
+        var runtime=AllayStormRuntime.INSTANCE;
+        var identity=runtime.identity();
+        if(identity==null||!runtime.feedbackState().authority())return;
+        flights.removeIf(flight->!runtime.livingMember(flight.member())
+                ||outerReported.getOrDefault(flight.member(),0)==flight.cycle());
+        if(flights.isEmpty())return;
+        PacketDistributor.sendToServer(com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.batch(
+                identity.dimension(),identity.epoch(),
+                com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.ARRIVED,flights));
+        for(var flight:flights)outerReported.put(flight.member(),flight.cycle());
+    }
     private final java.util.Map<Integer,java.util.BitSet> completions=new java.util.HashMap<>();
     private final java.util.Map<AllayStormRuntime.ContactAuthority,Long> gathered=new java.util.HashMap<>();
     private final java.util.Map<AllayStormRuntime.ContactAuthority,Integer> flowRevisions=new java.util.HashMap<>();
     private long flowTick=Long.MIN_VALUE;
     private long completionTick=Long.MIN_VALUE;
+    public record NativeHit(int target,float x,float y,float z,float time) {}
+    public void acceptNativeRegional(long tick,int id,long[] readyWords,long[] completed,int blocked,int unknown,
+            com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState flows,int reference,float referenceSeconds,
+            NativeHit hit){
+        var mc=Minecraft.getInstance();
+        var runtime=AllayStormRuntime.INSTANCE;
+        var owner=runtime.contactAuthority(id);
+        var attack=runtime.wavePacket(id);
+        if(mc.level==null||owner==null||attack==null||attack.column())return;
+        nativeContact(owner,hit);
+        var effective=runtime.nativeEffectiveRoster(id);
+        var ready=java.util.BitSet.valueOf(readyWords);
+        ready.and(effective);
+        runtime.gatherProgress(id,new int[]{ready.cardinality(),effective.cardinality(),blocked,unknown});
+        if(!runtime.feedbackState().authority())return;
+        nativeCompletions(owner,completed);
+        if(attack.locked())return;
+        float sample=(tick&((1L<<21)-1))*.05f;
+        long now=mc.level.getGameTime();
+        boolean enough=(!attack.helixAttack()||reference>0)
+                &&now-gathered.getOrDefault(owner,now-5)>=5
+                &&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(
+                        ready,effective,attack.members().length,sample,attack.startSec(),attack.assembleSec());
+        if(!enough&&flows.revision()<=flowRevisions.getOrDefault(owner,0))return;
+        if(enough)gathered.put(owner,now);
+        flowRevisions.merge(owner,flows.revision(),Math::max);
+        PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(
+                mc.level.dimension().location(),owner.epoch(),owner.id(),enough?ready.toLongArray():new long[0],
+                enough?effective.toLongArray():new long[0],flows,reference,referenceSeconds));
+    }
+    public void acceptNativeColumn(int id,int token,long completed,long installed,Vec3 sound,NativeHit hit){
+        var runtime=AllayStormRuntime.INSTANCE;
+        var owner=runtime.contactAuthority(id);
+        var attack=runtime.columnPacket(id);
+        if(Minecraft.getInstance().level==null||owner==null||attack==null)return;
+        runtime.nativeColumnSimulated(id);
+        if(sound!=null)runtime.columnTouchSound(id,(float)sound.x,(float)sound.y,(float)sound.z);
+        for(long remaining=installed;remaining!=0;remaining&=remaining-1)
+            ColumnSnapshotClient.INSTANCE.installed(id,Long.numberOfTrailingZeros(remaining),token);
+        nativeContact(owner,hit);
+        if(completed!=0&&runtime.feedbackState().authority())nativeCompletions(owner,new long[]{completed});
+    }
+    private void nativeCompletions(AllayStormRuntime.ContactAuthority owner,long[] ranks){
+        if(ranks.length==0)return;
+        var level=Minecraft.getInstance().level;
+        if(level!=null)PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(
+                level.dimension().location(),owner.epoch(),owner.id(),ranks));
+    }
+    private void nativeContact(AllayStormRuntime.ContactAuthority owner,NativeHit hit){
+        var mc=Minecraft.getInstance();
+        if(hit==null||mc.player==null||mc.player.getId()!=hit.target()||mc.level==null
+                ||!mc.player.isAlive()||mc.player.isSpectator()
+                ||!AllayStormRuntime.INSTANCE.acceptsContactNow(owner.id(),hit.time())||!reported.add(owner))return;
+        PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(mc.level.dimension().location(),
+                owner.id(),owner.epoch(),hit.time(),hit.x(),hit.y(),hit.z()));
+    }
     public void acceptWaveSnapshot(float[] entries) {
         retireWaves();
         if (entries == null)
@@ -168,6 +226,7 @@ public final class StormFeedback {
         var flowVersions=new java.util.HashMap<Integer,Integer>();
         var ready=new java.util.HashMap<Integer,java.util.BitSet>();
         var eligible=new java.util.HashMap<Integer,java.util.BitSet>();
+        var gatherSamples=new java.util.HashMap<Integer,Float>();
         var counts=new java.util.HashMap<Integer,int[]>();
         var references=new java.util.HashMap<Integer,float[]>();
         var outerArrivals=new java.util.ArrayList<com.iridium126.createmanaindustry.content.allaystorm.StormOuterLoop.Flight>();
@@ -182,12 +241,20 @@ public final class StormFeedback {
             if(member== -8){if(w!=null)flowVersions.put(id,Math.round(entries[o+2]));continue;}
             if(member== -7){if(w!=null){int flow=Math.round(entries[o+2]);float pause=entries[o+3];if(flow>=0&&flow<66&&Float.isFinite(pause)&&pause>=0&&pause<=600){float[] times=flowTimes.computeIfAbsent(id,k->{float[] t=new float[66];java.util.Arrays.fill(t,-1);return t;});times[flow]=pause;}}continue;}
             if(member== -6){if(w!=null){int[] c={Math.round(entries[o+2]),Math.round(entries[o+3]),Math.round(entries[o+4]),Math.round(entries[o+5])};counts.put(id,c);AllayStormRuntime.INSTANCE.gatherProgress(id,c);}continue;}
-            if(member== -4||member== -5){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<384){var mask=(member== -4?ready:eligible).computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
+            if(member== -4||member== -5){
+                float sample=entries[o+5];
+                if(w!=null&&Float.isFinite(sample)){
+                    gatherSamples.merge(id,sample,(first,next)->first.equals(next)?first:Float.NaN);
+                    int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);
+                    if(word>=0&&word<384){var mask=(member== -4?ready:eligible).computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}
+                }
+                continue;
+            }
             if(member== -3){StormCollisionRuntime.arrived(id,Math.round(entries[o+2]));continue;}
             if(member== -2){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<384){var mask=completions.computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
             if(member<0){if(w!=null)AllayStormRuntime.INSTANCE.columnTouchSound(id,entries[o+2],entries[o+3],entries[o+4]);continue;}
             if(w==null||!AllayStormRuntime.INSTANCE.acceptsContactNow(id,entries[o+5])||!reported.add(w))continue;
-            PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),entries[o+5],member,entries[o+2],entries[o+3],entries[o+4]));
+            PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),entries[o+5],entries[o+2],entries[o+3],entries[o+4]));
         }
         var mc=Minecraft.getInstance();
         if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()){
@@ -200,7 +267,6 @@ public final class StormFeedback {
             for(var entry:completions.entrySet()){var w=AllayStormRuntime.INSTANCE.contactAuthority(entry.getKey());if(w==null)continue;
                 var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(mc.level.dimension().location(),w.epoch(),w.id(),entry.getValue().toLongArray());
                 if(AllayStormRuntime.INSTANCE.feedbackState().authority())PacketDistributor.sendToServer(packet);
-                AllayStormRuntime.INSTANCE.completeAttack(packet);
             }completions.clear();
         }
         if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()&&flowTick!=mc.level.getGameTime()){
@@ -211,7 +277,8 @@ public final class StormFeedback {
                 if(AllayStormRuntime.INSTANCE.domeGather(id)&&flowVersions.getOrDefault(id,-1)!=flows.revision())continue;
                 var r=ready.get(id);var e=eligible.get(id);var c=counts.get(id);
                 var plan=AllayStormRuntime.INSTANCE.wavePacket(id);
-                boolean valid=r!=null&&e!=null&&plan!=null&&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,12288,AllayStormRuntime.INSTANCE.timeSec(),plan.startSec(),plan.assembleSec());
+                float sample=gatherSamples.getOrDefault(id,Float.NaN);
+                boolean valid=r!=null&&e!=null&&plan!=null&&Float.isFinite(sample)&&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,plan.members().length,sample,plan.startSec(),plan.assembleSec());
                 boolean canGather=valid&&(!plan.helixAttack()||references.containsKey(id))&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&(!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5);
                 if(canGather||flows.revision()>flowRevisions.getOrDefault(w,0)){
                     if(canGather)gathered.put(w,mc.level.getGameTime());flowRevisions.put(w,flows.revision());sent=true;
@@ -222,18 +289,12 @@ public final class StormFeedback {
 
     }
 
-    /** Drops a pending wave-contact readback (fence WAIT_FAILED; a fresh one is scheduled anyway). */
-    public void dropWaveContact() {
-        this.waveContactPending = false;
-    }
     public static final StormFeedback INSTANCE=new StormFeedback(com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime.INSTANCE);
     private final StormParticlePort particles;
-    private boolean waveContactPending;
     private final java.util.Set<AllayStormRuntime.ContactAuthority> reported=new java.util.HashSet<>();
     public StormFeedback(StormParticlePort particles) {this.particles=java.util.Objects.requireNonNull(particles);}
-    public void reset() {outerReported.clear();stormPosPending=false;stormPosIdentity=null;correctionClock.reset();lastSnapshotGameTime=Long.MIN_VALUE;waveContactPending=false;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
+    public void reset() {outerReported.clear();stormPosPending=false;stormPosIdentity=null;correctionClock.reset();lastSnapshotGameTime=Long.MIN_VALUE;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
     public void retireWaves() {
-        waveContactPending=false;
         retireWaveReports();
     }
     /** Prune replaced identities without dropping other waves' in-flight GPU feedback. */

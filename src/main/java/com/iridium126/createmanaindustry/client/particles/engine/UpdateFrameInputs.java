@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.nio.*;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers;
@@ -22,7 +24,7 @@ public final class UpdateFrameInputs implements AutoCloseable {
     private boolean closed;
     public UpdateFrameInputs(Layout layout){
         this.layout=layout;staging=ByteBuffer.allocateDirect(layout.bytes()).order(ByteOrder.nativeOrder());
-        buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
+        buffer=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
         GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,layout.bytes(),GL15.GL_STREAM_DRAW);
     }
     public Layout layout(){return layout;}
@@ -35,13 +37,13 @@ public final class UpdateFrameInputs implements AutoCloseable {
         staging.put(layout.playerOffset(),players,players.position(),players.remaining());
         staging.put(layout.damageOffset(),damage,damage.position(),damage.remaining());
     }
-    public void upload(){if(closed)throw new IllegalStateException("Frame inputs closed");GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);}
-    public void bind(int binding){GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,buffer);}
+    public void upload(){if(closed)throw new IllegalStateException("Frame inputs closed");GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);}
+    public void bind(int binding){GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,buffer);}
     /** Other stages keep their existing block ABI using aligned views. */
     public void bindViews(int bake,int players,int damage){
-        GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,bake,buffer,0,layout.bakeBytes());
-        GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,players,buffer,layout.playerOffset(),layout.playerBytes());
-        GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,damage,buffer,layout.damageOffset(),layout.damageBytes());
+        GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER,bake,buffer,0,layout.bakeBytes());
+        GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER,players,buffer,layout.playerOffset(),layout.playerBytes());
+        GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER,damage,buffer,layout.damageOffset(),layout.damageBytes());
     }
     @Override public void close(){if(closed)return;closed=true;GpuBufferNames.delete(buffer);}
 }

@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames;
 import com.iridium126.createmanaindustry.client.gpu.shader.*;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
@@ -22,19 +24,28 @@ public final class GlSpatialIndex implements AutoCloseable {
         }catch(RuntimeException|LinkageError failure){close();throw failure;}
     }
     private static int buffer(long bytes){int b=GL45.glCreateBuffers();GL45.glNamedBufferData(b,bytes,GL15.GL_DYNAMIC_COPY);if(GL45.glGetNamedBufferParameteri64(b,GL15.GL_BUFFER_SIZE)!=bytes){GpuBufferNames.delete(b);throw new IllegalStateException("GL index allocation failed");}return b;}
-    private static void bind(int at,int buffer){GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,at,buffer);}
-    private void ui(String name,int n){GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,name),n);}
-    private void pair(String name,long n){GL41.glProgramUniform2ui(program,GpuUniforms.loc(program,name),(int)n,(int)(n>>>32));}
+    private static void bind(int at,int buffer){GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,at,buffer);}
+    private void ui(String name,int n){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,name),n);}
+    private void pair(String name,long n){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform2ui(program,GpuUniforms.loc(program,name),(int)n,(int)(n>>>32));}
     private void phase(int n,int groups){ui("phase",n);GpuReplayCommands.dispatchCompute(Math.max(1,groups),1,1);GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);}
     public void query(int input,int output,long nonce,long epoch,long sourceTick,long scene,int probes,int kind,float x,float y,float z){
-        GL20.glUseProgram(program);bind(0,input);bind(1,output);bind(2,keys[0]);bind(3,keys[1]);bind(4,nodes);bind(5,histogram);bind(6,offsets);
+        query(input,output,nonce,epoch,sourceTick,scene,probes,kind,x,y,z,capacity,terrainCapacity,false);
+    }
+    public void queryRange(int input,int output,long nonce,long epoch,long sourceTick,long scene,int probes,int kind,float x,float y,float z,int members,int terrain){
+        if(members<0||members>capacity||terrain<0||terrain>terrainCapacity)throw new IllegalArgumentException("Spatial range exceeds capacity");
+        query(input,output,nonce,epoch,sourceTick,scene,probes,kind,x,y,z,members,terrain,true);
+    }
+    private void query(int input,int output,long nonce,long epoch,long sourceTick,long scene,int probes,int kind,float x,float y,float z,int members,int terrain,boolean ranged){
+        int active=Math.max(1,members+terrain),activeGroups=(active+255)/256;
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);bind(0,input);bind(1,output);bind(2,keys[0]);bind(3,keys[1]);bind(4,nodes);bind(5,histogram);bind(6,offsets);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"ranged"),ranged?1:0);ui("memberCount",members);ui("terrainCount",terrain);
         ui("capacity",capacity);ui("terrainCapacity",terrainCapacity);ui("probes",probes);ui("kind",kind);ui("nodeBudget",256);
-        pair("nonce",nonce);pair("epoch",epoch);pair("sourceTick",sourceTick);pair("scene",scene);GL41.glProgramUniform3f(program,GpuUniforms.loc(program,"anchor"),x,y,z);
-        phase(0,(2*n+254)/256);phase(1,groups);
+        pair("nonce",nonce);pair("epoch",epoch);pair("sourceTick",sourceTick);pair("scene",scene);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform3f(program,GpuUniforms.loc(program,"anchor"),x,y,z);
+        phase(0,(2*active+254)/256);phase(1,activeGroups);
         int a=0,b=1;for(int pass=0;pass<4;pass++){
-            bind(2,keys[a]);bind(3,keys[b]);ui("shift",pass*8);phase(2,groups);phase(3,1);phase(4,groups);int old=a;a=b;b=old;
+            bind(2,keys[a]);bind(3,keys[b]);ui("shift",pass*8);phase(2,activeGroups);phase(3,1);phase(4,activeGroups);int old=a;a=b;b=old;
         }
-        bind(2,keys[a]);phase(5,groups);phase(6,groups);phase(7,(capacity+255)/256);phase(8,1);
+        bind(2,keys[a]);phase(5,activeGroups);phase(6,activeGroups);phase(7,(members+255)/256);phase(8,1);
     }
     @Override public void close(){for(int b:keys)GpuBufferNames.delete(b);for(int b:new int[]{nodes,histogram,offsets})GpuBufferNames.delete(b);GpuPrograms.delete(program);}
 }

@@ -7,19 +7,29 @@ layout(std430, binding = BIND_INDIRECT) buffer Draw { uint cmd[INDIRECT_UINTS]; 
 layout(std430, binding = BIND_DISPATCH) writeonly buffer Dispatch { uint args[]; } dispatchOut;
 #pragma cmi_include chunks/population_read.glsl
 #pragma cmi_include chunks/population_write.glsl
+#pragma cmi_include chunks/ordinary_roster.glsl
 uniform uint uCapacity;
 uniform uint uPhase;
 uniform uint uPackageStaged;
 uniform bool uModelMembersEnabled,uModelMembersPublish;
 void main() {
     if(uPhase==4u){
-        if(uPackageStaged!=0u&&current.spare<populationWrite.live){populationWrite.modelCount=current.census;populationWrite.stormCount=current.items;current.census=0u;current.items=0u;memoryBarrierBuffer();}
-        dispatchOut.args[15]=(populationWrite.modelCount+63u)/64u;dispatchOut.args[16]=1u;dispatchOut.args[17]=1u;return;
+        if(uPackageStaged!=0u&&current.spare<populationWrite.live){
+            populationWrite.modelCount=current.census;populationWrite.stormCount=current.items;
+            current.census=0u;current.items=0u;
+        }
+        populationWrite.live=min(current.requested,uCapacity);
+        populationWrite.valid=uPopulationStormPairs?3u:1u;
+        if(dispatchOut.args.length()>=15){dispatchOut.args[12]=max(1u,(populationWrite.stormCount+63u)/64u);dispatchOut.args[13]=1u;dispatchOut.args[14]=1u;}
+        if(dispatchOut.args.length()>=18){dispatchOut.args[15]=(populationWrite.modelCount+63u)/64u;dispatchOut.args[16]=1u;dispatchOut.args[17]=1u;}
+        return;
     }
     if(uPhase==1u&&uModelMembersEnabled&&uModelMembersPublish){
         populationWrite.modelCount=current.census;populationWrite.stormCount=current.items;populationWrite.live=min(current.requested,uCapacity);
+        populationWrite.valid=uPopulationStormPairs?3u:1u;
         current.census=0u;current.items=0u;memoryBarrierBuffer();
     }
+    if(uPhase==0u&&dispatchOut.args.length()>=24){dispatchOut.args[21]=(cmiOrdinaryCount(min(previous.live,uCapacity))+63u)/64u;dispatchOut.args[22]=1u;dispatchOut.args[23]=1u;}
     uint n;
     if (uPhase == 0u) n = min(previous.live, uCapacity);
     else if (uPhase == 1u) {
@@ -28,10 +38,14 @@ void main() {
     } else {
         n = min(current.items, uCapacity);
         draw.cmd[IDX_CNT_CARRIER] = min(draw.cmd[IDX_CNT_CARRIER], (uCarrierLimit==0u?uint(CARRIER_CAP):uCarrierLimit));
-        if(uPopulationWriteEnabled){populationWrite.live=min(current.requested,uCapacity);populationWrite.valid=1u;memoryBarrierBuffer();}
+        if(uPopulationWriteEnabled){populationWrite.live=min(current.requested,uCapacity);populationWrite.valid=uPopulationStormPairs?3u:1u;memoryBarrierBuffer();}
     }
     if(uPhase==1u&&dispatchOut.args.length()>=18){
         dispatchOut.args[15]=(populationRead.modelCount+63u)/64u;dispatchOut.args[16]=1u;dispatchOut.args[17]=1u;
+    }
+    // Feedback uses the candidate Storm roster, which includes births.
+    if(uPhase==1u&&dispatchOut.args.length()>=15){
+        dispatchOut.args[12]=max(1u,(populationRead.stormCount+63u)/64u);dispatchOut.args[13]=1u;dispatchOut.args[14]=1u;
     }
     if(uPhase==1u&&dispatchOut.args.length()>=21){
         dispatchOut.args[18]=uPackageStaged!=0u&&current.spare<populationRead.live?(populationRead.modelCount+63u)/64u:0u;

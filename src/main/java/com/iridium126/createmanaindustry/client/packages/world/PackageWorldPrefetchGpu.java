@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.world;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import com.iridium126.createmanaindustry.client.packages.feedback.PackageCpuDiagnostics;
 import com.iridium126.createmanaindustry.client.packages.feedback.PackageReadbackRing;
@@ -30,7 +32,7 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
             String text=source.apply("packages/world_prefetch.comp");if(text==null||text.isBlank())throw new IllegalArgumentException("Missing world prefetch shader");
             linked=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute("Package world prefetch","#version 450 core\n"+text);
             for(int i=0;i<UNIFORMS.length;i++)locations[i]=GL20.glGetUniformLocation(linked,UNIFORMS[i]);
-            buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
+            buffer=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,PackageCollisionRequests.BYTES,GL15.GL_DYNAMIC_DRAW);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
             try(var stack=MemoryStack.stackPush()) {
@@ -57,7 +59,7 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
         if(count==0)return false;
         if(ring.pending()==PackageReadbackRing.SLOTS){skipped++;return false;}
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,requests);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,requests);
         try(var stack=MemoryStack.stackPush()) {
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,PackageCollisionRequests.HEADER_BYTES,
                     GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
@@ -65,16 +67,16 @@ public final class PackageWorldPrefetchGpu implements AutoCloseable {
                     PackageCollisionRequests.TOUCH_BYTES,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));
         }
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,bodyBuffer);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,OUTPUT_BINDING,requests);
-        GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,USAGE_BINDING,requests,PackageCollisionRequests.TOUCH_OFFSET,
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,0,bodyBuffer);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,OUTPUT_BINDING,requests);
+        GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER,USAGE_BINDING,requests,PackageCollisionRequests.TOUCH_OFFSET,
                 PackageCollisionRequests.TOUCH_BYTES);
-        GL20.glUseProgram(program);GL30.glUniform1ui(locations[5],count);GL20.glUniform1f(locations[6],lookahead);
-        GL20.glUniform1f(locations[7],safetyLookahead);
-        GL30.glUniform1ui(locations[8],PackageCollisionRequests.MAX_REQUESTS);
-        GL30.glUniform1ui(locations[9],PackageCollisionRequests.MAX_TOUCH_WORDS);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[5],count);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1f(locations[6],lookahead);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1f(locations[7],safetyLookahead);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[8],PackageCollisionRequests.MAX_REQUESTS);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[9],PackageCollisionRequests.MAX_TOUCH_WORDS);
         boolean ready=world.bind(locations,0,true);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,requests);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,requests);
         try(var stack=MemoryStack.stackPush()) {
             long tableVersion=ready?world.version():Long.MIN_VALUE;
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,8,stack.ints((int)tableVersion,(int)(tableVersion>>>32)));

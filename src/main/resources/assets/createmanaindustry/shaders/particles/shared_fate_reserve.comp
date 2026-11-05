@@ -5,6 +5,9 @@ layout(std430,binding=1) buffer Jobs{vec4 entries[];} jobs;
 layout(std430,binding=2) readonly buffer PreviousState{vec4 entries[];} previous;
 layout(std430,binding=3) buffer NextState{vec4 entries[];} nextState;
 layout(std430,binding=4) buffer Counter{uint live;uint spare;uint census;uint sorted;} counter;
+#ifdef CMI_FATE_DISPLAY_DISPATCH
+layout(std430,binding=9) writeonly buffer RibbonDispatch{uvec4 countAndGroups;} ribbonDispatch;
+#endif
 uniform uint uCount,uCapacity,uBudget;
 uniform uint uSimulationGeneration;
 #pragma cmi_include chunks/shared_fate_sampling.glsl
@@ -53,4 +56,7 @@ void main(){
         nextState.entries[sb+19u]=counts;
     }
     counter.live=offset;
+#ifdef CMI_FATE_DISPLAY_DISPATCH
+    ribbonDispatch.countAndGroups=uvec4(nodes,(nodes+255u)/256u,1u,1u);
+#endif
 }

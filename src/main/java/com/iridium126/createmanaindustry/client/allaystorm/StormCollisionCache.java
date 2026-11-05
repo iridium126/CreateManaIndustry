@@ -4,7 +4,7 @@ import java.util.*;
 import java.util.function.LongSupplier;
 import static com.iridium126.createmanaindustry.client.allaystorm.StormCollisionPages.*;
 
-/** Resumable owner-thread capture. A dirty section keeps its previous complete version. */
+/** Resumable owner-thread capture. Changed geometry is unknown until recaptured. */
 public final class StormCollisionCache {
     public interface Source {
         boolean loaded(Section key);
@@ -23,8 +23,8 @@ public final class StormCollisionCache {
         if(entries.keySet().removeIf(k->!keys.contains(k)))version++;pending.removeIf(k->!keys.contains(k));
         for(Section key:keys)if(!entries.containsKey(key)){var e=new Entry();e.revision=++revision;entries.put(key,e);pending.add(key);version++;}
     }
-    public void dirty(Section key){var e=entries.get(key);if(e==null)return;e.dirty=true;e.cursor=0;e.bits=null;e.revision=++revision;pending.add(key);}
-    public void unavailable(Section key){var e=entries.get(key);if(e==null)return;dirty(key);if(e.page!=null){e.page=null;version++;}}
+    public void dirty(Section key){var e=entries.get(key);if(e==null)return;e.dirty=true;e.cursor=0;e.bits=null;e.revision=++revision;pending.add(key);if(e.page!=null){e.page=null;version++;}}
+    public void unavailable(Section key){dirty(key);}
     public void dirtyColumn(int x,int z){for(Section key:entries.keySet())if(key.x()==x&&key.z()==z)unavailable(key);}
     public void capture(Source source,long nanos){
         long begin=clock.getAsLong();int attempts=pending.size();

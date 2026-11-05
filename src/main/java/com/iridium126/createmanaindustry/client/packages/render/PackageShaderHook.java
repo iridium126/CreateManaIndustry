@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.client.packages.render;
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport;
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusReport.State;
 import com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry;
+import com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms;
 import com.iridium126.createmanaindustry.client.particles.shaderpack.*;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
@@ -164,7 +165,8 @@ public final class PackageShaderHook {
             pool.mainRenderDistance((float)(ClientConfig.particleFadeDistance+24.0));
             if(!pool.preparePass(pass,pool.committedPoolBuffer(),CULLING.planes,CULLING.count,CULLING.distance,CULLING.safe,
                     (float)position.x,(float)position.y,(float)position.z,chainVisibility))return;
-            boolean sampled=pool.bindPassTbos(pass,PackageShaderCompiler.SAMPLER_BASE,com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.packagePartialTick);
+            float partial=PackageRuntime.INSTANCE.displayPartialTick();
+            boolean sampled=pool.bindPassTbos(pass,PackageShaderCompiler.SAMPLER_BASE,partial);
             RenderSystem.setShaderTexture(0,InventoryMenu.BLOCK_ATLAS);
             RenderSystem.setShaderTexture(2,mc.getTextureManager().getTexture(mc.gameRenderer.lightTexture().lightTextureLocation).getId());
             var shader=program.shader();shader.MODEL_VIEW_MATRIX.set(VIEW);if(shader.PROJECTION_MATRIX!=null)shader.PROJECTION_MATRIX.set(PROJECTION);
@@ -177,12 +179,12 @@ public final class PackageShaderHook {
             for(int layer=0;layer<2;layer++) {
                 if(layer==0?!ground:!chain)continue;
                 captured.setCurrentEntity(layer==0?packageId:0);captured.setCurrentBlockEntity(layer==1?chainId:0);captured.setCurrentRenderedItem(0);
-                applied=true;shader.apply();upload(program,sampled,(float)position.x,(float)position.y,(float)position.z,layer==1?pool.chainInterpolationOr(com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.packagePartialTick):com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.packagePartialTick);
+                applied=true;GpuPrograms.applyExternal(shader);upload(program,sampled,(float)position.x,(float)position.y,(float)position.z,layer==1?pool.chainInterpolationOr(partial):partial);
                 integer(program,"entityId",layer==0?packageId:0);integer(program,"blockEntityId",layer==1?chainId:0);
-                pool.drawPrepared(pass,layer,1,program.tessellation());shader.clear();applied=false;
+                pool.drawPrepared(pass,layer,1,program.tessellation());GpuPrograms.clearExternal(shader);applied=false;
             }
         }finally {
-            try{if(applied)program.shader().clear();}
+            try{if(applied)GpuPrograms.clearExternal(program.shader());}
             finally {
                 captured.setCurrentEntity(entity);captured.setCurrentBlockEntity(blockEntity);captured.setCurrentRenderedItem(item);captured.setCurrentAlphaTest(alpha);
                 ImmediateState.usingTessellation=tessellation;
@@ -197,13 +199,13 @@ public final class PackageShaderHook {
         int normal=p.location("iris_NormalMat");if(normal>=0)GL20.glUniformMatrix3fv(normal,false,NORMAL.get(NORMAL_MATRIX));
         vector(p,"cmi_CameraPos",x,y,z);scalar(p,"cmi_PartialTick",partialTick);integer(p,"cmi_SampledLighting",sampled?1:0);
         integer(p,"cmi_BlockId",-1);integer(p,"currentRenderedItemId",0);
-        int color=p.location("entityColor");if(color>=0)GL20.glUniform4f(color,0,0,0,0);
-        color=p.location("iris_ColorModulator");if(color>=0)GL20.glUniform4f(color,1,1,1,1);vector(p,"iris_ChunkOffset",0,0,0);
+        int color=p.location("entityColor");if(color>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current4f(color,0,0,0,0);
+        color=p.location("iris_ColorModulator");if(color>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current4f(color,1,1,1,1);vector(p,"iris_ChunkOffset",0,0,0);
         // Named pack uniforms (including shifted cameraPosition and shadow matrices)
         // belong to Iris's native providers. Only iris_* per-draw matrices need repair.
     }
     private static void matrix(PackageShaderCompiler.Program p,String name,Matrix4f value){int l=p.location(name);if(l>=0)GL20.glUniformMatrix4fv(l,false,value.get(MATRIX));}
-    private static void scalar(PackageShaderCompiler.Program p,String name,float value){int l=p.location(name);if(l>=0)GL20.glUniform1f(l,value);}
-    private static void integer(PackageShaderCompiler.Program p,String name,int value){int l=p.location(name);if(l>=0)GL20.glUniform1i(l,value);}
-    private static void vector(PackageShaderCompiler.Program p,String name,float x,float y,float z){int l=p.location(name);if(l>=0)GL20.glUniform3f(l,x,y,z);}
+    private static void scalar(PackageShaderCompiler.Program p,String name,float value){int l=p.location(name);if(l>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1f(l,value);}
+    private static void integer(PackageShaderCompiler.Program p,String name,int value){int l=p.location(name);if(l>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1i(l,value);}
+    private static void vector(PackageShaderCompiler.Program p,String name,float x,float y,float z){int l=p.location(name);if(l>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current3f(l,x,y,z);}
 }

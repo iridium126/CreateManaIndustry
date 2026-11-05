@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.gpu.buffer;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
 
 import java.nio.IntBuffer;
@@ -25,7 +27,7 @@ public final class GpuGrowingBuffer implements AutoCloseable {
         if(next==0)throw new IllegalStateException("GPU buffer name allocation failed");
         long fence = 0;
         try {
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, next);
+            GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER, next);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER, capacity, GL15.GL_DYNAMIC_DRAW);
             if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=capacity)
                 throw new IllegalStateException("GPU buffer storage allocation failed");
@@ -33,8 +35,8 @@ public final class GpuGrowingBuffer implements AutoCloseable {
                     GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (IntBuffer) null);
             if (buffer != 0) {
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-                GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER, buffer);
-                GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER, next);
+                GpuBindings.bind(GL31.GL_COPY_READ_BUFFER, buffer);
+                GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER, next);
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER, GL31.GL_COPY_WRITE_BUFFER, 0, 0, bytes);
                 fence = GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
                 if (fence == 0) throw new IllegalStateException("GPU growth fence allocation failed");

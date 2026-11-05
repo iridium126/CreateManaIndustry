@@ -184,6 +184,8 @@ public class CreateManaIndustryClient {
     @SubscribeEvent
     private static void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
+        if(mc.level!=null&&!mc.isPaused()&&mc.level.tickRateManager().runsNormally())
+            com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.captureNativeTick(mc.level.getGameTime(),mc.player);
         BlockParticleEmitterClient.tick(mc);
         if (mc.level != null
             && mc.level.dimension() == com.iridium126.createmanaindustry.dimension.AllvrDimensions.ALLAY_LEVEL) {
@@ -259,6 +261,11 @@ public class CreateManaIndustryClient {
         CreateManaIndustry.LOGGER.info("[Allvr] Sodium native terrain bridge enabled: adapter Sodium_0813_1211 ({})",
             sodium.reason());
         event.enqueueWork(() -> {
+            try {
+                com.iridium126.createmanaindustry.client.particles.engine.spatial.ParticleRtModules.prepare();
+            } catch (java.io.IOException | RuntimeException | LinkageError failure) {
+                CreateManaIndustry.LOGGER.warn("[CMI particles] RT native preparation unavailable: {}",failure.toString());
+            }
             PonderIndex.addPlugin(new CMIPonderPlugin());
 
             // Render Coolant through the translucent pass like Minecraft water.

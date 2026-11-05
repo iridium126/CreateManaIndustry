@@ -15,11 +15,13 @@
 // was written earlier in THIS dispatch (heads were zeroed from the CPU).
 layout(local_size_x = 64) in;
 #pragma cmi_include chunks/population_read.glsl
+#pragma cmi_include chunks/candidate_storm_roster.glsl
+uniform bool uCandidateStormRoster;
 
 const float CELL_SIZE = 2.5;
 
 layout(std430, binding = BIND_POOL_READ) readonly buffer ParticleRead { vec4 data[]; } readBuf;
-layout(std430, binding = BIND_PREV_COUNTER) readonly buffer PrevCounterBuf { uint live; uint spare; uint translucentCensus; } prevCounter;
+layout(std430, binding = BIND_PREV_COUNTER) readonly buffer PrevCounterBuf { uint live; uint spare; uint translucentCensus; uint storms; } prevCounter;
 layout(std430, binding = BIND_EMITTER) readonly buffer EmitterBuf { vec4 u[]; } emitters;
 layout(std430, binding = BIND_GRID) buffer GridBuf {
     int heads[GRID_TABLE]; // bucket head: live index + 1 (0 = empty bucket)
@@ -28,8 +30,9 @@ layout(std430, binding = BIND_GRID) buffer GridBuf {
 
 void main() {
     uint liveCount=min(prevCounter.live,uint(readBuf.data.length())/VEC4_PER_PARTICLE),rank=gl_GlobalInvocationID.x;
-    if(rank>=cmiPopulationCount(liveCount,true))return;
-    uint idx=cmiPopulationSlot(rank,liveCount,true);if(idx>=liveCount)return;
+    if(rank>=(uCandidateStormRoster?cmiCandidateStormCount(prevCounter.storms):cmiPopulationCount(liveCount,true)))return;
+    uint idx=uCandidateStormRoster?cmiCandidateStormSlot(rank):cmiPopulationSlot(rank,liveCount,true);
+    if(idx>=liveCount)return;
 
     uint base = idx * 4u;
     uint eid = floatBitsToUint(readBuf.data[base + 3u].w);

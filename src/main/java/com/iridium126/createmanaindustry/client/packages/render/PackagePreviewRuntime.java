@@ -56,6 +56,9 @@ public final class PackagePreviewRuntime implements AutoCloseable {
     }
     /** 20 Hz physics is independent of render FPS and the particle engine's automatic throttle. */
     public boolean active(){return physics!=null;}
+    public float displayInterpolation(long now){
+        return physics==null?1:(float)Math.clamp((accumulator+Math.max(0,now-lastNanos)*1e-9)/.05,0,1);
+    }
     public float prepare(boolean paused) {
         if(physics==null)return 1;
         long now=System.nanoTime();double elapsed=Math.max(0,(now-lastNanos)*1e-9);lastNanos=now;

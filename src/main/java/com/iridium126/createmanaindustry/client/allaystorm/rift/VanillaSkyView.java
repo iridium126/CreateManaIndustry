@@ -48,7 +48,7 @@ public final class VanillaSkyView {
             published=RiftRenderFrame.current();
         } finally {
             SkyRenderScope.leave();GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,framebuffer);GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);RenderSystem.viewport(viewport[0],viewport[1],viewport[2],viewport[3]);
-            RenderSystem.setShader(()->shader);GL20.glUseProgram(program);RenderSystem.depthMask(mask);
+            RenderSystem.setShader(()->shader);com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);RenderSystem.depthMask(mask);
             if(depth)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();
             if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();
             RenderSystem.depthFunc(depthFunction);

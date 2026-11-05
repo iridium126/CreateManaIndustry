@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.google.gson.GsonBuilder;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing;
@@ -29,8 +31,11 @@ public final class ClientFrameCapture {
             return input==null?"unavailable":new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8).trim();
         }catch(java.io.IOException failure){return "unavailable";}
     }
-    private static final class ShadowSlot {com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer storage;long fence,frame,generation;Window owner;}
-    private record SpatialKey(long scene,long nonce) {}
+    private static final class ShadowSlot {com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer storage;long fence,frame,generation,display;Window owner;}
+    private record SpatialKey(long worker,int kind,long scene,long nonce) {}
+    private record StormKey(long worker,long sequence) {}
+    private record StormSubmission(long frame,long identity,long tick,int slot,int members,int terrain,int queued,
+                                   int inFlight,int inputBytes,double cpuMs) {}
     private final ShadowSlot[] shadowSlots={new ShadowSlot(),new ShadowSlot(),new ShadowSlot()};
     private static final class Window {
         static final class Stage {long generation;double cpu,gpu;int cpuSamples,gpuSamples;Stage(long generation){this.generation=generation;}}
@@ -39,10 +44,12 @@ public final class ClientFrameCapture {
         final Map<Integer,Map<String,Object>> riftVisibility=new TreeMap<>();
         final List<String> spatial=new ArrayList<>();
         final Set<SpatialKey> spatialTickets=new HashSet<>();
+        final Map<StormKey,StormSubmission> stormTickets=new HashMap<>();
+        final List<String> stormSamples=new ArrayList<>();
         int draining,stageEntries;
         final long[] frames=new long[CAPACITY],sceneFrames=new long[CAPACITY],generations=new long[CAPACITY];
         final long[] attacksGeneration=new long[CAPACITY],terrainGeneration=new long[CAPACITY];
-        final long[] shadowGenerations=new long[CAPACITY],displayGenerations=new long[CAPACITY],displaySources=new long[CAPACITY];
+        final long[] shadowGenerations=new long[CAPACITY],shadowDisplays=new long[CAPACITY],displayGenerations=new long[CAPACITY],displaySources=new long[CAPACITY];
         final float[] simulationTime=new float[CAPACITY];
         final float[] simulationDelta=new float[CAPACITY];
         final String[] attacks=new String[CAPACITY];
@@ -53,10 +60,10 @@ public final class ClientFrameCapture {
         final int[][] submissions=new int[9][CAPACITY];
         int size,seconds,skippedGpu;
         boolean collecting=true;
-        long stopped;
+        long stopped,bindingsStart,bindingsAvoidedStart,uniformsStart,uniformsAvoidedStart;
         String invalid="";
         final Map<String,Object> metadata=new LinkedHashMap<>();
-        Window(){Arrays.fill(gpu,Double.NaN);Arrays.fill(cpu,Double.NaN);Arrays.fill(live,-1);Arrays.fill(models,-1);Arrays.fill(body,-1);Arrays.fill(carrier,-1);Arrays.fill(ghost,-1);Arrays.fill(sceneFrames,-1);Arrays.fill(generations,-1);Arrays.fill(shadowGenerations,-1);Arrays.fill(displayGenerations,-1);Arrays.fill(displaySources,-1);for(var counts:submissions)Arrays.fill(counts,-1);for(var values:camera)Arrays.fill(values,Double.NaN);}
+        Window(){Arrays.fill(gpu,Double.NaN);Arrays.fill(cpu,Double.NaN);Arrays.fill(live,-1);Arrays.fill(models,-1);Arrays.fill(body,-1);Arrays.fill(carrier,-1);Arrays.fill(ghost,-1);Arrays.fill(sceneFrames,-1);Arrays.fill(generations,-1);Arrays.fill(shadowGenerations,-1);Arrays.fill(shadowDisplays,-1);Arrays.fill(displayGenerations,-1);Arrays.fill(displaySources,-1);for(var counts:submissions)Arrays.fill(counts,-1);for(var values:camera)Arrays.fill(values,Double.NaN);}
     }
     private ClientFrameCapture(){}
     public synchronized boolean request(int seconds){
@@ -66,16 +73,42 @@ public final class ClientFrameCapture {
     }
     public boolean collecting(){return window!=null&&window.collecting;}
     public boolean busy(){return window!=null||requestedSeconds!=0;}
-    public boolean tracksSpatial(long scene,long nonce){return window!=null&&window.spatialTickets.contains(new SpatialKey(scene,nonce));}
+    public boolean tracksSpatial(long worker,int kind,long scene,long nonce){return window!=null&&window.spatialTickets.contains(new SpatialKey(worker,kind,scene,nonce));}
+    public void stormSubmitted(long worker,long sequence,long identity,long tick,int slot,int members,int terrain,
+                               int queued,int inFlight,int inputBytes,double cpuMs){
+        var w=window;if(w==null||!w.collecting)return;
+        long frame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken();
+        w.stormTickets.put(new StormKey(worker,sequence),
+                new StormSubmission(frame,identity,tick,slot,members,terrain,queued,inFlight,inputBytes,cpuMs));
+    }
+    public boolean tracksStorm(long worker,long sequence){
+        return window!=null&&window.stormTickets.containsKey(new StormKey(worker,sequence));
+    }
+    public void stormCompleted(long worker,long sequence,boolean applied,double[] gpuTimes){
+        var w=window;if(w==null)return;
+        var s=w.stormTickets.remove(new StormKey(worker,sequence));
+        if(s==null)return;
+        if(w.stormSamples.size()>=100_000){invalidate("Storm timing record capacity exceeded");return;}
+        var row=new StringBuilder().append(s.frame()).append(',').append(worker).append(',').append(s.identity()).append(',')
+                .append(s.tick()).append(',').append(sequence).append(',').append(s.slot()).append(',').append(s.members())
+                .append(',').append(s.terrain()).append(',').append(s.queued()).append(',').append(s.inFlight())
+                .append(',').append(s.inputBytes()).append(',').append(applied).append(',').append(s.cpuMs());
+        for(int i=0;i<7;i++)row.append(',').append(gpuTimes==null?Double.NaN:gpuTimes[i]);
+        row.append(',').append(gpuTimes==null?-1:(int)gpuTimes[7]);
+        row.append(',').append(gpuTimes==null?-1:(long)gpuTimes[7]*
+                com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.STORM_DISPLAY_RECORD_BYTES);
+        w.stormSamples.add(row.toString());
+    }
     /** ABI and statistics schema are independent. Timings are fetched only after completion. */
-    public void spatial(long sourceTick,long scene,long nonce,int slot,String event,boolean consumed,double[] times){
-        var w=window;if(w==null)return;var key=new SpatialKey(scene,nonce);
+    public void spatial(long sourceTick,long scene,long nonce,int slot,String event,boolean consumed,double[] times,long worker,int kind,int members,int terrain){
+        var w=window;if(w==null)return;var key=new SpatialKey(worker,kind,scene,nonce);
         if(event.equals("submitted")){if(!w.collecting)return;w.spatialTickets.add(key);}
         else if(!w.spatialTickets.contains(key))return;
         if(w.spatial.size()>=100_000){invalidate("spatial record capacity exceeded");return;}
         long frame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken();
         var row=new StringBuilder().append(frame).append(',').append(sourceTick).append(',').append(sourceTick+1).append(',').append(scene).append(',').append(nonce).append(',').append(slot).append(",12,2,").append(event).append(',').append(consumed);
-        for(int i=0;i<5;i++)row.append(',').append(times!=null&&i<times.length?times[i]:Double.NaN);w.spatial.add(row.toString());
+        for(int i=0;i<5;i++)row.append(',').append(times!=null&&i<times.length?times[i]:Double.NaN);
+        row.append(',').append(worker).append(',').append(kind==0?"motion":"render").append(',').append(members).append(',').append(terrain);w.spatial.add(row.toString());
         if(event.equals("retired"))w.spatialTickets.remove(key);
     }
     public void invalidate(String reason){if(collecting()){window.invalid=reason;stop();}}
@@ -86,11 +119,15 @@ public final class ClientFrameCapture {
         frameId++;head=System.nanoTime();active=-1;
         pollShadow();
         if(timer!=null){timer.poll();ParticleDiagnostics.INSTANCE.pollFrameSamples();ParticleFrameStages.poll();}
-        if(window!=null&&!window.collecting&&((++window.draining>=8&&timer.pending()==0&&window.spatialTickets.isEmpty())||head-window.stopped>5_000_000_000L))finish();
+        if(window!=null&&!window.collecting&&((++window.draining>=8&&timer.pending()==0&&window.spatialTickets.isEmpty()
+                &&window.stormTickets.isEmpty())||head-window.stopped>5_000_000_000L))finish();
         var mc=Minecraft.getInstance();
         if(requestedSeconds!=0&&window==null){
             if(mc.level==null||!mc.isWindowActive()){requestedSeconds=0;CreateManaIndustry.LOGGER.warn("[CMI frames] capture requires an active world window");return;}
             window=new Window();window.seconds=requestedSeconds;requestedSeconds=0;
+            window.bindingsStart=GpuBindings.submitted();window.bindingsAvoidedStart=GpuBindings.avoided();
+            var uniformCounters=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
+            window.uniformsStart=uniformCounters.submissions();window.uniformsAvoidedStart=uniformCounters.avoided();
             level=mc.level;width=mc.getWindow().getWidth();height=mc.getWindow().getHeight();
             limit=mc.options.framerateLimit().get();vsync=mc.options.enableVsync().get();
             context=ParticleDiagnostics.INSTANCE.measurementContext();
@@ -106,7 +143,7 @@ public final class ClientFrameCapture {
                     ?com.iridium126.createmanaindustry.client.render.shaderpack.RiftIrisUniforms.visibilityMetadata()
                     :java.util.Map.of("requested",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftSkyClipping,"effective",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftSkyClipping,"reason","vanilla conservative bounds clipping"));
             m.put("shadow_path_at_start",com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.performanceShadowPath():"Iris unavailable");
-            m.put("engine_source_sha256",ParticlePrograms.INSTANCE.diagnosticSourceDigest());m.put("diagnostic_receipt_sha256",com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialNative.receiptDigest());
+            m.put("engine_source_sha256",ParticlePrograms.INSTANCE.diagnosticSourceDigest());m.put("native_module_version",com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialNative.loadedVersion());
             m.put("profile_context_file",ParticleDiagnostics.INSTANCE.exportActiveProfileContext());
             m.put("gold_visible","unavailable: additive command combines materials; no same-generation material census");
             m.put("stage_scope","same scene-frame tagged asynchronous ranges; ranges may nest and must not be summed; absent stages are unavailable/inactive, not zero");
@@ -158,35 +195,52 @@ public final class ClientFrameCapture {
         if(stopAfterFrame&&collecting()){stop();stopAfterFrame=false;}
         active=-1;
     }
-    private void stop(){window.collecting=false;window.stopped=System.nanoTime();}
+    private void stop(){
+        window.collecting=false;window.stopped=System.nanoTime();
+        window.metadata.put("binding_submissions",GpuBindings.submitted()-window.bindingsStart);
+        window.metadata.put("bindings_avoided",GpuBindings.avoided()-window.bindingsAvoidedStart);
+        window.metadata.put("binding_scope","engine buffer, texture and program calls; foreign renderer calls excluded");
+        var uniforms=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
+        window.metadata.put("scalar_vector_uniform_submissions",uniforms.submissions()-window.uniformsStart);
+        window.metadata.put("scalar_vector_uniforms_avoided",uniforms.avoided()-window.uniformsAvoidedStart);
+    }
     /** Called with the source frame tag, never associates delayed census with the current frame. */
     public void census(long sceneFrame,long generation,int live,int models,int body,int carrier,int ghost,int feather,int lod1,int lod2,int additive,int sprite,int alpha){
-        var w=window;if(w==null)return;
-        for(int i=w.size-1;i>=Math.max(0,w.size-256);i--)if(w.sceneFrames[i]==sceneFrame){w.generations[i]=generation;w.live[i]=live;w.models[i]=models;w.body[i]=body;w.carrier[i]=carrier;w.ghost[i]=ghost;int[] counts={feather,lod1,lod2,additive,sprite,alpha};for(int j=0;j<counts.length;j++)w.submissions[j][i]=counts[j];return;}
+        simulationCensus(sceneFrame,generation,live,models);
+        displayCensus(sceneFrame,generation,body,carrier,ghost,feather,lod1,lod2,additive,sprite,alpha);
+    }
+    public void simulationCensus(long sceneFrame,long generation,int live,int models){
+        var w=window;if(w==null)return;Integer i=w.indices.get(sceneFrame);if(i==null||w.generations[i]>generation)return;
+        w.generations[i]=generation;w.live[i]=live;w.models[i]=models;
+    }
+    public void displayCensus(long sceneFrame,long generation,int body,int carrier,int ghost,int feather,int lod1,int lod2,int additive,int sprite,int alpha){
+        var w=window;if(w==null)return;Integer i=w.indices.get(sceneFrame);if(i==null||w.displaySources[i]!=generation)return;
+        w.body[i]=body;w.carrier[i]=carrier;w.ghost[i]=ghost;
+        int[] counts={feather,lod1,lod2,additive,sprite,alpha};for(int j=0;j<counts.length;j++)w.submissions[j][i]=counts[j];
     }
     public void sceneFrame(long frame){if(active>=0){window.sceneFrames[active]=frame;window.indices.put(frame,active);}}
     /** Display and simulation census have separate producers and completion clocks. */
-    public void displayPublication(long frame,long sourceGeneration){
+    public void displayPublication(long frame,long publication,long sourceGeneration){
         var w=window;if(w==null)return;Integer i=w.indices.get(frame);if(i==null)return;
-        w.displayGenerations[i]=frame;w.displaySources[i]=sourceGeneration;
-        if(w.shadowGenerations[i]>=0&&w.shadowGenerations[i]!=sourceGeneration)w.invalid="shadow/display source conflict";
+        w.displayGenerations[i]=publication;w.displaySources[i]=sourceGeneration;
+        if(w.shadowGenerations[i]>=0&&(w.shadowGenerations[i]!=sourceGeneration||w.shadowDisplays[i]!=publication))w.invalid="shadow/display source conflict";
     }
     /** The command source belongs to this exact shadow submission, independent of main-camera visibility. */
-    public void shadowSubmitted(long frame,long generation,int commands){
+    public void shadowSubmitted(long frame,long display,long generation,int commands){
         if(active<0||window.sceneFrames[active]!=frame)return;
         ShadowSlot free=null;for(var slot:shadowSlots)if(slot.fence==0){free=slot;break;}if(free==null)return;
         int read=org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL31.GL_COPY_READ_BUFFER),write=org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL31.GL_COPY_WRITE_BUFFER);
         try{
             if(free.storage==null)free.storage=new com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer(12);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-            org.lwjgl.opengl.GL15.glBindBuffer(org.lwjgl.opengl.GL31.GL_COPY_READ_BUFFER,commands);org.lwjgl.opengl.GL15.glBindBuffer(org.lwjgl.opengl.GL31.GL_COPY_WRITE_BUFFER,free.storage.id());
+            GpuBindings.bind(org.lwjgl.opengl.GL31.GL_COPY_READ_BUFFER,commands);GpuBindings.bind(org.lwjgl.opengl.GL31.GL_COPY_WRITE_BUFFER,free.storage.id());
             int[] fields={ParticleBuffers.IDX_CNT_MODELOP,ParticleBuffers.IDX_CNT_CARRIER,ParticleBuffers.IDX_CNT_GHOST};for(int i=0;i<fields.length;i++)com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(org.lwjgl.opengl.GL31.GL_COPY_READ_BUFFER,org.lwjgl.opengl.GL31.GL_COPY_WRITE_BUFFER,fields[i]*4L,i*4L,4);
-            free.fence=org.lwjgl.opengl.GL32.glFenceSync(org.lwjgl.opengl.GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);free.frame=frame;free.generation=generation;free.owner=window;
-        }finally{org.lwjgl.opengl.GL15.glBindBuffer(org.lwjgl.opengl.GL31.GL_COPY_READ_BUFFER,read);org.lwjgl.opengl.GL15.glBindBuffer(org.lwjgl.opengl.GL31.GL_COPY_WRITE_BUFFER,write);}
+            free.fence=org.lwjgl.opengl.GL32.glFenceSync(org.lwjgl.opengl.GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);free.frame=frame;free.generation=generation;free.display=display;free.owner=window;
+        }finally{GpuBindings.bind(org.lwjgl.opengl.GL31.GL_COPY_READ_BUFFER,read);GpuBindings.bind(org.lwjgl.opengl.GL31.GL_COPY_WRITE_BUFFER,write);}
     }
     private void pollShadow(){
         for(var slot:shadowSlots)if(slot.fence!=0){int status=org.lwjgl.opengl.GL32.glClientWaitSync(slot.fence,0,0);if(status==org.lwjgl.opengl.GL32.GL_TIMEOUT_EXPIRED)continue;
-            if(status!=org.lwjgl.opengl.GL32.GL_WAIT_FAILED&&slot.owner==window){Integer i=window.indices.get(slot.frame);if(i!=null){var bytes=java.nio.ByteBuffer.allocate(12).order(java.nio.ByteOrder.nativeOrder());slot.storage.readCompleted(0,12,bytes);window.shadowGenerations[i]=slot.generation;if(window.displaySources[i]>=0&&window.displaySources[i]!=slot.generation)window.invalid="shadow/display source conflict";for(int k=0;k<3;k++)window.submissions[6+k][i]=Math.max(0,window.submissions[6+k][i])+bytes.getInt(k*4);}}
+            if(status!=org.lwjgl.opengl.GL32.GL_WAIT_FAILED&&slot.owner==window){Integer i=window.indices.get(slot.frame);if(i!=null){var bytes=java.nio.ByteBuffer.allocate(12).order(java.nio.ByteOrder.nativeOrder());slot.storage.readCompleted(0,12,bytes);window.shadowGenerations[i]=slot.generation;window.shadowDisplays[i]=slot.display;if(window.displaySources[i]>=0&&(window.displaySources[i]!=slot.generation||window.displayGenerations[i]!=slot.display))window.invalid="shadow/display source conflict";for(int k=0;k<3;k++)window.submissions[6+k][i]=Math.max(0,window.submissions[6+k][i])+bytes.getInt(k*4);}}
             org.lwjgl.opengl.GL32.glDeleteSync(slot.fence);slot.fence=0;slot.owner=null;
         }
     }
@@ -219,6 +273,9 @@ public final class ClientFrameCapture {
         w.metadata.put("invalid_reason",w.invalid);w.metadata.put("samples",w.size);w.metadata.put("requested_seconds",w.seconds);w.metadata.put("skipped_gpu",w.skippedGpu);
         w.metadata.put("stage_records",w.stageEntries);
         w.metadata.put("spatial_unretired_at_export",w.spatialTickets.size());
+        w.metadata.put("storm_unconsumed_at_export",w.stormTickets.size());
+        w.metadata.put("storm_gpu_scope","CUDA tick segments may overlap OpenGL and frame intervals");
+        w.metadata.put("rt_native_owned_bytes",com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialNative.bytes());
         w.metadata.put("spatial_scope","submissions created during this window; lifecycle receipts drain after stop");
         w.metadata.put("interval_ms",statistics(w.interval,w.size));w.metadata.put("cpu_submit_ms",statistics(w.cpu,w.size));w.metadata.put("gpu_ms",statistics(w.gpu,w.size));
         double total=0;for(int i=0;i<w.size;i++)total+=w.interval[i];w.metadata.put("measured_seconds",total/1000);w.metadata.put("average_fps",total>0?w.size*1000/total:0);
@@ -227,8 +284,8 @@ public final class ClientFrameCapture {
                 Files.createDirectories(directory);String name="frames-"+UUID.randomUUID();
                 Files.writeString(directory.resolve(name+".json"),new GsonBuilder().setPrettyPrinting().create().toJson(w.metadata)+"\n",StandardOpenOption.CREATE_NEW);
                 try(var out=Files.newBufferedWriter(directory.resolve(name+".csv"),StandardOpenOption.CREATE_NEW)){
-                    out.write("frame,scene_frame,published_generation,interval_ms,cpu_submit_ms,gpu_ms,live,model_input,body_visible,carrier_visible,ghost_visible,input_time_sec,input_dt_sec,attack_contract_stage,attack_generation,terrain_generation,display_generation,display_source_generation,shadow_source_generation\n");
-                    for(int i=0;i<w.size;i++)out.write(w.frames[i]+","+w.sceneFrames[i]+","+w.generations[i]+","+w.interval[i]+","+w.cpu[i]+","+w.gpu[i]+","+w.live[i]+","+w.models[i]+","+w.body[i]+","+w.carrier[i]+","+w.ghost[i]+","+w.simulationTime[i]+","+w.simulationDelta[i]+","+w.attacks[i]+","+w.attacksGeneration[i]+","+w.terrainGeneration[i]+","+w.displayGenerations[i]+","+w.displaySources[i]+","+w.shadowGenerations[i]+"\n");
+                    out.write("frame,scene_frame,published_generation,interval_ms,cpu_submit_ms,gpu_ms,live,model_input,body_visible,carrier_visible,ghost_visible,input_time_sec,input_dt_sec,attack_contract_stage,attack_generation,terrain_generation,display_generation,display_source_generation,shadow_source_generation,shadow_display_generation\n");
+                    for(int i=0;i<w.size;i++)out.write(w.frames[i]+","+w.sceneFrames[i]+","+w.generations[i]+","+w.interval[i]+","+w.cpu[i]+","+w.gpu[i]+","+w.live[i]+","+w.models[i]+","+w.body[i]+","+w.carrier[i]+","+w.ghost[i]+","+w.simulationTime[i]+","+w.simulationDelta[i]+","+w.attacks[i]+","+w.attacksGeneration[i]+","+w.terrainGeneration[i]+","+w.displayGenerations[i]+","+w.displaySources[i]+","+w.shadowGenerations[i]+","+w.shadowDisplays[i]+"\n");
                 }
                 try(var out=Files.newBufferedWriter(directory.resolve(name+"-stages.csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,stage,generation,cpu_submit_ms,gpu_ms,cpu_ranges,gpu_ranges\n");
@@ -242,7 +299,11 @@ public final class ClientFrameCapture {
                     out.write("frame,scene_frame,published_generation,feather,lod1,lod2,additive,sprite,alpha,shadow_body,shadow_carrier,shadow_ghost,shadow_generation\n");
                     for(int i=0;i<w.size;i++){out.write(w.frames[i]+","+w.sceneFrames[i]+","+w.generations[i]);for(var counts:w.submissions)out.write(","+counts[i]);out.write(","+w.shadowGenerations[i]+"\n");}
                 }
-                Files.write(directory.resolve(name+"-spatial.csv"),java.util.stream.Stream.concat(java.util.stream.Stream.of("scene_frame,source_tick,target_tick,scene_epoch,nonce,slot,native_abi,statistics_schema,event,consumed,external_input_wait_ms,validate_and_instance_prepare_ms,ias_maintenance_ms,probe_and_parameter_upload_ms,seal_and_signal_ms"),w.spatial.stream()).toList(),StandardOpenOption.CREATE_NEW);try(var out=Files.newBufferedWriter(directory.resolve(name+"-camera.csv"),StandardOpenOption.CREATE_NEW)){
+                Files.write(directory.resolve(name+"-spatial.csv"),java.util.stream.Stream.concat(java.util.stream.Stream.of("scene_frame,source_tick,target_tick,scene_epoch,nonce,slot,native_abi,statistics_schema,event,consumed,external_input_wait_ms,validate_and_instance_prepare_ms,ias_maintenance_ms,probe_and_parameter_upload_ms,seal_and_signal_ms,worker_epoch,query_kind,members,terrain_boxes"),w.spatial.stream()).toList(),StandardOpenOption.CREATE_NEW);
+                Files.write(directory.resolve(name+"-storm.csv"),java.util.stream.Stream.concat(java.util.stream.Stream.of(
+                        "scene_frame,worker,identity,tick,sequence,display_slot,member_range,terrain_boxes,queued,in_flight,input_bytes,applied,cpu_submit_ms,gpu_control_ms,gpu_instance_prepare_ms,gpu_ias_ms,gpu_trace_ms,gpu_step_ms,gpu_feedback_ms,gpu_display_ms,display_records,display_record_bytes"),
+                        w.stormSamples.stream()).toList(),StandardOpenOption.CREATE_NEW);
+                try(var out=Files.newBufferedWriter(directory.resolve(name+"-camera.csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,x,y,z,yaw_degrees,pitch_degrees,vertical_fov_degrees\n");
                     for(int i=0;i<w.size;i++){out.write(w.frames[i]+","+w.sceneFrames[i]);for(var values:w.camera)out.write(","+values[i]);out.write("\n");}
                 }

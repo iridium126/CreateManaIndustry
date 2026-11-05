@@ -107,7 +107,7 @@ public final class PackageShaderCompiler implements AutoCloseable {
             // release its native buffer. Keep ownership in the program bundle.
             if(shader.MODEL_VIEW_MATRIX==null)shader.MODEL_VIEW_MATRIX=placeholder=new Uniform("ModelViewMat",10,16,shader);
             String[] names={"cmi_PackagePool","cmi_PackageAttachment","cmi_PackageLight"};
-            for(int i=0;i<names.length;i++)GL41.glProgramUniform1i(shader.getId(),GL20.glGetUniformLocation(shader.getId(),names[i]),SAMPLER_BASE+i);
+            for(int i=0;i<names.length;i++)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(shader.getId(),GL20.glGetUniformLocation(shader.getId(),names[i]),SAMPLER_BASE+i);
             int atlas=-1;
             for(String uniform:new String[]{"gtexture","tex","texture0"}) {
                 int location=GL20.glGetUniformLocation(shader.getId(),uniform);

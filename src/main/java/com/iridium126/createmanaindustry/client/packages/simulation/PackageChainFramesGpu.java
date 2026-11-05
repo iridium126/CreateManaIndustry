@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.simulation;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import com.iridium126.createmanaindustry.client.packages.feedback.PackageCpuDiagnostics;
 
@@ -45,7 +47,7 @@ public final class PackageChainFramesGpu implements AutoCloseable {
     }
     private static ByteBuffer map(int buffer,int bytes) {
         if(buffer==0)throw new IllegalStateException("Chain frame allocation failed");
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,MAP_FLAGS);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,MAP_FLAGS);
         if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)throw new IllegalStateException("Chain frame storage unavailable");
         var mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,bytes,MAP_FLAGS);
         if(mapped==null)throw new IllegalStateException("Chain frame mapping unavailable");return mapped.order(ByteOrder.nativeOrder());
@@ -79,15 +81,15 @@ public final class PackageChainFramesGpu implements AutoCloseable {
         if(chosen==null){skipped++;return null;}
         if(chosen.capacity<Math.max(1,count)) {
             chosen.capacity=Math.min(capacity,Math.max(64,Integer.highestOneBit(Math.max(1,count)-1)<<1));
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,chosen.frames);
+            GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,chosen.frames);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,(long)chosen.capacity*FRAME_BYTES,GL15.GL_DYNAMIC_DRAW);
             if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=(long)chosen.capacity*FRAME_BYTES)
                 throw new IllegalStateException("Chain expanded frame storage unavailable");
         }
         chosen.mapped.clear();chosen.mapped.put(parents.duplicate());uploadedBytes+=parents.remaining();
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(chosen.parents,origins,chosen.frames));}
-        GL20.glUseProgram(program);GL30.glUniform1ui(countLocation,count);GL30.glUniform1ui(parentsLocation,parentCount);
+        try(var stack=MemoryStack.stackPush()){GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(chosen.parents,origins,chosen.frames));}
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(countLocation,count);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(parentsLocation,parentCount);
         if(count>0){{PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((count+63)/64,1,1);}com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
         chosen.leased=true;return new View(chosen,count);
     }

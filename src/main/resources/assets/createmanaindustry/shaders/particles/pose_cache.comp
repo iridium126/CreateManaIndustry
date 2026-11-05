@@ -1,0 +1,49 @@
+// One producer for camera/shadow candidates; unknown visibility retains the instance.
+layout(local_size_x=64) in;
+layout(std430,binding=0) readonly buffer PosePool {vec4 rows[];} posePool;
+layout(std430,binding=3) readonly buffer PoseCount {uint live;} poseCount;
+layout(std430,binding=5) readonly buffer PoseEmitters {vec4 rows[];} poseEmitters;
+layout(std430,binding=CMI_RESOURCE_POSE_OUTPUT_BINDING) buffer PoseOutput {uvec4 rows[];} poseOutput;
+#pragma cmi_include chunks/population_read.glsl
+#pragma cmi_include chunks/rt_visibility_read.glsl
+#define CMI_POSE_PRODUCER
+#pragma cmi_include chunks/allay_pose.glsl
+uniform uint poseStamp;
+uniform bool uShadowMayDraw;
+uniform float uWaveTier[4];
+void main(){
+ uint rank=gl_GlobalInvocationID.x;
+ if(!cmiPopulationIndexed(poseCount.live,false)||rank>=populationRead.modelCount)return;
+ uint slot=cmiPopulationSlot(rank,poseCount.live,false),animationSlot=cmiPopulationAnimation(rank);
+ if(slot>=poseCount.live||animationSlot>=262144u)return;
+ uint at=slot*4u;vec4 p0=posePool.rows[at],p1=posePool.rows[at+1u],p3=posePool.rows[at+3u];
+ // The later Iris view may invalidate its light proof; a camera-hidden
+ // model can still be a shadow candidate in that view.
+ if((cmiRtVisibility(p0.xyz)&1u)==0u&&!uShadowMayDraw)return;
+ uint hb=floatBitsToUint(p3.w)*VEC4_PER_EMITTER;vec4 storm=poseEmitters.rows[hb+18u];
+ bool corpse=p3.y<=0.;int animation=int(poseEmitters.rows[hb+17u].x);
+ if(storm.x>.5)animation=cmiStormAnimOverride(distance(p0.xyz,poseEmitters.rows[hb+19u].xyz),storm.y,p3.z,uTimeSec);
+ if(corpse)animation=3;
+ cmiLoadAllayAnimation(animationSlot,p3.x);
+ // Only the active candidate's animation is published for draw fallback.
+ // The normal draw uses the matrices below without rereading this prefix.
+ uint animationBase=animationSlot*4u;
+ for(uint row=0u;row<3u;row++)
+  poseOutput.rows[animationBase+row]=texelFetch(cmi_AllayAnimation,int(animationBase+row));
+ float carry=0.,tier=0.;
+ if(!corpse&&storm.x>.5){int claim=cmiStormWaveClaim(p3.z,p0.w);if(claim>=0){
+  carry=uStarfallEnabled?cmiAttackCarry(p0.w,uTimeSec,p1.w):cmiStormCarryRamp(uTimeSec,uWave[claim].z,uWave[claim].w);
+  tier=uStarfallEnabled?cmiStarTier(claim):uWaveTier[claim];
+ }}
+ float item=tier>.5?tier:poseEmitters.rows[hb+17u].z;
+ float bodyCarry=uStarfallEnabled&&!corpse&&storm.x>.5?carry:0.,yaw=0.;
+ uint outputBase=uint(CMI_RESOURCE_POSE_ANIMATION_ROWS)+animationSlot*uint(CMI_RESOURCE_POSE_ROWS_PER_INSTANCE);
+ for(int part=0;part<8;part++){
+  mat4 transform=cmiAllayAttackPartTransform(p3.x,p3.z,p0.w,p0.xyz,p1.xyz,animation,part,yaw,part==7?carry:bodyCarry,p1.w,!corpse&&storm.x>.5);
+  uint outAt=outputBase+1u+uint(part)*3u;
+  poseOutput.rows[outAt]=floatBitsToUint(vec4(transform[0].x,transform[1].x,transform[2].x,transform[3].x));
+  poseOutput.rows[outAt+1u]=floatBitsToUint(vec4(transform[0].y,transform[1].y,transform[2].y,transform[3].y));
+  poseOutput.rows[outAt+2u]=floatBitsToUint(vec4(transform[0].z,transform[1].z,transform[2].z,transform[3].z));
+ }
+ poseOutput.rows[outputBase]=uvec4(floatBitsToUint(yaw),poseStamp,floatBitsToUint(item),floatBitsToUint(carry));
+}

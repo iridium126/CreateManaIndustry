@@ -11,11 +11,12 @@ public final class UpdateResourceInterface {
     public record Texture(String name,int type,int unit){}
     public static final List<Texture> SAMPLERS=List.of(new Texture("uCollision",GL20.GL_SAMPLER_3D,0),
             new Texture("uStormCollisionAtlas",GL30.GL_UNSIGNED_INT_SAMPLER_3D,1),new Texture("uStormCollisionTable",GL31.GL_INT_SAMPLER_BUFFER,2),
-            new Texture("cmi_AllayAnimationRead",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,3),new Texture("cmiDomeKeys",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,15));
+            new Texture("cmi_AllayAnimationRead",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,3),new Texture("cmiDomeKeys",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_DOME_KEYS));
     public static final List<Texture> IMAGES=List.of(new Texture("cmi_AllayAnimationWrite",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,0),
             new Texture("cmi_AllayAnimationInitial",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,1),new Texture("cmi_ModelMembersWrite",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,2),
             new Texture("cmi_ModelAllocator",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,3),
             new Texture("cmiSpatialWrite",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,4),new Texture("cmiSpatialMeta",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,5),
+            new Texture("cmiSpatialSteering",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,5),
             new Texture("cmiSpatialHints",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,6),new Texture("cmiSpatialRead",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,7));
     public record Report(Map<String,Integer> blocks,Map<String,Integer> samplers,Map<String,Integer> images){}
     public static Report verify(int program,int expectedBlocks){
@@ -43,13 +44,15 @@ public final class UpdateResourceInterface {
         return new Report(Collections.unmodifiableMap(blocks),samplers,images);
     }
     private static Map<String,Integer> verifyTextures(int program,List<Texture> expected,int limitName){
-        int limit=GL11.glGetInteger(limitName);var active=new TreeMap<String,Integer>();var units=new HashMap<Integer,Integer>();
+        int limit=GL11.glGetInteger(limitName);
+        int addressLimit=limitName==GL42.GL_MAX_IMAGE_UNITS?limit:GL11.glGetInteger(GL20.GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS);
+        var active=new TreeMap<String,Integer>();var units=new HashMap<Integer,Integer>();
         for(var texture:expected){
             int index=GL43.glGetProgramResourceIndex(program,GL43.GL_UNIFORM,texture.name());if(index==GL43.GL_INVALID_INDEX)continue;
             int[] info=new int[3];GL43.glGetProgramResourceiv(program,GL43.GL_UNIFORM,index,new int[]{GL43.GL_TYPE,GL43.GL_LOCATION,GL43.GL_ARRAY_SIZE},null,info);
             if(info[0]!=texture.type()||info[2]!=1)throw new IllegalStateException("Update texture type changed: "+texture.name());
-            if(texture.unit()>=limit)throw new IllegalStateException("Update texture unit exceeds hardware: "+texture.name());
-            GL41.glProgramUniform1i(program,info[1],texture.unit());
+            if(texture.unit()>=addressLimit||active.size()>=limit)throw new IllegalStateException("Update texture unit exceeds hardware: "+texture.name());
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,info[1],texture.unit());
             Integer previous=units.put(texture.unit(),texture.type());if(previous!=null&&previous!=texture.type())throw new IllegalStateException("Update sampler type conflict at "+texture.unit());
             if(GL20.glGetUniformi(program,info[1])!=texture.unit())throw new IllegalStateException("Update texture unit was not installed");active.put(texture.name(),texture.unit());
         }

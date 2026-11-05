@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.nio.IntBuffer;
 import com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient;
@@ -34,7 +36,7 @@ public final class StormLodGpu implements AutoCloseable {
     private final StormLodTarget target=new StormLodTarget();
     private final com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry bodyTiming=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry(),pixelTiming=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry();
     private StormLodGpu() {}
-    private static int buffer(long bytes){int id=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_DRAW);return id;}
+    private static int buffer(long bytes){int id=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,id);GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_DRAW);return id;}
     private void allocate(){
         ensureCovered();if(dead!=0)return;
         dead=buffer(MASK_WORDS*4L);
@@ -44,20 +46,20 @@ public final class StormLodGpu implements AutoCloseable {
     /** Called before main keygen; its output pool is this generation's real near representation. */
     public void keygen(int program){
         ensureCovered();
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,covered);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,covered);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,new int[]{0});
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,21,covered);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,21,covered);
         setIntUniform(program,"uLodCapture",StormLodClient.active()&&StormLodClient.identity.equals(AllayStormRuntime.INSTANCE.identity())?1:0);
         setFloatUniform(program,"uOpaqueCutoff",StormLodRules.near(ClientConfig.particleFadeDistance));
     }
-    public void prepare(long nextGeneration,Camera camera,Matrix4fc view,Matrix4fc projection,float partial){
+    public void prepare(long nextGeneration,Camera camera,Matrix4fc view,Matrix4fc projection,long displayTick,float partial){
         boolean profiling=ParticleDiagnostics.INSTANCE.enabled();
         bodyTiming.configure(profiling,profiling);pixelTiming.configure(profiling,profiling);target.profiling(profiling);
         bodyTiming.poll();pixelTiming.poll();
         candidateGeneration=nextGeneration;candidate=1-bank;candidateActive=false;
         if(!StormLodClient.active())return;
         allocate();
-        var mc=Minecraft.getInstance();var sample=StormLodClient.CENTERS.sample(mc.level.getGameTime(),partial);
+        var sample=StormLodClient.CENTERS.sample(displayTick,partial);
         if(sample==null)return;
         float near=StormLodRules.near(ClientConfig.particleFadeDistance);
         float far=StormLodRules.limit(StormLodClient.serverLimit,ClientConfig.stormLodDistance);
@@ -73,14 +75,14 @@ public final class StormLodGpu implements AutoCloseable {
         if(uploadedRevision!=StormLodClient.revision){
             mask.clear();long[] words=StormLodClient.DEAD.toLongArray();
             for(int i=0;i<MASK_WORDS;i++){long word=i/2<words.length?words[i/2]:0;mask.put((int)(word>>>((i&1)*32)));}
-            mask.flip();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,dead);GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,mask);uploadedRevision=StormLodClient.revision;
+            mask.flip();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,dead);GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,mask);uploadedRevision=StormLodClient.revision;
         }
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,commands[candidate]);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,commands[candidate]);
         GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,new int[]{AllayModelGeometry.BODY_OPAQUE_INDEX_COUNT,0,0,0,0,6,0,0,0,0});
-        int program=ParticlePrograms.INSTANCE.lodCompute();GL20.glUseProgram(program);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,records[candidate]);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,order[candidate]);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,2,commands[candidate]);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,3,dead);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,4,covered);
-        var def=StormLodClient.definition;var phase=AllayStormPhases.evaluate(def.creationRadius(),def.finalRadius(),def.growthPerSecond(),def.createdAt(),mc.level.getGameTime(),partial,sample.count(),def.seed());
+        int program=ParticlePrograms.INSTANCE.lodCompute();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,0,records[candidate]);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,1,order[candidate]);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,2,commands[candidate]);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,3,dead);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,4,covered);
+        var def=StormLodClient.definition;var phase=AllayStormPhases.evaluate(def.creationRadius(),def.finalRadius(),def.growthPerSecond(),def.createdAt(),displayTick,partial,sample.count(),def.seed());
         setUIntUniform(program,"uCount",Math.clamp((int)sample.count(),0,CAPACITY));setFloatUniform(program,"uSeed",def.seed());
         setFloatUniform(program,"uRadius",(float)sample.radius());setFloatUniform(program,"uOmega",phase.omega());setFloatUniform(program,"uRotation",phase.rotation());
         setFloatUniform(program,"uCirculation",phase.conveyor());setFloatUniform(program,"uCirculationRate",phase.conveyorRate());
@@ -93,13 +95,7 @@ public final class StormLodGpu implements AutoCloseable {
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
         candidateActive=true;
     }
-    /** Candidate indirect commands, copied before its publication fence. */
-    boolean copyProfile(ParticleReadbacks.Slot slot){
-        if(!slot.profile||!candidateActive||candidateGeneration!=slot.generation||commands[candidate]==0)return false;
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,commands[candidate]);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.buffer);
-        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,ParticleReadbacks.PROFILE_LOD_OFFSET,40);
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,0);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,0);return true;
-    }
+    int displayCommands(long displayGeneration){return ready(displayGeneration)?commands[bank]:0;}
     public void commit(long publishedGeneration){
         if(candidateGeneration!=publishedGeneration)throw new IllegalStateException("LOD generation mismatch");
         bank=candidate;generation=publishedGeneration;active=candidateActive;identity=StormLodClient.identity;nativeDrawn=false;
@@ -128,7 +124,7 @@ public final class StormLodGpu implements AutoCloseable {
         nativeDrawn=true;
     }
     /** Native variant reads the same buffers through the engine's existing texture-buffer views. */
-    public void bindNative(){ParticleBuffers.INSTANCE.bindMergedTbos(10,records[bank],order[bank]);ParticleBuffers.INSTANCE.bindVao();GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,commands[bank]);}
+    public void bindNative(){ParticleBuffers.INSTANCE.bindMergedTbos(10,records[bank],order[bank]);ParticleBuffers.INSTANCE.bindVao();GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,commands[bank]);}
     public void drawBody(){
         bodyTiming.begin(ParticleDiagnostics.INSTANCE.enabled(),ParticleDiagnostics.INSTANCE.enabled(),ParticleDiagnostics.INSTANCE.lastFrame(),generation);
         try{GL40.glDrawElementsIndirect(GL11.GL_TRIANGLES,GL11.GL_UNSIGNED_INT,0L);}finally{bodyTiming.end();}
@@ -140,16 +136,16 @@ public final class StormLodGpu implements AutoCloseable {
     public void fallback(long publishedGeneration,Matrix4fc view,Matrix4fc projection){
         if(nativeDrawn||!ready(publishedGeneration))return;
         target.frameContext(ParticleDiagnostics.INSTANCE.lastFrame(),generation);target.draw(projection,projection(projection),()->{
-            int program=ParticlePrograms.INSTANCE.lodRender();GL20.glUseProgram(program);
+            int program=ParticlePrograms.INSTANCE.lodRender();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);
             setMat4Uniform(program,"ModelViewMat",view);setMat4Uniform(program,"ProjMat",projection(projection));setMat4Uniform(program,"cmi_LodInverseView",new Matrix4f(view).invert());
             ParticleBuffers.INSTANCE.bindVao();ParticleBuffers.INSTANCE.bindModelGeo();
-            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,records[bank]);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,order[bank]);
+            GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,0,records[bank]);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,1,order[bank]);
             // Model geometry remains bound at BIND_MODELGEO by the engine.
             ParticleAtlas.ALLAY.bind(1);setIntUniform(program,"uSprite",1);
-            GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,commands[bank]);
+            GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,commands[bank]);
             RenderSystem.enableDepthTest();RenderSystem.depthMask(true);RenderSystem.disableBlend();RenderSystem.disableCull();
             setIntUniform(program,"cmi_LodPass",1);drawBody();
-            int pixel=ParticlePrograms.INSTANCE.lodPixel();GL20.glUseProgram(pixel);
+            int pixel=ParticlePrograms.INSTANCE.lodPixel();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(pixel);
             setMat4Uniform(pixel,"ModelViewMat",view);setMat4Uniform(pixel,"ProjMat",projection(projection));setMat4Uniform(pixel,"cmi_LodInverseView",new Matrix4f(view).invert());
             setIntUniform(pixel,"uSprite",1);setIntUniform(pixel,"uMode",1);setIntUniform(pixel,"cmi_LodPass",2);drawPixel();
         });

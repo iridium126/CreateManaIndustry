@@ -58,14 +58,18 @@ public final class ParticlePrograms {
     private static final List<Specification> SPECIFICATIONS=List.of(
         new Specification("prepare_dispatch.comp",null,(owner,id)->owner.prepareDispatch=id),
         new Specification("reset.comp",null,(owner,id)->owner.reset=id),
-        new Specification("update.comp",null,(owner,id)->owner.update=id),
+        new Specification("update_ordinary.comp",null,(owner,id)->owner.ordinaryUpdate=id),
+        new Specification("update_model.comp",null,(owner,id)->owner.modelUpdate=id),
+        new Specification("update_storm_gl.comp",null,(owner,id)->owner.update=id),
         new Specification("allay_animate.comp",null,(owner,id)->owner.allayAnimate=id),
         new Specification("model_prepare.comp",null,(owner,id)->owner.modelPrepare=id),
         new Specification("model_filter.comp",null,(owner,id)->owner.modelFilter=id),
         new Specification("model_compact.comp",null,(owner,id)->owner.modelCompact=id),
         new Specification("emit.comp",null,(owner,id)->owner.emit=id),
         new Specification("block_emit.comp",null,(owner,id)->owner.blockEmit=id),
-        new Specification("keygen.comp",null,(owner,id)->owner.keygen=id),
+        new Specification("keygen_ordinary.comp",null,(owner,id)->owner.ordinaryKeygen=id),
+        new Specification("keygen_model.comp",null,(owner,id)->owner.keygen=id),
+        new Specification("census_ordinary.comp",null,(owner,id)->owner.ordinaryCensus=id),
         new Specification("feather_tools.comp",null,(owner,id)->owner.featherTools=id),
         new Specification("gold_surface.comp",null,(owner,id)->owner.goldSurface=id),
         new Specification("feather_emit.comp",null,(owner,id)->owner.featherEmit=id),
@@ -126,7 +130,10 @@ public final class ParticlePrograms {
                 long now=System.nanoTime();if(now-progress>=5_000_000_000L){progress=now;LOGGER.info("[CMI particles] shader compilation still pending: {} ({}s); retaining active programs",specification.path(),(now-programStarted)/1_000_000_000L);}return false;
             }
             int linked=current.take();current.close();current=null;
-            try{if(specification.vertex.equals("update.comp"))updateInterface=UpdateResourceInterface.verify(linked,16);}
+            try{com.iridium126.createmanaindustry.client.gpu.shader.GpuProgramContract.installSamplers(linked);
+                com.iridium126.createmanaindustry.client.gpu.shader.GpuProgramContract.verify(linked,specification.path());
+                if(specification.vertex.startsWith("update_"))SimulationParameters.verify(linked);
+                if(specification.vertex.equals("update_storm_gl.comp"))updateInterface=UpdateResourceInterface.verify(linked,16);}
             catch(RuntimeException invalid){com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(linked);throw invalid;}
             completed.put(specification.key(),linked);index++;
             LOGGER.info("[CMI particles] shader compilation finished: {} ({}ms)",specification.path(),(System.nanoTime()-programStarted)/1_000_000L);
@@ -154,13 +161,14 @@ public final class ParticlePrograms {
     public static String commonPrelude(){return PRELUDE;}
 
     private static String buildPrelude() {
-        StringBuilder sb = new StringBuilder(768);
+        StringBuilder sb = new StringBuilder(com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.glsl());
         sb.append(ParticleAtlasLayout.shaderPrelude());
         sb.append("#define CMI_GOLD_TYPE ").append(com.iridium126.createmanaindustry.client.particles.emitter.AllayGoldSpecs.TYPE).append("u\n#define CMI_GOLD_MAX ").append(com.iridium126.createmanaindustry.client.particles.emitter.AllayGoldSpecs.MAX_COUNT).append("u\n");
         // A uniform zero origin prevents pathological cold linking of large constant
         // SSBO ranges on tested NVIDIA drivers. Apply it once at every access, so
         // relative addresses remain visible to alias analysis in the update kernel.
         sb.append("#ifndef CMI_STORM_STATE_BASE_DECLARED\n#define CMI_STORM_STATE_BASE_DECLARED\nuniform uint uStormStateBase;\n#define CMI_STATE(pool,index) pool.words[uStormStateBase+(index)]\n#endif\n");
+        sb.append("#define CMI_DOME_JOIN_DELTA_Y ").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.DOME_JOIN_DELTA_Y).append("u\n");
         sb.append(com.iridium126.createmanaindustry.client.allaystorm.ColumnGpuLayout.glsl());
         sb.append("#define CMI_NAV_EXTRA_BASE (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.NAV_EXTRA).append("u)\n");
         sb.append("#define CMI_DEPEN_STREAK_BASE (").append(com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.GATHER_STREAK).append("u)\n");
@@ -268,6 +276,9 @@ public final class ParticlePrograms {
     public int prepareDispatch() { return prepareDispatch; }
     private int reset;
     private int update;
+    private int ordinaryUpdate,modelUpdate;
+    public int ordinaryUpdate(){return ordinaryUpdate;}
+    public int modelUpdate(){return modelUpdate;}
     private int allayAnimate,modelPrepare,modelFilter,modelCompact;
     public int modelFilter(){return modelFilter;}
     public int modelCompact(){return modelCompact;}
@@ -281,6 +292,7 @@ public final class ParticlePrograms {
     public int lodRender(){return lodRender;}
     public int lodComposite(){return lodComposite;}
     private int keygen;
+    private int ordinaryKeygen,ordinaryCensus;
     private int radixHist;
     private int radixScan;
     private int radixScatter;
@@ -318,7 +330,7 @@ public final class ParticlePrograms {
     /** Captures use published include-expanded source, never a pending resource reload. */
     public String committedPlain(String file){String value=committedSources.get(GLSL_DIR+file);if(value==null)throw new IllegalStateException("Particle source is not published: "+file);return value;}
     public String diagnosticProgramName(int id){
-        if(id==update)return "update.comp";if(id==grid)return "gridbuild.comp";if(id==prepareDispatch)return "prepare_dispatch.comp";if(id==reset)return "reset.comp";
+        if(id==update)return "update_storm_gl.comp";if(id==ordinaryUpdate)return "update_ordinary.comp";if(id==modelUpdate)return "update_model.comp";if(id==grid)return "gridbuild.comp";if(id==prepareDispatch)return "prepare_dispatch.comp";if(id==reset)return "reset.comp";
         if(id==domeContacts)return "dome_contacts.comp";if(id==domeControl)return "dome_contact_control.comp";if(id==domeApply)return "dome_contact_apply.comp";if(id==domeAudit)return "dome_contact_audit.comp";if(id==domePath)return "dome_path.comp";
         if(id==depenetrationPrepare)return "storm_depenetration_prepare.comp";if(id==depenetrationSchedule)return "storm_depenetration_schedule.comp";if(id==depenetration)return "storm_depenetration.comp";if(id==columnRecovery)return "column_restore.comp";if(id==waveContact)return "wavecontact.comp";
         return "external-program-binary";
@@ -391,10 +403,14 @@ public final class ParticlePrograms {
             this.prepareDispatch = candidate.prepareDispatch; candidate.prepareDispatch = 0;
             this.reset = candidate.reset; candidate.reset = 0;
             this.update = candidate.update; candidate.update = 0;
+            this.ordinaryUpdate=candidate.ordinaryUpdate;candidate.ordinaryUpdate=0;
+            this.modelUpdate=candidate.modelUpdate;candidate.modelUpdate=0;
             this.modelFilter=candidate.modelFilter;candidate.modelFilter=0;this.modelCompact=candidate.modelCompact;candidate.modelCompact=0;this.modelPrepare=candidate.modelPrepare;candidate.modelPrepare=0;this.allayAnimate=candidate.allayAnimate;candidate.allayAnimate=0;
             this.emit = candidate.emit; candidate.emit = 0;
             this.blockEmit = candidate.blockEmit; candidate.blockEmit = 0;
             this.keygen = candidate.keygen; candidate.keygen = 0;
+            this.ordinaryKeygen=candidate.ordinaryKeygen;candidate.ordinaryKeygen=0;
+            this.ordinaryCensus=candidate.ordinaryCensus;candidate.ordinaryCensus=0;
             this.goldSurface=candidate.goldSurface;candidate.goldSurface=0;this.featherTools=candidate.featherTools;candidate.featherTools=0;this.featherEmit=candidate.featherEmit;candidate.featherEmit=0;this.featherRender=candidate.featherRender;candidate.featherRender=0;
             this.lodCompute=candidate.lodCompute;candidate.lodCompute=0;this.lodRender=candidate.lodRender;candidate.lodRender=0;this.lodComposite=candidate.lodComposite;candidate.lodComposite=0;this.lodPixel=candidate.lodPixel;candidate.lodPixel=0;
             this.radixHist = candidate.radixHist; candidate.radixHist = 0;
@@ -423,16 +439,16 @@ public final class ParticlePrograms {
     }
 
     public void configureStatic(int capacity) {
-        for (int p : new int[] {prepareDispatch, update, columnRecovery, emit, blockEmit}) {
+        for (int p : new int[] {prepareDispatch, update, ordinaryUpdate,modelUpdate,columnRecovery, emit, blockEmit}) {
             int location = GL20.glGetUniformLocation(p, "uCapacity");
-            if (location >= 0) org.lwjgl.opengl.GL41.glProgramUniform1ui(p, location, capacity);
+            if (location >= 0) com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(p, location, capacity);
         }
     }
 
     public boolean ready() {
-        return goldSurface!=0&&featherTools!=0&&featherEmit!=0&&featherRender!=0&&lodPixel!=0&&lodCompute!=0&&lodRender!=0&&lodComposite!=0&&this.modelFilter!=0&&this.modelCompact!=0&&this.allayAnimate!=0&&this.modelPrepare!=0&&this.prepareDispatch != 0 && this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
+        return ordinaryUpdate!=0&&modelUpdate!=0&&goldSurface!=0&&featherTools!=0&&featherEmit!=0&&featherRender!=0&&lodPixel!=0&&lodCompute!=0&&lodRender!=0&&lodComposite!=0&&this.modelFilter!=0&&this.modelCompact!=0&&this.allayAnimate!=0&&this.modelPrepare!=0&&this.prepareDispatch != 0 && this.blockEmit != 0 && this.reset != 0 && this.update != 0 && this.emit != 0 && this.render != 0
                 && this.texturedRender != 0 && this.modelRender != 0
-                && this.keygen != 0 && this.radixHist != 0 && this.radixScan != 0
+                && this.keygen != 0 && this.ordinaryKeygen!=0&&this.ordinaryCensus!=0 && this.radixHist != 0 && this.radixScan != 0
                 && this.radixScatter != 0 && this.capture != 0 && this.grid != 0
                 && this.hit != 0 && this.damagePrepare!=0 && this.stormPos != 0 && this.columnSnapshot != 0 && this.columnRecovery != 0 && this.waveContact != 0 && this.domeContacts!=0 && this.domeControl!=0 && this.domeApply!=0 && this.domeAudit!=0 && this.domePath!=0 && this.depenetration!=0 && this.depenetrationSchedule!=0 && this.depenetrationPrepare!=0;
     }
@@ -456,6 +472,8 @@ public final class ParticlePrograms {
     public int keygen() {
         return this.keygen;
     }
+    public int ordinaryKeygen(){return ordinaryKeygen;}
+    public int ordinaryCensus(){return ordinaryCensus;}
 
     public int radixHist() {
         return this.radixHist;
@@ -564,7 +582,7 @@ public final class ParticlePrograms {
         committedSources=Map.of();
         committedDigest=null;
         for (int p : new int[] {
-                this.modelFilter,this.modelCompact,this.modelPrepare,this.allayAnimate,this.prepareDispatch, this.reset, this.update, this.emit, this.blockEmit, this.keygen,
+                this.modelFilter,this.modelCompact,this.modelPrepare,this.allayAnimate,this.prepareDispatch, this.reset, this.update,this.ordinaryUpdate,this.modelUpdate, this.emit, this.blockEmit, this.keygen,this.ordinaryKeygen,this.ordinaryCensus,
                 this.radixHist, this.radixScan, this.radixScatter, this.capture,
                 this.grid, this.hit, this.damagePrepare,this.stormPos,this.columnSnapshot,this.columnRecovery, this.waveContact,this.domeContacts,this.domeControl,this.domeApply,this.domeAudit,this.domePath,this.depenetration,this.depenetrationSchedule,this.depenetrationPrepare,
                 this.goldSurface,this.featherTools,this.featherEmit,this.featherRender,this.render, this.texturedRender, this.modelRender, this.lodCompute,this.lodRender,this.lodComposite,this.lodPixel }) {
@@ -572,6 +590,8 @@ public final class ParticlePrograms {
         }
         this.modelFilter=this.modelCompact=this.modelPrepare=this.allayAnimate=0;
         this.prepareDispatch = this.reset = this.update = this.emit = this.blockEmit = this.keygen = 0;
+        this.ordinaryUpdate=this.modelUpdate=0;
+        this.ordinaryKeygen=this.ordinaryCensus=0;
         this.radixHist = this.radixScan = this.radixScatter = this.capture = 0;
         this.grid = this.hit = this.damagePrepare = this.stormPos = this.waveContact = 0;
         this.domeContacts=0;this.domeControl=0;this.domeApply=0;this.domeAudit=0;this.domePath=0;this.depenetration=0;this.depenetrationSchedule=0;this.depenetrationPrepare=0;this.columnSnapshot=0;this.columnRecovery=0;

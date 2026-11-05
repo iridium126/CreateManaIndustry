@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.allaystorm;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.client.gpu.buffer.*;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms;
 import com.iridium126.createmanaindustry.content.allaystorm.*;
@@ -14,6 +16,7 @@ import org.lwjgl.opengl.*;
 public final class ColumnSnapshotClient {
     public static final ColumnSnapshotClient INSTANCE = new ColumnSnapshotClient();
     public static final int PER_FRAME = 4;
+    public record NativeCapture(ClientboundStormColumnSnapshotRequest request,int slot) {}
     private static final class Capture {
         GpuReadbackBuffer buffer;
         long fence, epoch, tick;
@@ -59,9 +62,50 @@ public final class ColumnSnapshotClient {
         var previous = restores.get(packet.id());
         if (previous != null && previous.packet.token() >= packet.token()) return;
         restores.put(packet.id(), new Restore(packet)); revision++;
+        runtime.stageNativeColumnRestore(packet);
     }
 
     public boolean restoring() { return !restores.isEmpty(); }
+
+    public List<NativeCapture> reserveNativeCaptures(){
+        if(requests.isEmpty())return List.of();
+        var runtime=AllayStormRuntime.INSTANCE;
+        var selected=new ArrayList<NativeCapture>(PER_FRAME);
+        for(var iterator=requests.values().iterator();iterator.hasNext()&&selected.size()<PER_FRAME;){
+            var request=iterator.next();
+            if(!captureStillWanted(request)){iterator.remove();continue;}
+            int slot=runtime.columnSlot(request.id());
+            if(slot<4||StarfallGpuBuffers.INSTANCE.columnWaiting(slot,request.id()))continue;
+            selected.add(new NativeCapture(request,slot-4));
+            iterator.remove();
+        }
+        return List.copyOf(selected);
+    }
+    private boolean captureStillWanted(ClientboundStormColumnSnapshotRequest request){
+        return matches(request.identity())&&AllayStormRuntime.INSTANCE.columnPacket(request.id())!=null
+                &&Minecraft.getInstance().level.getGameTime()-request.requestedAt()<20;
+    }
+    public void publishCapture(ClientboundStormColumnSnapshotRequest request,long tick,float seconds,float[] values){
+        if(!captureStillWanted(request))return;
+        var runtime=AllayStormRuntime.INSTANCE;
+        var column=runtime.columnPacket(request.id());
+        var completed=runtime.columnCompleted(request.id());
+        for(int rank=0;rank<StarfallColumnSnapshot.MEMBERS;rank++){
+            int offset=rank*StarfallColumnSnapshot.STRIDE;
+            if(completed.get(rank)||!runtime.livingMember(column.members()[rank])){
+                Arrays.fill(values,offset,offset+StarfallColumnSnapshot.STRIDE,0);
+                values[offset]=6;
+            }else if(values[offset]==255){
+                requests.putIfAbsent(request.id(),request);
+                return;
+            }
+        }
+        StarfallColumnSnapshot snapshot;
+        try{snapshot=new StarfallColumnSnapshot(values);}
+        catch(IllegalArgumentException invalid){requests.putIfAbsent(request.id(),request);return;}
+        PacketDistributor.sendToServer(new StormColumnSnapshotPacket(request.dimension(),request.epoch(),request.id(),
+                request.token(),request.source(),tick,seconds,snapshot));
+    }
 
     public void installed(int id, int rank, int token) {
         var restore = restores.get(id);
@@ -94,18 +138,10 @@ public final class ColumnSnapshotClient {
                 capture.buffer.readCompleted(0, staging.remaining(), staging); staging.flip();
                 for (int entry = 0; entry < capture.requests.size(); entry++) {
                     var request = capture.requests.get(entry);
-                    if (!matches(request.identity()) || Minecraft.getInstance().level.getGameTime() - request.requestedAt() >= 20) continue;
-                    var column = runtime.columnPacket(request.id()); if (column == null) continue;
+                    if (!captureStillWanted(request)) continue;
                     float[] values = new float[StarfallColumnSnapshot.FLOATS];
                     for (int field = 0; field < values.length; field++) values[field] = staging.getFloat((entry * values.length + field) * 4);
-                    var completed = runtime.columnCompleted(request.id()); boolean ready = true;
-                    for (int rank = 0; rank < 64; rank++) {
-                        int offset = rank * StarfallColumnSnapshot.STRIDE;
-                        if (completed.get(rank) || !runtime.livingMember(column.members()[rank])) { Arrays.fill(values, offset, offset + StarfallColumnSnapshot.STRIDE, 0); values[offset] = 6; }
-                        else if (values[offset] == 255) ready = false;
-                    }
-                    if (!ready) { requests.putIfAbsent(request.id(), request); continue; }
-                    PacketDistributor.sendToServer(new StormColumnSnapshotPacket(request.dimension(), request.epoch(), request.id(), request.token(), request.source(), capture.tick, capture.seconds, new StarfallColumnSnapshot(values)));
+                    publishCapture(request,capture.tick,capture.seconds,values);
                 }
             } finally { GL32.glDeleteSync(capture.fence); capture.fence = 0; capture.requests = List.of(); inFlight--; }
         }
@@ -125,18 +161,18 @@ public final class ColumnSnapshotClient {
         }
         if (uploaded == revision) return;
         if (input == 0) {
-            input = GL15.glGenBuffers(); GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, input);
+            input = GL15.glGenBuffers(); GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER, input);
             GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER, PER_FRAME * StarfallColumnSnapshot.BYTES, GL15.GL_DYNAMIC_DRAW);
         }
         staging.clear();
         for (var restore : batch) for (float value : restore.packet.snapshot().values()) staging.putFloat(value);
-        staging.flip(); GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, input); GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, staging); uploaded = revision;
+        staging.flip(); GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER, input); GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, 0, staging); uploaded = revision;
     }
 
     public void bind(int program) {
         GpuUniforms.setIntUniform(program, "uColumnRestoreCount", batch.size());
         if (batch.isEmpty()) return;
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, 22, input);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER, 22, input);
         GL41.glProgramUniform4iv(program, GpuUniforms.loc(program, "uColumnRestoreSlots"), slots);
         GL41.glProgramUniform4iv(program, GpuUniforms.loc(program, "uColumnRestoreTokens"), tokens);
         GL41.glProgramUniform4fv(program, GpuUniforms.loc(program, "uColumnRestoreTimes"), times);
@@ -156,11 +192,11 @@ public final class ColumnSnapshotClient {
         }
         if (selected.isEmpty()) return;
         if (target.buffer == null) target.buffer = new GpuReadbackBuffer(PER_FRAME * StarfallColumnSnapshot.BYTES);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, target.buffer.id());
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER, target.buffer.id());
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32F, GL11.GL_RED, GL11.GL_FLOAT, new float[]{255});
-        GL20.glUseProgram(program); StarfallGpuBuffers.INSTANCE.bind(program, false);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, 0, pool); GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, 3, count);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, 5, emitters); GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, 22, target.buffer.id());
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program); StarfallGpuBuffers.INSTANCE.bind(program, false);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER, 0, pool); GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER, 3, count);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER, 5, emitters); GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER, 22, target.buffer.id());
         GpuUniforms.setIntUniform(program, "uColumnCount", selected.size());
         GL41.glProgramUniform4iv(program, GpuUniforms.loc(program, "uColumnSlots"), selectedSlots);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(Math.max(1, (upper + 63) / 64), 1, 1);

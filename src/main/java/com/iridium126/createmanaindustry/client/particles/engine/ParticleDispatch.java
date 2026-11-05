@@ -8,7 +8,7 @@ final class ParticleDispatch {
     /** Publish or refresh the candidate roster while emission/foreign compute may still be current. */
     static void prepareModelPublication(ParticlePrograms programs, boolean packageStaged, boolean publishMembers) {
         int program = programs.prepareDispatch();
-        org.lwjgl.opengl.GL41.glProgramUniform1i(program,
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,
                 com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program, "uModelMembersPublish"),
                 publishMembers ? 1 : 0);
         prepare(programs, 1, packageStaged);
@@ -18,7 +18,7 @@ final class ParticleDispatch {
     }
     static void prepare(ParticlePrograms programs,int phase,boolean packageStaged) {
         int program = programs.prepareDispatch();
-        GL20.glUseProgram(program);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setUIntUniform(program, "uPhase", phase);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setUIntUniform(program,"uPackageStaged",packageStaged?1:0);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1, 1, 1);

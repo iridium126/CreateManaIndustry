@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.util.Arrays;
 import com.iridium126.createmanaindustry.client.allaystorm.rift.SkyRenderState;
 import com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState;
@@ -77,7 +79,7 @@ final class StormLodTarget implements AutoCloseable {
             geometry.run();
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_FRAMEBUFFER_BARRIER_BIT);
             GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,source);RenderSystem.viewport(viewport[0],viewport[1],width,height);RenderSystem.enableScissor(viewport[0]+x,viewport[1]+y,w,h);
-            int composite=ParticlePrograms.INSTANCE.lodComposite();GL20.glUseProgram(composite);
+            int composite=ParticlePrograms.INSTANCE.lodComposite();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(composite);
             int fallback=Arrays.stream(colors).filter(id->id!=0).findFirst().orElseThrow();
             for(int slot=0;slot<8;slot++){
                 GpuTexture2DState.bind(slot,colors[slot]!=0?colors[slot]:fallback);GL33.glBindSampler(slot,0);
@@ -100,7 +102,7 @@ final class StormLodTarget implements AutoCloseable {
         }catch(RuntimeException|LinkageError failure){close();throw failure;}finally{
             GL11.glScissor(scissorBox[0],scissorBox[1],scissorBox[2],scissorBox[3]);
             RenderSystem.depthFunc(depthFunction);RenderSystem.depthMask(depthMask);if(depthEnabled)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();
-            GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,indirect);GL20.glUseProgram(program);
+            GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,indirect);com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);
         }
     }
     String report(){return "target="+width+"x"+height+", color attachments="+Arrays.stream(colors).filter(id->id!=0).count()+", composite: "+ParticleDiagnostics.INSTANCE.timing(compositeTiming,true);}

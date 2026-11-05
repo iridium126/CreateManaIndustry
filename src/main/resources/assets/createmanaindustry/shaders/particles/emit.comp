@@ -223,33 +223,8 @@ void main() {
                 uStormConvPhase, uStormConvRate, spMax, anchor, home, homeVel);
         vec3 spos;
         vec3 svel;
-        // c.w = ring-spawn flag: GROWTH members (center-packet deltas) are
-        // born on the ring and fly in; ACTIVATE-sourced members spawn settled.
-        if (emitCmd.entries[eb + 11u] > 0.5) {
-            // ---- growth member: ring birth outside the visible envelope ----
-            // Radius = SPAWN_RING_BLOCKS + the CURRENT storm radius. The 120
-            // is a server constant mirroring the DEFAULT client visibility
-            // envelope (fade 96 + 24 ramp = the model path's hard-cull bound):
-            // the fade is a client config the server cannot read, so the ring
-            // is a deterministic function of synced state (120 + header
-            // radius) rather than per-client — identical births on every
-            // client/GPU. Angle = memberIdx * golden angle (2.399963 rad):
-            // consecutive growth members rotate around the circle, a perfectly
-            // uniform birth distribution with no hash-quality risk. Velocity
-            // points at the member's OWN home point at the speed cap; the
-            // servo takes over from there. The ring is HORIZONTAL at the
-            // storm's altitude (anchor.y).
-            float ringA = float(memberIdx) * 2.399963;
-            float ringR = 120.0 + stormR;
-            spos = anchor + vec3(cos(ringA) * ringR, 0.0, sin(ringA) * ringR);
-            vec3 toHome = home - spos;
-            float dHome = length(toHome);
-            svel = dHome > 1e-3 ? toHome * (spMax / dHome) : vec3(0.0);
-        } else {
-            // analytic: ON the home point at the spawn instant — settled.
-            spos = home;
-            svel = homeVel;
-        }
+        cmiStormBirth(memberIdx, emitCmd.entries[eb + 11u] > 0.5, stormR, spMax,
+                anchor, home, homeVel, spos, svel);
         uint slot = cmiReserveEmitterParticle(eid);
         if (slot >= uCapacity)
             return;

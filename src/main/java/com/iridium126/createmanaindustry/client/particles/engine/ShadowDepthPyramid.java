@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.util.function.Function;
 import org.lwjgl.opengl.*;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
@@ -28,13 +30,13 @@ public final class ShadowDepthPyramid implements AutoCloseable {
         int w=Math.max(1,(sourceWidth+1)/2),h=Math.max(1,(sourceHeight+1)/2);
         if(texture==0||width!=w||height!=h){releaseTexture();width=w;height=h;levels=32-Integer.numberOfLeadingZeros(Math.max(w,h));
             texture=GL45.glCreateTextures(GL11.GL_TEXTURE_2D);GL45.glTextureStorage2D(texture,levels,GL30.GL_R32F,w,h);}
-        GL20.glUseProgram(program);GL41.glProgramUniform1i(program,reverse,reversed?1:0);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,reverse,reversed?1:0);
         // First reduction reads the live native depth directly; there is no full-resolution copy.
         GL42.glMemoryBarrier(GL42.GL_FRAMEBUFFER_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
         GL33.glBindSampler(4,sampler);
         for(int l=0;l<levels;l++){
-            GL45.glBindTextureUnit(4,l==0?source:texture);GL41.glProgramUniform1i(program,sourceLevel,l==0?0:l-1);
-            GL42.glBindImageTexture(0,texture,l,false,0,GL15.GL_WRITE_ONLY,GL30.GL_R32F);
+            GL45.glBindTextureUnit(4,l==0?source:texture);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,sourceLevel,l==0?0:l-1);
+            GpuBindings.image(0,texture,l,false,0,GL15.GL_WRITE_ONLY,GL30.GL_R32F);
             GL43.glDispatchCompute((Math.max(1,w>>l)+7)/8,(Math.max(1,h>>l)+7)/8,1);
             GL42.glMemoryBarrier(GL42.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
         }

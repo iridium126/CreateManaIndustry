@@ -419,8 +419,9 @@ public final class AllayStormManager {
     private static boolean advanceDome(ServerLevel level,Runtime rt,Wave w,ServerPlayer target,long tick,float clock){
         float now=w.start+AllayStarfall.elapsed(clock,w.start);
         if(!w.locked){
-            if(DomeGatherRules.elapsedTicks(clock,w.start)<DomeGatherRules.durationTicks(w.start,w.assemble))return true;
-            w.gathered=true;w.lock=w.assemble;w.locked=true;w.currentPhase=4;w.end=w.lock+60.25f;
+            if(DomeGatherRules.elapsedTicks(clock,w.start)>DomeGatherRules.durationTicks(w.start,w.assemble)&&!w.gathered){w.abortReason=7;return false;}
+            if(!w.gathered)return true;
+            w.assemble=now;w.lock=now;w.locked=true;w.currentPhase=4;w.end=now+60.25f;
             broadcastWave(level,rt,wavePacket(w,AllayStarfall.LOCK,false,target==null?-1:target.getId()));
         }
         return true;
@@ -869,7 +870,7 @@ public final class AllayStormManager {
         if (t == null || !t.active)
             return;
         if(!packet.dimension().equals(level.dimension().location()))return;
-        if(rt.columns.contact(player,data,StormIdentity.of(level,data),packet.waveId(),packet.epoch(),packet.sampleSec(),packet.memberIdx(),new Vec3(packet.relX(),packet.relY(),packet.relZ())))return;
+        if(rt.columns.contact(player,data,StormIdentity.of(level,data),packet.waveId(),packet.epoch(),packet.sampleSec(),new Vec3(packet.relX(),packet.relY(),packet.relZ())))return;
         Wave w = null;
         for (Wave cand : rt.waves)
             if (cand.id == packet.waveId()) {
@@ -878,10 +879,11 @@ public final class AllayStormManager {
             }
         if (w == null || (w.kind==AllayDome.STARFALL && !player.getUUID().equals(w.target)))
             return;
-        int idx=packet.memberIdx();
-        if(packet.epoch()!=w.epoch||idx<0||idx>=data.count||data.dead.get(idx)||!w.membership.get(idx))return;
+        if(packet.epoch()!=w.epoch||!player.isAlive()||player.isSpectator()||!Float.isFinite(packet.sampleSec()))return;
+        if(AllayStarfall.elapsed(packet.sampleSec(),w.lock)<0||AllayStarfall.elapsed(packet.sampleSec(),w.end)>=0)return;
+        if(!w.locked||w.membership.isEmpty()||(StormAttack.regional(w.kind)&&!w.gathered))return;
         Vec3 contact=new Vec3(packet.relX(),packet.relY(),packet.relZ());
-        if(!Double.isFinite(contact.x)||!Double.isFinite(contact.y)||!Double.isFinite(contact.z)||!w.reported.add(player.getUUID(),idx))return;
+        if(!Double.isFinite(contact.x)||!Double.isFinite(contact.y)||!Double.isFinite(contact.z)||!w.reported.add(player.getUUID()))return;
 
         // position-only source: the contact point feeds isDamageSourceBlocked's
         // direction check (null source position = shield can never block) and
@@ -896,13 +898,13 @@ public final class AllayStormManager {
     public static void gatheredAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket packet,IPayloadContext ctx){
         if(!(ctx.player() instanceof ServerPlayer player))return;var level=player.serverLevel();var data=level.getData(CMIAttachments.STORM_DATA.get());var rt=runtime(level);var track=rt.tracks.get(player.getUUID());
         if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
-        for(var w:rt.waves)if(w.id==packet.id()&&w.kind!=AllayDome.DOME&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered){
+        for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered){
             float now=clockSeconds(level.getGameTime());
+            // A scheduled attack may publish its first flow pause before its
+            // start tick. Readiness itself is still restricted to [start, assemble].
             if(StormGatherRules.elapsedTicks(now,w.start)>StormGatherRules.durationTicks(w.start,w.assemble))return;
             if(w.kind==AllayDome.DOME){
                 var flows=packet.flows();
-                // START is scheduled slightly ahead; trust the bounded GPU phase,
-                // retaining the existing identity and gather-deadline checks.
                 if(!flows.extendsState(w.gatherFlows))return;
                 if(flows.revision()!=w.gatherFlows.revision()){w.gatherFlows=flows;broadcastWave(level,rt,wavePacket(w,AllayStarfall.UPDATE,false,-1));}
             }else if(packet.flows().revision()!=0)return;
@@ -920,7 +922,12 @@ public final class AllayStormManager {
             // Only server-confirmed death or exit can reduce the denominator.
             if(!eligible.equals(expectedEligible))return;
             if(!StormGatherRules.valid(ready,eligible,w.members.length,now,w.start,w.assemble))return;
-            for(int rank=0;rank<w.members.length;rank++)if(!ready.get(rank)&&!w.completed.get(rank)){w.completed.set(rank);w.membership.clear(w.members[rank]);rt.waveReserved.clear(w.members[rank]);}
+            expectedEligible.andNot(ready);
+            for(int rank=expectedEligible.nextSetBit(0);rank>=0;rank=expectedEligible.nextSetBit(rank+1)){
+                w.completed.set(rank);
+                w.membership.clear(w.members[rank]);
+                rt.waveReserved.clear(w.members[rank]);
+            }
             if(accepted!=null){w.lockedReference=accepted;w.referenceSample=packet.sampleSec();w.referenceVersion=packet.referenceVersion();}
             w.gathered=true;return;
         }

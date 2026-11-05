@@ -1,6 +1,8 @@
 param([int]$Jobs=8)
 $ErrorActionPreference='Stop'
 $TaskRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+& python (Join-Path $PSScriptRoot 'generate_gpu_resources.py')
+if($LASTEXITCODE -ne 0){throw 'Particle resource layout generation failed'}
 $DependencyFile=Join-Path $TaskRoot '.gradle/particle-rt/dependencies.json'
 if(!(Test-Path -LiteralPath $DependencyFile)){& python (Join-Path $PSScriptRoot 'prepare_rt.py');if($LASTEXITCODE -ne 0){throw 'RT dependencies unavailable'}}
 $Dependencies=Get-Content -LiteralPath $DependencyFile -Raw | ConvertFrom-Json
@@ -16,4 +18,6 @@ $Build=Join-Path $TaskRoot '.gradle/particle-rt/build'
 if($LASTEXITCODE -ne 0){throw 'Particle RT configure failed'}
 & $Cmake --build $Build --parallel $Jobs
 if($LASTEXITCODE -ne 0){throw 'Particle RT build failed'}
+& python (Join-Path $TaskRoot 'scripts/particles/publish_rt.py')
+if($LASTEXITCODE -ne 0){throw 'Particle RT publication failed'}
 Write-Output (Join-Path $Build 'CmiParticleRt.dll')

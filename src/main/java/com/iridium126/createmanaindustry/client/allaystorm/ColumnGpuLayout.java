@@ -13,6 +13,8 @@ public final class ColumnGpuLayout {
     }
     public static String glsl(){
         return "#define CMI_COLUMN_ARC_WORDS "+WORDS+"u\n"
+                +"#define CMI_COLUMN_STATE_BASE "+StarfallGpuBuffers.COLUMN_STATE+"u\n"
+                +"#define CMI_COLUMN_ARC_BASE "+StarfallGpuBuffers.COLUMN_ARC+"u\n"
                 +"#define CMI_COLUMN_ARC_SAMPLES "+SAMPLES+"u\n"
                 +"#define CMI_COLUMN_ARC_NODES "+NODES+"u\n"
                 +"#define CMI_COLUMN_ORIGIN "+ORIGIN+"u\n"

@@ -17,9 +17,10 @@ class OrderedResultRingTest {
             ring.consume(ticket);assertThrows(IllegalStateException.class,()->ring.consume(ticket));
         }
         assertEquals(0,ring.pending());assertNull(ring.acquire(1000,2,0));
-        ring.retire(second);var next=ring.acquire(1001,3,0);assertEquals(second.slot(),next.slot());
-        assertThrows(IllegalStateException.class,()->ring.retire(second));ring.cancel(next);
-        ring.retire(first);ring.retire(third);
+        assertThrows(IllegalStateException.class,()->ring.retire(second));
+        ring.retire(first);var next=ring.acquire(1001,3,0);assertEquals(first.slot(),next.slot());
+        assertThrows(IllegalStateException.class,()->ring.retire(first));ring.cancel(next);
+        ring.retire(second);ring.retire(third);
         assertEquals(3,ring.submitted());assertEquals(3,ring.consumptions());assertEquals(3,ring.retired());assertEquals(0,ring.occupied());
     }
     @Test void exportsCanBeCancelledOnlyBeforeSubmission(){

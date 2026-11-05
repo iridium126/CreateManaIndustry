@@ -97,8 +97,8 @@ public final class ShaderPackProgramCompiler {
     /** Texture units the merged programs' TBO samplers are pinned to. Reserved
      * inside Iris's sampler allocator by mixin/iris/MixinProgramSamplers,
      * so pack samplers can never collide with them; unbound after every draw. */
-    public static final int MERGED_SAMPLER_UNIT_BASE = 9;
-    public static final int MERGED_SAMPLER_UNIT_COUNT = 7;
+    public static final int MERGED_SAMPLER_UNIT_BASE = com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_MERGED_GEOMETRY;
+    public static final int MERGED_SAMPLER_UNIT_COUNT = 8;
 
     private final java.util.function.Function<String,String> mergedSources;
     public ShaderPackProgramCompiler(){this(ParticlePrograms::loadParticlePlain);}
@@ -893,6 +893,7 @@ public final class ShaderPackProgramCompiler {
                     // hp <= 0 (not < 0): the kill frame itself already counts
                     // as dead, matching update.comp's corpse predicate.
                     bool corpse = p3.y <= 0.0;
+                    cmiLoadAllayAnimation((item.x>>9u)&262143u,p3.x);
                     // ---- carried item (held sword): the carrier segment ------
                     // Only partId-7 vertices arrive through the carrier command
                     // (cmi_SegmentMode == 2), and keygen admitted each instance
@@ -904,10 +905,11 @@ public final class ShaderPackProgramCompiler {
                     // header item, corpses included, like the old full-mesh
                     // path. Body vertices never run this block: the per-vertex
                     // item invocations for every non-carrier instance are gone.
-                    float carryRamp = 0.0;
-                    float itemId = 0.0;
-                    if(uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec,p1.w);}
+                    float carryRamp = cmiAllayCachedPose?uintBitsToFloat(cmiAllayCachedMeta.w):0.;
+                    float itemId = cmiAllayCachedPose?uintBitsToFloat(cmiAllayCachedMeta.z):0.;
+                    if(!cmiAllayCachedPose&&uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec,p1.w);}
                     if (pid == 7 && !gone) {
+                        if(!cmiAllayCachedPose){
                         float waveTier = 0.0;
                         if (!corpse && stormA.x > 0.5) {
                             int k = cmiStormWaveClaim(p3.z,p0.w);
@@ -920,11 +922,12 @@ public final class ShaderPackProgramCompiler {
                         // (storm specs keep 17.z = 0, so the paths never stack)
                         itemId = waveTier > 0.5 ? waveTier
                                 : texelFetch(cmi_Emitters, int(hb + 17u)).z;
+                        }
                         // defensive only: keygen guarantees an item for every
                         // carrier instance; a mismatch means upstream corruption
                         gone = itemId <= 0.5;
                     }
-                    if (stormA.x > 0.5 && !gone) {
+                    if (stormA.x > 0.5 && !gone && !cmiAllayCachedPose) {
                         anim = cmiStormAnimOverride(
                                 distance(p0.xyz, texelFetch(cmi_Emitters, int(hb + 19u)).xyz),
                                 stormA.y, p3.z, uTimeSec);
@@ -933,7 +936,6 @@ public final class ShaderPackProgramCompiler {
                         anim = 3;
                     float sinceDeath = corpse ? -p3.y : 0.0;
                     float yaw;
-                    cmiLoadAllayAnimation((item.x>>9u)&262143u,p3.x);
                     mat4 M = gone ? mat4(1.0) : cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p0.xyz, p1.xyz, anim, pid, yaw, carryRamp, p1.w, !corpse && stormA.x > .5);
 
                     vec3 local = gone ? vec3(0.0) : vec3(texelFetch(cmi_Geo, int(vb)).x, texelFetch(cmi_Geo, int(vb + 1u)).x, texelFetch(cmi_Geo, int(vb + 2u)).x);

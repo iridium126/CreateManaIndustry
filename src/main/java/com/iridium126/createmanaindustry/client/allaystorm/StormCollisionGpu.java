@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.allaystorm;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.nio.*;
 import java.util.*;
 import org.lwjgl.opengl.*;
@@ -72,7 +74,7 @@ public final class StormCollisionGpu implements AutoCloseable {
             bank.rows=rows.size();int[] table=table(rows);bank.staging=MemoryUtil.memAlloc(table.length*4).order(ByteOrder.nativeOrder());bank.staging.asIntBuffer().put(table);
             bank.mask=table.length/4-1;bank.serial=serial;bank.progress=0;
             try{
-                GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,bank.buffer);GpuTransfers.allocate(GL31.GL_TEXTURE_BUFFER,bank.staging.capacity(),GL15.GL_STREAM_DRAW);
+                GpuBindings.bind(GL31.GL_TEXTURE_BUFFER,bank.buffer);GpuTransfers.allocate(GL31.GL_TEXTURE_BUFFER,bank.staging.capacity(),GL15.GL_STREAM_DRAW);
                 GL13.glActiveTexture(GL13.GL_TEXTURE2);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,bank.texture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_RGBA32I,bank.buffer);
                 if(GL11.glGetError()!=GL11.GL_NO_ERROR)throw new IllegalStateException("Storm collision page-table allocation failed");
             }catch(RuntimeException|LinkageError failure){MemoryUtil.memFree(bank.staging);bank.staging=null;throw failure;}
@@ -84,7 +86,7 @@ public final class StormCollisionGpu implements AutoCloseable {
         reclaim();startTable();int left=byteBudget;
         if(building>=0){
             var bank=banks[building];int n=Math.min(left/2,bank.staging.capacity()-bank.progress);n-=n%16;
-            if(n>0){var part=bank.staging.duplicate();part.position(bank.progress).limit(bank.progress+n);GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,bank.buffer);GpuTransfers.upload(GL31.GL_TEXTURE_BUFFER,bank.progress,part);bank.progress+=n;left-=n;uploaded+=n;}
+            if(n>0){var part=bank.staging.duplicate();part.position(bank.progress).limit(bank.progress+n);GpuBindings.bind(GL31.GL_TEXTURE_BUFFER,bank.buffer);GpuTransfers.upload(GL31.GL_TEXTURE_BUFFER,bank.progress,part);bank.progress+=n;left-=n;uploaded+=n;}
             if(bank.progress==bank.staging.capacity()){MemoryUtil.memFree(bank.staging);bank.staging=null;published=bank.serial;surfacePublished(bank);current=building;building=-1;}
         }
         while(left>=BYTES&&!pending.isEmpty()&&System.nanoTime()-began<nanos){
@@ -108,14 +110,14 @@ public final class StormCollisionGpu implements AutoCloseable {
     }
     private void bindSingle(int program){
         boolean ready=current>=0;
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uStormCollisionOn"),ready?1:0);
-        GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uStormCollisionRevision"),ready?(int)banks[current].serial:0);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"uStormCollisionOn"),ready?1:0);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uStormCollisionRevision"),ready?(int)banks[current].serial:0);
         if(!ready)return;
-        GL13.glActiveTexture(GL13.GL_TEXTURE1);GL11.glBindTexture(GL12.GL_TEXTURE_3D,atlas);
-        GL13.glActiveTexture(GL13.GL_TEXTURE2);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,banks[current].texture);
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uStormCollisionAtlas"),1);
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uStormCollisionTable"),2);
-        GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uStormCollisionMask"),banks[current].mask);
+        GpuBindings.texture(1,GL12.GL_TEXTURE_3D,atlas);
+        GpuBindings.texture(2,GL31.GL_TEXTURE_BUFFER,banks[current].texture);
+        GpuUniforms.sampler(program,"uStormCollisionAtlas",com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_STORM_ATLAS);
+        GpuUniforms.sampler(program,"uStormCollisionTable",com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_STORM_TABLE);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uStormCollisionMask"),banks[current].mask);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
     }
     public void submitted(){if(current<0)return;var bank=banks[current];if(bank.fence!=0)GL32.glDeleteSync(bank.fence);bank.fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);}

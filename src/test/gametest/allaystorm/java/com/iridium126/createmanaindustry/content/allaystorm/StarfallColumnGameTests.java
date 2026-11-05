@@ -24,8 +24,8 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 public final class StarfallColumnGameTests {
     private record Fixture(StarfallColumns columns,AllayStormData data,StormIdentity identity,
                            ClientboundStormColumnPacket packet,FakePlayer trigger,FakePlayer other,Vec3 contact,BitSet reserved) {
-        boolean hit(FakePlayer player,int member,float sample,Vec3 point,long epoch){return columns.contact(player,data,identity,packet.id(),epoch,sample,member,point);}
-        boolean hit(FakePlayer player){return hit(player,0,StarfallColumns.clock(player.level().getGameTime()),contact,packet.epoch());}
+        boolean hit(FakePlayer player,float sample,Vec3 point,long epoch){return columns.contact(player,data,identity,packet.id(),epoch,sample,point);}
+        boolean hit(FakePlayer player){return hit(player,StarfallColumns.clock(player.level().getGameTime()),contact,packet.epoch());}
         void tick(List<net.minecraft.server.level.ServerPlayer> players){columns.tick(trigger.serverLevel(),data,packet.centerX(),packet.centerZ(),players,reserved,()->999,p->{});}
     }
     private static final class CombatPlayer extends FakePlayer {
@@ -84,15 +84,15 @@ public final class StarfallColumnGameTests {
         h.succeed();
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40)
-    public static void rejectsWrongIdentityAndMemberWithoutConsumingAdmission(GameTestHelper h){
+    public static void rejectsWrongIdentityAndExpiredSampleWithoutConsumingAdmission(GameTestHelper h){
         var f=fixture(h);float now=StarfallColumns.clock(h.getLevel().getGameTime());
-        h.assertTrue(!f.hit(f.other,0,now,f.contact,f.packet.epoch()+1),"Wrong epoch accepted");
+        h.assertTrue(!f.hit(f.other,now,f.contact,f.packet.epoch()+1),"Wrong epoch accepted");
 
 
 
-        h.assertTrue(!f.hit(f.other,64,now,f.contact,f.packet.epoch()),"Non-roster member accepted");
+        h.assertTrue(!f.hit(f.other,f.packet.end(),f.contact,f.packet.epoch()),"Contact at expiration accepted");
 
-        h.assertTrue(!f.hit(f.other,0,now,new Vec3(Double.NaN,0,0),f.packet.epoch()),"Nonfinite contact accepted");
+        h.assertTrue(!f.hit(f.other,now,new Vec3(Double.NaN,0,0),f.packet.epoch()),"Nonfinite contact accepted");
         var obstacle=BlockPos.containing(f.contact).above();h.getLevel().setBlockAndUpdate(obstacle,Blocks.STONE.defaultBlockState());
 
         h.assertTrue(f.other.getHealth()==20,"Rejected candidates changed health");
@@ -107,7 +107,7 @@ public final class StarfallColumnGameTests {
         float now=StarfallColumns.clock(h.getLevel().getGameTime());
         // Batch settlement remains once per target even after vanilla i-frames expire.
         f.other.invulnerableTime=0;
-        h.assertTrue(!f.hit(f.other,1,now,f.contact,f.packet.epoch()),"Second member settled the same attack twice");
+        h.assertTrue(!f.hit(f.other,now,f.contact,f.packet.epoch()),"Duplicate event settled the same attack twice");
         h.assertTrue(f.other.getHealth()==health,"Concurrent members bypassed vanilla i-frames");h.succeed();
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40)

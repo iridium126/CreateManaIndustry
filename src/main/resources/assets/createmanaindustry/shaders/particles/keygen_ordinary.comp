@@ -1,0 +1,2 @@
+#define CMI_KEYGEN_DOMAIN 1
+#pragma cmi_include keygen.comp

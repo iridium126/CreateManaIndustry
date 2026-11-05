@@ -8,6 +8,7 @@ import org.lwjgl.opengl.*;
 import com.iridium126.createmanaindustry.client.particles.engine.*;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.*;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
+import static com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.*;
 
 /** One current driver harness. Rule checks and benchmarks use the same public engine kernels. */
 public final class ParticleEngineGpuValidation {
@@ -315,11 +316,17 @@ public final class ParticleEngineGpuValidation {
         try{
             bridge=SpatialNative.createBuffers(128+n*64,3);worker=SpatialNative.create(bridge,n,0,2,91,modules.toAbsolutePath().toString());
             for(int frame=0;frame<8;frame++){
+                if(frame>=2&&frame<=4){
+                    long deadline=System.nanoTime()+15_000_000_000L;
+                    while(!SpatialNative.close(worker)){check(System.nanoTime()<deadline,"Faulted query session retirement");Thread.sleep(1);}
+                    worker=SpatialNative.create(bridge,n,0,2,91,modules.toAbsolutePath().toString());
+                }
                 int slot=frame%3;long nonce=frame+1;int[] b=SpatialNative.buffers(bridge,slot);var data=packet(n,0,nonce,frame,0);if(frame==1)data.putLong(16,92);if(frame==2)data.putInt(72,0);if(frame==3)data.putFloat(128,Float.NaN);
                 GL45.glNamedBufferSubData(b[0],0,data);if(frame==3)check(Float.isNaN(read(b[0],data.capacity()).getFloat(128)),"NaN uploaded");if(frame>=4&&frame<=6)SpatialNative.delay(worker,new int[]{10,50,500}[frame-4]);long start=System.nanoTime();check(SpatialNative.submit(worker,slot,nonce,frame,91,0),"submit");double submit=(System.nanoTime()-start)/1e6;
                 tickets[slot]=nonce;check(!SpatialNative.submit(worker,slot,nonce+1000,frame,91,0),"no unretired slot reuse");long until=System.nanoTime()+15_000_000_000L;while(SpatialNative.poll(worker,slot,nonce)==1){check(System.nanoTime()<until,"bounded native completion");Thread.sleep(1);}check(SpatialNative.poll(worker,slot,nonce)==2,SpatialNative.diagnostics(worker));
                 SpatialNative.consume(worker,slot,nonce);var result=read(b[1],data.capacity());check(result.getLong(8)==nonce,"native output belongs to this submission");check((result.getInt(44)!=0)==(frame>=1&&frame<=3),"whole-frame GPU rejection frame="+frame+" nonce="+result.getLong(8)+" error="+result.getInt(44)+" pos="+result.getFloat(160)+" id="+result.getInt(156));if(frame==0)check(result.getFloat(128)<0,"real precompiled OptiX nearest hit");
-                long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);while(!SpatialNative.recycle(worker,slot,nonce,fence)){check(System.nanoTime()<until,"GL consumer retirement");Thread.sleep(1);}GL32.glDeleteSync(fence);
+                long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);while(!SpatialNative.recycle(worker,slot,nonce,fence)){check(System.nanoTime()<until,"GL consumer retirement");Thread.sleep(1);}GL32.glDeleteSync(fence);tickets[slot]=0;
+                if(frame>=1&&frame<=3)check(!SpatialNative.submit(worker,slot,nonce+1000,frame+1,91,0),"Faulted query session refuses new work");
                 cases.add(Map.of("case","RT ownership/fault","frame",frame,"submit_ms",submit,"wall_ms",(System.nanoTime()-start)/1e6,"passed",true));
             }
         }catch(Throwable failure){failure.printStackTrace();throw failure;}finally{if(worker!=0){GL11.glFinish();for(int i=0;i<3;i++)if(tickets[i]!=0){int state=SpatialNative.poll(worker,i,tickets[i]);if(state==5){long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);while(!SpatialNative.recycle(worker,i,tickets[i],fence))Thread.sleep(1);GL32.glDeleteSync(fence);}else if(state==2){SpatialNative.consume(worker,i,tickets[i]);long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);while(!SpatialNative.recycle(worker,i,tickets[i],fence))Thread.sleep(1);GL32.glDeleteSync(fence);}}long end=System.nanoTime()+15_000_000_000L;while(!SpatialNative.close(worker)){check(System.nanoTime()<end,"worker retirement");Thread.sleep(1);}}if(bridge!=0)SpatialNative.closeBuffers(bridge);}
@@ -363,9 +370,101 @@ public final class ParticleEngineGpuValidation {
         }finally{if(worker!=0){long end=System.nanoTime()+15_000_000_000L;while(!SpatialNative.close(worker)){check(System.nanoTime()<end,"reload retirement");Thread.sleep(1);}}SpatialNative.closeBuffers(bridge);}
         check(SpatialNative.ownedBytes()==0,"ring retired after reload");
     }
+    static java.lang.reflect.Method stormMethod(String name,Class<?>... types)throws Exception{
+        var method=SpatialNative.class.getDeclaredMethod(name,types);
+        method.setAccessible(true);
+        return method;
+    }
+    static ByteBuffer stormTick(long sequence,long tick,long gameTime,long identity,boolean active,boolean birth){
+        var data=bytes(STORM_TICK_HEADER_BYTES+(birth?STORM_CONTROL_BYTES:0));
+        data.putInt(0,STORM_TICK_MAGIC).putInt(4,ABI).putInt(8,birth?1:0).putInt(12,active?1:0)
+                .putLong(16,sequence).putLong(24,tick).putLong(32,identity)
+                .putInt(40,active?1:0).putInt(44,19).putFloat(52,64).putFloat(60,8)
+                .putFloat(64,sequence*.1f).putFloat(76,1)
+                .putFloat(80,com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.renderSeconds(gameTime,0))
+                .putFloat(84,6);
+        if(birth){
+            int at=STORM_TICK_HEADER_BYTES;
+            data.putInt(at,STORM_CONTROL_SPAWN).putInt(at+8,1).putLong(at+16,identity);
+        }
+        return data;
+    }
+    static void nativeStormTimeline(List<Object> cases)throws Exception{
+        SpatialNative.load(Path.of(".gradle/particle-rt/build"));
+        var createBridge=stormMethod("createStormDisplayBuffers",long.class,int.class);
+        var create=stormMethod("createStormControl",int.class,long.class,int.class);
+        var delay=stormMethod("delayStormControl",long.class,int.class);
+        var submit=stormMethod("submitStormTick",long.class,ByteBuffer.class,int.class,int.class,boolean.class);
+        var poll=stormMethod("pollStormTick",long.class,long.class);
+        var consume=stormMethod("consumeStormTick",long.class,long.class);
+        var recycle=stormMethod("recycleStormDisplay",long.class,int.class,long.class,long.class);
+        var close=stormMethod("closeStormControl",long.class);
+        long bridge=(long)createBridge.invoke(null,STORM_DISPLAY_HEADER_BYTES+8L*STORM_DISPLAY_RECORD_BYTES+
+                (long)STORM_COLUMN_SLOTS*STORM_COLUMN_MEMBERS*STORM_DISPLAY_COLUMN_BYTES,RT_SLOTS);
+        long worker=0,submitted=0,consumed=0;
+        long until=System.nanoTime()+15_000_000_000L;
+        try{
+            worker=(long)create.invoke(null,8,bridge,2);
+            long[] worldTimes={(1L<<21)-1,(1L<<21)+3,(1L<<21)+1};
+            for(int slot=0;slot<RT_SLOTS;slot++){
+                delay.invoke(null,worker,new int[]{10,50,500}[slot]);
+                var packet=stormTick(slot+1,100+slot,worldTimes[slot],slot<2?1:2,slot<2,slot==0);
+                check((boolean)submit.invoke(null,worker,packet,packet.capacity(),slot,true),"Storm control slot submitted");
+                submitted++;
+            }
+            var replacement=stormTick(4,120,8,3,true,true);
+            check(!(boolean)submit.invoke(null,worker,replacement,replacement.capacity(),0,false),"Full Storm ring retains replacement tick");
+            check(!(boolean)close.invoke(null,worker),"Storm reload leaves outstanding receipts intact");
+            float[] firstPosition=new float[3];
+            for(int slot=0;slot<RT_SLOTS;slot++){
+                long sequence=slot+1L;
+                while((int)poll.invoke(null,worker,sequence)==1){check(System.nanoTime()<until,"Storm completion deadline");Thread.sleep(1);}
+                check((int)consume.invoke(null,worker,sequence)==2,"Storm receipt applied once");
+                consumed++;
+                var output=read(SpatialNative.buffers(bridge,slot)[1],STORM_DISPLAY_HEADER_BYTES+STORM_DISPLAY_RECORD_BYTES);
+                check(output.getLong(16)==sequence&&output.getLong(24)==100+slot
+                        &&output.getLong(32)==(slot<2?1:2)&&output.getInt(8)==(slot<2?1:0),"Storm display publication identity");
+                if(slot==0)for(int axis=0;axis<3;axis++)
+                    firstPosition[axis]=output.getFloat(STORM_DISPLAY_HEADER_BYTES+axis*Float.BYTES);
+                if(slot==1){
+                    float displacement=0;
+                    for(int axis=0;axis<3;axis++){
+                        float delta=output.getFloat(STORM_DISPLAY_HEADER_BYTES+axis*Float.BYTES)-firstPosition[axis];
+                        displacement+=delta*delta;
+                    }
+                    check(displacement>1e-8f&&displacement<.35f*.35f,"World clock correction preserves one step of member motion");
+                }
+                long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
+                try{while(!(boolean)recycle.invoke(null,worker,slot,sequence,fence)){
+                    check(System.nanoTime()<until,"Storm display retirement deadline");Thread.sleep(1);
+                }}finally{GL32.glDeleteSync(fence);}
+            }
+            var malformed=stormTick(4,100,8,3,true,true);
+            boolean rejected=false;
+            try{submit.invoke(null,worker,malformed,malformed.capacity(),-1,false);}
+            catch(java.lang.reflect.InvocationTargetException failure){rejected=failure.getCause() instanceof RuntimeException;}
+            check(rejected,"Out-of-order Storm tick rejected before claiming a slot");
+            check((boolean)submit.invoke(null,worker,replacement,replacement.capacity(),-1,false),"New Storm after inactive time gap");
+            submitted++;
+            while((int)poll.invoke(null,worker,4L)==1){check(System.nanoTime()<until,"Replacement Storm completion");Thread.sleep(1);}
+            check((int)consume.invoke(null,worker,4L)==2,"Replacement Storm retains its own receipt");
+            consumed++;
+            cases.add(Map.of("case","Native Storm tick and display lifecycle","delays_ms",List.of(10,50,500),"consumed",consumed,"passed",true));
+        }finally{
+            if(worker!=0&&submitted==consumed){
+                while(!(boolean)close.invoke(null,worker)){check(System.nanoTime()<until,"Storm session retirement");Thread.sleep(1);}
+            }
+            if(submitted==consumed)SpatialNative.closeBuffers(bridge);
+        }
+        check(SpatialNative.ownedBytes()==0,"Storm session and bridge retired");
+    }
     public static void main(String[] args)throws Exception{
         Path out=Path.of(System.getProperty("cmi.particle.output","build/particle-engine/verify"));Files.createDirectories(out);var result=new LinkedHashMap<String,Object>();var cases=new ArrayList<Object>();result.put("passed",false);
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,6);long window=GLFW.glfwCreateWindow(32,32,"particle engine driver checks",0,0);GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
-        try{localCorrection(cases);contacts(cases);interpolation(cases);displayPublication(cases);featherPixels(cases);conservativeVisibility(cases,!Arrays.asList(args).contains("--gl-only"));glQueries(cases);geometry(cases,!Arrays.asList(args).contains("--gl-only"));for(String shader:List.of("spatial/motion.comp","update.comp","wavecontact.comp","dome_contacts.comp","dome_contact_control.comp","dome_contact_apply.comp","dome_contact_audit.comp"))GL20.glDeleteProgram(program(shader));if(!Arrays.asList(args).contains("--gl-only")){nativeQueries(cases);nativeRing(cases);nativeWorkerQueue(cases);}check(GL11.glGetError()==0,"GL state");result.put("passed",true);}finally{result.put("checks",checks);result.put("cases",cases);result.put("gpu",GL11.glGetString(GL11.GL_RENDERER));result.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("gpu.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        try{
+            if(Arrays.asList(args).contains("--storm-timeline-only"))nativeStormTimeline(cases);
+            else{localCorrection(cases);contacts(cases);interpolation(cases);displayPublication(cases);featherPixels(cases);conservativeVisibility(cases,!Arrays.asList(args).contains("--gl-only"));glQueries(cases);geometry(cases,!Arrays.asList(args).contains("--gl-only"));for(String shader:List.of("spatial/motion.comp","update.comp","wavecontact.comp","dome_contacts.comp","dome_contact_control.comp","dome_contact_apply.comp","dome_contact_audit.comp","storm_projection.comp"))GL20.glDeleteProgram(program(shader));if(!Arrays.asList(args).contains("--gl-only")){nativeQueries(cases);nativeRing(cases);nativeWorkerQueue(cases);nativeStormTimeline(cases);}}
+            check(GL11.glGetError()==0,"GL state");result.put("passed",true);
+        }finally{result.put("checks",checks);result.put("cases",cases);result.put("gpu",GL11.glGetString(GL11.GL_RENDERER));result.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("gpu.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
     }
 }

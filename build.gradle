@@ -22,6 +22,8 @@ sourceSets.main.resources {
 
 apply from: file('gradle/repositories.gradle')
 apply from: file('gradle/packaging.gradle')
+apply from: file('gradle/gpu-resources.gradle')
+apply from: file('gradle/particle-rt.gradle')
 
 neoForge {
     version = neo_version

@@ -118,10 +118,10 @@ public final class StarfallColumns {
     }
 
     /** Returns true only after final validation and exactly-once admission. */
-    public boolean contact(ServerPlayer player,AllayStormData data,StormIdentity identity,int id,long epoch,float sample,int member,Vec3 contact){
-        Active a=columns.get(id);if(a==null||!data.active||!player.isAlive()||player.isSpectator()||identity.epoch()!=epoch)return false;
-        var p=a.packet;if(!p.dimension().equals(player.level().dimension().location())||p.epoch()!=epoch||member<0||member>=data.count||data.dead.get(member))return false;
-        int rank=-1;for(int i=0;i<p.members().length;i++)if(p.members()[i]==member){rank=i;break;}if(rank<0||a.completed.get(rank))return false;
+    public boolean contact(ServerPlayer player,AllayStormData data,StormIdentity identity,int id,long epoch,float sample,Vec3 contact){
+        Active a=columns.get(id);if(a==null||a.completed.cardinality()==64||!data.active||!player.isAlive()||player.isSpectator()||identity.epoch()!=epoch)return false;
+        var p=a.packet;if(!p.dimension().equals(player.level().dimension().location())||p.epoch()!=epoch||!Float.isFinite(sample))return false;
+        float at=time(p,sample);if(at<p.assemble()||at>=p.end())return false;
         if(!Double.isFinite(contact.x)||!Double.isFinite(contact.y)||!Double.isFinite(contact.z))return false;
         if(!a.reported.add(player.getUUID()))return false;
         var source=new DamageSource(player.registryAccess().registryOrThrow(Registries.DAMAGE_TYPE).getHolderOrThrow(CMIDamageTypes.STORM_PECK),contact);

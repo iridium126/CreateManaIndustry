@@ -8,7 +8,8 @@ public final class OrderedResultRing {
     private final Ticket[] owners;
     private final boolean[] consumed;
     private final ArrayDeque<Ticket> pending=new ArrayDeque<>();
-    private long serial,submitted,consumptions,retired;
+    private final ArrayDeque<Ticket> retirement=new ArrayDeque<>();
+    private long serial,submitted,consumptions,retired,lastSubmittedNonce;
     public OrderedResultRing(int slots){
         if(slots<1||slots>3)throw new IllegalArgumentException("One to three slots required");
         owners=new Ticket[slots];consumed=new boolean[slots];
@@ -25,8 +26,8 @@ public final class OrderedResultRing {
     }
     public void submit(Ticket ticket){
         owns(ticket);
-        if(consumed[ticket.slot()]||pending.contains(ticket))throw new IllegalStateException("Duplicate RT submission");
-        pending.addLast(ticket);submitted++;
+        if(consumed[ticket.slot()]||pending.contains(ticket)||ticket.nonce()<=lastSubmittedNonce)throw new IllegalStateException("Duplicate or out of order RT submission");
+        pending.addLast(ticket);retirement.addLast(ticket);lastSubmittedNonce=ticket.nonce();submitted++;
     }
     public void cancel(Ticket ticket){
         owns(ticket);
@@ -34,6 +35,7 @@ public final class OrderedResultRing {
         owners[ticket.slot()]=null;
     }
     public Ticket head(){return pending.peekFirst();}
+    public Ticket retirementHead(){return retirement.peekFirst();}
     public void consume(Ticket ticket){
         owns(ticket);
         if(pending.peekFirst()!=ticket)throw new IllegalStateException("Out of order or duplicate RT consumption");
@@ -41,8 +43,8 @@ public final class OrderedResultRing {
     }
     public void retire(Ticket ticket){
         owns(ticket);
-        if(!consumed[ticket.slot()])throw new IllegalStateException("RT slot retired before consumption");
-        consumed[ticket.slot()]=false;owners[ticket.slot()]=null;retired++;
+        if(!consumed[ticket.slot()]||retirement.peekFirst()!=ticket)throw new IllegalStateException("RT slot retired before consumption or out of order");
+        retirement.removeFirst();consumed[ticket.slot()]=false;owners[ticket.slot()]=null;retired++;
     }
     public int pending(){return pending.size();}
     public int occupied(){int n=0;for(var owner:owners)if(owner!=null)n++;return n;}

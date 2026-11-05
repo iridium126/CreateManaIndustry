@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.greattrick.sharedfate;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
 
 import com.iridium126.createmanaindustry.client.particles.engine.*;
@@ -29,6 +31,8 @@ public final class SharedFateGpu implements AutoCloseable {
     private int input,jobs,read,write,prepare,reserve,emit,inputCapacity,stateCapacity;
     private ByteBuffer staging;
     private int nodeRead,nodeWrite,nodeWriteCapacity,nodeReadCapacity,debrisRead,debrisWrite,debrisCapacity;
+    private int nodeReadDispatch,nodeWriteDispatch;
+    private long nodeGeneration=-1,candidateGeneration=-1;
     private int displayProgram,displayNodes,displayCapacity;
     private boolean displayActive;
     private Vec3 currentCamera=Vec3.ZERO,previousCamera=Vec3.ZERO;
@@ -61,7 +65,7 @@ public final class SharedFateGpu implements AutoCloseable {
         if(slots>stateCapacity) {
             int next=buffer((long)slots*STATE_BYTES),nextWrite=buffer((long)slots*STATE_BYTES);
             if(read!=0){
-                GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,read);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,next);
+                GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,read);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,next);
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)stateCapacity*STATE_BYTES);
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(read);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(write);
             }
@@ -92,7 +96,7 @@ public final class SharedFateGpu implements AutoCloseable {
             Vec3 delta=wire.lastCamera==null?Vec3.ZERO:wire.lastCamera.subtract(camera);
             staging.putFloat((float)delta.x).putFloat((float)delta.y).putFloat((float)delta.z).putFloat(0);
         }
-        staging.flip();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,input);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);
+        staging.flip();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,input);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);
         return true;
     }
     public void generate(ParticleAppendTarget output,int counterSlot,Matrix4fc view,Matrix4fc projection,float[] frustum,float throttle) {
@@ -101,20 +105,21 @@ public final class SharedFateGpu implements AutoCloseable {
         if(emitter<0||alphaEmitter<0||ribbonEmitter<0)return;
         int needed=Math.addExact(Math.min(Math.min(output.capacity(),ClientConfig.sameFateMaxParticles),2048*frames.size()),4*frames.size());
         if(nodeWriteCapacity<needed){nodeWrite=reallocate(nodeWrite,(long)needed*64);nodeWriteCapacity=needed;}
+        if(nodeWriteDispatch==0)nodeWriteDispatch=buffer(16);
         if(!debrisSlots.isEmpty())copy(debrisRead,debrisWrite,(long)debrisCapacity*2048*64);
         // This late allocation happens after the engine's normal header upload.
         // Keygen and the draw passes must see its conjure size/style on this frame too.
         output.flushHeaders();
         // Preserve offscreen slots and only promote poses after the whole owner frame commits.
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,read);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,write);
+        GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,read);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,write);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,(long)stateCapacity*STATE_BYTES);
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,input);GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,jobs);
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,2,read);GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,3,write);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,0,input);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,1,jobs);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,2,read);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,3,write);
         output.bind(output.reserveOutput(),counterSlot,4,5);
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,nodeWrite);
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,7,debrisRead);
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,8,debrisWrite);
-        GL20.glUseProgram(prepare);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,6,nodeWrite);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,7,debrisRead);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,8,debrisWrite);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(prepare);
         uint(prepare,"uCount",frames.size());
         scalar(prepare,"uTime",SharedFateClient.now());scalar(prepare,"uFadeDistance",ClientConfig.particleFadeDistance);
         matrix(prepare,"uView",view);matrix(prepare,"uProjection",projection);
@@ -122,37 +127,41 @@ public final class SharedFateGpu implements AutoCloseable {
         GL20.glUniform4fv(uniforms.location(prepare,"uFrustum"),frustum);
         ParticleDiagnostics.INSTANCE.mark("fate_prepare");
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((frames.size()+63)/64,1,1);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        GL20.glUseProgram(reserve);uint(reserve,"uCount",frames.size());uint(reserve,"uCapacity",output.capacity());
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(reserve);uint(reserve,"uCount",frames.size());uint(reserve,"uCapacity",output.capacity());
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,9,nodeWriteDispatch);
         uint(reserve,"uSimulationGeneration",(int)output.historyGeneration());
         uint(reserve,"uBudget",Math.max(0,(int)(ClientConfig.sameFateMaxParticles*Math.max(0,Math.min(1,throttle)))));
         ParticleDiagnostics.INSTANCE.mark("fate_reserve");
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        GL20.glUseProgram(emit);uint(emit,"uEmitter",emitter);uint(emit,"uRibbonAlphaEmitter",alphaEmitter);uint(emit,"uRibbonEmitter",ribbonEmitter);uint(emit,"uDebrisSlots",debrisCapacity);scalar(emit,"uTime",SharedFateClient.now());
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(emit);uint(emit,"uEmitter",emitter);uint(emit,"uRibbonAlphaEmitter",alphaEmitter);uint(emit,"uRibbonEmitter",ribbonEmitter);uint(emit,"uDebrisSlots",debrisCapacity);scalar(emit,"uTime",SharedFateClient.now());
         output.bindHistory(emit);uint(emit,"uSimulationGeneration",(int)output.historyGeneration());
         matrix(emit,"uView",view);matrix(emit,"uProjection",projection);
         scalar(emit,"uViewportHeight",net.minecraft.client.Minecraft.getInstance().getWindow().getHeight());
         ParticleDiagnostics.INSTANCE.mark("fate_emit");
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(frames.size(),1,1);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         ParticleDiagnostics.INSTANCE.mark("fate_handoff");
-        staged=true;
+        candidateGeneration=output.historyGeneration();staged=true;
     }
     public void bindDrawInputs(){
         if(nodeRead==0)nodeRead=buffer(64);
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,RIBBON_BINDING,displayActive?displayNodes:nodeRead);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,RIBBON_BINDING,displayActive?displayNodes:nodeRead);
     }
     public void clearDisplay(){displayActive=false;}
-    public void publishDisplay(float alpha,Vec3 displayCamera){
-        displayActive=false;if(nodeRead==0||nodeReadCapacity==0)return;
+    public void publishDisplay(long generation,float alpha,Vec3 displayCamera){
+        displayActive=false;if(nodeReadDispatch==0||nodeGeneration!=generation)return;
         if(displayProgram==0)displayProgram=compile("shared_fate_display.comp");
         if(displayCapacity<nodeReadCapacity){displayNodes=reallocate(displayNodes,(long)nodeReadCapacity*64);displayCapacity=nodeReadCapacity;}
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,nodeRead);
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,nodeWrite==0?nodeRead:nodeWrite);
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,2,displayNodes);
-        GL20.glUseProgram(displayProgram);uint(displayProgram,"uCount",nodeReadCapacity);scalar(displayProgram,"uAlpha",alpha);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,0,nodeRead);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,1,nodeWrite==0?nodeRead:nodeWrite);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,2,displayNodes);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,3,nodeReadDispatch);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(displayProgram);scalar(displayProgram,"uAlpha",alpha);
         Vec3 now=currentCamera.subtract(displayCamera),before=previousCamera.subtract(displayCamera);
-        GL20.glUniform3f(uniforms.location(displayProgram,"uCurrentCameraDelta"),(float)now.x,(float)now.y,(float)now.z);
-        GL20.glUniform3f(uniforms.location(displayProgram,"uPreviousCameraDelta"),(float)before.x,(float)before.y,(float)before.z);
-        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((nodeReadCapacity+255)/256,1,1);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current3f(uniforms.location(displayProgram,"uCurrentCameraDelta"),(float)now.x,(float)now.y,(float)now.z);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current3f(uniforms.location(displayProgram,"uPreviousCameraDelta"),(float)before.x,(float)before.y,(float)before.z);
+        GpuBindings.bind(GL43.GL_DISPATCH_INDIRECT_BUFFER,nodeReadDispatch);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_COMMAND_BARRIER_BIT);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchComputeIndirect(Integer.BYTES);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         displayActive=true;
     }
@@ -160,15 +169,17 @@ public final class SharedFateGpu implements AutoCloseable {
         if(!staged)return;staged=false;int previous=read;read=write;write=previous;
         previousCamera=currentCamera;currentCamera=camera;displayActive=false;
         previous=nodeRead;nodeRead=nodeWrite;nodeWrite=previous;int oldCapacity=nodeReadCapacity;nodeReadCapacity=nodeWriteCapacity;nodeWriteCapacity=oldCapacity;
+        previous=nodeReadDispatch;nodeReadDispatch=nodeWriteDispatch;nodeWriteDispatch=previous;nodeGeneration=candidateGeneration;
         if(!debrisSlots.isEmpty()){previous=debrisRead;debrisRead=debrisWrite;debrisWrite=previous;}
         frames.forEach(f->f.wire().lastCamera=camera);
     }
-    public void reset(){staged=false;displayActive=false;currentCamera=previousCamera=Vec3.ZERO;frames=List.of();debrisSlots.clear();if(read!=0)zero(read);if(write!=0)zero(write);if(debrisRead!=0)zero(debrisRead);if(debrisWrite!=0)zero(debrisWrite);}
+    public void reset(){staged=false;displayActive=false;nodeGeneration=candidateGeneration=-1;currentCamera=previousCamera=Vec3.ZERO;frames=List.of();debrisSlots.clear();if(read!=0)zero(read);if(write!=0)zero(write);if(debrisRead!=0)zero(debrisRead);if(debrisWrite!=0)zero(debrisWrite);}
     private static void copy(int source,int target,long bytes){
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,target);
+        GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,source);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,target);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,bytes);
     }
-    private void initialize(){if(prepare!=0)return;try{if(debrisRead==0){debrisRead=buffer(64);debrisWrite=buffer(64);}prepare=compile("shared_fate_prepare.comp");reserve=compile("shared_fate_reserve.comp");emit=compile("shared_fate_emit.comp");}catch(RuntimeException failure){close();throw failure;}}
+    private void initialize(){if(prepare!=0)return;try{if(debrisRead==0){debrisRead=buffer(64);debrisWrite=buffer(64);}prepare=compile("shared_fate_prepare.comp");reserve=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute(
+            "shared_fate_reserve.comp","#version 450 core\n#define CMI_FATE_DISPLAY_DISPATCH\n"+SOURCES.apply("shared_fate_reserve.comp"));emit=compile("shared_fate_emit.comp");}catch(RuntimeException failure){close();throw failure;}}
     static int compile(String path){
         return com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute(path,
                 "#version 450 core\n" + SOURCES.apply(path));
@@ -176,21 +187,22 @@ public final class SharedFateGpu implements AutoCloseable {
     private static int powerOfTwo(int count){if(count<=1)return 1;return Math.multiplyExact(Integer.highestOneBit(count-1),2);}
     private static int buffer(long bytes){
         if(bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalStateException("Shared-fate GPU metadata exceeds SSBO capacity");
-        int buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
+        int buffer=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);zero(buffer);return buffer;
     }
-    private static void zero(int buffer){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_RGBA32F,GL11.GL_RGBA,GL11.GL_FLOAT,(ByteBuffer)null);}
+    private static void zero(int buffer){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_RGBA32F,GL11.GL_RGBA,GL11.GL_FLOAT,(ByteBuffer)null);}
     private static int reallocate(int old,long bytes){int next=buffer(bytes);if(old!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(old);return next;}
-    private void uint(int p,String name,int value){GL30.glUniform1ui(uniforms.location(p,name),value);}
-    private void scalar(int p,String name,float value){GL20.glUniform1f(uniforms.location(p,name),value);}
+    private void uint(int p,String name,int value){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(uniforms.location(p,name),value);}
+    private void scalar(int p,String name,float value){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1f(uniforms.location(p,name),value);}
     private void matrix(int p,String name,Matrix4fc value){uniforms.matrix(p,name,value);}
     public void close(){
         uniforms.clear();
-        for(int buffer:new int[]{input,jobs,read,write,nodeRead,nodeWrite,debrisRead,debrisWrite,displayNodes})if(buffer!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(buffer);
+        for(int buffer:new int[]{input,jobs,read,write,nodeRead,nodeWrite,nodeReadDispatch,nodeWriteDispatch,debrisRead,debrisWrite,displayNodes})if(buffer!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(buffer);
         if(displayProgram!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(displayProgram);
         displayProgram=displayNodes=displayCapacity=0;displayActive=false;
         if(prepare!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(prepare);if(reserve!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(reserve);if(emit!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(emit);
         nodeRead=nodeWrite=nodeReadCapacity=nodeWriteCapacity=debrisRead=debrisWrite=debrisCapacity=0;debrisSlots.clear();
+        nodeReadDispatch=nodeWriteDispatch=0;nodeGeneration=candidateGeneration=-1;
         disabled=false;staged=false;input=jobs=read=write=prepare=reserve=emit=inputCapacity=stateCapacity=0;staging=null;frames=List.of();
     }
 }

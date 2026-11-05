@@ -19,12 +19,16 @@ class StormCollisionPagesTest {
         int[] table=table(rows);rows.forEach((key,page)->assertEquals(page.intValue(),lookup(table,key)));
         assertEquals(UNKNOWN,lookup(table,new Section(10_000,-100_000,50_000)));
     }
-    @Test void captureIsResumableAndDirtyPagesStayVisible(){
+    @Test void captureIsResumableAndDirtyPagesAreUnknownUntilRecaptured(){
         var time=new AtomicLong();var cache=new StormCollisionCache(()->time.addAndGet(100));var key=new Section(-1,5000,-2);cache.demand(Set.of(key));
         var source=new StormCollisionCache.Source(){public boolean loaded(Section k){return true;}public Page snapshot(Section k,long revision){return null;}public boolean solid(Section k,int index){return index%2==0;}};
         cache.capture(source,250);assertNull(cache.get(key));
         for(int i=0;i<200;i++)cache.capture(source,500);assertNotNull(cache.get(key));var old=cache.get(key);assertEquals(0,cache.pending());
-        cache.dirty(key);cache.capture(source,250);assertSame(old,cache.get(key));
+        long version=cache.version();
+        cache.dirty(key);cache.capture(source,250);
+        assertNull(cache.get(key));
+        assertFalse(cache.ready().containsKey(key),"Dirty geometry must leave the publication before recapture");
+        assertTrue(cache.version()>version);
         for(int i=0;i<200;i++)cache.capture(source,500);assertNotEquals(old.revision(),cache.get(key).revision());
         cache.unavailable(key);assertNull(cache.get(key));
     }

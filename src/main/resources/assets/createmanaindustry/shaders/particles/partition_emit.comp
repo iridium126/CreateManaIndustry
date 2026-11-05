@@ -37,6 +37,6 @@ void main(){
         particles.data[dst]=vec4(pos,diameter);particles.data[dst+1u]=vec4(0,0,0,hash(key+5.0)*6.2831853);
         particles.data[dst+2u]=vec4(color,envelope*fade*highlight*(edge?.65:.07));
         particles.data[dst+3u]=vec4(0,0,key,uintBitsToFloat(uEmitter));
-        cmiExternalHistory(offset+i,history&&i<previousCount?previousOffset+i+1u:0u);
+        cmiExternalHistory(offset+i,history&&count==previousCount?previousOffset+i+1u:0u);
     }
 }

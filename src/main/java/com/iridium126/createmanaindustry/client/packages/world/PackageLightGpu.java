@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.world;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
 
@@ -36,7 +38,7 @@ public final class PackageLightGpu implements AutoCloseable {
         if(bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalArgumentException("Light atlas exceeds device limit");
         try {
             for(int i=0;i<BANKS;i++) {
-                var bank=banks[i]=new Bank();bank.buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,bank.buffer);
+                var bank=banks[i]=new Bank();bank.buffer=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,bank.buffer);
                 int flags=GL30.GL_MAP_WRITE_BIT|GL44.GL_MAP_PERSISTENT_BIT|GL44.GL_MAP_COHERENT_BIT;
                 GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,flags);
                 bank.mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,bytes,flags).order(ByteOrder.nativeOrder());
@@ -118,7 +120,7 @@ public final class PackageLightGpu implements AutoCloseable {
         private Bank bank;private boolean used;
         private View(Bank bank){this.bank=bank;}
         public void bind(int binding){open();if(bank==null)throw new IllegalStateException("Closed light view");
-            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,bank.buffer);used=true;}
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,binding,bank.buffer);used=true;}
         public int tableSize(){return tableSize;}
         public int dataWordOffset(){return dataOffset/4;}
         @Override public void close(){if(bank==null)return;bank.leases--;if(used && !closed){
@@ -129,6 +131,6 @@ public final class PackageLightGpu implements AutoCloseable {
     public long skipped(){return skipped;}
     private void open(){if(closed)throw new IllegalStateException("Light atlas closed");}
     @Override public void close(){if(closed)return;closed=true;for(var bank:banks)if(bank!=null){
-        if(bank.fence!=0)GL32.glDeleteSync(bank.fence);if(bank.buffer!=0){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,bank.buffer);
+        if(bank.fence!=0)GL32.glDeleteSync(bank.fence);if(bank.buffer!=0){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,bank.buffer);
             if(bank.mapped!=null)GL15.glUnmapBuffer(GL43.GL_SHADER_STORAGE_BUFFER);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(bank.buffer);}}}
 }

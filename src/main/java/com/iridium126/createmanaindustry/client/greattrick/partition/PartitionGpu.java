@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.greattrick.partition;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.client.particles.engine.*;
 
 import com.iridium126.createmanaindustry.client.greattrick.PartitionClient;
@@ -52,23 +54,23 @@ public final class PartitionGpu implements AutoCloseable {
                 Vec3 anchor=f.stopped<0?Vec3.ZERO:frozen.computeIfAbsent(f.id,k->camera).subtract(camera);
                 staging.putFloat((float)anchor.x).putFloat((float)anchor.y).putFloat((float)anchor.z).putInt(committedFields.getOrDefault(f,-1)+1);
             }
-            staging.flip();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,input);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);return true;
+            staging.flip();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,input);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);return true;
         }catch(RuntimeException error){close();disabled=true;com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("Partition GPU rendering disabled until reload",error);return false;}
     }
     public void generate(ParticleAppendTarget output,int slot,org.joml.Matrix4fc view,org.joml.Matrix4fc projection,float[] frustum,float throttle) {
         if(fields.isEmpty())return;
         int emitter=output.ensureEmitter(SPEC);if(emitter<0)return;output.flushHeaders();
-        GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,0,input);GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,1,jobs);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,0,input);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,1,jobs);
         output.bind(output.reserveOutput(),slot,4,5);
-        GL20.glUseProgram(prepare);uint(prepare,"uCount",fields.size());scalar(prepare,"uFadeDistance",ClientConfig.particleFadeDistance);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(prepare);uint(prepare,"uCount",fields.size());scalar(prepare,"uFadeDistance",ClientConfig.particleFadeDistance);
         GL20.glUniform4fv(uniforms.location(prepare,"uFrustum"),frustum);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((fields.size()*18+63)/64,1,1);barrier();
-        GL20.glUseProgram(reserve);uint(reserve,"uCount",fields.size());uint(reserve,"uCapacity",output.capacity());
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(reserve);uint(reserve,"uCount",fields.size());uint(reserve,"uCapacity",output.capacity());
         uint(reserve,"uBudget",(int)(ClientConfig.partitionMaxParticles*Math.max(0,Math.min(1,throttle))));
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);barrier();
-        GL20.glUseProgram(emit);uint(emit,"uEmitter",emitter);scalar(emit,"uFadeDistance",ClientConfig.particleFadeDistance);
-        output.bindHistory(emit);GL43.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,previousJobs);
-        GL20.glUniform1i(uniforms.location(emit,"uHistoryConsecutive"),committedGeneration>=0&&committedGeneration+1==output.historyGeneration()?1:0);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(emit);uint(emit,"uEmitter",emitter);scalar(emit,"uFadeDistance",ClientConfig.particleFadeDistance);
+        output.bindHistory(emit);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,6,previousJobs);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1i(uniforms.location(emit,"uHistoryConsecutive"),committedGeneration>=0&&committedGeneration+1==output.historyGeneration()?1:0);
         uniforms.matrix(emit,"uView",view);
         uniforms.matrix(emit,"uProjection",projection);
         scalar(emit,"uViewportHeight",net.minecraft.client.Minecraft.getInstance().getWindow().getHeight());
@@ -77,9 +79,9 @@ public final class PartitionGpu implements AutoCloseable {
     }
     private static int compile(String path){return com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute(path,"#version 450 core\n"+SOURCES.apply(path));}
     private static void barrier(){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}
-    private void uint(int p,String n,int v){GL30.glUniform1ui(uniforms.location(p,n),v);}
-    private void scalar(int p,String n,float v){GL20.glUniform1f(uniforms.location(p,n),v);}
-    private static int buffer(long size){int b=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,b);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,size,GL15.GL_DYNAMIC_COPY);return b;}
+    private void uint(int p,String n,int v){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(uniforms.location(p,n),v);}
+    private void scalar(int p,String n,float v){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1f(uniforms.location(p,n),v);}
+    private static int buffer(long size){int b=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,b);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,size,GL15.GL_DYNAMIC_COPY);return b;}
     public void commit(){if(!staged)return;staged=false;int old=previousJobs;previousJobs=jobs;jobs=old;committedFields.clear();for(int i=0;i<fields.size();i++)committedFields.put(fields.get(i),i);committedGeneration=candidateGeneration;}
     public void reset(){staged=false;committedGeneration=-1;committedFields.clear();fields=List.of();frozen.clear();}
     public void close(){uniforms.clear();for(int b:new int[]{input,jobs,previousJobs})if(b!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(b);for(int p:new int[]{prepare,reserve,emit})if(p!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(p);input=jobs=previousJobs=prepare=reserve=emit=capacity=0;staging=null;disabled=false;reset();}

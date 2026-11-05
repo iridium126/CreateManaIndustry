@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.feedback;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -103,7 +105,7 @@ public final class PackageDeltaChannel implements AutoCloseable {
             ackMailbox=new long[nextJournal.slotCapacity()];ackScratch=new long[ackMailbox.length];Arrays.fill(ackMailbox,-1);
             batchSequences=new long[ackMailbox.length];
             if(coalesceAcks) {
-                nextGpuJournal=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,nextGpuJournal);
+                nextGpuJournal=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,nextGpuJournal);
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,(long)nextJournal.slotCapacity()*512*64,GL15.GL_DYNAMIC_COPY);
             }
             headerRing=new PackageReadbackRing(16);payload=new PackageReadbackRing(Math.min(FRAGMENT_BYTES,capacity*64));
@@ -249,7 +251,7 @@ public final class PackageDeltaChannel implements AutoCloseable {
     private void copyJournal(Fragment fragment,long firstSequence) {
         int copied=0,first=(int)(firstSequence%journal.slotCapacity())*512*64,size=journal.slotCapacity()*512*64;
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-        GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,fragment.frame.capture.recordBuffer());GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,gpuJournal);
+        GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,fragment.frame.capture.recordBuffer());GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,gpuJournal);
         while(copied<fragment.bytes) {
             int bytes=Math.min(fragment.bytes-copied,size-first);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,fragment.offset+copied,first,bytes);

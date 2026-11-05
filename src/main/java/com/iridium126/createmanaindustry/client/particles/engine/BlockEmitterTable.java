@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.nio.FloatBuffer;
 import java.util.BitSet;
 import org.lwjgl.BufferUtils;
@@ -71,7 +73,7 @@ public final class BlockEmitterTable {
     public void uploadAndBind() {
         // GPU copy preserves accumulated fractional phases, including clean source rows.
         buffer = storage.ensure((long) highWater * WORDS * 4);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, buffer);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER, buffer);
         // Contiguous edits become one upload; unchanged GPU phase words survive.
         for (int start = dirty.nextSetBit(0); start >= 0 && start < highWater;) {
             int end = Math.min(highWater, dirty.nextClearBit(start));
@@ -82,8 +84,8 @@ public final class BlockEmitterTable {
         }
         dirty.clear();
         // Reuse the command binding only for this independent compute pass.
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER, ParticleBuffers.EMIT_BB, buffer);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, 0);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER, ParticleBuffers.EMIT_BB, buffer);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER, 0);
     }
 
     public void clear() {

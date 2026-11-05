@@ -45,6 +45,6 @@ public final class AllayDome {
     /** One attack owns one ledger; each target settles the batch once. */
     public static final class Contacts {
         private final java.util.Set<UUID> victims=new java.util.HashSet<>();
-        public boolean add(UUID player,int member){return victims.add(player);}
+        public boolean add(UUID player){return victims.add(player);}
     }
 }

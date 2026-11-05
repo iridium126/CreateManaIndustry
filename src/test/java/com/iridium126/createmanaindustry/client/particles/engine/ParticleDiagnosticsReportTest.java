@@ -50,9 +50,9 @@ class ParticleDiagnosticsReportTest {
     }
     @Test void simulationAndVisibleCountsRemainDistinct()throws Exception{
         var d=new ParticleDiagnostics();field(d,"samples",1);field(d,"enabled",true);field(d,"firstFrame",100L);
-        d.simulationCounts(99,50,1000,900);assertTrue(d.report(new GpuBudgetLedger().snapshot()).contains("Simulation input counts: unmeasured"));
+        d.simulationCounts(99,50,1000,900);assertTrue(d.report(new GpuBudgetLedger().snapshot()).contains("Simulation publication counts: unmeasured"));
         d.simulationCounts(101,51,1000,900);d.modelCounts(102,52,19,0,19,2,0,0);
-        String report=d.report(new GpuBudgetLedger().snapshot());assertTrue(report.contains("live=1000; MODEL=900; non-model=100; frame=101; input generation=50"));
+        String report=d.report(new GpuBudgetLedger().snapshot());assertTrue(report.contains("live=1000; MODEL=900; non-model=100; frame=101; generation=51"));
         assertTrue(report.contains("body/carrier/ghost/feather/LOD1/LOD2=19/0/19/2/0/0"));
     }
 }

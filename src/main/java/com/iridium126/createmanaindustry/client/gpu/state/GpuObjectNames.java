@@ -9,7 +9,7 @@ public final class GpuObjectNames {
     private GpuObjectNames() {}
     public static void deleteTexture(int texture) {
         if(texture==0)return;
-        GpuBufferRetirement.retiringTexture(texture);GL11.glDeleteTextures(texture);
+        GpuBindings.forgetTexture(texture);GpuBufferRetirement.retiringTexture(texture);GL11.glDeleteTextures(texture);
     }
     public static void deleteTexture(int[] textures) {for(int texture:textures)deleteTexture(texture);}
     public static void deleteTexture(java.nio.IntBuffer textures) {for(int i=textures.position();i<textures.limit();i++)deleteTexture(textures.get(i));}

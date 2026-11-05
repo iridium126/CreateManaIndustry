@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.feedback;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
 
@@ -65,8 +67,8 @@ public final class PackageObserverGpu implements AutoCloseable {
             for(int i=0;i<NAMES.length;i++) {
                 next[i]=com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler.compute("PackageObserverGpu", "#version 450 core\n"+sources.apply("packages/"+NAMES[i]+".comp"));
                 for(int j=0;j<UNIFORMS.length;j++)nextLocations[i][j]=GL20.glGetUniformLocation(next[i],UNIFORMS[j]);
-                GL41.glProgramUniform1f(next[i],nextLocations[i][4],SMOOTHING_SECONDS);
-                GL41.glProgramUniform1f(next[i],nextLocations[i][5],PREDICTION_SECONDS);
+                com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(next[i],nextLocations[i][4],SMOOTHING_SECONDS);
+                com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(next[i],nextLocations[i][5],PREDICTION_SECONDS);
             }
         }catch(RuntimeException | LinkageError failure){for(int program:next)if(program!=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(program);throw failure;}
         int[] previous=programs;programs=next;locations=nextLocations;
@@ -77,7 +79,7 @@ public final class PackageObserverGpu implements AutoCloseable {
     private static int buffer(long bytes) {
         int id=GL15.glGenBuffers();if(id==0)throw new IllegalStateException("Observer buffer allocation failed");
         try {
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);
+            GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,id);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);
             if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)
                 throw new IllegalStateException("Observer buffer storage allocation failed");
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(ByteBuffer)null);return id;
@@ -91,7 +93,7 @@ public final class PackageObserverGpu implements AutoCloseable {
         for(int i=0;i<2;i++){clearRange(bodies[i],(long)local*BODY_BYTES,BODY_BYTES);clearRange(history[i],(long)local*HISTORY_BYTES,HISTORY_BYTES);}
         version++;
     }
-    private static void clearRange(int buffer,long offset,long bytes){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);try(var stack=MemoryStack.stackPush()){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,offset,bytes,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}}
+    private static void clearRange(int buffer,long offset,long bytes){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);try(var stack=MemoryStack.stackPush()){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,offset,bytes,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}}
     /** Slots are the immutable local namespace's high-water count, never a CPU live census.
      * Unknown/reused identities, duplicate destinations and illegal fields set a sticky GPU error;
      * no member of that or any subsequent batch mutates. The adapter must consume control feedback
@@ -124,9 +126,9 @@ public final class PackageObserverGpu implements AutoCloseable {
         if(count==0)return true;
         boundUpload=bank;this.compact=compact;
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,patches[bank]);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,data);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,patches[bank]);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,data);
         if(++tag==0){clear(claims);tag=1;}
-        bind();use(0,count,time);GL30.glUniform1ui(locations[0][3],tag);dispatch(count);
+        bind();use(0,count,time);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[0][3],tag);dispatch(count);
         use(1,count,time);dispatch(count);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);version++;
         uploadFences[bank]=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
         if(uploadFences[bank]==0)throw new IllegalStateException("Observer upload fence allocation failed");
@@ -149,7 +151,7 @@ public final class PackageObserverGpu implements AutoCloseable {
     public void retireNamespace(long epoch,long stream,float time) {
         open();time(time);
         if(epoch<=0 || stream<=0 || time<lastTime)throw new IllegalArgumentException("Observer retire namespace/time");
-        bind();use(3,0,time);GL30.glUniform4ui(locations[3][7],(int)epoch,(int)(epoch>>>32),(int)stream,(int)(stream>>>32));
+        bind();use(3,0,time);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current4ui(locations[3][7],(int)epoch,(int)(epoch>>>32),(int)stream,(int)(stream>>>32));
         dispatch(slots);version++;
     }
     /** Publish only after a sample is fully enqueued. Both history endpoints contain this GPU
@@ -159,29 +161,29 @@ public final class PackageObserverGpu implements AutoCloseable {
         if(time<lastTime)throw new IllegalArgumentException("Observer clock reversed");
         if(published>=0 && publishedVersion==version && time==lastTime)return;
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,control);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,control);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,4,8,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(ByteBuffer)null);
         int next=published<0?0:published^1;
         bind();try(MemoryStack stack=MemoryStack.stackPush()) {
-            GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,4,stack.ints(bodies[next],history[next]));
+            GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,4,stack.ints(bodies[next],history[next]));
         }
         use(2,0,time);dispatch(slots);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         published=next;publishedVersion=version;lastTime=time;publication++;
     }
     private void bind(){try(MemoryStack stack=MemoryStack.stackPush()){
-        GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(states,patches[boundUpload],control,claims,0,0,patches[boundUpload]));
+        GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(states,patches[boundUpload],control,claims,0,0,patches[boundUpload]));
     }}
     private void use(int program,int count,float time) {
-        GL20.glUseProgram(programs[program]);
-        if(locations[program][0]>=0 && uniformSlots[program]!=slots){GL30.glUniform1ui(locations[program][0],slots);uniformSlots[program]=slots;}
-        if(locations[program][1]>=0 && uniformPatches[program]!=count){GL30.glUniform1ui(locations[program][1],count);uniformPatches[program]=count;}
-        if(locations[program][2]>=0 && uniformTime[program]!=time){GL20.glUniform1f(locations[program][2],time);uniformTime[program]=time;}
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(programs[program]);
+        if(locations[program][0]>=0 && uniformSlots[program]!=slots){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[program][0],slots);uniformSlots[program]=slots;}
+        if(locations[program][1]>=0 && uniformPatches[program]!=count){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[program][1],count);uniformPatches[program]=count;}
+        if(locations[program][2]>=0 && uniformTime[program]!=time){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1f(locations[program][2],time);uniformTime[program]=time;}
         int format=compact?1:0;
-        if(locations[program][6]>=0 && uniformCompact[program]!=format){GL30.glUniform1ui(locations[program][6],format);uniformCompact[program]=format;}
+        if(locations[program][6]>=0 && uniformCompact[program]!=format){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[program][6],format);uniformCompact[program]=format;}
     }
     private static void dispatch(int count){if(count>0){{PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((count+63)/64,1,1);}com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);}}
-    private static void clear(int buffer){GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
+    private static void clear(int buffer){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(ByteBuffer)null);}
     private static void time(float time){if(!Float.isFinite(time) || time<0)throw new IllegalArgumentException("Observer clock");}
     public int capacity(){return capacity;}

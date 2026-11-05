@@ -9,13 +9,23 @@ vec3 cmiContactClosest(vec3 before,vec3 after,vec3 target,vec2 interval,out floa
  alpha=clamp(distance2>1e-12?dot(target-before,step)/distance2:1.,interval.x,interval.y);
  return before+step*alpha;
 }
+// Intersect the active time window with the interval spent inside a sphere.
+// The projection form avoids subtracting two large terms in the discriminant
+// when a target crosses a very short attack interval at high speed.
+bool cmiContactClipSphere(vec3 before,vec3 after,float radius,inout vec2 interval){
+ vec3 step=after-before;float a=dot(step,step),rr=radius*radius;
+ if(a<=1e-12)return dot(before,before)<=rr;
+ float nearest=-dot(before,step)/a;
+ vec3 offset=before+nearest*step;
+ float margin=rr-dot(offset,offset);
+ if(margin<0.)return false;
+ float reach=sqrt(margin/a);
+ interval=vec2(max(interval.x,nearest-reach),min(interval.y,nearest+reach));
+ return interval.x<=interval.y;
+}
 bool cmiContactHit(vec3 before,vec3 after,vec3 target,float radius,vec2 interval,out float alpha){
- vec3 step=after-before,offset=before-target;float a=dot(step,step);
- vec3 first=offset+step*interval.x;
- if(dot(first,first)<=radius*radius){alpha=interval.x;return true;}
- if(a<=1e-12)return false;
- float b=dot(offset,step),c=dot(offset,offset)-radius*radius,disc=b*b-a*c;
- if(disc<0.)return false;
- float entry=(-b-sqrt(max(0.,disc)))/a,exit=(-b+sqrt(max(0.,disc)))/a;
- alpha=max(interval.x,entry);return alpha<=interval.y&&exit>=interval.x;
+ bool hit=cmiContactClipSphere(before-target,after-target,radius,interval);alpha=interval.x;return hit;
+}
+bool cmiContactMovingHit(vec3 before,vec3 after,vec3 targetBefore,vec3 targetAfter,float radius,vec2 interval,out float alpha){
+ bool hit=cmiContactClipSphere(before-targetBefore,after-targetAfter,radius,interval);alpha=interval.x;return hit;
 }

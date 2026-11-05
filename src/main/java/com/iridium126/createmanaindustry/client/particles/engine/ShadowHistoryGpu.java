@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.util.function.Function;
 import com.iridium126.createmanaindustry.client.gpu.shader.*;
 import org.lwjgl.opengl.*;
@@ -35,12 +37,12 @@ public final class ShadowHistoryGpu implements AutoCloseable {
         }
         int write=1-readBank;
         try{
-            GL20.glUseProgram(program);GL45.glBindTextureUnit(4,depth);GL45.glBindTextureUnit(5,raw[readBank]);GL45.glBindTextureUnit(6,certifiedMask);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);GL45.glBindTextureUnit(4,depth);GL45.glBindTextureUnit(5,raw[readBank]);GL45.glBindTextureUnit(6,certifiedMask);
             for(int unit=4;unit<=6;unit++)GL33.glBindSampler(unit,sampler);
-            GL42.glBindImageTexture(0,raw[write],0,false,0,GL15.GL_WRITE_ONLY,GL30.GL_RG32F);GL42.glBindImageTexture(1,reliable[write],0,false,0,GL15.GL_WRITE_ONLY,GL30.GL_R32F);
+            GpuBindings.image(0,raw[write],0,false,0,GL15.GL_WRITE_ONLY,GL30.GL_RG32F);GpuBindings.image(1,reliable[write],0,false,0,GL15.GL_WRITE_ONLY,GL30.GL_R32F);
             GL41.glProgramUniformMatrix4fv(program,locations[0],false,inverse);GL41.glProgramUniformMatrix4fv(program,locations[1],false,matrices[readBank]);
-            GL41.glProgramUniform3f(program,locations[2],compatible?(float)(stamp.x()-committed.x()):0,compatible?(float)(stamp.y()-committed.y()):0,compatible?(float)(stamp.z()-committed.z()):0);
-            GL41.glProgramUniform1i(program,locations[3],compatible?1:0);GL41.glProgramUniform1f(program,locations[4],tolerance);
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform3f(program,locations[2],compatible?(float)(stamp.x()-committed.x()):0,compatible?(float)(stamp.y()-committed.y()):0,compatible?(float)(stamp.z()-committed.z()):0);
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,locations[3],compatible?1:0);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(program,locations[4],tolerance);
             GL42.glMemoryBarrier(GL42.GL_FRAMEBUFFER_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
             GL43.glDispatchCompute((width+7)/8,(height+7)/8,1);GL42.glMemoryBarrier(GL42.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
             pyramids[write].build(reliable[write],width,height,false);

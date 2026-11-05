@@ -25,6 +25,11 @@ public final class ParticleTypes {
         InterpolationField(int bit){this.bit=bit;}
     }
     public enum Coordinates { WORLD, CAMERA_RELATIVE }
+    private static final int CAMERA_RELATIVE_BIT=256,MODEL_BIT=512,FEATHER_BIT=1024;
+    private static final Set<InterpolationField> SPRITE_FIELDS=Set.of(InterpolationField.POSITION,
+            InterpolationField.VELOCITY,InterpolationField.ROTATION,InterpolationField.COLOR,InterpolationField.CLOCK);
+    private static final Set<InterpolationField> MODEL_FIELDS=Set.of(InterpolationField.POSITION,
+            InterpolationField.VELOCITY,InterpolationField.COLOR,InterpolationField.CLOCK);
     public record Type(int id, String name, Material material,
                        String spawnModule, String updateModule, Set<Feature> features,
                        Set<InterpolationField> interpolation, Coordinates coordinates) {
@@ -32,7 +37,7 @@ public final class ParticleTypes {
             this(id,name,material,spawnModule,updateModule,features,interpolation,Coordinates.WORLD);
         }
         public Type(int id,String name,Material material,String spawnModule,String updateModule,Set<Feature> features){
-            this(id,name,material,spawnModule,updateModule,features,defaultInterpolation(id,material),Coordinates.WORLD);
+            this(id,name,material,spawnModule,updateModule,features,defaultInterpolation(material),Coordinates.WORLD);
         }
         public Type {
             if (id < 0 || id > 65535 || !name.matches("[a-z][a-z0-9_]*"))
@@ -46,23 +51,27 @@ public final class ParticleTypes {
                     throw new IllegalArgumentException("Invalid shader module: " + module);
         }
     }
-    private static Set<InterpolationField> defaultInterpolation(int id,Material material){
-        if(material==Material.PACKAGE)return Set.of(); // The package producer publishes its own two-pose layout.
-        var fields=EnumSet.of(InterpolationField.POSITION,InterpolationField.VELOCITY,InterpolationField.ROTATION,InterpolationField.COLOR,InterpolationField.CLOCK);
-        if(material==Material.MODEL)fields.remove(InterpolationField.ROTATION);
-        if(id==AllayFeatherLayout.TYPE||id==AllayGoldSpecs.TYPE)fields.remove(InterpolationField.COLOR);
-        if(id==AllayGoldSpecs.TYPE)fields.add(InterpolationField.BRIGHTNESS);
-        return fields;
+    private static Set<InterpolationField> defaultInterpolation(Material material){
+        return switch(material){
+            case PACKAGE -> Set.of(); // Body and hook transforms have an independent two-pose layout.
+            case MODEL -> MODEL_FIELDS;
+            default -> SPRITE_FIELDS;
+        };
     }
     public static synchronized String interpolationShader(){
-        var code=new StringBuilder("uint cmiDisplayFields(uint type){\n");
+        var code=new StringBuilder("#define CMI_DISPLAY_CAMERA_RELATIVE "+CAMERA_RELATIVE_BIT+"u\n"
+                +"#define CMI_DISPLAY_MODEL "+MODEL_BIT+"u\n#define CMI_DISPLAY_FEATHER "+FEATHER_BIT+"u\n");
+        for(var field:InterpolationField.values())code.append("#define CMI_DISPLAY_").append(field.name())
+                .append(' ').append(field.bit).append("u\n");
+        code.append("uint cmiDisplayFields(uint type){switch(type){\n");
         for(var type:TYPES.values()){
             int mask=0;for(var field:type.interpolation())mask|=field.bit;
-            code.append("if(type==").append(type.id()).append("u)return ").append(mask).append("u;\n");
+            if(type.coordinates()==Coordinates.CAMERA_RELATIVE)mask|=CAMERA_RELATIVE_BIT;
+            if(type.material()==Material.MODEL)mask|=MODEL_BIT;
+            if(type.id()==AllayFeatherLayout.TYPE)mask|=FEATHER_BIT;
+            code.append("case ").append(type.id()).append("u:return ").append(mask).append("u;\n");
         }
-        code.append("return 0u;}\nbool cmiDisplayCameraRelative(uint type){return ");
-        for(var type:TYPES.values())if(type.coordinates()==Coordinates.CAMERA_RELATIVE)code.append("type==").append(type.id()).append("u||");
-        return code.append("false;}\n").toString();
+        return code.append("default:return 0u;}}\n").toString();
     }
     private static final Map<Integer, Type> TYPES = new LinkedHashMap<>();
     private static final Map<Material, Type> STANDARD_TYPES = new EnumMap<>(Material.class);
@@ -73,9 +82,12 @@ public final class ParticleTypes {
         registerStandard(new Type(3, "model", Material.MODEL, null, null, Set.of(Feature.MODEL_ATLAS)));
         registerStandard(new Type(4, "opaque", Material.OPAQUE, null, null, Set.of(Feature.SPRITE_ATLAS)));
         registerStandard(new Type(6, "package", Material.PACKAGE, null, null, Set.of(Feature.PACKAGE,Feature.COLLISION)));
-        register(new Type(AllayGoldSpecs.TYPE,"allay_gold",Material.ADDITIVE,"chunks/gold_spawn.glsl",null,Set.of()));
+        register(new Type(AllayGoldSpecs.TYPE,"allay_gold",Material.ADDITIVE,"chunks/gold_spawn.glsl",null,Set.of(),
+                Set.of(InterpolationField.POSITION,InterpolationField.VELOCITY,InterpolationField.ROTATION,
+                        InterpolationField.CLOCK,InterpolationField.BRIGHTNESS)));
         register(new Type(AllayFeatherLayout.TYPE, "allay_feather", Material.OPAQUE,
-                "chunks/feather_spawn.glsl", null, Set.of(Feature.MODEL_ATLAS,Feature.COLLISION)));
+                "chunks/feather_spawn.glsl", null, Set.of(Feature.MODEL_ATLAS,Feature.COLLISION),
+                Set.of(InterpolationField.POSITION,InterpolationField.VELOCITY,InterpolationField.ROTATION,InterpolationField.CLOCK)));
         register(new Type(10,"external_conjure",Material.ADDITIVE,null,null,Set.of(),
                 Set.of(InterpolationField.POSITION,InterpolationField.ROTATION,InterpolationField.COLOR,InterpolationField.SIZE,InterpolationField.OPACITY),Coordinates.CAMERA_RELATIVE));
         register(new Type(11,"fate_ribbon_glow",Material.ADDITIVE,null,null,Set.of(),

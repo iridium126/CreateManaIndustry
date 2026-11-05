@@ -158,6 +158,7 @@
     "allaystorm.AllayScopedSkyTimeMixin",
     "allaystorm.AllayClientTimeMixin",
     "allaystorm.AllayTimePacketMixin",
+    "allaystorm.StormContactTeleportMixin",
     "iris.AllayWorldTimeMixin",
     "allaystorm.AllayDimensionSkyMixin",
     "allaystorm.RiftCloudCacheAccess",

@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.nio.FloatBuffer;
 import java.util.BitSet;
 import org.lwjgl.BufferUtils;
@@ -11,6 +13,8 @@ final class ParticleEmitterUploads {
     private final int capacity;
     private final float[] mirror;
     private final FloatBuffer staging;
+    private long revision;
+    private int uploadedHeaders;
     final BitSet dirty = new BitSet();
     ParticleEmitterUploads(int capacity) {
         this.capacity = capacity;
@@ -30,14 +34,18 @@ final class ParticleEmitterUploads {
     void upload(int buffer) {
         if (dirty.isEmpty()) return;
         ParticleDiagnostics.INSTANCE.call();
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
         for (int first=dirty.nextSetBit(0);first>=0;) {
             int end=dirty.nextClearBit(first), offset=first*WORDS, length=(end-first)*WORDS;
             staging.clear();staging.put(mirror,offset,length).flip();
             ParticleDiagnostics.INSTANCE.upload(length*4L);
             ParticleDiagnostics.INSTANCE.call();
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,offset*4L,staging);
+            uploadedHeaders=Math.max(uploadedHeaders,end);
+            revision++;
             dirty.clear(first,end);first=dirty.nextSetBit(end);
         }
     }
+    long revision(){return revision;}
+    long uploadedBytes(){return (long)uploadedHeaders*WORDS*Float.BYTES;}
 }

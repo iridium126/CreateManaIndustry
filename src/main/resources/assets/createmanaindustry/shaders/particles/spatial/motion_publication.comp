@@ -1,0 +1,59 @@
+layout(local_size_x=256) in;
+struct Row {vec4 position,velocity;uvec4 identity;vec4 preferred;};
+layout(std430,binding=0) writeonly buffer Packet {uint header[32];Row rows[];} packet;
+layout(std430,binding=1) readonly buffer Pool {vec4 rows[];} pool;
+layout(std430,binding=3) readonly buffer Count {uint live;} count;
+layout(std430,binding=5) readonly buffer Terrain {Row rows[];} terrain;
+layout(std430,binding=28) readonly buffer State {uint words[];} state;
+#pragma cmi_include chunks/population_read.glsl
+layout(rgba32ui,binding=4) uniform uimageBuffer motionWrite;
+layout(rgba32ui,binding=5) uniform uimageBuffer motionSteering;
+layout(rgba32ui,binding=7) readonly uniform uimageBuffer motionRead;
+uniform uint phase,capacity,terrainCount,probes,kind,memberRange;
+uniform uvec2 nonce,epoch,sourceTick,scene;
+uniform float timeSec;
+uniform bool stateEnabled,copyTerrain;
+
+Row loadMotion(uint member,bool previous){
+ int at=int(member*4u);
+ if(previous)return Row(uintBitsToFloat(imageLoad(motionRead,at)),uintBitsToFloat(imageLoad(motionRead,at+1)),imageLoad(motionRead,at+2),uintBitsToFloat(imageLoad(motionRead,at+3)));
+ return Row(uintBitsToFloat(imageLoad(motionWrite,at)),uintBitsToFloat(imageLoad(motionWrite,at+1)),imageLoad(motionWrite,at+2),uintBitsToFloat(imageLoad(motionWrite,at+3)));
+}
+
+void main(){
+ uint i=gl_GlobalInvocationID.x;
+ if(phase==0u){
+  if(i<memberRange){imageStore(motionWrite,int(i*4u+2u),uvec4(i,0,0,0));imageStore(motionSteering,int(i),uvec4(0));}
+  return;
+ }
+ if(phase==2u){
+  if(i>=cmiPopulationCount(count.live,true))return;
+  uint slot=cmiPopulationSlot(i,count.live,true);
+  if(slot>=count.live)return;
+  uint base=slot*4u;
+  vec4 p0=pool.rows[base],p1=pool.rows[base+1u],p3=pool.rows[base+3u];
+  uint member=(uint(p0.w+.5)&MEMBER_IDX_MASK)-1u;
+  if(member>=memberRange||p3.y<=0.)return;
+  vec4 steering=uintBitsToFloat(imageLoad(motionSteering,int(member)));
+  uint tag=stateEnabled?CMI_STATE(state,member*2u+1u)&255u:0u,attack=stateEnabled?CMI_STATE(state,member*2u):0u;
+  int at=int(member*4u);
+  imageStore(motionWrite,at,floatBitsToUint(vec4(p0.xyz,.34)));
+  imageStore(motionWrite,at+1,floatBitsToUint(vec4(p1.xyz,steering.w==0.?32.:abs(steering.w))));
+  imageStore(motionWrite,at+2,uvec4(member,floatBitsToUint(p3.z),floatBitsToUint(p3.w),1u|(tag<<8u)|(steering.w<0.?0x80000000u:0u)));
+  imageStore(motionWrite,at+3,uvec4(floatBitsToUint(steering.w==0.?p1.xyz:steering.xyz),attack));
+  return;
+ }
+ if(i<memberRange)packet.rows[i]=loadMotion(i,phase==1u);
+ else if(copyTerrain&&i<memberRange+terrainCount)packet.rows[capacity+i-memberRange]=terrain.rows[i-memberRange];
+ if(i==0u){
+  for(uint k=0u;k<32u;k++)packet.header[k]=0u;
+  packet.header[0]=0x41313149u;packet.header[1]=12u;
+  packet.header[2]=nonce.x;packet.header[3]=nonce.y;packet.header[4]=epoch.x;packet.header[5]=epoch.y;
+  packet.header[6]=sourceTick.x;packet.header[7]=sourceTick.y;
+  uvec2 target=sourceTick+uvec2(1,0);if(target.x==0u)target.y++;
+  packet.header[8]=target.x;packet.header[9]=target.y;packet.header[10]=capacity;
+  packet.header[12]=floatBitsToUint(timeSec);packet.header[13]=floatBitsToUint(.05);packet.header[14]=floatBitsToUint(.1);
+  packet.header[16]=scene.x;packet.header[17]=scene.y;packet.header[18]=1u;packet.header[19]=probes;packet.header[20]=kind;
+  packet.header[28]=terrainCount;packet.header[29]=32u+capacity*16u;
+ }
+}

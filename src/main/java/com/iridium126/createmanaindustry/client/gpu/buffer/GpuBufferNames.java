@@ -10,6 +10,7 @@ public final class GpuBufferNames {
     public static long epoch() { return epoch; }
     public static void delete(int buffer) {
         if(buffer==0)return;
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.forget(buffer);
         GpuBufferRetirement.retiring(buffer);epoch++;GL15.glDeleteBuffers(buffer);
     }
     public static void delete(int[] buffers) {for(int buffer:buffers)delete(buffer);}

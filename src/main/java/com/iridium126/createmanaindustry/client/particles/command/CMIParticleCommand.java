@@ -338,7 +338,7 @@ public final class CMIParticleCommand {
         var root=Commands.literal("backend");
         for(String name:com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.backends())root.then(Commands.literal(name).executes(ctx->{
             boolean accepted=com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.request(name);
-            tell(ctx,accepted?"Backend "+name+" queued for the next complete particle-frame boundary. Active FPS capture will be invalidated; check hardware status for actual backend and fallback.":"Unknown backend; choose auto, gl or rt.");return accepted?1:0;
+            tell(ctx,accepted?"Backend "+name+" queued for the next inactive Storm boundary. Check hardware status for the active backend.":"Unknown backend. Choose auto, gl or rt.");return accepted?1:0;
         }));return root;
     }
     private static int profile(CommandContext<CommandSourceStack> ctx) {

@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.world;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.client.packages.simulation.PackagePhysicsGpu;
 
 
@@ -26,8 +28,8 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
     private long uploadedBytes,skippedViews;
     public PackageMovingCollisionGpu(){this(fence->GL32.glClientWaitSync(fence,GL32.GL_SYNC_FLUSH_COMMANDS_BIT,0));}
     /** Injected completion observation is used by validation to hold all four banks busy. */
-    public PackageMovingCollisionGpu(java.util.function.LongToIntFunction poll){this.poll=Objects.requireNonNull(poll);empty=GL15.glGenBuffers();if(empty==0)throw new IllegalStateException("Moving fallback buffer unavailable");GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,empty);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,48,GL15.GL_DYNAMIC_DRAW);if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=48){com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(empty);throw new IllegalStateException("Moving fallback storage unavailable");}}
-    private static ByteBuffer map(int id,int bytes){if(id==0||bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalStateException("Moving storage/device limit");GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,MAP_FLAGS);if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)throw new IllegalStateException("Moving storage unavailable");var mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,bytes,MAP_FLAGS);if(mapped==null)throw new IllegalStateException("Moving mapping unavailable");return mapped.order(ByteOrder.nativeOrder());}
+    public PackageMovingCollisionGpu(java.util.function.LongToIntFunction poll){this.poll=Objects.requireNonNull(poll);empty=GL15.glGenBuffers();if(empty==0)throw new IllegalStateException("Moving fallback buffer unavailable");GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,empty);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,48,GL15.GL_DYNAMIC_DRAW);if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=48){com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(empty);throw new IllegalStateException("Moving fallback storage unavailable");}}
+    private static ByteBuffer map(int id,int bytes){if(id==0||bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalStateException("Moving storage/device limit");GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,id);GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,bytes,MAP_FLAGS);if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)throw new IllegalStateException("Moving storage unavailable");var mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,bytes,MAP_FLAGS);if(mapped==null)throw new IllegalStateException("Moving mapping unavailable");return mapped.order(ByteOrder.nativeOrder());}
     private void owner(){if(Thread.currentThread()!=owner||closed)throw new IllegalStateException("Moving GPU atlas unavailable/off owner thread");}
     public void tickRate(double rate){
         owner();if(viewOpen)throw new IllegalStateException("Moving bank resize during view");
@@ -183,8 +185,8 @@ public final class PackageMovingCollisionGpu implements AutoCloseable {
         public boolean ready(){owner();return !ended&&poseAvailable&&(source==null||revision==source.revision()&&frame==source.poseFrame);}
         public void claimStep(PackagePhysicsGpu physics){owner();if(ended||submitted)throw new IllegalStateException("Moving view already submitted");submitted=true;if(poseAvailable&&source!=null&&revision==source.revision()&&frame==source.poseFrame)physics.claimMovingFrame(source,frame);}
         public void bind(int readyLocation){owner();if(ended)throw new IllegalStateException("Moving view ended");com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-            try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,9,stack.ints(bank==null?empty:bank.buffer,bank==null||bank.geometry==null?empty:bank.geometry.buffer));}
-            GL20.glUniform1i(readyLocation,poseAvailable&&(source==null||(revision==source.revision()&&frame==source.poseFrame))?1:0);
+            try(var stack=MemoryStack.stackPush()){GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,9,stack.ints(bank==null?empty:bank.buffer,bank==null||bank.geometry==null?empty:bank.geometry.buffer));}
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1i(readyLocation,poseAvailable&&(source==null||(revision==source.revision()&&frame==source.poseFrame))?1:0);
         }
         @Override public void close(){owner();if(ended)return;ended=true;if(bank!=null){long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);if(fence==0)throw new IllegalStateException("Moving fence unavailable");bank.leased=false;bank.fence=fence;}}
     }

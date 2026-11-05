@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms;
 import org.lwjgl.opengl.*;
@@ -13,19 +15,19 @@ public final class DomeGatherNavigation {
         if(!stars.navigationReady())return;
         stars.bind(program,true);
         stars.bindPathDispatch();
-        GL41.glProgramUniform1f(program,GpuUniforms.loc(program,"uTimeSec"),time);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(program,GpuUniforms.loc(program,"uTimeSec"),time);
         dispatch(program,stars.domePathDispatchBuffer(),previousIndirect);
     }
     public static void dispatch(int program,int state,int previousIndirect) {
-        GL20.glUseProgram(program);
-        GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uMode"),0);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uMode"),0);
         ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL43.GL_COMMAND_BARRIER_BIT);
-        GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,state);
+        GpuBindings.bind(GL43.GL_DISPATCH_INDIRECT_BUFFER,state);
         try {
-            GL41.glProgramUniform1ui(program,GpuUniforms.loc(program,"uMode"),1);
+            com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uMode"),1);
             ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchComputeIndirect(0);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
-        } finally {GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,previousIndirect);GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,29,previousIndirect);}
+        } finally {GpuBindings.bind(GL43.GL_DISPATCH_INDIRECT_BUFFER,previousIndirect);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,29,previousIndirect);}
     }
 }

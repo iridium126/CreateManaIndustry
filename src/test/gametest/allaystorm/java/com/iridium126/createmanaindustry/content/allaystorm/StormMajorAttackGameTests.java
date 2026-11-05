@@ -63,15 +63,7 @@ public final class StormMajorAttackGameTests {
             h.assertTrue(Math.abs((float)field(wave,"end")-((AllayHelix.Flight)field(wave,"helix")).finish()-1)<.001,"Aiming update changed Helix deadline margin");
         }
         if(gatheringOnly)return new Scene(wave,player,data,runtime);
-        if(kind==StormAttack.DOME){
-            float deadline=(float)field(wave,"assemble");
-            call("advanceDome",level,runtime,wave,player,level.getGameTime(),deadline-.05f);
-            h.assertTrue(!(boolean)field(wave,"locked"),"Dome released before its planned tick");
-            call("advanceDome",level,runtime,wave,player,level.getGameTime(),deadline);
-            h.assertTrue((boolean)field(wave,"locked")&&(float)field(wave,"lock")==deadline,"Dome did not release at its planned tick");
-            h.assertTrue(((BitSet)field(wave,"completed")).isEmpty(),"Deadline release retired live members");
-            return new Scene(wave,player,data,runtime);
-        }
+
         float lock=(float)field(wave,kind==StormAttack.HELIX?"assemble":"lock");
         var identity=StormIdentity.of(level,data);var eligibleMask=new BitSet();eligibleMask.set(0,start.members().length);var readyMask=new BitSet();readyMask.set(0,(start.members().length*95+99)/100-1);readyMask.set(start.members().length-1);
         if(evidence!=null){var gson=new com.google.gson.Gson();readyMask=BitSet.valueOf(gson.fromJson(evidence.get("ready"),long[].class));eligibleMask=BitSet.valueOf(gson.fromJson(evidence.get("eligible"),long[].class));lock=start.startSec()+evidence.get("gatherSeconds").getAsFloat();}
@@ -79,7 +71,7 @@ public final class StormMajorAttackGameTests {
         int referenceVersion=0;float referenceSeconds=0;
         if(kind==StormAttack.HELIX){lock=feedbackTime(wave,h,1f);var frames=(java.util.ArrayDeque<HelixGatherFrame>)field(wave,"helixFrames");var frame=frames.getLast();referenceVersion=frame.version();referenceSeconds=frame.seconds()+.25f;}
         var context=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?player:null);
-        if(kind==StormAttack.HELIX){int required=StormGatherRules.required(start.members().length,StormGatherRules.elapsedTicks(lock,(float)field(wave,"start")),StormGatherRules.durationTicks((float)field(wave,"start"),(float)field(wave,"assemble")));readyMask.clear();readyMask.set(0,required-1);readyMask.set(start.members().length-1);}
+        if(evidence==null){int required=StormGatherRules.required(start.members().length,StormGatherRules.elapsedTicks(lock,(float)field(wave,"start")),StormGatherRules.durationTicks((float)field(wave,"start"),(float)field(wave,"assemble")));readyMask.clear();readyMask.set(0,required-1);readyMask.set(start.members().length-1);}
         AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),start.waveId(),readyMask.toLongArray(),eligibleMask.toLongArray(),DomeGatherState.EMPTY,referenceVersion,referenceSeconds),context);
         h.assertTrue((boolean)field(wave,"gathered"),"GPU feedback did not pass real handler");
         var finished=(BitSet)field(wave,"completed");h.assertTrue(finished.cardinality()==start.members().length-readyMask.cardinality(),"Unready participants were not released");
@@ -109,19 +101,25 @@ public final class StormMajorAttackGameTests {
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domePrestartPauseCannotLaunchOrExtendItsBudget(GameTestHelper helper){
         var scene=launch(helper,StormAttack.DOME,16384,null,true);var wave=scene.wave();float deadline=(float)field(wave,"assemble");var identity=StormIdentity.of(helper.getLevel(),scene.data());var times=new float[66];Arrays.fill(times,-1);times[0]=0;var flows=new DomeGatherState(times);var ready=new BitSet();ready.set(0,12288);
         var context=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?scene.player():null);
-        AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),(int)field(wave,"id"),ready.toLongArray(),ready.toLongArray(),flows),context);helper.assertTrue(((DomeGatherState)field(wave,"gatherFlows")).revision()==0&&!(boolean)field(wave,"gathered")&&(float)field(wave,"assemble")==deadline,"Prestart pause was lost, launched, or extended the budget");helper.succeed();
+        AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),(int)field(wave,"id"),ready.toLongArray(),ready.toLongArray(),flows),context);helper.assertTrue(((DomeGatherState)field(wave,"gatherFlows")).revision()==flows.revision()&&!(boolean)field(wave,"gathered")&&(float)field(wave,"assemble")==deadline,"Prestart pause was lost, launched, or extended the budget");helper.succeed();
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domeDynamicGateIncludesDeadlineAndReleasesUnreadyExactlyOnce(GameTestHelper helper){
-        for(int offset:new int[]{0,1}){
-            var scene=launch(helper,StormAttack.DOME,16384,null,true);var wave=scene.wave();
-            float deadline=(float)field(wave,"assemble");int[] members=(int[])field(wave,"members");
-            helper.assertTrue((boolean)call("advanceDome",helper.getLevel(),scene.runtime(),wave,scene.player(),helper.getLevel().getGameTime(),deadline+offset*.05f),"Dome aborted at its release tick");
-            helper.assertTrue((boolean)field(wave,"locked")&&(float)field(wave,"lock")==deadline,"Late server tick moved the planned release");
-            helper.assertTrue(((BitSet)field(wave,"completed")).isEmpty(),"Deadline release invented member exits");
-            var reserved=(BitSet)field(scene.runtime(),"waveReserved");for(int member:members)helper.assertTrue(reserved.get(member),"Live batch member lost its reservation");
-            call("advanceDome",helper.getLevel(),scene.runtime(),wave,scene.player(),helper.getLevel().getGameTime(),deadline+1);
-            helper.assertTrue((float)field(wave,"lock")==deadline,"Repeated advance moved the release tick");
-        }helper.succeed();
+        var scene=launch(helper,StormAttack.DOME,16384,null,true);var wave=scene.wave();
+        int members=((int[])field(wave,"members")).length;
+        int duration=StormGatherRules.durationTicks((float)field(wave,"start"),(float)field(wave,"assemble"));
+        float now=feedbackTime(wave,helper,duration/20f);
+        var identity=StormIdentity.of(helper.getLevel(),scene.data());int id=(int)field(wave,"id");
+        var context=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?scene.player():null);
+        var eligible=new BitSet();eligible.set(0,members);var ready=new BitSet();
+        int required=StormGatherRules.required(members,duration,duration);ready.set(0,required-1);
+        AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,ready.toLongArray(),eligible.toLongArray()),context);
+        helper.assertTrue(!(boolean)field(wave,"gathered"),"One below the deadline threshold passed");
+        ready.set(required-1);
+        AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,ready.toLongArray(),eligible.toLongArray()),context);
+        helper.assertTrue((boolean)field(wave,"gathered"),"Deadline threshold was rejected");
+        helper.assertTrue((boolean)call("advanceDome",helper.getLevel(),scene.runtime(),wave,scene.player(),helper.getLevel().getGameTime(),now),"Qualified Dome cancelled");
+        helper.assertTrue((boolean)field(wave,"locked")&&((BitSet)field(wave,"completed")).cardinality()==members-required,"Deadline release did not preserve ready roster");
+        helper.succeed();
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domeGatherRetirementIsAuthoritativeAndIdempotent(GameTestHelper helper){
         var scene=launch(helper,StormAttack.DOME,16384,null,true);var wave=scene.wave();var runtime=scene.runtime();int[] members=(int[])field(wave,"members");
@@ -135,8 +133,8 @@ public final class StormMajorAttackGameTests {
         var snapshot=(ClientboundStormWavePacket)call("wavePacket",wave,0,true,scene.player().getId());helper.assertTrue(BitSet.valueOf(snapshot.completedRanks()).equals(ranks),"Observer or authority handoff revived a retired rank");
         reserved.set(members[0]);AllayStormManager.completeAttack(packet,context);helper.assertTrue(reserved.get(members[0]),"Duplicate gather completion released a replacement owner");feedbackTime(wave,helper,0);
         var remaining=new BitSet();remaining.set(0,members.length);remaining.andNot(ranks);AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),packet.id(),remaining.toLongArray(),remaining.toLongArray()),context);
-        helper.assertTrue(!(boolean)field(wave,"gathered")&&reserved.get(members[0]),"Legacy readiness changed a replacement owner's reservation");
-        float deadline=(float)field(wave,"assemble");call("advanceDome",helper.getLevel(),runtime,wave,scene.player(),helper.getLevel().getGameTime(),deadline);
+        helper.assertTrue((boolean)field(wave,"gathered")&&reserved.get(members[0]),"Readiness changed a replacement owner's reservation");
+        float deadline=(helper.getLevel().getGameTime()&((1<<21)-1))/20f;call("advanceDome",helper.getLevel(),runtime,wave,scene.player(),helper.getLevel().getGameTime(),deadline);
         helper.assertTrue((boolean)field(wave,"locked")&&reserved.get(members[0])&&((BitSet)field(wave,"completed")).equals(ranks),"Scheduled release resurrected a retired rank or released its new owner");helper.succeed();
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domeAllGatherMembersRetiredReclaimsSlot(GameTestHelper helper){
@@ -183,7 +181,7 @@ public final class StormMajorAttackGameTests {
                 helper.assertTrue((boolean)field(wave,"gathered"),"Actual terrain masks failed the server's dynamic gate");call("advanceDome",helper.getLevel(),runtime,wave,scene.player(),helper.getLevel().getGameTime(),feedbackNow);helper.assertTrue((boolean)field(wave,"locked"),"Production terrain plan failed to LOCK");
             }else{
                 AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,gson.fromJson(entry.get("ready"),long[].class),gson.fromJson(entry.get("eligible"),long[].class),new DomeGatherState(gson.fromJson(entry.get("flows"),float[].class))),context);
-                helper.assertTrue(!(boolean)field(wave,"gathered"),"Incomplete terrain feedback passed the dynamic gate");helper.assertTrue((boolean)call("advanceDome",helper.getLevel(),runtime,wave,scene.player(),helper.getLevel().getGameTime(),(float)field(wave,"assemble")+.05f)&&(boolean)field(wave,"locked"),"Dome missed planned release without readiness");
+                helper.assertTrue(!(boolean)field(wave,"gathered"),"Incomplete terrain feedback passed the dynamic gate");helper.assertTrue(!(boolean)call("advanceDome",helper.getLevel(),runtime,wave,scene.player(),helper.getLevel().getGameTime(),(float)field(wave,"assemble")+.05f)&&!(boolean)field(wave,"locked"),"Dome released without readiness");
             }
         }helper.succeed();
     }
@@ -309,7 +307,7 @@ public final class StormMajorAttackGameTests {
         var scene=launch(h,StormAttack.DOME,16384);var w=scene.wave();var rt=scene.runtime();var track=((Map<UUID,Object>)field(rt,"tracks")).get(scene.player().getUUID());set(track,"authority",true);
         var ctx=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?scene.player():null);
         var identity=StormIdentity.of(h.getLevel(),scene.data());var bits=new BitSet();bits.set(12287);int id=(int)field(w,"id"),member=((int[])field(w,"members"))[12287];AllayStormManager.completeAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(identity.dimension(),identity.epoch(),id,bits.toLongArray()),ctx);
-        h.assertTrue(!((BitSet)field(rt,"waveReserved")).get(member),"Rank 12287 failed to release");set(w,"locked",false);set(w,"gathered",false);float deadline=(float)field(w,"assemble");boolean advanced=(boolean)call("advanceDome",h.getLevel(),rt,w,scene.player(),h.getLevel().getGameTime()+2000,deadline+.05f);h.assertTrue(advanced&&(boolean)field(w,"locked")&&(float)field(w,"lock")==deadline,"Dome failed planned release after high-rank retirement");h.succeed();
+        h.assertTrue(!((BitSet)field(rt,"waveReserved")).get(member),"Rank 12287 failed to release");set(w,"locked",false);set(w,"gathered",false);float deadline=(float)field(w,"assemble");boolean advanced=(boolean)call("advanceDome",h.getLevel(),rt,w,scene.player(),h.getLevel().getGameTime()+2000,deadline+.05f);h.assertTrue(!advanced&&!(boolean)field(w,"locked"),"Unqualified Dome did not cancel at timeout");h.succeed();
     }
 
     @SuppressWarnings("unchecked")
@@ -319,7 +317,10 @@ public final class StormMajorAttackGameTests {
         AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch()-1,id,new long[0],new long[0]),ctx);h.assertTrue(!(boolean)field(w,"gathered"),"Old epoch authorized launch");
         set(track,"authority",false);AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,new long[0],new long[0]),ctx);h.assertTrue(!(boolean)field(w,"gathered"),"Non-authority authorized launch");set(track,"authority",true);
         var ready=new BitSet();ready.set(0,11674);var eligible=(BitSet)ready.clone();AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,ready.toLongArray(),eligible.toLongArray()),ctx);h.assertTrue(!(boolean)field(w,"gathered"),"Unconfirmed missing members reduced the gather denominator");
-        ready.set(0,12288);eligible.set(0,12288);AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,ready.toLongArray(),eligible.toLongArray()),ctx);call("advanceDome",h.getLevel(),rt,w,null,h.getLevel().getGameTime()+1,now+.05f);h.assertTrue(!(boolean)field(w,"locked"),"Readiness feedback bypassed the planned deadline");float deadline=(float)field(w,"assemble");call("advanceDome",h.getLevel(),rt,w,null,h.getLevel().getGameTime()+400,deadline);h.assertTrue((boolean)field(w,"locked")&&(float)field(w,"lock")==deadline,"Dome missed the planned deadline");h.succeed();
+        feedbackTime(w,h,0);ready.set(0,12288);eligible.set(0,12288);
+        AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,ready.toLongArray(),eligible.toLongArray()),ctx);
+        call("advanceDome",h.getLevel(),rt,w,null,h.getLevel().getGameTime()+1,now+.05f);
+        h.assertTrue((boolean)field(w,"locked")&&(float)field(w,"lock")<now+20,"Qualified readiness waited for the old deadline");h.succeed();
     }
     @SuppressWarnings("unchecked")
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void dome12287AvailableSkipsBut12288Launches(GameTestHelper h){
@@ -329,7 +330,7 @@ public final class StormMajorAttackGameTests {
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domeHitsOtherPlayersOnceAndKeepsVanillaInvulnerability(GameTestHelper h){
         var scene=launch(h,StormAttack.DOME,16384);var player=new FakePlayer(h.getLevel(),new GameProfile(UUID.randomUUID(),"DomeVictim")){@Override public boolean isInvulnerableTo(net.minecraft.world.damagesource.DamageSource source){return false;}};try{var protection=net.minecraft.server.level.ServerPlayer.class.getDeclaredField("spawnInvulnerableTime");protection.setAccessible(true);protection.setInt(player,0);}catch(ReflectiveOperationException e){throw new IllegalStateException(e);}player.setGameMode(GameType.SURVIVAL);player.setPos(scene.player().position());var tracks=(Map<UUID,Object>)field(scene.runtime(),"tracks");tracks.put(player.getUUID(),tracks.get(scene.player().getUUID()));
         var ctx=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?player:null);var identity=StormIdentity.of(h.getLevel(),scene.data());int id=(int)field(scene.wave(),"id");var members=(int[])field(scene.wave(),"members");
-        var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),0,members[0],(float)player.getX()+1,(float)player.getY(),(float)player.getZ());float before=player.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(player.getHealth()<before,"Other active player was not hit");float after=player.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(player.getHealth()==after,"Duplicate Dome contact damaged twice");player.invulnerableTime=0;AllayStormManager.handleWaveContact(new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),0,members[1],packet.relX(),packet.relY(),packet.relZ()),ctx);h.assertTrue(player.getHealth()==after,"Dome bypassed vanilla invulnerability");h.succeed();
+        var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),(float)field(scene.wave(),"lock"),(float)player.getX()+1,(float)player.getY(),(float)player.getZ());float before=player.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(player.getHealth()<before,"Other active player was not hit");float after=player.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(player.getHealth()==after,"Duplicate Dome contact damaged twice");player.invulnerableTime=0;AllayStormManager.handleWaveContact(new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),packet.sampleSec(),packet.relX(),packet.relY(),packet.relZ()),ctx);h.assertTrue(player.getHealth()==after,"Dome bypassed vanilla invulnerability");h.succeed();
     }
 
     @GameTest(template="storm_combat_test",timeoutTicks=100) public static void domeTemplateCrossesStationaryCenterAndSettlesOnce(GameTestHelper h){
@@ -341,17 +342,18 @@ public final class StormMajorAttackGameTests {
         for(double t=0;t<DomeTemplate.duration(0);t+=.025){var point=DomeTemplate.point(0,t*6).add(cx,cy-.3,cz);double distance=point.distanceTo(victim.position().add(0,.5,0));if(distance<best){best=distance;hit=point;}}
         h.assertTrue(best<1.6,"Reference core channel never contacts stationary center player");
         var ctx=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?victim:null);
-        var identity=StormIdentity.of(h.getLevel(),scene.data());int member=((int[])field(wave,"members"))[0],id=(int)field(wave,"id");var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),0,member,(float)hit.x,(float)hit.y,(float)hit.z);
+        var identity=StormIdentity.of(h.getLevel(),scene.data());int id=(int)field(wave,"id");var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),(float)field(wave,"lock"),(float)hit.x,(float)hit.y,(float)hit.z);
         float health=victim.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(victim.getHealth()<health,"Stationary center candidate did not settle damage");health=victim.getHealth();AllayStormManager.handleWaveContact(packet,ctx);h.assertTrue(victim.getHealth()==health,"Center contact applied twice");h.succeed();
     }
 
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domePausedClocksSurviveSnapshotsAndLock(GameTestHelper h){
         var scene=launch(h,StormAttack.DOME,16384,null,true);var w=scene.wave();var rt=scene.runtime();float deadline=(float)field(w,"assemble");
         var ctx=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?scene.player():null);
+        feedbackTime(w,h,0);deadline=(float)field(w,"assemble");
         float[] times=new float[66];Arrays.fill(times,-1);times[65]=0;var flows=new DomeGatherState(times);var identity=StormIdentity.of(h.getLevel(),scene.data());int id=(int)field(w,"id");var ready=new BitSet();ready.set(0,12288);
         AllayStormManager.gatheredAttack(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(identity.dimension(),identity.epoch(),id,ready.toLongArray(),ready.toLongArray(),flows),ctx);
         var before=(ClientboundStormWavePacket)call("wavePacket",w,0,true,scene.player().getId());
-        h.assertTrue(before.gatherFlows().revision()==0&&before.assembleSec()==deadline&&!(boolean)field(w,"gathered"),"Legacy flow/readiness report altered planned release");
+        h.assertTrue(before.gatherFlows().revision()==1&&before.assembleSec()==deadline&&(boolean)field(w,"gathered"),"Gather report lost the flow clock or changed its budget");
         call("advanceDome",h.getLevel(),rt,w,null,h.getLevel().getGameTime(),deadline);
         var lock=(ClientboundStormWavePacket)call("wavePacket",w,2,false,-1);h.assertTrue((boolean)field(w,"locked")&&(float)field(w,"lock")==deadline,"LOCK omitted planned release time");h.succeed();
     }
@@ -370,7 +372,7 @@ public final class StormMajorAttackGameTests {
             double x=(float)field(scene.wave(),"centerX"),y=(float)field(scene.wave(),"centerY"),z=(float)field(scene.wave(),"centerZ");victim.setPos(x,y-.9,z);
             var hit=evidence.getAsJsonArray("contact");int rank=hit.get(0).getAsInt(),member=((int[])field(scene.wave(),"members"))[rank];h.assertTrue(!((BitSet)field(scene.wave(),"completed")).get(rank),"Actual GPU contact came from an unready member");
             var identity=StormIdentity.of(h.getLevel(),scene.data());int id=(int)field(scene.wave(),"id");
-            var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),(float)field(scene.wave(),"lock")+hit.get(4).getAsFloat(),member,(float)x+hit.get(1).getAsFloat(),(float)y+hit.get(2).getAsFloat(),(float)z+hit.get(3).getAsFloat());
+            var packet=new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),(float)field(scene.wave(),"lock")+hit.get(4).getAsFloat(),(float)x+hit.get(1).getAsFloat(),(float)y+hit.get(2).getAsFloat(),(float)z+hit.get(3).getAsFloat());
             var context=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?victim:null);
             float health=victim.getHealth();AllayStormManager.handleWaveContact(packet,context);h.assertTrue(victim.getHealth()<health,"Production GPU center contact did not settle server damage");health=victim.getHealth();AllayStormManager.handleWaveContact(packet,context);h.assertTrue(victim.getHealth()==health,"Production GPU contact settled twice");
             if(evidence.has("injectedBoundaryMember")&&evidence.get("injectedBoundaryMember").getAsInt()>=0){
@@ -378,7 +380,7 @@ public final class StormMajorAttackGameTests {
                 var authority=(net.neoforged.neoforge.network.handling.IPayloadContext)Proxy.newProxyInstance(StormMajorAttackGameTests.class.getClassLoader(),new Class[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},(proxy,method,args)->method.getName().equals("player")?scene.player():null);
                 var completion=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(identity.dimension(),identity.epoch(),id,completed.toLongArray());AllayStormManager.completeAttack(completion,authority);
                 var reserved=(BitSet)field(scene.runtime(),"waveReserved");h.assertTrue(((BitSet)field(scene.wave(),"completed")).get(boundaryRank)&&!reserved.get(boundaryMember)&&!((BitSet)field(scene.wave(),"membership")).get(boundaryMember),"GPU boundary completion did not release server ownership");
-                victim.invulnerableTime=0;float after=victim.getHealth();AllayStormManager.handleWaveContact(new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),packet.sampleSec(),boundaryMember,packet.relX(),packet.relY(),packet.relZ()),context);h.assertTrue(victim.getHealth()==after,"Late boundary-member contact settled damage");
+                victim.invulnerableTime=0;float after=victim.getHealth();AllayStormManager.handleWaveContact(new com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormWaveContactPacket(identity.dimension(),id,identity.epoch(),packet.sampleSec(),packet.relX(),packet.relY(),packet.relZ()),context);h.assertTrue(victim.getHealth()==after,"Duplicate batch contact settled damage");
                 reserved.set(boundaryMember);AllayStormManager.completeAttack(completion,authority);h.assertTrue(reserved.get(boundaryMember),"Duplicate boundary completion released a new owner");
                 com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("Dome GPU boundary rank={} released; late contact and duplicate completion rejected",boundaryRank);
             }

@@ -131,6 +131,7 @@ void main() {
     // hp <= 0 (not < 0): the kill frame itself already counts as dead, matching
     // update.comp's corpse predicate and vanilla's deathTime > 0 overlay.
     bool corpse = p3.y <= 0.0;
+    cmiLoadAllayAnimation((item.x>>9u)&262143u,p3.x);
     // ---- carried item (held sword): the carrier segment ---------------------
     // Only partId-7 vertices arrive through the carrier command, and keygen's
     // sweep admitted each instance through the SAME shared cmiStormWaveClaim
@@ -141,10 +142,11 @@ void main() {
     // included, exactly like the old full-mesh path. Body vertices never run
     // this block: the per-vertex item invocations for every non-carrier
     // instance no longer exist at all.
-    float carryRamp = 0.0;
-    float itemId = 0.0;
-    if(uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec,p1.w);}
+    float carryRamp = cmiAllayCachedPose?uintBitsToFloat(cmiAllayCachedMeta.w):0.;
+    float itemId = cmiAllayCachedPose?uintBitsToFloat(cmiAllayCachedMeta.z):0.;
+    if(!cmiAllayCachedPose&&uStarfallEnabled&&!corpse&&stormA.x>.5){int claim=cmiStarClaim(p0.w,uTimeSec);if(claim>=0)carryRamp=cmiAttackCarry(p0.w,uTimeSec,p1.w);}
     if (pid == 7) {
+        if(!cmiAllayCachedPose){
         float waveTier = 0.0;
         if (!corpse && stormA.x > 0.5) {
             int k = cmiStormWaveClaim(p3.z,p0.w);
@@ -156,6 +158,7 @@ void main() {
         // held-item id: a wave claim OVERRIDES the emitter header slot (storm
         // specs keep 17.z = 0, so the two paths can never stack)
         itemId = waveTier > 0.5 ? waveTier : emitters.u[hb + 17u].z;
+        }
         if (itemId <= 0.5) {
             // defensive only: keygen guarantees an item for every carrier
             // instance, so a mismatch means upstream corruption — clip instead
@@ -166,7 +169,7 @@ void main() {
     }
     // Storm members: inner-band members near the chased anchor periodically
     // run full vanilla dance cycles instead of plain flight.
-    if (stormA.x > 0.5) {
+    if (stormA.x > 0.5 && !cmiAllayCachedPose) {
         anim = cmiStormAnimOverride(distance(p0.xyz, emitters.u[hb + 19u].xyz),
                 stormA.y, p3.z, uTimeSec);
     }
@@ -174,7 +177,6 @@ void main() {
         anim = 3;
     float sinceDeath = corpse ? -p3.y : 0.0;
     float yaw;
-    cmiLoadAllayAnimation((item.x>>9u)&262143u,p3.x);
     mat4 M = cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p0.xyz, p1.xyz, anim, pid, yaw, carryRamp, p1.w, !corpse && stormA.x > .5);
 
     // ---- vertex transform to world ----

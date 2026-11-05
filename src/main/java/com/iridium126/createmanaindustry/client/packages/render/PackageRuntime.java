@@ -39,7 +39,20 @@ public final class PackageRuntime {
     private volatile String packagePreviewStatus="off";
     private volatile boolean packageShadersDirty;
     private int packageEmitter=-1;
-    float packagePartialTick=1;
+    private float displayPartialTick=1;
+    private float displayChainPartial=Float.NaN;
+    public void freezeDisplay(long publication){
+        if(packageParticles==null)return;
+        var mc=Minecraft.getInstance();
+        if(!mc.isPaused()&&mc.level!=null&&mc.level.tickRateManager().runsNormally()){
+            long now=System.nanoTime();
+            displayPartialTick=packagePreview.active()?packagePreview.displayInterpolation(now):packageWorld.displayInterpolation(now);
+            displayChainPartial=packagePreview.active()?Float.NaN:packageWorld.displayChainInterpolation(now);
+        }
+        packageParticles.chainInterpolation(displayChainPartial);
+        packageParticles.beginDisplay(publication);
+    }
+    float displayPartialTick(){return displayPartialTick;}
     private final EmitterSpec packageSpec=EmitterSpec.builder()
             .type(ParticleTypes.standard(ParticleTypes.Material.PACKAGE)).life(1,1).build();
 
@@ -90,14 +103,13 @@ public final class PackageRuntime {
                     && (!CreateManaIndustry.IRIS_ACTIVE || !com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.prepare())) {
                 this.packagePreview.close();this.packagePreviewStatus="stopped: package shaderpack program unavailable";
             }
-            else this.packagePartialTick=this.packagePreview.prepare(Minecraft.getInstance().isPaused());
+            else this.packagePreview.prepare(Minecraft.getInstance().isPaused());
             ParticleDiagnostics.INSTANCE.mark("upload_after_packages");
         }
         if(com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime.pumpGpu())changed=true;
         boolean profilePackageWorld=ClientConfig.packageGpuAuthority && !this.packagePreview.active();
         if(profilePackageWorld)ParticleDiagnostics.INSTANCE.mark("package_physics");
         if(this.packageWorld.prepare(this.packagePoolFactory,ParticlePrograms::loadParticlePlain,this.packagePreview.active())) {
-            if(!this.packagePreview.active())this.packagePartialTick=this.packageWorld.interpolation();
             changed=true;
         }
         if(profilePackageWorld)ParticleDiagnostics.INSTANCE.mark("upload_after_packages");
@@ -125,7 +137,7 @@ public final class PackageRuntime {
             packageParticles.lighting(dev.engine_room.flywheel.api.visualization.VisualizationManager.supportsVisualization(level),
                     level.effects().constantAmbientLight(),directions[0],directions[1]);
             packageParticles.draw(frame.pool(),view,projection,(float)position.x,(float)position.y,
-                    (float)position.z,packagePartialTick);
+                    (float)position.z,displayPartialTick());
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
 
         }
@@ -148,6 +160,7 @@ public final class PackageRuntime {
     public void abort() { if(packageParticles!=null)packageParticles.abort(); }
     public void reset() {
         PackageAuthorityClient.closeAll("Particle identities reset",true);packagePreview.close();packagePreviewStatus="off";
+        displayPartialTick=1;displayChainPartial=Float.NaN;
         if(packageParticles!=null)packageParticles.reset();requests.clear();
     }
     public void reload() {

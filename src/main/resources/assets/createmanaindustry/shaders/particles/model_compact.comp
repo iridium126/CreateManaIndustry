@@ -6,5 +6,5 @@ layout(std430,binding=7)readonly buffer Scratch{uvec2 rows[];}scratch;
 void main(){uint row=gl_GlobalInvocationID.x;if(row>=counter.models)return;
  uvec2 entry=scratch.rows[row];uint slot=entry.x&0x7fffffffu;
  imageStore(cmi_ModelMembersWrite,int(8u+row*2u),uvec4(slot));imageStore(cmi_ModelMembersWrite,int(9u+row*2u),uvec4(entry.y));
- if((entry.x&0x80000000u)!=0u){uint storm=atomicAdd(counter.storms,1u);if(storm<uPopulationStormCapacity)imageStore(cmi_ModelMembersWrite,int(8u+2u*uPopulationModelCapacity+storm),uvec4(slot));}
+ if((entry.x&0x80000000u)!=0u){uint storm=atomicAdd(counter.storms,1u);if(storm<uPopulationStormCapacity){uint at=8u+2u*uPopulationModelCapacity+storm*(uPopulationStormPairs?2u:1u);imageStore(cmi_ModelMembersWrite,int(at),uvec4(slot));if(uPopulationStormPairs)imageStore(cmi_ModelMembersWrite,int(at+1u),uvec4(entry.y));}}
 }

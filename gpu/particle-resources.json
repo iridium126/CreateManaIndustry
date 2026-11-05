@@ -1,0 +1,422 @@
+{
+  "schema": 12,
+  "constants": {
+    "ABI": 12,
+    "RT_SLOTS": 3,
+    "PARTICLE_BYTES": 64,
+    "SPATIAL_HEADER_BYTES": 128,
+    "SPATIAL_RECORD_BYTES": 64,
+    "STORM_TICK_HEADER_BYTES": 224,
+    "STORM_TICK_SEQUENCE_OFFSET": 16,
+    "STORM_TICK_TARGET_OFFSET": 96,
+    "STORM_TICK_PROJECTION_OFFSET": 128,
+    "STORM_TICK_PLAYER_COUNT_OFFSET": 144,
+    "STORM_TICK_COLUMN_CAPTURE_OFFSET": 160,
+    "STORM_PLAYER_BYTES": 16,
+    "STORM_PLAYER_LIMIT": 32768,
+    "STORM_POSITION_BATCH_OFFSET": 26912,
+    "STORM_POSITION_BATCH_LIMIT": 256,
+    "STORM_POSITION_ROW_BYTES": 32,
+    "STORM_COLUMN_CAPTURE_LIMIT": 4,
+    "STORM_COLUMN_CAPTURE_FLOATS": 30,
+    "STORM_COLUMN_CAPTURE_OFFSET": 35120,
+    "STORM_CONTROL_BYTES": 64,
+    "STORM_MAX_CONTROLS": 65536,
+    "STORM_TERRAIN_ROW_BYTES": 16,
+    "STORM_TERRAIN_PAGE_BYTES": 512,
+    "STORM_TERRAIN_MAX_ROWS": 65536,
+    "STORM_TERRAIN_MAX_PAGES": 16384,
+    "STORM_MEMBER_BYTES": 192,
+    "STORM_SPATIAL_TERRAIN_LIMIT": 16384,
+    "STORM_TICK_MAGIC": 1398033202,
+    "STORM_CONTROL_SPAWN": 1,
+    "STORM_CONTROL_DAMAGE": 2,
+    "STORM_CONTROL_CORRECTION": 3,
+    "STORM_CONTROL_DOME_STATE": 4,
+    "STORM_CONTROL_DOME_ASSIGN": 5,
+    "STORM_CONTROL_DOME_PAUSE": 6,
+    "STORM_CONTROL_DOME_RELEASE": 7,
+    "STORM_CONTROL_HELIX_STATE": 8,
+    "STORM_CONTROL_HELIX_FRAME": 9,
+    "STORM_CONTROL_HELIX_ASSIGN": 10,
+    "STORM_CONTROL_HELIX_RECOVERY": 11,
+    "STORM_CONTROL_COLUMN_STATE": 12,
+    "STORM_CONTROL_COLUMN_ASSIGN": 13,
+    "STORM_CONTROL_COLUMN_RELEASE": 14,
+    "STORM_CONTROL_COLUMN_RESTORE": 15,
+    "STORM_CONTROL_COLUMN_RESTORE_ROW": 16,
+    "STORM_CONTROL_LIFECYCLE": 17,
+    "STORM_CONTROL_OUTER_START": 18,
+    "STORM_CONTROL_OUTER_RELEASE": 19,
+    "STORM_OUTER_BATCH_OFFSET": 18704,
+    "STORM_OUTER_BATCH_LIMIT": 1024,
+    "STORM_COLUMN_SLOTS": 64,
+    "STORM_COLUMN_MEMBERS": 64,
+    "STORM_COLUMN_RESTORE_PARTS": 4,
+    "STORM_COLUMN_BATCH_OFFSET": 13584,
+    "STORM_COLUMN_BATCH_STRIDE": 80,
+    "STORM_DISPLAY_HEADER_BYTES": 64,
+    "STORM_DISPLAY_SEQUENCE_OFFSET": 16,
+    "STORM_DISPLAY_READY_OFFSET": 40,
+    "STORM_DISPLAY_RECORD_BYTES": 80,
+    "STORM_DISPLAY_APPEARANCE_OFFSET": 48,
+    "STORM_DISPLAY_KEY_OFFSET": 64,
+    "STORM_DISPLAY_COLUMN_BYTES": 320,
+    "STORM_DISPLAY_COLUMN_ARC_OFFSET": 48,
+    "STORM_DISPLAY_COLUMN_ARC_NODES": 65,
+    "STORM_DISPLAY_PHASE_SHIFT": 8,
+    "STORM_DISPLAY_KIND_SHIFT": 12,
+    "STORM_DISPLAY_SLOT_SHIFT": 16,
+    "STORM_DISPLAY_BIRTH": 16,
+    "STORM_DISPLAY_DISCONTINUITY": 8,
+    "STORM_DISPLAY_TERRAIN_CLIPPED": 2,
+    "STORM_DISPLAY_MAGIC": 1398033203,
+    "STORM_DISPLAY_POOF": 32,
+    "STORM_PROJECTION_INPUT_BINDING": 6,
+    "STORM_PROJECTION_DISPATCH_BINDING": 7,
+    "STORM_PROJECTION_MAP_BINDING": 12,
+    "STORM_PROJECTION_STATE_READ_BINDING": 27,
+    "STORM_PROJECTION_STATE_WRITE_BINDING": 28,
+    "STORM_HELIX_MEMBERS": 4096,
+    "STORM_HELIX_FRAMES": 9,
+    "STORM_HELIX_FRAME_ROWS": 8,
+    "STORM_HELIX_RECOVERY_ROWS": 5,
+    "STORM_DOME_SLOTS": 4,
+    "STORM_DOME_MEMBERS": 12288,
+    "STORM_DOME_FLOWS": 66,
+    "STORM_DOME_RECORD_WORDS": 16,
+    "STORM_DOME_NODE_WORDS": 12,
+    "STORM_DOME_BATCH_BYTES": 65840,
+    "STORM_DOME_READY_OFFSET": 16,
+    "STORM_DOME_COMPLETED_OFFSET": 6160,
+    "STORM_DOME_BLOCKED_OFFSET": 12304,
+    "STORM_DOME_UNKNOWN_OFFSET": 12320,
+    "STORM_DOME_PAUSED_OFFSET": 12336,
+    "STORM_DOME_CONTACT_OFFSET": 13392,
+    "STORM_DOME_CONTACT_BYTES": 32,
+    "STORM_DOME_CONTROL_CREATE": 4,
+    "STORM_HELIX_REFERENCE_OFFSET": 13520,
+    "STORM_HELIX_REFERENCE_BYTES": 16,
+    "DISPLAY_PARAMETERS_BINDING": 0,
+    "DISPLAY_PARAMETERS_BYTES": 64,
+    "SIMULATION_PARAMETERS_BINDING": 1,
+    "SIMULATION_PARAMETERS_BYTES": 48,
+    "DISPLAY_LAYOUT_OFFSET": 0,
+    "DISPLAY_CLOCK_OFFSET": 16,
+    "DISPLAY_CURRENT_CAMERA_OFFSET": 32,
+    "DISPLAY_PREVIOUS_CAMERA_OFFSET": 48,
+    "SAMPLER_COLLISION": 0,
+    "SAMPLER_STORM_ATLAS": 1,
+    "SAMPLER_STORM_TABLE": 2,
+    "SAMPLER_ANIMATION_READ": 3,
+    "SAMPLER_MERGED_GEOMETRY": 9,
+    "SAMPLER_MERGED_PARTICLES": 10,
+    "SAMPLER_MERGED_EMITTERS": 11,
+    "SAMPLER_MERGED_PERMUTATION": 12,
+    "SAMPLER_MERGED_STARFALL": 13,
+    "SAMPLER_DOME_POSE": 14,
+    "SAMPLER_ANIMATION_DRAW": 15,
+    "SAMPLER_DOME_KEYS": 16,
+    "POSE_OUTPUT_BINDING": 30,
+    "ORDINARY_ROSTER_BINDING": 22,
+    "POSE_PARTS": 8,
+    "POSE_ROWS_PER_INSTANCE": 25,
+    "POSE_ANIMATION_ROWS": 1048576,
+    "BINDING_PARTICLE_BB_READ": 0,
+    "BINDING_PARTICLE_BB_WRITE": 1,
+    "BINDING_INDIRECT_BB": 2,
+    "BINDING_COUNTER_BB": 3,
+    "BINDING_EMIT_BB": 4,
+    "BINDING_EMITTER_BB": 5,
+    "BINDING_SORTREAD_BINDING": 6,
+    "BINDING_SORTWRITE_BINDING": 7,
+    "BINDING_ORDERADD_BINDING": 8,
+    "BINDING_HIST_BINDING": 9,
+    "BINDING_OFFSET_BINDING": 10,
+    "BINDING_BAKEMETA_BINDING": 11,
+    "BINDING_MODELGEO_BINDING": 12,
+    "BINDING_PREVCOUNTER_BINDING": 14,
+    "BINDING_ORDEROPAQUE_BINDING": 15,
+    "BINDING_GRID_BB": 13,
+    "BINDING_DAMAGE_BB": 16,
+    "BINDING_HIT_BB": 17,
+    "BINDING_PLAYERS_BB": 18,
+    "BINDING_CORRECTION_BB": 19,
+    "BINDING_STORMPOS_BB": 20,
+    "BINDING_MEMBERMAP_BB": 21,
+    "BINDING_WAVECONTACT_BB": 22,
+    "BINDING_CARRIERSINK_BB": 23,
+    "BINDING_IDENTITY_BB": 31,
+    "BINDING_WAVE_STAMP_BB": 30,
+    "BINDING_DISPATCH_BB": 29,
+    "BINDING_POPULATION_READ_BB": 24,
+    "BINDING_POPULATION_WRITE_BB": 25
+  },
+  "samplers": {
+    "uCollision": {
+      "unit": "SAMPLER_COLLISION",
+      "type": 35679
+    },
+    "uStormCollisionAtlas": {
+      "unit": "SAMPLER_STORM_ATLAS",
+      "type": 36307
+    },
+    "uStormCollisionTable": {
+      "unit": "SAMPLER_STORM_TABLE",
+      "type": 36304
+    },
+    "cmi_AllayAnimationRead": {
+      "unit": "SAMPLER_ANIMATION_READ",
+      "type": 36312
+    },
+    "cmi_AllayAnimation": {
+      "unit": "SAMPLER_ANIMATION_DRAW",
+      "type": 36312
+    },
+    "cmiDomeKeys": {
+      "unit": "SAMPLER_DOME_KEYS",
+      "type": 36312
+    },
+    "cmi_DomePose": {
+      "unit": "SAMPLER_DOME_POSE",
+      "type": 36312
+    },
+    "cmi_Starfall": {
+      "unit": "SAMPLER_MERGED_STARFALL",
+      "type": 36312
+    }
+  },
+  "layouts": {
+    "particle": {
+      "stride": 64,
+      "fields": {
+        "position": 0,
+        "velocity": 16,
+        "appearance": 32,
+        "lifetime": 48
+      }
+    },
+    "spatialInput": {
+      "stride": 64,
+      "fields": {
+        "position": 0,
+        "velocity": 16,
+        "identity": 32,
+        "preferred": 48
+      }
+    },
+    "spatialOutput": {
+      "stride": 64,
+      "fields": {
+        "hint": 0,
+        "identity": 16,
+        "position": 32,
+        "velocity": 48
+      }
+    },
+    "displayParameters": {
+      "stride": 64,
+      "fields": {
+        "layout": 0,
+        "clock": 16,
+        "currentCamera": 32,
+        "previousCamera": 48
+      }
+    },
+    "simulationParameters": {
+      "stride": 48,
+      "fields": {
+        "layout": 0,
+        "clock": 16,
+        "rates": 32
+      }
+    }
+  },
+  "programs": {
+    "spatial/motion_publication.comp": {
+      "resources": {
+        "Packet": { "kind": "ssbo", "binding": 0, "access": "write", "layout": "spatialInput", "minimumBytes": 128 },
+        "Pool": { "kind": "ssbo", "binding": 1, "access": "read", "layout": "particle" },
+        "Count": { "kind": "ssbo", "binding": 3, "access": "read" },
+        "Terrain": { "kind": "ssbo", "binding": 5, "access": "read", "layout": "spatialInput" },
+        "PopulationRead": { "kind": "ssbo", "binding": 24, "access": "read", "minimumBytes": 32 },
+        "State": { "kind": "ssbo", "binding": 28, "access": "read" },
+        "motionWrite": { "kind": "image", "binding": 4, "access": "read_write", "type": 36967 },
+        "motionSteering": { "kind": "image", "binding": 5, "access": "read_write", "type": 36967 },
+        "motionRead": { "kind": "image", "binding": 7, "access": "read", "type": 36967 }
+      },
+      "barriers": ["shader_storage", "shader_image_access"]
+    },
+    "spatial/visibility.comp": {
+      "resources": {
+        "Pool": { "kind": "ssbo", "binding": 0, "access": "read", "layout": "particle" },
+        "Bounds": { "kind": "ssbo", "binding": 1, "access": "read_write" },
+        "Count": { "kind": "ssbo", "binding": 2, "access": "read" },
+        "Packet": { "kind": "ssbo", "binding": 3, "access": "write", "layout": "spatialInput", "minimumBytes": 128 },
+        "HistoryInput": { "kind": "ssbo", "binding": 4, "access": "read", "layout": "spatialInput", "minimumBytes": 128 },
+        "HistoryOutput": { "kind": "ssbo", "binding": 5, "access": "read", "layout": "spatialOutput", "minimumBytes": 128 },
+        "Visible": { "kind": "ssbo", "binding": 6, "access": "write", "minimumBytes": 16 },
+        "Emitters": { "kind": "ssbo", "binding": 7, "access": "read" },
+        "PopulationRead": { "kind": "ssbo", "binding": 24, "access": "read", "minimumBytes": 32 }
+      },
+      "barriers": ["shader_storage", "buffer_update"]
+    },
+    "pose_cache.comp": {
+      "resources": {
+        "PosePool": { "kind": "ssbo", "binding": 0, "access": "read", "layout": "particle" },
+        "PoseCount": { "kind": "ssbo", "binding": 3, "access": "read" },
+        "PoseEmitters": { "kind": "ssbo", "binding": 5, "access": "read" },
+        "PopulationRead": { "kind": "ssbo", "binding": 24, "access": "read", "minimumBytes": 32 },
+        "RtVisibleGroups": { "kind": "ssbo", "binding": 29, "access": "read", "minimumBytes": 16 },
+        "PoseOutput": { "kind": "ssbo", "binding": 30, "access": "write" }
+      },
+      "barriers": ["shader_storage", "texture_fetch"]
+    },
+    "storm_projection.comp": {
+      "resources": {
+        "OldPool": { "kind": "ssbo", "binding": 0, "access": "read", "layout": "particle" },
+        "NewPool": { "kind": "ssbo", "binding": 1, "access": "write", "layout": "particle" },
+        "Counter": { "kind": "ssbo", "binding": 3, "access": "read_write", "minimumBytes": 16 },
+        "PreviousCount": { "kind": "ssbo", "binding": 14, "access": "read" },
+        "Emitters": { "kind": "ssbo", "binding": 5, "access": "read" },
+        "NativePublication": { "kind": "ssbo", "binding": 6, "access": "read", "minimumBytes": 64 },
+        "NativeDispatch": { "kind": "ssbo", "binding": 7, "access": "write", "minimumBytes": 12 },
+        "ProjectionMap": { "kind": "ssbo", "binding": 12, "access": "read_write" },
+        "PriorStormPose": { "kind": "ssbo", "binding": 27, "access": "read" },
+        "NextStormPose": { "kind": "ssbo", "binding": 28, "access": "write" },
+        "Members": { "kind": "ssbo", "binding": 21, "access": "write" },
+        "PopulationRead": { "kind": "ssbo", "binding": 24, "access": "read", "minimumBytes": 32 },
+        "Identities": { "kind": "ssbo", "binding": 31, "access": "write" }
+      },
+      "barriers": ["shader_storage", "shader_image_access", "command"]
+    },
+    "display.comp": {
+      "resources": {
+        "CurrentPool": {
+          "kind": "ssbo",
+          "binding": 0,
+          "access": "read",
+          "layout": "particle"
+        },
+        "PreviousPool": {
+          "kind": "ssbo",
+          "binding": 1,
+          "access": "read",
+          "layout": "particle"
+        },
+        "DisplayPool": {
+          "kind": "ssbo",
+          "binding": 2,
+          "access": "write",
+          "layout": "particle"
+        },
+        "CurrentCount": {
+          "kind": "ssbo",
+          "binding": 3,
+          "access": "read"
+        },
+        "PreviousCount": {
+          "kind": "ssbo",
+          "binding": 4,
+          "access": "read"
+        },
+        "HistoryEdges": {
+          "kind": "ssbo",
+          "binding": 5,
+          "access": "read"
+        },
+        "DisplayCount": {
+          "kind": "ssbo",
+          "binding": 6,
+          "access": "write"
+        },
+        "Commands": {
+          "kind": "ssbo",
+          "binding": 7,
+          "access": "write"
+        },
+        "Dispatch": {
+          "kind": "ssbo",
+          "binding": 8,
+          "access": "write"
+        },
+        "SortMeta": {
+          "kind": "ssbo",
+          "binding": 9,
+          "access": "write"
+        },
+        "Population": {
+          "kind": "ssbo",
+          "binding": 10,
+          "access": "read"
+        },
+        "Emitters": {
+          "kind": "ssbo",
+          "binding": 11,
+          "access": "read"
+        },
+        "OrdinaryRoster": {
+          "kind": "ssbo",
+          "binding": 22,
+          "access": "read"
+        },
+        "PreviousStormDisplay": { "kind": "ssbo", "binding": 27, "access": "read" },
+        "CurrentStormDisplay": { "kind": "ssbo", "binding": 28, "access": "read" },
+        "CmiDisplayParameters": {
+          "kind": "ubo",
+          "binding": 0,
+          "access": "read",
+          "layout": "displayParameters"
+        }
+      },
+      "barriers": [
+        "shader_storage",
+        "texture_fetch",
+        "command",
+        "buffer_update"
+      ]
+    }
+  },
+  "sharedUniformBlocks": {
+    "CmiDisplayParameters": {
+      "binding": 0,
+      "bytes": 64,
+      "members": {
+        "cmiDisplayLayout": {
+          "offset": 0,
+          "type": 36296
+        },
+        "cmiDisplayClock": {
+          "offset": 16,
+          "type": 35666
+        },
+        "cmiCurrentCameraDelta": {
+          "offset": 32,
+          "type": 35666
+        },
+        "cmiPreviousCameraDelta": {
+          "offset": 48,
+          "type": 35666
+        }
+      }
+    },
+    "CmiSimulationParameters": {
+      "binding": 1,
+      "bytes": 48,
+      "members": {
+        "cmiSimulationLayout": {
+          "offset": 0,
+          "type": 36296
+        },
+        "cmiSimulationClock": {
+          "offset": 16,
+          "type": 35666
+        },
+        "cmiSimulationRates": {
+          "offset": 32,
+          "type": 35666
+        }
+      }
+    }
+  }
+}

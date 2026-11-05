@@ -48,7 +48,7 @@ public final class WorldEffectRenderer {
             RenderSystem.activeTexture(GL13.GL_TEXTURE0);int copy=sceneCopy.capture(w,h);
             RenderSystem.viewport(0,0,w,h);RenderSystem.disableBlend();RenderSystem.disableDepthTest();RenderSystem.depthMask(false);RenderSystem.disableCull();RenderSystem.colorMask(true,true,true,true);GL11.glDisable(GL11.GL_SCISSOR_TEST);
             // Veil's bind/unbind clears global blocks and sampler units. This pass owns only its local bindings.
-            GL20.glUseProgram(shader.getProgram());
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(shader.getProgram());
             if(!com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.applyWorldEffectCamera(shader))return unavailable("main camera snapshot unavailable");
             bind(shader,"DiffuseSampler0",0,copy);bind(shader,"DiffuseDepthSampler",1,main.getDepthTextureId());
             setInt(shader,"ExposureMode",path==PackCapabilities.WorldPath.HDR?2:path==PackCapabilities.WorldPath.TRANSLUCENT?1:0);
@@ -82,7 +82,7 @@ public final class WorldEffectRenderer {
     public static String failure(){return failure;}
     private static void setInt(UniformAccess shader,String name,int value){var u=shader.getUniform(name);if(u!=null)u.setInt(value);}
     private static int sampler(boolean color){int id=color?colorSampler:rawSampler;if(id==0){id=GL33.glGenSamplers();GL33.glSamplerParameteri(id,GL11.GL_TEXTURE_MIN_FILTER,color?GL11.GL_LINEAR:GL11.GL_NEAREST);GL33.glSamplerParameteri(id,GL11.GL_TEXTURE_MAG_FILTER,color?GL11.GL_LINEAR:GL11.GL_NEAREST);GL33.glSamplerParameteri(id,GL11.GL_TEXTURE_WRAP_S,GL12.GL_CLAMP_TO_EDGE);GL33.glSamplerParameteri(id,GL11.GL_TEXTURE_WRAP_T,GL12.GL_CLAMP_TO_EDGE);GL33.glSamplerParameteri(id,GL14.GL_TEXTURE_COMPARE_MODE,GL11.GL_NONE);if(color)colorSampler=id;else rawSampler=id;}return id;}
-    private static void bind(ShaderProgram shader,String name,int unit,int texture){RenderSystem.activeTexture(GL13.GL_TEXTURE0+unit);GL33.glBindSampler(unit,sampler(unit==0));GL11.glBindTexture(GL11.GL_TEXTURE_2D,texture);int loc=shader.getUniformLocation(name);if(loc>=0)GL20.glUniform1i(loc,unit);}
+    private static void bind(ShaderProgram shader,String name,int unit,int texture){RenderSystem.activeTexture(GL13.GL_TEXTURE0+unit);GL33.glBindSampler(unit,sampler(unit==0));GL11.glBindTexture(GL11.GL_TEXTURE_2D,texture);int loc=shader.getUniformLocation(name);if(loc>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1i(loc,unit);}
     public static double gpuMs(String id){var timer=timers.get(id);return timer==null?0:timer.lastMs();}
     public static boolean gpuSampled(String id){var timer=timers.get(id);return timer!=null&&timer.sampled();}
     public static void close(){sceneCopy.close();if(colorSampler!=0)GL33.glDeleteSamplers(colorSampler);if(rawSampler!=0)GL33.glDeleteSamplers(rawSampler);colorSampler=rawSampler=0;timers.values().forEach(GpuTimestampRing::close);timers.clear();}

@@ -1,0 +1,3 @@
+#define CMI_KEYGEN_DOMAIN 2
+#define CMI_DISPLAY_LOD_COVERAGE 1
+#pragma cmi_include keygen.comp

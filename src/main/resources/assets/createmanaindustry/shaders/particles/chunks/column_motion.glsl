@@ -18,22 +18,7 @@ bool cmiColumnFloor(vec3 p){
   if(m.w>.5&&all(greaterThanEqual(rel,vec3(.2)))&&all(lessThan(rel,vec3(SX,SY,SZ)-vec3(.2))))return !solidAt(p+vec3(0,.1,0),m.xyz,i)&&solidAt(p-vec3(0,.2,0),m.xyz,i);
  }return false;
 }
-struct CmiColumnCurve {float radius,root,angle,endAngle,height,endHeight,radial,angular,vertical,arcWarp;};
-CmiColumnCurve cmiColumnCurveParameters(uint arc,uint b,uint rank){
- vec3 start=cmiColumnState3(arc+CMI_COLUMN_ORIGIN)-cmiStarLanding(b,0u).xyz,direction=cmiColumnState3(arc+CMI_COLUMN_DIRECTION);vec4 t=cmiStarVec(b+4u);
- float radius=max(length(start.xz),.2),root=cmiColumnRoot(rank),angle=atan(start.z,start.x),endAngle=angle+.7*max(t.z+cmiColumnDelay(rank)-t.y,.1);
- endAngle+=cmiColumnWrap(cmiColumnAngle(b,rank)-endAngle);
- vec2 radial=vec2(cos(angle),sin(angle));
- return CmiColumnCurve(radius,root,angle,endAngle,start.y,cmiColumnHeight(root),clamp(dot(direction.xz,radial)*4.,-.25*radius,.25*radius),dot(direction.xz,vec2(-radial.y,radial.x))*4./radius,direction.y*4.,mix(.1,.2,smoothstep(1.,4.,max(0.,start.y)/radius)));
-}
-// Monotone integrated P4 grid concentrates knots where the speed changes.
-// Geometry is unchanged; all 128 chord samples and the inverse share this grid.
-float cmiColumnArcGrid(float t,float strength){return t+strength*t*(1.-t)*(1.-2.*t)*(1.-7.*t+7.*t*t);}
-vec3 cmiColumnCurvePoint(CmiColumnCurve p,float u){
- float h0=u*(1.-u)*(1.-u),h1=u*u*(u-1.),blend=cmiColumnSmooth(u);
- float radius=max(.2,mix(p.radius,p.root,blend)+p.radial*h0+.35*h1),angle=mix(p.angle,p.endAngle,blend)+p.angular*h0;
- return vec3(cos(angle)*radius,mix(p.height,p.endHeight,blend)+p.vertical*h0+.35*p.root*.125*h1,sin(angle)*radius);
-}
+#pragma cmi_include chunks/column_curve.glsl
 vec3 cmiColumnCurve(uint s,uint arc,uint b,uint rank,float u){return cmiColumnCurvePoint(cmiColumnCurveParameters(arc,b,rank),u);}
 void cmiColumnCurveInit(uint s,uint arc,uint b,uint rank,vec3 pos,vec3 vel,float begin){
  cmiColumnStore(s+2u,begin);cmiColumnStore3(arc+CMI_COLUMN_ORIGIN,pos);
@@ -42,12 +27,6 @@ void cmiColumnCurveInit(uint s,uint arc,uint b,uint rank,vec3 pos,vec3 vel,float
  float lengthTotal=0.;vec3 previous=pos-cmiStarLanding(b,0u).xyz;cmiColumnStore(arc,0.);
  for(uint i=1u;i<=CMI_COLUMN_ARC_SAMPLES;i++){vec3 point=cmiColumnCurvePoint(parameters,cmiColumnArcGrid(float(i)/float(CMI_COLUMN_ARC_SAMPLES),parameters.arcWarp));lengthTotal+=distance(point,previous);if((i&1u)==0u)cmiColumnStore(cmiColumnArcNode(arc,i/2u),lengthTotal);previous=point;}
  cmiColumnStore(s+15u,0.);CMI_STATE(starStateWrite,arc+CMI_COLUMN_PHASE)=2u;cmiColumnStore3(arc+CMI_COLUMN_TANGENT,direction);
-}
-float cmiColumnParameter(uint arc,float distanceArc,float warp){
- if(distanceArc<=0.)return 0.;float total=cmiColumnState(cmiColumnArcNode(arc,CMI_COLUMN_ARC_NODES-1u));if(distanceArc>=total)return 1.;
- uint lo=0u,hi=CMI_COLUMN_ARC_NODES-1u;for(int i=0;i<6;i++){uint mid=(lo+hi)/2u;if(cmiColumnState(cmiColumnArcNode(arc,mid))<distanceArc)lo=mid;else hi=mid;}
- float start=cmiColumnState(cmiColumnArcNode(arc,lo)),delta=max(cmiColumnState(cmiColumnArcNode(arc,hi))-start,.000001);
- return mix(cmiColumnArcGrid(float(lo)/64.,warp),cmiColumnArcGrid(float(hi)/64.,warp),clamp((distanceArc-start)/delta,0.,1.));
 }
 vec3 cmiColumnTurn(vec3 from,vec3 to,float radians){
  from=normalize(from);to=normalize(to);float angle=acos(clamp(dot(from,to),-1.,1.));if(angle<.0001)return to;

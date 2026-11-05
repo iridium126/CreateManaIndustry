@@ -20,6 +20,7 @@ public final class AllayStormRuntime {
     public static final AllayStormRuntime INSTANCE=new AllayStormRuntime(com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime.INSTANCE);
 
     private final StormParticlePort particles;
+    private com.iridium126.createmanaindustry.client.particles.engine.spatial.StormNativeInputs nativeInputs;
 
     public AllayStormRuntime(StormParticlePort particles) {
         this.particles = java.util.Objects.requireNonNull(particles);
@@ -101,8 +102,10 @@ public final class AllayStormRuntime {
         // growth delta: the server's generated population advanced — the new
         // indices join the spawn backlog (members cannot be removed by this
         // stream; only ACTIVATE/STOP reshape the population)
-        if (count > this.stormCount)
+        if (count > this.stormCount) {
             this.pendingStormSpawns += count - this.stormCount;
+            memberLifeRevision++;
+        }
         this.stormCount = Math.max(this.stormCount, count);
         if(this.stormCount>=16384)com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.preloadKeys();
     }
@@ -217,6 +220,7 @@ public final class AllayStormRuntime {
     private final BitSet stormDead = new BitSet();
     /** True while THIS client is the authority (runs the position readback). */
     private boolean stormAuthority = false;
+    private long memberLifeRevision;
     private double stormCorrectionHz = 5.0;
     /** Next member index to schedule for spawning (skips dead members). */
     private int stormSpawnCursor = 0;
@@ -259,10 +263,13 @@ public final class AllayStormRuntime {
         if (!p.identity().acceptsLifecycle(p.action(), currentDimension, stormIdentity)) return;
         if (p.action() == ClientboundStormStatePacket.ACTION_ACTIVATE) {
             if(!com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline().select(p.identity()))return;
+            com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.beforeStormActivation(this);
             stormIdentity = p.identity();
         }
         if(p.action()==ClientboundStormStatePacket.ACTION_STOP)
             com.iridium126.createmanaindustry.client.allaystorm.visual.StormCenterView.timeline().retire(p.identity());
+        if(nativeInputs!=null&&p.action()!=ClientboundStormStatePacket.ACTION_UPDATE)
+            nativeInputs.lifecycle(p.action()==ClientboundStormStatePacket.ACTION_ACTIVATE);
         applyStormState(p.action(), p.authority(), p.correctionHz(), Vec3.atLowerCornerOf(p.anchor()),
                 p.count(), p.stormSeed(), p.creationRadius(), p.finalRadius(), p.growthPerSecond(), p.createdAt(), p.deadBitmap());
     }
@@ -284,6 +291,7 @@ public final class AllayStormRuntime {
                 if (particles.initialized())
                     particles.invalidateParticleIdentities();
                 this.stormDead.clear();
+                memberLifeRevision++;
                 if (deadBitmap != null) {
                     byte[] bm = deadBitmap;
                     for (int i = 0; i < bm.length; i++) {
@@ -389,14 +397,17 @@ public final class AllayStormRuntime {
             // member the SERVER already counts dead (reports against it are
             // rejected forever — an unkillable ghost). scheduleSpawnRuns'
             // skip loop re-reads stormDead every frame; the bit is idempotent.
+            if(!this.stormDead.get(memberIdx))memberLifeRevision++;
             this.stormDead.set(memberIdx);StormCollisionRuntime.dead(memberIdx);
         }
-        com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.enqueueDamageEntry(memberIdx,damage,kbX,kbZ,light,ParticleBuffers.DAMAGE_FLAG_MEMBER|(died?ParticleBuffers.DAMAGE_FLAG_DIED:0));
+        if(nativeInputs!=null)nativeInputs.damage(memberIdx,damage,kbX,kbZ,light,died);
+        else com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.enqueueDamageEntry(memberIdx,damage,kbX,kbZ,light,ParticleBuffers.DAMAGE_FLAG_MEMBER|(died?ParticleBuffers.DAMAGE_FLAG_DIED:0));
         StormFeedback.INSTANCE.applyHitCorrection(memberIdx, hitPosition, gameTime);
     }
 
     /** Full storm teardown (level clear/shutdown): forget the emitter id too. */
     public void resetStormState() {
+        if(nativeInputs!=null&&stormActive)nativeInputs.lifecycle(false);
         centerClock.reset();
         this.stormIdentity = null;
         this.stormActive = false;
@@ -560,7 +571,7 @@ public final class AllayStormRuntime {
         if (this.stormActive) {
             particles.prepareAppearance(this.center);
         }
-        if (this.stormActive && this.pendingStormSpawns > 0) {
+        if (this.stormActive && (this.pendingStormSpawns > 0||nativeInputs!=null&&!stormHeaderWritten)) {
             int id = particles.ensureEmitter(AllayStormSpec.SPEC);
             if (id >= 0) {
                 if (!this.stormHeaderWritten) {
@@ -576,43 +587,27 @@ public final class AllayStormRuntime {
                     this.stormEmitId = id;
                     this.stormHeaderWritten = true;
                 }
-                // Drain in ~60 frames regardless of population (see javadoc).
-                int budget = Math.min(this.pendingStormSpawns,
-                        Math.max(s.capacity(),
-                                (this.pendingStormSpawns + 59) / 60));
-                int scheduled = 0;
-                while (scheduled < budget && !s.full()
-                        && this.stormSpawnCursor < this.stormCount) {
-                    while (this.stormSpawnCursor < this.stormCount && this.stormDead.get(this.stormSpawnCursor))
-                        this.stormSpawnCursor++;
-                    if (this.stormSpawnCursor >= this.stormCount)
-                        break;
-                    // Runs must not cross the analytic/ring style boundary:
-                    // indices BELOW stormAnalyticUpTo existed at ACTIVATE and
-                    // spawn settled; indices AT OR ABOVE it arrived through
-                    // growth and spawn on the ring outside the visible
-                    // envelope, flying to their storm positions.
-                    boolean ring = this.stormSpawnCursor >= this.stormAnalyticUpTo;
-                    int styleLimit = ring ? this.stormCount : Math.min(this.stormCount, this.stormAnalyticUpTo);
-                    int runStart = this.stormSpawnCursor;
-                    while (this.stormSpawnCursor < styleLimit && !this.stormDead.get(this.stormSpawnCursor)
-                            && scheduled + (this.stormSpawnCursor - runStart) < budget)
-                        this.stormSpawnCursor++;
-                    int runLen = this.stormSpawnCursor - runStart;
-                    if (runLen <= 0)
-                        break;
-                    if (!s.members(id,runLen,this.center,runStart,ring)) {
-                        this.stormSpawnCursor=runStart;
-                        break;
-                    }
-                    scheduled += runLen;
-                }
-                if (this.stormSpawnCursor >= this.stormCount)
-                    this.pendingStormSpawns = 0;
-                else
-                    this.pendingStormSpawns -= scheduled;
+                if(nativeInputs==null)writeSpawnRuns(s.capacity(),(first,count,ring)->s.members(id,count,center,first,ring));
             }
         }
+    }
+    @FunctionalInterface private interface SpawnRun {boolean write(int first,int count,boolean growth);}
+    private void writeSpawnRuns(int capacity,SpawnRun sink){
+        int budget=Math.min(pendingStormSpawns,Math.max(capacity,(pendingStormSpawns+59)/60));
+        int scheduled=0,runs=0;
+        while(scheduled<budget&&runs<capacity&&stormSpawnCursor<stormCount){
+            while(stormSpawnCursor<stormCount&&stormDead.get(stormSpawnCursor))stormSpawnCursor++;
+            if(stormSpawnCursor>=stormCount)break;
+            int first=stormSpawnCursor;
+            boolean growth=first>=stormAnalyticUpTo;
+            int end=growth?stormCount:Math.min(stormCount,stormAnalyticUpTo);
+            while(stormSpawnCursor<end&&!stormDead.get(stormSpawnCursor)&&scheduled+stormSpawnCursor-first<budget)
+                stormSpawnCursor++;
+            int count=stormSpawnCursor-first;
+            if(!sink.write(first,count,growth)){stormSpawnCursor=first;break;}
+            scheduled+=count;runs++;
+        }
+        pendingStormSpawns=stormSpawnCursor>=stormCount?0:pendingStormSpawns-scheduled;
     }
 
     /**
@@ -651,6 +646,8 @@ public final class AllayStormRuntime {
         boolean alive,simulated;int slotIdx=-1,waveId,targetEntityId;long epoch;
         com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket packet;
         final java.util.BitSet completed=new java.util.BitSet();
+        java.util.BitSet effective;
+        long effectiveRevision=-1;
         final float[] bounds=new float[6];boolean windowReady;
         int columnSoundMask;boolean startSound,lockSound;
     }
@@ -658,36 +655,31 @@ public final class AllayStormRuntime {
     private final com.iridium126.createmanaindustry.content.allaystorm.StormWaveSlots waveLifecycle = new com.iridium126.createmanaindustry.content.allaystorm.StormWaveSlots(MAX_WAVES);
     private final com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[] starfallSnapshots=new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[MAX_WAVES];
     private final StarfallGpuBuffers starfallGpu=StarfallGpuBuffers.INSTANCE;
+    private final com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[] nativeCollisionWaves=
+            new com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket[MAX_WAVES];
     private boolean starfallDirty=true;private String lastHelixAbort="none";
     private int lastGatherId,lastGatherKind,lastGatherAbort;private int[] lastGatherCounts=new int[4];
 
     boolean livingMember(int member){return member>=0&&member<stormCount&&!stormDead.get(member);}
     public boolean anyWaveActive(){for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())return true;return false;}
-    private boolean locallyRelevant(WaveClient w){
-        var me=Minecraft.getInstance().player;if(me==null||w==null||!w.alive||w.packet.abort())return false;
-        if(stormAuthority)return true; // Aggregate gather/completion feedback is independent of local contact range.
-        var p=w.packet;if(p.helixAttack()){if(!p.locked()||com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.lockSec())<0||com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(timeSec,p.diveUntilSec())>0)return false;return me.getX()>=w.bounds[0]&&me.getX()<=w.bounds[3]&&me.getY()>=w.bounds[1]&&me.getY()<=w.bounds[4]&&me.getZ()>=w.bounds[2]&&me.getZ()<=w.bounds[5];}
-        if(p.column()){double dx=me.getX()-p.landings()[0],dz=me.getZ()-p.landings()[2];return dx*dx+dz*dz<=256&&Math.abs(me.getY()-p.landings()[1])<5;}
-        if(p.starfall())return w.targetEntityId==me.getId();
-        if(!p.locked())return false;double dx=me.getX()-p.centerX(),dz=me.getZ()-p.centerZ(),r=p.crownRadius()+4;
-        return dx*dx+dz*dz<=r*r&&me.getY()>=p.centerY()-3&&me.getY()<=p.centerY()+p.crownRadius()+4;
-    }
-    public boolean anyWaveTargetingLocalPlayer(){for(var w:waveSlots)if(locallyRelevant(w))return true;return false;}
     public void outer(com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket packet){
         var identity=identity();if(identity==null||!identity.dimension().equals(packet.dimension())||identity.epoch()!=packet.epoch())return;
-        starfallGpu.outer(packet);if(packet.operation()==1)StormFeedback.INSTANCE.outerReleased(packet);
+        if(nativeInputs==null)starfallGpu.outer(packet);else nativeInputs.outer(packet);
+        if(packet.operation()==1)StormFeedback.INSTANCE.outerReleased(packet);
     }
     public void completeAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket packet){
         var identity=identity();if(identity==null||!identity.dimension().equals(packet.dimension())||identity.epoch()!=packet.epoch())return;
         var wave=findWaveById(packet.id());if(wave==null)return;
         var delta=java.util.BitSet.valueOf(packet.ranks());delta.andNot(wave.completed);wave.completed.or(delta);
+        if(!delta.isEmpty())wave.effectiveRevision=-1;
+        if(nativeInputs!=null)nativeInputs.release(wave.slotIdx,wave.packet,delta);
         if(wave.simulated)StormCollisionRuntime.completed(wave.packet,delta.toLongArray());starfallGpu.completed(packet.id(),packet.ranks());starfallDirty=true;
         if(wave.completed.cardinality()==wave.packet.members().length){wave.alive=false;waveLifecycle.complete(wave.waveId);starfallSnapshots[wave.slotIdx]=null;}
     }
     public void applyColumn(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket p){
         var mc=Minecraft.getInstance();if(mc.level==null||!mc.level.dimension().location().equals(p.dimension()))return;
         boolean replacement=findWaveById(p.id())==null;
-        applyWave(p.snapshot());
+        applyWave(p.snapshot(),p);
         var wave=findWaveById(p.id());
         if(replacement&&p.resume()&&wave!=null){starfallGpu.columnWaiting(wave.slotIdx,p.id(),true);wave.lockSound=true;starfallDirty=true;}
     }
@@ -696,6 +688,10 @@ public final class AllayStormRuntime {
     public java.util.BitSet columnCompleted(int id){var wave=findWaveById(id);return wave==null?new java.util.BitSet():(java.util.BitSet)wave.completed.clone();}
     public void columnRestored(int id,int token){var wave=findWaveById(id);if(wave==null)return;starfallGpu.columnWaiting(wave.slotIdx,id,false);starfallGpu.columnRestoreToken(wave.slotIdx,id,token);starfallDirty=true;}
     public void applyWave(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket p){
+        applyWave(p,null);
+    }
+    private void applyWave(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket p,
+                           com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket column){
         if(!stormActive||p.epoch()!=com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.epoch(stormCreatedAtGameTime,stormSeed))return;
         var update = waveLifecycle.apply(p, timeSec);
         for (int slot = 0; slot < MAX_WAVES; slot++)
@@ -704,12 +700,14 @@ public final class AllayStormRuntime {
                 starfallDirty = true;
             }
         if (update == null) return;
+        if(nativeInputs!=null)nativeInputs.attack(update.slot(),update.packet(),update.replacement(),column,timeSec);
         WaveClient w = waveSlots[update.slot()];
         if (update.replacement()) {
             w = new WaveClient(); w.slotIdx = update.slot(); waveSlots[update.slot()] = w;
         }
         if(p.event()==0&&!p.abort())StormCollisionRuntime.claimed(update.packet());
         w.packet = update.packet();
+        w.effectiveRevision=-1;
         if (p.abort()) {
             if(w.simulated&&(w.packet.helixAttack()||w.packet.dome()||w.packet.column())){var all=new java.util.BitSet();all.set(0,w.packet.members().length);all.andNot(w.completed);StormCollisionRuntime.completed(w.packet,all.toLongArray());}
             if(w.packet.helixAttack()||w.packet.dome()){lastGatherId=w.waveId;lastGatherKind=w.packet.attackType();lastGatherAbort=p.fallbackReason();lastGatherCounts=w.gatherCounts.clone();}
@@ -821,19 +819,106 @@ public final class AllayStormRuntime {
     public void checkpointSpawnInputs() {candidateSpawnCursor=stormSpawnCursor;candidatePendingSpawns=pendingStormSpawns;}
     public void restoreSpawnInputs() {stormSpawnCursor=candidateSpawnCursor;pendingStormSpawns=candidatePendingSpawns;}
 
-    record FeedbackState(boolean active,boolean authority,double correctionHz,Vec3 center,float time,int players,int waveMask) {}
+    record FeedbackState(boolean active,boolean authority,double correctionHz,Vec3 center,float time,int players) {}
     FeedbackState feedbackState() {
-        int mask=0;for(int i=0;i<MAX_WAVES;i++)if(locallyRelevant(waveSlots[i]))mask|=i<4?1<<i:16;
-        if((stormAuthority&&anyWaveActive())||StormCollisionRuntime.returning()||starfallGpu.hasOuter()||ColumnSnapshotClient.INSTANCE.restoring())mask|=31;
-        return new FeedbackState(stormActive,stormAuthority,stormCorrectionHz,center,timeSec,lastPlayerCount,mask);
+        return new FeedbackState(stormActive,stormAuthority,stormCorrectionHz,center,timeSec,lastPlayerCount);
+    }
+    int waveFeedbackMask(Vec3 before,Vec3 after,int player){
+        int mask=0;
+        for(int slot=0;slot<MAX_WAVES;slot++){
+            var wave=waveSlots[slot];if(wave==null||!wave.alive||wave.packet.abort())continue;
+            var packet=wave.packet;
+            // A moving target can enter and leave the broad-phase box in one
+            // tick. Keep the whole swept bound; the GPU tests the true radius.
+            boolean candidate;
+            if(packet.helixAttack()){
+                var b=wave.bounds;
+                candidate=packet.locked()&&overlaps(before,after,b[0],b[1],b[2],b[3],b[4],b[5]);
+            }else if(packet.column()){
+                var p=packet.landings();
+                candidate=overlaps(before,after,p[0]-16,p[1]-5,p[2]-16,p[0]+16,p[1]+5,p[2]+16);
+            }else if(packet.starfall())candidate=player==wave.targetEntityId;
+            else{
+                double x=packet.centerX(),y=packet.centerY(),z=packet.centerZ(),r=packet.crownRadius()+4;
+                candidate=packet.locked()&&overlaps(before,after,x-r,y-3,z-r,x+r,y+r,z+r);
+            }
+            if(candidate)mask|=slot<4?1<<slot:16;
+        }
+        boolean outer=nativeInputs==null?starfallGpu.hasOuter():nativeInputs.hasOuter();
+        if((stormAuthority&&anyWaveActive())||StormCollisionRuntime.returning()||outer||ColumnSnapshotClient.INSTANCE.restoring())mask|=31;
+        return mask;
+    }
+    private static boolean overlaps(Vec3 a,Vec3 b,double x0,double y0,double z0,double x1,double y1,double z1){
+        return Math.max(a.x,b.x)>=x0&&Math.min(a.x,b.x)<=x1
+            &&Math.max(a.y,b.y)>=y0&&Math.min(a.y,b.y)<=y1
+            &&Math.max(a.z,b.z)>=z0&&Math.min(a.z,b.z)<=z1;
     }
     boolean acceptsContactNow(int id,float hitTime){
         var wave=findWaveById(id);var level=Minecraft.getInstance().level;
         if(wave==null||wave.packet.abort()||level==null||!Float.isFinite(hitTime))return false;
-        float now=clockSeconds(level.getGameTime());
         return com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(hitTime,wave.packet.startSec())>=0
-            &&com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(hitTime,wave.packet.diveUntilSec())<=0;
+            &&com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall.elapsed(hitTime,wave.packet.diveUntilSec())<0;
     }
     public record ContactAuthority(int id,long epoch) {}
+
+    public void attachNativeInputs(com.iridium126.createmanaindustry.client.particles.engine.spatial.StormNativeInputs inputs){
+        if(nativeInputs!=null||stormActive)throw new IllegalStateException("Storm input ownership requires an inactive boundary");
+        nativeInputs=java.util.Objects.requireNonNull(inputs);
+    }
+    public void detachNativeInputs(com.iridium126.createmanaindustry.client.particles.engine.spatial.StormNativeInputs inputs){
+        if(nativeInputs==inputs)nativeInputs=null;
+    }
+    public boolean nativeInputOwned(){return nativeInputs!=null;}
+    public int nativeProjectionEmitter(){return stormActive?stormEmitId:-1;}
+    public boolean stageNativeCorrection(int member,float x,float y,float z,float arrival,
+                                         float vx,float vy,float vz,float strength){
+        if(nativeInputs==null)return false;
+        nativeInputs.correction(member,x,y,z,arrival,vx,vy,vz,strength);
+        return true;
+    }
+    public void stageNativeColumnRestore(com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket packet){
+        if(nativeInputs==null)return;
+        var wave=findWaveById(packet.id());
+        if(wave!=null&&wave.packet.column())nativeInputs.restore(wave.slotIdx,wave.packet,packet);
+    }
+    public void invalidateNativeTargetEdge(){if(nativeInputs!=null)nativeInputs.invalidateTargetEdge();}
+    public void captureNativeTick(long tick,net.minecraft.client.player.LocalPlayer player){
+        var inputs=nativeInputs;
+        if(inputs==null||!inputs.due())return;
+        try{
+            tickClock(tick,0);
+            if(stormActive){
+                for(int i=0;i<waveSlots.length;i++){
+                    var wave=waveSlots[i];
+                    nativeCollisionWaves[i]=wave!=null&&wave.alive&&!wave.packet.abort()?wave.packet:null;
+                }
+                StormCollisionRuntime.refresh(true,center,(float)stormRadius,nativeCollisionWaves);
+                StormCollisionRuntime.captureForNativeTick();
+                writeSpawnRuns(EmitCommandWriter.LIMIT,inputs::spawn);
+            }
+            boolean eligible=player!=null&&player.isAlive()&&!player.isSpectator();
+            var level=Minecraft.getInstance().level;
+            inputs.capture(tick,stormCount,stormSeed,center,(float)stormRadius,stormRotPhase,stormConvPhase,
+                    stormConvRate,stormOmegaNow,timeSec,AllayStormSpec.MAX_SPEED,
+                    eligible?player:null,eligible?player.getId():0,eligible?player.position().add(0,.5,0):null,
+                    level==null?java.util.List.of():level.players(),stormAuthority?stormCorrectionHz:0);
+        }catch(RuntimeException|LinkageError failure){
+            inputs.stop(failure.toString());
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn("Native Storm input timeline stopped",failure);
+        }
+    }
     ContactAuthority contactAuthority(int id) {var wave=findWaveById(id);return wave==null||wave.packet.abort()?null:wave.feedbackIdentity;}
+    java.util.BitSet nativeEffectiveRoster(int id){
+        var wave=findWaveById(id);
+        if(wave==null||wave.packet.abort())return new java.util.BitSet();
+        wave.simulated=true;
+        if(wave.effectiveRevision==memberLifeRevision)return wave.effective;
+        var members=wave.packet.members();
+        var effective=new java.util.BitSet(members.length);
+        for(int rank=0;rank<members.length;rank++)
+            if(!wave.completed.get(rank)&&livingMember(members[rank]))effective.set(rank);
+        wave.effective=effective;wave.effectiveRevision=memberLifeRevision;
+        return effective;
+    }
+    void nativeColumnSimulated(int id){var wave=findWaveById(id);if(wave!=null)wave.simulated=true;}
 }

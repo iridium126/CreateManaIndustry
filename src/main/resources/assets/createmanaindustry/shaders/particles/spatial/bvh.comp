@@ -10,11 +10,13 @@ layout(std430,binding=4) coherent buffer Nodes {Node rows[];} nodes;
 layout(std430,binding=5) buffer Histogram {uint values[];} histogram;
 layout(std430,binding=6) buffer Offsets {uint values[];} offsets;
 uniform uint phase,capacity,terrainCapacity,shift,probes,kind,nodeBudget;
+uniform uint memberCount,terrainCount;
+uniform bool ranged;
 uniform uvec2 nonce,epoch,sourceTick,scene;
 uniform vec3 anchor;
 const uint INVALID=0xffffffffu;
 shared uint counts[256],localKeys[256],prefix[256];
-uint total(){return capacity+terrainCapacity;}
+uint total(){return ranged?max(1u,memberCount+terrainCount):capacity+terrainCapacity;}
 bool finite3(vec3 p){return !any(isnan(p))&&!any(isinf(p));}
 bool descriptorValid(){
  uvec2 target=sourceTick+uvec2(1,0);if(target.x==0u)target.y++;
@@ -60,13 +62,13 @@ void main(){
   if(i==0u){for(uint k=0u;k<32u;k++)outputData.header[k]=inputData.header[k];outputData.header[0]=0x4131314fu;outputData.header[11]=descriptorValid()?0u:1u;outputData.header[18]=0u;}return;
  }
  if(phase==1u){
-  if(i>=n)return;InputRow row=inputData.rows[i];bool terrain=i>=capacity,present=terrain?i-capacity<inputData.header[28]:(row.identity.w&1u)!=0u;
+  if(i>=n)return;uint sourceRow=ranged?(memberCount+terrainCount==0u?0u:i<memberCount?i:capacity+i-memberCount):i;InputRow row=inputData.rows[sourceRow];bool terrain=sourceRow>=capacity,present=(!ranged||i<memberCount+terrainCount)&&(terrain?sourceRow-capacity<inputData.header[28]:(row.identity.w&1u)!=0u);
   bool valid=present&&finite3(row.position.xyz)&&finite3(row.velocity.xyz)&&finite3(row.preferred.xyz)&&!isnan(row.velocity.w)&&!isinf(row.velocity.w)&&all(lessThanEqual(abs(row.position.xyz),vec3(31000000)));
   valid=valid&&(terrain?all(greaterThan(row.velocity.xyz,vec3(0)))&&all(lessThanEqual(row.velocity.xyz,vec3(16)))&&(row.identity.w&3u)!=0u:
-   row.identity.x==i&&row.position.w>=.34&&row.position.w<=1.&&row.velocity.w>=0.&&row.velocity.w<=(kind==1u?8192.:128.)&&all(lessThanEqual(abs(row.velocity.xyz),vec3(128)))&&all(lessThanEqual(abs(row.preferred.xyz),vec3(kind==1u?8192.:128.))));
+   row.identity.x==sourceRow&&row.position.w>=.34&&row.position.w<=1.&&row.velocity.w>=0.&&row.velocity.w<=(kind==1u?8192.:128.)&&all(lessThanEqual(abs(row.velocity.xyz),vec3(128)))&&all(lessThanEqual(abs(row.preferred.xyz),vec3(kind==1u?8192.:128.))));
   if(present&&!valid)atomicOr(outputData.header[11],2u);
   uvec3 p=uvec3(clamp((row.position.xyz-anchor+vec3(512.))*(1023./1024.),vec3(0),vec3(1023)));
-  keysIn.rows[i]=uvec2(valid?spread(p.x)|(spread(p.y)<<1u)|(spread(p.z)<<2u):INVALID,i);return;
+  keysIn.rows[i]=uvec2(valid?spread(p.x)|(spread(p.y)<<1u)|(spread(p.z)<<2u):INVALID,sourceRow);return;
  }
  if(phase==2u){
   counts[lane]=0u;barrier();uint key=i<n?(keysIn.rows[i].x>>shift)&255u:0u;localKeys[lane]=key;barrier();if(i<n)atomicAdd(counts[key],1u);barrier();histogram.values[gl_WorkGroupID.x*256u+lane]=counts[lane];return;
@@ -102,7 +104,7 @@ void main(){
    nodes.rows[parent].lo=vec4(min(a.lo.xyz,b.lo.xyz),uintBitsToFloat(floatBitsToUint(a.lo.w)|floatBitsToUint(b.lo.w)));nodes.rows[parent].hi=vec4(max(a.hi.xyz,b.hi.xyz),0);memoryBarrierBuffer();parent=nodes.rows[parent].links.z;}return;
  }
  if(phase==8u){if(i==0u)outputData.header[18]=1u;return;}
- if(i>=capacity)return;InputRow row=inputData.rows[i];OutputRow result;result.hint=vec4(kind==1u?1.:0.,0,0,0);result.identity=row.identity;result.position=vec4(row.position.xyz,row.preferred.w);result.velocity=row.velocity;
+ if(i>=(ranged?memberCount:capacity))return;InputRow row=inputData.rows[i];OutputRow result;result.hint=vec4(kind==1u?1.:0.,0,0,0);result.identity=row.identity;result.position=vec4(row.position.xyz,row.preferred.w);result.velocity=row.velocity;
  if(outputData.header[11]!=0u){result.identity.w=0u;outputData.rows[i]=result;return;}
  if((row.identity.w&1u)==0u||(kind==0u&&(row.identity.w&0x80000000u)!=0u)){outputData.rows[i]=result;return;}float speed=length(row.preferred.xyz);if(speed<.01){outputData.rows[i]=result;return;}
  vec3 forward=row.preferred.xyz/speed;float reach=kind==1u?max(.001,row.velocity.w):max(.05,min(speed,row.velocity.w)*.1+.34);

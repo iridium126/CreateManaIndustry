@@ -93,7 +93,7 @@ public final class ParticleRenderer {
                     }
                 }
                 try {
-                    GL20.glUseProgram(0);
+                    com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(0);
                     GL30.glBindVertexArray(0);
                 } catch (RuntimeException | LinkageError ignoredCleanup) {
                     // see above
@@ -139,7 +139,7 @@ public final class ParticleRenderer {
             int prog = programs.modelRender();
             if (prog == 0)
                 return;
-            GL20.glUseProgram(prog);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(prog);
             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(prog,false);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindRenderClock(prog,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
             setFloatUniform(prog,"uTimeSec",ClientGpuScene.INSTANCE.displayTimeSec());
@@ -174,7 +174,7 @@ public final class ParticleRenderer {
             RenderSystem.depthMask(true);
             RenderSystem.defaultBlendFunc();
             RenderSystem.disableBlend();
-            GL20.glUseProgram(0);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(0);
             GL30.glBindVertexArray(0);
         }
 
@@ -205,7 +205,7 @@ public final class ParticleRenderer {
             int prog = textured ? programs.texturedRender() : programs.render();
             if (prog == 0)
                 return;
-            GL20.glUseProgram(prog);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(prog);
             com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bind(prog,false);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindRenderClock(prog,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
             setFloatUniform(prog,"uTimeSec",ClientGpuScene.INSTANCE.displayTimeSec());
@@ -273,7 +273,7 @@ public final class ParticleRenderer {
             RenderSystem.depthMask(true);
             RenderSystem.defaultBlendFunc();
             RenderSystem.disableBlend();
-            GL20.glUseProgram(0);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(0);
             GL30.glBindVertexArray(0);
         }
 

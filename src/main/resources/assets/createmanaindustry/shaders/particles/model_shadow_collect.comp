@@ -3,6 +3,7 @@ layout(local_size_x=64) in;
 #pragma cmi_include chunks/population_read.glsl
 #pragma cmi_include chunks/model_shadow_groups_read.glsl
 #pragma cmi_include chunks/shadow_visibility.glsl
+#pragma cmi_include chunks/rt_visibility_read.glsl
 #if CMI_SHADOW_DEPTH
 #pragma cmi_include chunks/shadow_depth_test.glsl
 #endif
@@ -30,6 +31,7 @@ void main(){
     if(header+18u>=uint(headers.length()))return;
     float material=headers[header+7u].x;if(material<1.5||material>=2.5)return;
     bool storm=headers[header+18u].x>.5;
+    if(!cmiRtShadowVisible(p0.xyz,uShadowRay,uCamera,uShadowViewPlanes,uShadowViewEnabled))return;
     float size=cmiModelSize(p0,p3,headers[header+5u].z,headers[header+5u].w,headers[header+6u].x,storm);
     float scale=2.0*size/MODEL_ABOVE_FEET;vec2 dimensions=uNativeSize*scale;
     if(!(dimensions.x>0.0&&dimensions.y>0.0))return;

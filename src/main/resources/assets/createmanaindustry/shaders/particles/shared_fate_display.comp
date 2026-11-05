@@ -3,11 +3,11 @@ layout(local_size_x=256) in;
 layout(std430,binding=0) readonly buffer CurrentNodes {vec4 rows[];} currentNodes;
 layout(std430,binding=1) readonly buffer PreviousNodes {vec4 rows[];} previousNodes;
 layout(std430,binding=2) writeonly buffer DisplayNodes {vec4 rows[];} displayNodes;
-uniform uint uCount;
+layout(std430,binding=3) readonly buffer RibbonDispatch {uvec4 countAndGroups;} ribbonDispatch;
 uniform float uAlpha;
 uniform vec3 uCurrentCameraDelta,uPreviousCameraDelta;
 void main(){
-    uint i=gl_GlobalInvocationID.x;if(i>=uCount)return;
+    uint i=gl_GlobalInvocationID.x;if(i>=ribbonDispatch.countAndGroups.x)return;
     uint b=i*4u;vec4 pose=currentNodes.rows[b],side=currentNodes.rows[b+1u],color=currentNodes.rows[b+2u],detail=currentNodes.rows[b+3u];
     pose.xyz+=uCurrentCameraDelta;
     uint prior=floatBitsToUint(detail.z);

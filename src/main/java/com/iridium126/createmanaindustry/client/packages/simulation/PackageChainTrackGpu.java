@@ -1,4 +1,6 @@
 package com.iridium126.createmanaindustry.client.packages.simulation;
+
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
 import com.iridium126.createmanaindustry.client.packages.authority.PackageGpuIdentityReservations;
 
 
@@ -191,12 +193,12 @@ public final class PackageChainTrackGpu implements AutoCloseable {
     void validateStep(int bodies){open();if(bodies!=count || nextStep>0xffffffffL)throw new IllegalStateException("Chain body metadata/step namespace");}
     void bindStep(int trackCountLocation) {
         open();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-        try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,5,stack.ints(tracks,events));}
-        GL30.glUniform1ui(trackCountLocation,trackCount);
+        try(var stack=MemoryStack.stackPush()){GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,5,stack.ints(tracks,events));}
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(trackCountLocation,trackCount);
     }
     void nodes(int bodyBuffer,int chainBuffer) {
-        open();if(count==0)return;GL20.glUseProgram(programs[0]);
-        try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(metadata,events,chainBuffer,bodyBuffer,tracks,nodes));}
+        open();if(count==0)return;com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(programs[0]);
+        try(var stack=MemoryStack.stackPush()){GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(metadata,events,chainBuffer,bodyBuffer,tracks,nodes));}
         ui(0,0,count);ui(0,1,trackCount);ui(0,2,nodeCount);ui(0,3,(int)nextStep++);
         {PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((count+63)/64,1,1);}com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
@@ -205,11 +207,11 @@ public final class PackageChainTrackGpu implements AutoCloseable {
         int bank=0;while(bank<BANKS && captures[bank]!=null)bank++;if(bank==BANKS)return null;
         if(nextStamp>0xffffffffL)throw new IllegalStateException("Chain capture namespace exhausted");
         var capture=new Capture(bank,(int)nextStamp++,headers[bank],records[bank],maxRecords);clear(capture.headerBuffer);
-        GL20.glUseProgram(programs[1]);
-        try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(events,flights,capture.headerBuffer,capture.recordBuffer));}
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(programs[1]);
+        try(var stack=MemoryStack.stackPush()){GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(events,flights,capture.headerBuffer,capture.recordBuffer));}
         ui(1,0,count);ui(1,4,maxRecords);ui(1,5,capture.stamp);
         if(count>0){PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((count+63)/64,1,1);}com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-        GL20.glUseProgram(programs[2]);ui(2,4,maxRecords);{PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);}
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(programs[2]);ui(2,4,maxRecords);{PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);}
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
         captures[bank]=capture;return capture;
     }
@@ -235,8 +237,8 @@ public final class PackageChainTrackGpu implements AutoCloseable {
     private void applyRange(int stamp,int buffer,int first,int n,boolean cancel,int header) {
         open();if(stamp==0 || buffer<=0 || first<0 || n<0 || (long)first+n>capacity)throw new IllegalArgumentException("Chain ACK range");
         if(n==0)return;com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-        GL20.glUseProgram(programs[3]);
-        try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(metadata,events,flights,buffer,header==0?headers[0]:header));}
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(programs[3]);
+        try(var stack=MemoryStack.stackPush()){GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(metadata,events,flights,buffer,header==0?headers[0]:header));}
         ui(3,0,count);ui(3,5,stamp);ui(3,6,n);ui(3,7,cancel?1:0);ui(3,8,header==0?0:1);ui(3,9,first);
         {PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((n+63)/64,1,1);}com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);
     }
@@ -253,24 +255,24 @@ public final class PackageChainTrackGpu implements AutoCloseable {
     public int trackCapacity(){open();return trackCapacity;}
     public int nodeCapacity(){open();return nodeCapacity;}
     public int pendingBuffer(){open();return events;}
-    private void ui(int p,int u,int value){GL30.glUniform1ui(locations[p][u],value);}
+    private void ui(int p,int u,int value){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(locations[p][u],value);}
     private static int layout(ByteBuffer data,int stride,int capacity) {
         if(data==null || !data.isDirect() || data.remaining()%stride!=0 || data.remaining()/stride>capacity)
             throw new IllegalArgumentException("Chain buffer layout");return data.remaining()/stride;
     }
     private static ByteBuffer view(ByteBuffer data){return data.duplicate().order(ByteOrder.nativeOrder());}
     private static void upload(int buffer,long offset,ByteBuffer data) {
-        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
         if(data.hasRemaining())com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,offset,data);
     }
     private static int buffer(long bytes) {
         if(bytes>GpuCapabilities.current().storageBlockBytes())throw new IllegalArgumentException("Chain SSBO device limit");
         int id=GL15.glGenBuffers();if(id==0)throw new IllegalStateException("Chain buffer allocation failed");
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,id);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,id);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,bytes,GL15.GL_DYNAMIC_COPY);
         if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes){com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);throw new IllegalStateException("Chain storage allocation failed");}return id;
     }
     private static void clear(int buffer) {
-        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);
         try(var stack=MemoryStack.stackPush()){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,stack.ints(0));}
     }
     private void open(){if(closed || Thread.currentThread()!=owner)throw new IllegalStateException("Chain track GPU closed/off render thread");}

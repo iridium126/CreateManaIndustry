@@ -25,15 +25,18 @@ class ParticleRenderLifecycleContractTest {
     }
     @Test void selectedUpdateBindsActualPoolCapacityBeforeDispatch()throws IOException{
         var simulate=method(read(ENGINE+"ParticleRuntime$FrameCandidate"),"simulate");
-        int selected=-1,capacity=-1,identities=-1,dispatch=-1;
+        int parameters=-1,selected=-1,capacity=-1,identities=-1,dispatch=-1;
         for(int i=0;i<simulate.instructions.size();i++)if(simulate.instructions.get(i) instanceof MethodInsnNode call){
-            if(call.owner.equals("org/lwjgl/opengl/GL20")&&call.name.equals("glUseProgram"))selected=i;
+            if(call.owner.equals(ENGINE+"SimulationParameters")&&call.name.equals("upload"))parameters=i;
+            if(parameters>=0&&call.owner.endsWith("/GpuBindings")&&call.name.equals("program"))selected=i;
             if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("bindUpdateCapacity"))capacity=i;
             if(capacity>=0&&call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("bindIdentities"))identities=i;
             if(capacity>=0&&call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("dispatch")){dispatch=i;break;}
         }
-        assertTrue(selected>=0&&selected<capacity&&capacity<identities&&identities<dispatch,
-                "Late-compiled update programs must not publish an empty pool with default uCapacity=0");
+        assertTrue(parameters>=0&&parameters<selected&&selected<capacity&&capacity<identities&&identities<dispatch,
+                "Dedicated update kernels use the tick UBO and legacy column recovery receives its explicit capacity");
+        assertTrue(calls(method(read(ENGINE+"SimulationParameters"),"upload"),
+                "com/iridium126/createmanaindustry/client/gpu/state/GpuBindings","bindBase"));
     }
     @Test void goldManualCommandsArmTheSharedAmbientOwner()throws IOException{
         var runtime=method(read(ENGINE+"ParticleRuntime"),"ensureEmitterRuntime");
@@ -53,12 +56,13 @@ class ParticleRenderLifecycleContractTest {
         var cull=method(read(ENGINE+"ParticleRuntime$FrameCandidate"),"cullSort");
         int program=-1,feather=-1;
         for(int i=0;i<cull.instructions.size();i++)if(cull.instructions.get(i) instanceof MethodInsnNode call){
-            if(call.owner.equals("org/lwjgl/opengl/GL20")&&call.name.equals("glUseProgram"))program=i;
+            if(call.owner.endsWith("/GpuBindings")&&call.name.equals("program"))program=i;
             if(call.owner.equals(ENGINE+"AllayFeatherGpu")&&call.name.equals("bind")){
-                feather=i;assertTrue(program>=0&&program<i,"Feather glUniform calls require the keygen program to be current");
+                feather=i;assertTrue(program>=0&&program<i,"Feather glUniform calls require the census program to be current");
             }
         }
         assertTrue(feather>=0);
+        assertTrue(calls(method(read(ENGINE+"ModelRenderPublication"),"prepare"),ENGINE+"AllayFeatherGpu","publishDisplay"));
         var hook=read("com/iridium126/createmanaindustry/client/particles/shaderpack/CMIPackEntityMergeHook");
         for(String entry:new String[]{"render","renderShadow"})
             assertTrue(calls(method(hook,entry),ENGINE+"ParticleAtlas","ready"),entry+" must skip the unallocated atlas");
@@ -211,7 +215,7 @@ class ParticleRenderLifecycleContractTest {
         var cull=method(candidate,"cullSort");int restore=-1,publication=-1;
         for(int i=0;i<cull.instructions.size();i++)if(cull.instructions.get(i) instanceof MethodInsnNode call){
             if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("bindDispatchInputs"))restore=i;
-            if(call.owner.equals(ENGINE+"ParticleDispatch")&&call.name.equals("prepare")){publication=i;break;}
+            if(call.owner.equals(ENGINE+"ParticleDispatch")&&call.name.equals("prepareModelPublication")){publication=i;break;}
         }
         assertTrue(restore>=0&&publication>restore,"Cull publication must restore every binding after generators");
         var binding=method(read(ENGINE+"ParticleBuffers"),"bindDispatchInputs");

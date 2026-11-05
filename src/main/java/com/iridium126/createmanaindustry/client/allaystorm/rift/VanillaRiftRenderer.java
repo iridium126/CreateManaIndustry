@@ -63,7 +63,7 @@ public final class VanillaRiftRenderer {
             RiftVanillaComposite.draw(shader);
             return true;
         } finally {
-            RenderSystem.setShader(()->previous); GL20.glUseProgram(program);
+            RenderSystem.setShader(()->previous); com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);
             RenderSystem.depthMask(mask); RenderSystem.depthFunc(depthFunction);
             if(depth)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();
             if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();

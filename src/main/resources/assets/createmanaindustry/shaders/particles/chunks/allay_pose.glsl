@@ -242,6 +242,7 @@ mat4 cmiAllayStarPartTransform(float age,float seed,vec3 velocity,int animation,
 }
 #pragma cmi_include chunks/dome_pose.glsl
 mat4 cmiAllayAttackPartTransform(float age,float seed,float identity,vec3 position,vec3 velocity,int animation,int part,out float yaw,float carry,float marker,bool attack){
+ mat4 cached;if(cmiCachedAllayPart(part,cached,yaw))return cached;
  if(cmiAllayAnimationValid){carry=cmiAnimationCarry;animation=animation==3?3:cmiAnimationDance>=0.?1:0;}
  int slot=attack&&uStarfallEnabled?cmiStarClaim(identity,uTimeSec):-1;
  bool helix=slot>=0&&(cmiHelix(cmiStarBase(uint(slot)))||cmiDome(cmiStarBase(uint(slot))));

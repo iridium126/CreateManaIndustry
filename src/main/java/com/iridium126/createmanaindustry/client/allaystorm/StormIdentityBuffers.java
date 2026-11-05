@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.allaystorm;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import org.lwjgl.opengl.*;
@@ -41,7 +43,7 @@ public final class StormIdentityBuffers implements AutoCloseable {
         int buffer = GL15.glGenBuffers();
         if(buffer==0)throw new IllegalStateException("Storm buffer name allocation failed");
         try {
-            GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, buffer);
+            GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER, buffer);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER, bytes, GL15.GL_DYNAMIC_DRAW);
             if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)
                 throw new IllegalStateException("Storm buffer storage allocation failed");
@@ -57,14 +59,14 @@ public final class StormIdentityBuffers implements AutoCloseable {
     public void write(int identity, FloatBuffer values) {
         if (identity < 0 || identity >= LIMIT) throw new IllegalArgumentException("Storm identity range");
         ensureMembers();
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, corrections);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER, corrections);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER, identity * 32L, values);
     }
 
     public void clearMembers() {
         if (members == 0) return;
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER, members);
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER, members);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER, GL30.GL_R32UI,
                 GL30.GL_RED_INTEGER, GL11.GL_UNSIGNED_INT, (IntBuffer) null);
     }

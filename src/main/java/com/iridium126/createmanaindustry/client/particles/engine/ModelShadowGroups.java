@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames;
@@ -41,21 +43,21 @@ public final class ModelShadowGroups implements AutoCloseable {
         if(bank<0||bank>1)throw new IllegalArgumentException("Shadow group bank");
         generations[bank]=-1;candidate=-1;
         enabled=enabled&&snapshot!=null&&snapshot.matches(generation);
-        if(!enabled){GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uShadowGroupsWrite"),0);wasEnabled=false;return;}
+        if(!enabled){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"uShadowGroupsWrite"),0);wasEnabled=false;return;}
         if(modelCapacity<1)throw new IllegalArgumentException("Shadow group capacity");
         float radius=snapshot.radius(),low=snapshot.low(),high=snapshot.high();
-        GL41.glProgramUniform1i(program,GpuUniforms.loc(program,"uShadowGroupsWrite"),enabled?1:0);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"uShadowGroupsWrite"),enabled?1:0);
         wasEnabled=enabled;
         if(!enabled)return;
         if(capacity!=modelCapacity){close();capacity=modelCapacity;
-            for(int i=0;i<2;i++){buffers[i]=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffers[i]);
+            for(int i=0;i<2;i++){buffers[i]=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffers[i]);
                 GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,HEADER_BYTES+8L*capacity,GL15.GL_DYNAMIC_COPY);}}
         header.clear();header.putInt(0).putInt(0).putInt(capacity).putInt(1);
         header.putLong(generation).putLong(0);
         header.putFloat((float)snapshot.x()).putFloat((float)snapshot.y()).putFloat((float)snapshot.z()).putFloat(radius);
         header.putFloat(low).putFloat(high).putFloat(0).putFloat(0).flip();
-        GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,buffers[bank]);GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,header);
-        GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,BINDING,buffers[bank]);candidate=generation;
+        GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffers[bank]);GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,header);
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,BINDING,buffers[bank]);candidate=generation;
     }
     public void commit(int bank,long generation){generations[bank]=candidate==generation?generation:-1;candidate=-1;}
     public int buffer(int bank,long generation){return requested()?publishedBuffer(bank,generation):0;}

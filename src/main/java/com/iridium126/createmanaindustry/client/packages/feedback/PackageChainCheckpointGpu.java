@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.feedback;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
 
@@ -42,14 +44,14 @@ public final class PackageChainCheckpointGpu implements AutoCloseable {
             int flags=GL30.GL_MAP_READ_BIT|GL44.GL_MAP_PERSISTENT_BIT|GL44.GL_MAP_COHERENT_BIT;
             for(int i=0;i<BANKS;i++) {
                 var bank=banks[i]=new Bank();bank.buffer=GL15.glGenBuffers();
-                GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,bank.buffer);
+                GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,bank.buffer);
                 GL44.glBufferStorage(GL31.GL_COPY_WRITE_BUFFER,size,flags);
                 bank.mapped=GL30.glMapBufferRange(GL31.GL_COPY_WRITE_BUFFER,0,size,flags);
                 if(bank.mapped==null)throw new IllegalStateException("Chain checkpoint persistent mapping failed");
                 bank.mapped=bank.mapped.asReadOnlyBuffer().order(ByteOrder.nativeOrder());
             }
             if(transfer==Transfer.DEVICE_COPY) {
-                scratch=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,scratch);
+                scratch=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,scratch);
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,size,GL15.GL_DYNAMIC_COPY);
                 if(GL32.glGetBufferParameteri64(GL43.GL_SHADER_STORAGE_BUFFER,GL15.GL_BUFFER_SIZE)!=size)
                     throw new IllegalStateException("Chain checkpoint device scratch allocation failed");
@@ -79,15 +81,15 @@ public final class PackageChainCheckpointGpu implements AutoCloseable {
         if(selected<0){skipped++;return false;}
         var bank=banks[selected];int output=transfer==Transfer.DEVICE_COPY?scratch:bank.buffer;
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-        try(var stack=MemoryStack.stackPush()){GL44.glBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER,0,
+        try(var stack=MemoryStack.stackPush()){GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,
                 stack.ints(input.bodies(),input.chains(),input.metadata(),input.admission(),0,output,input.history()));}
-        GL20.glUseProgram(program);GL30.glUniform1ui(countLocation,input.count());
-        GL30.glUniform1ui(bodyLocation,input.bodyCount());GL30.glUniform1ui(capacityLocation,input.capacity());
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(countLocation,input.count());
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(bodyLocation,input.bodyCount());com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(capacityLocation,input.capacity());
         {PackageCpuDiagnostics.dispatch();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((input.count()+63)/64,1,1);}
         int length=input.count()*PackagePoseQueryGpu.RESULT_BYTES;
         if(transfer==Transfer.DEVICE_COPY) {
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-            GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,scratch);GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,bank.buffer);
+            GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,scratch);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,bank.buffer);
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,0,0,length);
         }
         // Coherent mapping still requires completion before the CPU can read any record.

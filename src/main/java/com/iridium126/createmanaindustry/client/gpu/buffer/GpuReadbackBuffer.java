@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.gpu.buffer;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 import java.nio.ByteBuffer;
 import org.lwjgl.opengl.*;
 
@@ -19,7 +21,7 @@ public final class GpuReadbackBuffer implements AutoCloseable {
         try {
             buffer=GL15.glGenBuffers();
             if(buffer==0)throw new IllegalStateException("Readback buffer allocation failed");
-            GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,buffer);
+            GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,buffer);
             int flags=GL30.GL_MAP_READ_BIT|GL44.GL_MAP_PERSISTENT_BIT|GL44.GL_MAP_COHERENT_BIT;
             GL44.glBufferStorage(GL31.GL_COPY_WRITE_BUFFER,bytes,flags);
             if(GL32.glGetBufferParameteri64(GL31.GL_COPY_WRITE_BUFFER,GL15.GL_BUFFER_SIZE)!=bytes)

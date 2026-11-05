@@ -64,5 +64,9 @@ public final class PackageSimulationClock {
         sample(now,tick,paused);if(!paused&&ready&&due(tick)){commit(nextTick);return Advance.STEP;}return Advance.IDLE;
     }
     public float interpolation(){return Math.clamp((float)accumulated/period,0,1);}
+    public float displayInterpolation(long now){
+        if(!initialized||gap)return interpolation();
+        return (float)Math.clamp((accumulated+(double)Math.max(0,now-previous))/period,0,1);
+    }
     public void reset(){initialized=false;gap=false;accumulated=0;step=0;}
 }

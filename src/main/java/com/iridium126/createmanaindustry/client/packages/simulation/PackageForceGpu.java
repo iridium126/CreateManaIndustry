@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.simulation;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import com.iridium126.createmanaindustry.client.packages.world.PackageForceScene;
 
@@ -24,7 +26,7 @@ public final class PackageForceGpu implements AutoCloseable {
     public PackageForceGpu(LongToIntFunction poll){
         this.poll=java.util.Objects.requireNonNull(poll);
         try{if(BYTES>GpuCapabilities.current().storageBlockBytes())throw new IllegalStateException("Force device capacity");
-            for(int i=0;i<4;i++){Bank b=new Bank();banks[i]=b;b.buffer=GL15.glGenBuffers();GL15.glBindBuffer(GL43.GL_SHADER_STORAGE_BUFFER,b.buffer);
+            for(int i=0;i<4;i++){Bank b=new Bank();banks[i]=b;b.buffer=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,b.buffer);
                 GL44.glBufferStorage(GL43.GL_SHADER_STORAGE_BUFFER,BYTES,FLAGS);b.mapped=GL30.glMapBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,0,BYTES,FLAGS);
                 if(b.mapped==null)throw new IllegalStateException("Package force upload mapping");}}
         catch(RuntimeException failure){close();throw failure;}
@@ -54,7 +56,7 @@ public final class PackageForceGpu implements AutoCloseable {
         public int frames(){return frames;}
         public void bind(int location,int sourcesLocation){if(ended||closed)throw new IllegalStateException("Package force view closed");
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL44.GL_CLIENT_MAPPED_BUFFER_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
-            GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,6,bank.buffer);GL30.glUniform1ui(location,nodes);if(sourcesLocation>=0)GL30.glUniform1ui(sourcesLocation,sources);}
+            GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,6,bank.buffer);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(location,nodes);if(sourcesLocation>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current1ui(sourcesLocation,sources);}
         @Override public void close(){if(ended)return;ended=true;long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
             if(fence==0)throw new IllegalStateException("Package force upload fence unavailable");
             if(bank.fence!=0)GL32.glDeleteSync(bank.fence);bank.fence=fence;bank.leased=false;}

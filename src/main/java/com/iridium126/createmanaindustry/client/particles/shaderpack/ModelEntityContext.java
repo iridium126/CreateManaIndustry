@@ -14,7 +14,7 @@ public record ModelEntityContext(int allayId) {
     public void upload(int program,boolean carrier){
         integer(program,"entityId",entityId(carrier));
         integer(program,"blockEntityId",0);integer(program,"currentRenderedItemId",0);
-        int color=GpuUniforms.loc(program,"entityColor");if(color>=0)GL20.glUniform4f(color,0,0,0,0);
+        int color=GpuUniforms.loc(program,"entityColor");if(color>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current4f(color,0,0,0,0);
     }
     private static void integer(int program,String name,int value){GpuUniforms.setIntUniform(program,name,value);}
 }

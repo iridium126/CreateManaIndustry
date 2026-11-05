@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.packages.feedback;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+
 
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
@@ -53,8 +55,8 @@ public final class PackageReadbackRing implements AutoCloseable {
         Slot slot=slots[next];
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
         if(source!=slot.storage.id()) {
-            GL15.glBindBuffer(GL31.GL_COPY_READ_BUFFER,source);
-            GL15.glBindBuffer(GL31.GL_COPY_WRITE_BUFFER,slot.storage.id());
+            GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,source);
+            GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,slot.storage.id());
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,sourceOffset,0,length);
         } else if(sourceOffset!=0)throw new IllegalArgumentException("In-place capture offset");
         long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
