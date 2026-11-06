@@ -35,6 +35,7 @@ public final class ModelRenderPublication implements AutoCloseable {
     private final java.nio.ByteBuffer profileBytes=java.nio.ByteBuffer.allocate(PROFILE_BYTES).order(java.nio.ByteOrder.nativeOrder());
     private final float[] planes=new float[24];
     private final float[] viewValues=new float[16];
+    private final java.nio.IntBuffer displayBindings=org.lwjgl.BufferUtils.createIntBuffer(12);
     private final Matrix4f clip=new Matrix4f();
     private final Vector4f plane=new Vector4f();
     private int program,capacity,carrierCapacity,nextSlot;
@@ -87,6 +88,11 @@ public final class ModelRenderPublication implements AutoCloseable {
     }
     public Frame prepare(ParticleBuffers gpu,ParticlePrograms shaders,Publication current,Publication previous,
                          float alpha,float timeSec,Camera camera,Matrix4fc view,Matrix4fc projection){
+        return prepare(gpu,shaders,current,previous,alpha,timeSec,camera,view,projection,null);
+    }
+    public Frame prepare(ParticleBuffers gpu,ParticlePrograms shaders,Publication current,Publication previous,
+                         float alpha,float timeSec,Camera camera,Matrix4fc view,Matrix4fc projection,
+                         NativeStormDisplayClock.View stormPlayback){
         endFrame();allocate(gpu);Slot s=freeSlot();
         selected=s;
         if(emitterRevision!=gpu.emitterRevision()||emitterEpoch!=gpu.identityEpoch()){
@@ -99,8 +105,11 @@ public final class ModelRenderPublication implements AutoCloseable {
         boolean history=previous!=null&&previous.generation()+1==current.generation()&&identityEpoch==gpu.identityEpoch();
         if(!history){timeSec+=(1-alpha)*.05f;alpha=1;}
         identityEpoch=gpu.identityEpoch();
-        bind(0,current.pool());bind(1,gpu.previousParticleBufferId());bind(2,s.pool);bind(3,current.counter());bind(4,history?previous.counter():current.counter());bind(5,gpu.historyBufferId());bind(11,frozenEmitters);
-        bind(6,s.counter);bind(7,s.commands);bind(8,s.dispatch);bind(9,s.first);bind(10,current.population());
+        displayBindings.clear();
+        displayBindings.put(current.pool()).put(gpu.previousParticleBufferId()).put(s.pool).put(current.counter())
+                .put(history?previous.counter():current.counter()).put(gpu.historyBufferId()).put(s.counter).put(s.commands)
+                .put(s.dispatch).put(s.first).put(current.population()).put(frozenEmitters).flip();
+        GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,displayBindings);
         gpu.bindOrdinaryRead(program,false,current.generation());
         var cameraNow=camera.getPosition();var currentDelta=gpu.currentCameraOrigin().subtract(cameraNow);var previousDelta=gpu.previousCameraOrigin().subtract(cameraNow);
         DisplayParameters.write(s.parameterBytes,capacity,gpu.historyWordBase(),gpu.metaSlotIndex(),carrierCapacity,history?alpha:1,currentDelta,previousDelta);
@@ -108,6 +117,13 @@ public final class ModelRenderPublication implements AutoCloseable {
         GpuBindings.bindBase(GL31.GL_UNIFORM_BUFFER,DisplayParameters.BINDING,s.parameters);
         GpuReplayCommands.copyNamedBufferSubData(current.commands(),s.commands,0,0,ParticleBuffers.INDIRECT_UINTS*4L);
         StarfallGpuBuffers.INSTANCE.bind(program,false);StarfallGpuBuffers.INSTANCE.bindDisplayHistory(program);
+        ui(program,"uStormPlaybackStamp",stormPlayback==null?0:stormPlayback.stamp());
+        if(stormPlayback!=null){
+            GpuBindings.texture(com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_MERGED_GEOMETRY,
+                    GL31.GL_TEXTURE_BUFFER,stormPlayback.texture());
+            var weights=stormPlayback.weights();
+            GpuUniforms.uniform4f(program,GpuUniforms.loc(program,"uStormPlaybackWeights"),weights.oldest(),weights.previous(),weights.current(),weights.anchor());
+        }
         StarfallGpuBuffers.INSTANCE.bindTexture(com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_MERGED_STARFALL);
         long nativeGameTime=StarfallGpuBuffers.INSTANCE.nativeDisplayGameTime();
         float trajectoryTime=nativeGameTime<0?timeSec:(float)(((nativeGameTime&((1L<<21)-1))-(1.-alpha))*.05);

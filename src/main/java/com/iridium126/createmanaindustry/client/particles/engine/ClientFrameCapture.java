@@ -46,9 +46,10 @@ public final class ClientFrameCapture {
     private final VisibilitySlot[] visibilitySlots=java.util.stream.Stream.generate(VisibilitySlot::new).limit(12).toArray(VisibilitySlot[]::new);
     private final java.nio.ByteBuffer visibilityBytes=org.lwjgl.BufferUtils.createByteBuffer(16);
     private static final class Window {
-        static final class Stage {long generation;double cpu,gpu;int cpuSamples,gpuSamples;Stage(long generation){this.generation=generation;}}
+        record StageKey(String name,long generation) {}
+        static final class Stage {double cpu,gpu;int cpuSamples,gpuSamples;}
         final Map<Long,Integer> indices=new HashMap<>();
-        final Map<Integer,Map<String,Stage>> stages=new TreeMap<>();
+        final Map<Integer,Map<StageKey,Stage>> stages=new TreeMap<>();
         final Map<Integer,Map<String,Object>> riftVisibility=new TreeMap<>();
         final List<String> spatial=new ArrayList<>();
         final List<String> visibility=new ArrayList<>(),poses=new ArrayList<>();
@@ -70,6 +71,7 @@ public final class ClientFrameCapture {
         int size,seconds,skippedGpu;
         boolean collecting=true;
         long stopped,bindingsStart,bindingsAvoidedStart,uniformsStart,uniformsAvoidedStart;
+        long copiedStateStart,nativeDisplayGaps,emptyCameraQueries;
         String invalid="";
         final Map<String,Object> metadata=new LinkedHashMap<>();
         Window(){Arrays.fill(gpu,Double.NaN);Arrays.fill(cpu,Double.NaN);Arrays.fill(live,-1);Arrays.fill(models,-1);Arrays.fill(body,-1);Arrays.fill(carrier,-1);Arrays.fill(ghost,-1);Arrays.fill(sceneFrames,-1);Arrays.fill(generations,-1);Arrays.fill(shadowGenerations,-1);Arrays.fill(shadowDisplays,-1);Arrays.fill(displayGenerations,-1);Arrays.fill(displaySources,-1);for(var counts:submissions)Arrays.fill(counts,-1);for(var values:camera)Arrays.fill(values,Double.NaN);}
@@ -142,7 +144,8 @@ public final class ClientFrameCapture {
             level=mc.level;width=mc.getWindow().getWidth();height=mc.getWindow().getHeight();
             limit=mc.options.framerateLimit().get();vsync=mc.options.enableVsync().get();
             context=ParticleDiagnostics.INSTANCE.measurementContext();
-            var m=window.metadata;m.put("auto_throttle",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle);m.put("schema",6);m.put("started",Instant.now().toString());m.put("context",context);
+            window.copiedStateStart=com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.copiedStateBytes();
+            var m=window.metadata;m.put("auto_throttle",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle);m.put("schema",7);m.put("started",Instant.now().toString());m.put("context",context);
             m.put("camera_scope","current primary level camera and projection; FOV is vertical degrees derived from the actual projection; unavailable values are NaN; compare each orientation independently");
             m.put("build_sha256",buildIdentity());
             m.put("measurement_mode","instrumented-frame-window");
@@ -217,7 +220,12 @@ public final class ClientFrameCapture {
         var uniforms=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
         window.metadata.put("scalar_vector_uniform_submissions",uniforms.submissions()-window.uniformsStart);
         window.metadata.put("scalar_vector_uniforms_avoided",uniforms.avoided()-window.uniformsAvoidedStart);
+        window.metadata.put("storm_state_copied_bytes",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.copiedStateBytes()-window.copiedStateStart);
+        window.metadata.put("rt_camera_empty_queries",window.emptyCameraQueries);
+        window.metadata.put("native_display_missing_sequences",window.nativeDisplayGaps);
     }
+    public void emptyCameraQuery(){if(collecting())window.emptyCameraQueries++;}
+    void nativeDisplayGap(long count){if(collecting())window.nativeDisplayGaps+=count;}
     /** Called with the source frame tag, never associates delayed census with the current frame. */
     public void census(long sceneFrame,long generation,int live,int models,int body,int carrier,int ghost,int feather,int lod1,int lod2,int additive,int sprite,int alpha){
         simulationCensus(sceneFrame,generation,live,models);
@@ -303,9 +311,9 @@ public final class ClientFrameCapture {
     }
     private void stageSample(String label,long sceneFrame,long generation,double cpu,double gpu){
         var w=window;if(w==null)return;Integer index=w.indices.get(sceneFrame);if(index==null)return;
-        var stages=w.stages.computeIfAbsent(index,key->new TreeMap<>());var stage=stages.get(label);
-        if(stage==null){if(++w.stageEntries>1_000_000){w.invalid="stage sample capacity exceeded";return;}stage=new Window.Stage(generation);stages.put(label,stage);}
-        if(stage.generation!=generation){w.invalid="stage generation conflict";return;}
+        var stages=w.stages.computeIfAbsent(index,key->new LinkedHashMap<>());
+        var key=new Window.StageKey(label,generation);var stage=stages.get(key);
+        if(stage==null){if(++w.stageEntries>1_000_000){w.invalid="stage sample capacity exceeded";return;}stage=new Window.Stage();stages.put(key,stage);}
         if(Double.isFinite(cpu)){stage.cpu+=cpu;stage.cpuSamples++;}if(Double.isFinite(gpu)){stage.gpu+=gpu;stage.gpuSamples++;}
     }
     public void simulationInput(long sceneFrame,float time,float dt){
@@ -341,7 +349,7 @@ public final class ClientFrameCapture {
                 }
                 try(var out=Files.newBufferedWriter(directory.resolve(name+"-stages.csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,stage,generation,cpu_submit_ms,gpu_ms,cpu_ranges,gpu_ranges\n");
-                    for(var row:w.stages.entrySet())for(var item:row.getValue().entrySet()){int i=row.getKey();var s=item.getValue();out.write(w.frames[i]+","+w.sceneFrames[i]+","+item.getKey()+","+s.generation+","+(s.cpuSamples==0?Double.NaN:s.cpu)+","+(s.gpuSamples==0||(s.cpuSamples>0&&s.gpuSamples!=s.cpuSamples)?Double.NaN:s.gpu)+","+s.cpuSamples+","+s.gpuSamples+"\n");}
+                    for(var row:w.stages.entrySet())for(var item:row.getValue().entrySet()){int i=row.getKey();var s=item.getValue();var key=item.getKey();out.write(w.frames[i]+","+w.sceneFrames[i]+","+key.name()+","+key.generation()+","+(s.cpuSamples==0?Double.NaN:s.cpu)+","+(s.gpuSamples==0||(s.cpuSamples>0&&s.gpuSamples!=s.cpuSamples)?Double.NaN:s.gpu)+","+s.cpuSamples+","+s.gpuSamples+"\n");}
                 }
                 try(var out=Files.newBufferedWriter(directory.resolve(name+"-rift-visibility.jsonl"),StandardOpenOption.CREATE_NEW)){
                     var gson=new com.google.gson.Gson();

@@ -160,7 +160,6 @@ public final class StormFeedback {
     private final java.util.Map<Integer,java.util.BitSet> completions=new java.util.HashMap<>();
     private final java.util.Map<AllayStormRuntime.ContactAuthority,Long> gathered=new java.util.HashMap<>();
     private final java.util.Map<AllayStormRuntime.ContactAuthority,Integer> flowRevisions=new java.util.HashMap<>();
-    private long flowTick=Long.MIN_VALUE;
     private long completionTick=Long.MIN_VALUE;
     public record NativeHit(int target,float x,float y,float z,float time) {}
     public void acceptNativeRegional(long tick,int id,long[] readyWords,long[] completed,int blocked,int unknown,
@@ -177,20 +176,24 @@ public final class StormFeedback {
         ready.and(effective);
         runtime.gatherProgress(id,new int[]{ready.cardinality(),effective.cardinality(),blocked,unknown});
         if(!runtime.feedbackState().authority())return;
-        nativeCompletions(owner,completed);
+        if(attack.locked()||!attack.dome())nativeCompletions(owner,completed);
         if(attack.locked())return;
+        if(attack.dome()){
+            effective.andNot(java.util.BitSet.valueOf(completed));
+            ready.and(effective);
+        }
         float sample=(tick&((1L<<21)-1))*.05f;
         long now=mc.level.getGameTime();
         boolean enough=(!attack.helixAttack()||reference>0)
-                &&now-gathered.getOrDefault(owner,now-5)>=5
+                &&(completed.length!=0||now-gathered.getOrDefault(owner,now-5)>=5)
                 &&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(
                         ready,effective,attack.members().length,sample,attack.startSec(),attack.assembleSec());
-        if(!enough&&flows.revision()<=flowRevisions.getOrDefault(owner,0))return;
+        if(!enough&&(!attack.dome()||completed.length==0)&&flows.revision()<=flowRevisions.getOrDefault(owner,0))return;
         if(enough)gathered.put(owner,now);
         flowRevisions.merge(owner,flows.revision(),Math::max);
         PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(
                 mc.level.dimension().location(),owner.epoch(),owner.id(),enough?ready.toLongArray():new long[0],
-                enough?effective.toLongArray():new long[0],flows,reference,referenceSeconds));
+                enough?effective.toLongArray():new long[0],flows,reference,referenceSeconds,tick,attack.dome()?completed:new long[0]));
     }
     public void acceptNativeColumn(long tick,int id,int token,long completed,long installed,Vec3 sound,NativeHit hit){
         var runtime=AllayStormRuntime.INSTANCE;
@@ -222,6 +225,7 @@ public final class StormFeedback {
         retireWaves();
         if (entries == null)
             return;
+        var domeExits=new java.util.HashMap<Integer,java.util.BitSet>();
         var flowTimes=new java.util.HashMap<Integer,float[]>();
         var flowVersions=new java.util.HashMap<Integer,Integer>();
         var ready=new java.util.HashMap<Integer,java.util.BitSet>();
@@ -251,7 +255,7 @@ public final class StormFeedback {
                 continue;
             }
             if(member== -3){StormCollisionRuntime.arrived(id,Math.round(entries[o+2]));continue;}
-            if(member== -2){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<384){var mask=completions.computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
+            if(member== -2){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<384){var plan=AllayStormRuntime.INSTANCE.wavePacket(id);var sink=plan!=null&&plan.dome()&&!plan.locked()?domeExits:completions;var mask=sink.computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
             if(member<0){if(w!=null)AllayStormRuntime.INSTANCE.columnTouchSound(id,entries[o+2],entries[o+3],entries[o+4]);continue;}
             if(!targetCurrent||w==null||!AllayStormRuntime.INSTANCE.acceptsContactNow(id,entries[o+5])||!acceptSample(w,tick))continue;
             PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),tick,entries[o+5],entries[o+2],entries[o+3],entries[o+4]));
@@ -269,22 +273,24 @@ public final class StormFeedback {
                 if(AllayStormRuntime.INSTANCE.feedbackState().authority())PacketDistributor.sendToServer(packet);
             }completions.clear();
         }
-        if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()&&flowTick!=mc.level.getGameTime()){
-            var ids=new java.util.HashSet<Integer>(ready.keySet());ids.addAll(flowTimes.keySet());
-            boolean sent=false;
+        if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()){
+            var ids=new java.util.HashSet<Integer>(ready.keySet());ids.addAll(flowTimes.keySet());ids.addAll(domeExits.keySet());
             for(int id:ids){var w=AllayStormRuntime.INSTANCE.contactAuthority(id);if(w==null)continue;
                 var flows=flowTimes.containsKey(id)?new com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState(flowTimes.get(id)):com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState.EMPTY;
-                if(AllayStormRuntime.INSTANCE.domeGather(id)&&flowVersions.getOrDefault(id,-1)!=flows.revision())continue;
+                boolean dome=AllayStormRuntime.INSTANCE.domeGather(id);
+                if(dome&&flowVersions.getOrDefault(id,0)!=flows.revision())continue;
+                var exits=domeExits.get(id);
+                boolean hasExits=exits!=null&&!exits.isEmpty();
                 var r=ready.get(id);var e=eligible.get(id);var c=counts.get(id);
                 var plan=AllayStormRuntime.INSTANCE.wavePacket(id);
                 float sample=gatherSamples.getOrDefault(id,Float.NaN);
                 boolean valid=r!=null&&e!=null&&plan!=null&&Float.isFinite(sample)&&com.iridium126.createmanaindustry.content.allaystorm.StormGatherRules.valid(r,e,plan.members().length,sample,plan.startSec(),plan.assembleSec());
-                boolean canGather=valid&&(!plan.helixAttack()||references.containsKey(id))&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&(!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5);
-                if(canGather||flows.revision()>flowRevisions.getOrDefault(w,0)){
-                    if(canGather)gathered.put(w,mc.level.getGameTime());flowRevisions.put(w,flows.revision());sent=true;
-                    PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(mc.level.dimension().location(),w.epoch(),id,canGather?r.toLongArray():new long[0],canGather?e.toLongArray():new long[0],flows,references.containsKey(id)?Math.round(references.get(id)[0]):0,references.containsKey(id)?references.get(id)[1]:0));
+                boolean canGather=valid&&(!plan.helixAttack()||references.containsKey(id))&&c!=null&&r.cardinality()==c[0]&&e.cardinality()==c[1]&&(hasExits||!gathered.containsKey(w)||mc.level.getGameTime()-gathered.get(w)>=5);
+                if(canGather||hasExits||flows.revision()>flowRevisions.getOrDefault(w,0)){
+                    if(canGather)gathered.put(w,mc.level.getGameTime());flowRevisions.put(w,flows.revision());
+                    PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket(mc.level.dimension().location(),w.epoch(),id,canGather?r.toLongArray():new long[0],canGather?e.toLongArray():new long[0],flows,references.containsKey(id)?Math.round(references.get(id)[0]):0,references.containsKey(id)?references.get(id)[1]:0,tick,hasExits?exits.toLongArray():new long[0]));
                 }
-            }if(sent)flowTick=mc.level.getGameTime();
+            }
         }
 
     }
@@ -298,7 +304,7 @@ public final class StormFeedback {
         return true;
     }
     public StormFeedback(StormParticlePort particles) {this.particles=java.util.Objects.requireNonNull(particles);}
-    public void reset() {outerReported.clear();stormPosPending=false;stormPosIdentity=null;correctionClock.reset();lastSnapshotGameTime=Long.MIN_VALUE;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
+    public void reset() {outerReported.clear();stormPosPending=false;stormPosIdentity=null;correctionClock.reset();lastSnapshotGameTime=Long.MIN_VALUE;reported.clear();gathered.clear();flowRevisions.clear();completions.clear();completionTick=Long.MIN_VALUE;}
     public void retireWaves() {
         retireWaveReports();
     }

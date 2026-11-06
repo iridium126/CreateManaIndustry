@@ -23,6 +23,12 @@ layout(std430,binding=CMI_RESOURCE_STORM_PROJECTION_MAP_BINDING) buffer Projecti
 layout(std430,binding=BIND_MEMBERMAP) buffer Members {float rows[];} memberMap;
 layout(std430,binding=CMI_RESOURCE_STORM_PROJECTION_STATE_READ_BINDING) readonly buffer PriorStormPose {uint words[];} priorPose;
 layout(std430,binding=CMI_RESOURCE_STORM_PROJECTION_STATE_WRITE_BINDING) writeonly buffer NextStormPose {uint words[];} nextPose;
+struct PlaybackRow {vec4 oldest,previous,current,anchor;};
+layout(std430,binding=13) readonly buffer PriorPlayback {PlaybackRow rows[];} priorPlayback;
+layout(std430,binding=15) writeonly buffer NextPlayback {PlaybackRow rows[];} nextPlayback;
+uniform bool uPlaybackWrite,uPlaybackContinuous,uPlaybackNewAnchor;
+uniform uint uPlaybackPriorStamp;
+uniform vec4 uPlaybackSource;
 uniform uint uCapacity,uPhase,uProjectionStamp,uEmitter;
 uniform bool uProjectionPresent,uProjectionReuse,uProjectionContinuous;
 uniform bool uProjectionPoseReady;
@@ -121,6 +127,21 @@ void publishPose(uint member,NativeMember record,bool stable){
     nextPose.words[at+1u]=(keep?0x80000000u:0u)|uint(round(carry*65535.))|
         (uint(round(clamp(speed/64.,0.,1.)*32767.))<<16u);
 }
+void publishPlayback(uint member,NativeMember record,bool stable){
+    if(!uPlaybackWrite)return;
+    vec4 current=vec4(record.position.xyz,uintBitsToFloat(uProjectionStamp));
+    PlaybackRow row=PlaybackRow(current,current,current,current);
+    if(stable&&uPlaybackPriorStamp!=0u&&(record.key.w&uint(CMI_RESOURCE_STORM_DISPLAY_DISCONTINUITY|CMI_RESOURCE_STORM_DISPLAY_BIRTH))==0u){
+        PlaybackRow prior=priorPlayback.rows[member];
+        if(floatBitsToUint(prior.current.w)==uPlaybackPriorStamp){
+            row.previous=uPlaybackContinuous?prior.current:vec4(record.previous.xyz,0);
+            row.oldest=uPlaybackContinuous?prior.previous:row.previous;
+            row.anchor=uPlaybackNewAnchor?prior.oldest*uPlaybackSource.x+prior.previous*uPlaybackSource.y
+                +prior.current*uPlaybackSource.z+prior.anchor*uPlaybackSource.w:prior.anchor;
+        }
+    }
+    nextPlayback.rows[member]=row;
+}
 void main(){
     uint i=gl_GlobalInvocationID.x;
     if(uPhase==0u||uPhase==3u){previousMember(i);return;}
@@ -164,6 +185,7 @@ void main(){
         cmiHistoryContinue(slot);
     }
     publishPose(member,record,stable);
+    publishPlayback(member,record,stable);
     uint base=slot*4u;
     writeBuf.data[base]=vec4(record.position.xyz,float(member+1u));
     writeBuf.data[base+1u]=record.velocity;

@@ -423,7 +423,7 @@ void main() {
                 }
                 bool unknown=resourceUnknown||(cmiStormVoxel&&(cmiStormMissing||!cmiStormKnown(target)||!cmiStormKnown(target+vec3(0,.6,0))));
                 int bodyTerrain=cmiDome(b)&&cmiStormVoxel?cmiDomeBodyTerrain(target):0;
-                unknown=unknown||bodyTerrain<0||(cmiDome(b)&&cmiDomeNavigationUnknown);
+                unknown=unknown||bodyTerrain<0;
                 bool occupied=!unknown&&cmiStormVoxel&&(cmiDome(b)?bodyTerrain==1:(cmiStormSolid(target)||cmiStormSolid(target+vec3(0,.6,0))));
                 vec3 towards=target-p0.xyz;
                 bool stalled=cmiTerrainClipped&&length(towards)>.4&&dot(pos-p0.xyz,normalize(towards))<max(0.,dot(cmiBeforeSweepVelocity*uDt,normalize(towards)))*.1;
@@ -434,7 +434,7 @@ void main() {
                     float published=cmiDomePause(a);
                     if(occupied&&isinf(published))atomicMin(CMI_STATE(starStateWrite,at+1u),floatBitsToUint(max(0.,cmiDomeElapsed(b,uTimeSec)-uDt)));
                     uint window=CMI_DOME_GATHER_WINDOW+(cmiStarSlot(a)*12288u+cmiMajorRank(a))*8u;
-                    CMI_STATE(starStateWrite,window+7u)=(cmiTerrainClipped||cmiDomeNavigationBlocked||cmiDomeNavigationClipped?1u:0u)|(unknown?2u:0u)|(!cmiContactSweepValid?4u:0u);
+                    CMI_STATE(starStateWrite,window+7u)=(cmiTerrainClipped||cmiDomeNavigationBlocked||cmiDomeNavigationClipped?1u:0u)|(unknown?2u:0u)|(!cmiContactSweepValid?4u:0u)|(cmiDomeNavigationUnknown?8u:0u);
                     blockedSeconds=0.;
                 }else blockedSeconds=stalled?blockedSeconds+uDt:0.;
                 bool blocked=occupied||blockedSeconds>=.5;uint counts=CMI_GATHER_COUNTS+cmiStarSlot(a)*4u,word=cmiStarSlot(a)*384u+cmiMajorRank(a)/32u,bit=1u<<(cmiMajorRank(a)&31u);
@@ -554,7 +554,8 @@ void main() {
             bool pending=(CMI_STATE(starStateWrite,mask)&bit)!=0u;
             if(!corpse&&cmiStormEmbedded){
                 bool fresh=!pending||CMI_STATE(starStateRead,member*2u)!=CMI_STATE(starStateWrite,member*2u);
-                if(fresh){CMI_STATE(starStateWrite,extra+3u)=floatBitsToUint(uTimeSec);CMI_STATE(starStateWrite,extra+11u)=floatBitsToUint(uTimeSec);}
+                CMI_STATE(starStateWrite,extra+3u)=fresh?floatBitsToUint(uTimeSec):CMI_STATE(starStateRead,extra+3u);
+                CMI_STATE(starStateWrite,extra+11u)=fresh?floatBitsToUint(uTimeSec):CMI_STATE(starStateRead,extra+11u);
                 CMI_STATE(starStateWrite,extra+1u)=slot+1u;CMI_STATE(starStateWrite,extra+15u)=uStormFrame;
                 if(!pending){atomicOr(CMI_STATE(starStateWrite,mask),bit);atomicAdd(CMI_STATE(starStateWrite,CMI_DEPEN_CONTROL+9u),1u);}
                 roll=0.;CMI_STATE(starStateWrite,CMI_GATHER_STREAK+member)=0u;

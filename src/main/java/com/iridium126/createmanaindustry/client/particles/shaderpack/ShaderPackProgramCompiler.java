@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.shaderpack;
 
+import com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.accessor.CMIProgramDirectivesAccessor;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
@@ -150,8 +152,10 @@ public final class ShaderPackProgramCompiler {
     private String featherOptimization="pending";
     public String featherOptimization(){return "shared entity program; "+featherOptimization;}
     private FeatherLeafSway.Plan leafSway;
+    private FeatherLeafSway.Plan solidLeafSway, cutoutLeafSway;
     private String leafSwayStatus="pending";
-    public String leafSwayStatus(){return leafSwayStatus;}
+    public String leafSwayStatus(){return leafSway==null?leafSwayStatus:
+            leafSwayStatus+" / "+com.iridium126.createmanaindustry.client.particles.engine.FeatherLeafDisplayGpu.INSTANCE.status();}
     private final java.util.Map<ShaderInstance,Uniform> placeholderUniforms=new java.util.IdentityHashMap<>();
     private int carrierGtextureUnit=-1;
     private String optimizationReport="pending";
@@ -240,8 +244,9 @@ public final class ShaderPackProgramCompiler {
 
             var resolver = new ProgramFallbackResolver(programSet);
             if(allowLeafSway){
-                var terrain=resolver.resolve(ProgramId.TerrainCutout).flatMap(ProgramSource::getVertexSource).orElse("");
-                leafSway=FeatherLeafSway.resolve(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().inventory(),terrain);
+                solidLeafSway=FeatherLeafSway.terrain(programSet, ProgramId.TerrainSolid);
+                cutoutLeafSway=FeatherLeafSway.terrain(programSet, ProgramId.TerrainCutout);
+                leafSway=cutoutLeafSway!=null?cutoutLeafSway:solidLeafSway;
                 leafSwayStatus=leafSway==null?"inactive in effective terrain program":leafSway.pack()+" leaf motion";
             }
             var refProgram = resolver.resolve(ProgramId.Entities).orElse(null);
@@ -377,7 +382,7 @@ public final class ShaderPackProgramCompiler {
             // Shadow track: compiled last and fully isolated --
             // any failure here only costs particle shadows, never the merge.
             this.compileShadow(accessor, programSet, properties, resolver);
-            FeatherLeafSway.compiled(leafSway,session);
+            FeatherLeafSway.compiled(solidLeafSway,cutoutLeafSway,session);
 
             CreateManaIndustry.LOGGER.info(
                     "[CMI particles] pack entity merge ready ({}+{}, gtexture {}/{}, inherited alphaTest={})",
@@ -442,7 +447,7 @@ public final class ShaderPackProgramCompiler {
 
     /** Drops compiled state (pipeline changed, reload, or failure). */
     public void reset() {
-        leafSway=null;leafSwayStatus="pending";FeatherLeafSway.compiled(null,-1);
+        leafSway=null;solidLeafSway=null;cutoutLeafSway=null;leafSwayStatus="pending";FeatherLeafSway.compiled(null,null,-1);
         releasePrograms();optimizationReport="pending";sourceProgram="pending";featherOptimization="pending";
         receiverStatus="effective material programs not checked";
         entityContext=ModelEntityContext.NEUTRAL;blendPlan=ModelBlendPlan.LEGACY;
@@ -687,6 +692,14 @@ public final class ShaderPackProgramCompiler {
      * values on every use.
      */
     private void seedDummyModelViewUniform(ShaderInstance shader) {
+        int program=shader.getId(),base=MERGED_SAMPLER_UNIT_BASE;
+        GpuUniforms.sampler(program,"cmi_Geo",base);
+        GpuUniforms.sampler(program,"cmi_Pool",base+1);
+        GpuUniforms.sampler(program,"cmi_Emitters",base+2);
+        GpuUniforms.sampler(program,"cmi_Sorted",base+3);
+        GpuUniforms.sampler(program,"cmi_Starfall",base+4);
+        org.lwjgl.opengl.GL41.glProgramUniform4fv(program,GpuUniforms.loc(program,"uHeldItemUV"),
+                com.iridium126.createmanaindustry.client.particles.engine.HeldItemGeometry.uvTable());
         if (shader.MODEL_VIEW_MATRIX == null){
             var placeholder=new Uniform("ModelViewMat",10,16,shader);
             shader.MODEL_VIEW_MATRIX=placeholder;placeholderUniforms.put(shader,placeholder);
@@ -744,7 +757,6 @@ public final class ShaderPackProgramCompiler {
         sb.append("#define CMI_STARFALL_TBO\n#undef CMI_DOME_RUNTIME_FLOW\n");
         // constants ride the AST as plain const declarations -- #define lines
         // vanish when declarations transplant across glsl-transformer trees
-        sb.append("const uint MODEL_VERTEX_FLOATS = ").append(com.iridium126.createmanaindustry.client.particles.engine.AllayModelGeometry.VERTEX_FLOATS).append("u;\n");
         sb.append("const uint VEC4_PER_EMITTER = 20u;\n");
         // rest-pose model above-feet height in blocks -- the vanilla-size scale
         // divisor shared with model.vsh / hit.comp (emitted as a plain const
@@ -821,20 +833,69 @@ public final class ShaderPackProgramCompiler {
         sb.append(mergedSources.apply("chunks/feather_record.glsl")).append('\n');
         sb.append("uniform int cmi_FeatherPass,cmi_FeatherWordBase; uniform vec3 cmi_FeatherRight,cmi_FeatherUp;\n");
         sb.append("const int cmi_FeatherVisibleOffset = ").append(com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.VISIBLE).append(";\n");
-        if(sway)sb.append(leafSway.source());
+        boolean leafJitter = sway && (leafSway.terrainJitter() || solidLeafSway != null && solidLeafSway.terrainJitter());
+        if(sway) {
+            sb.append("uniform bool cmi_FeatherSwayEnabled; uniform int cmi_FeatherSwayStamp;\n");
+            sb.append("const int cmi_LeafSplitBase = ")
+                    .append(com.iridium126.createmanaindustry.client.particles.engine.FeatherLeafDisplayGpu.SPLIT_BASE)
+                    .append(";\n");
+            sb.append("const int cmi_LeafSplitStride = ")
+                    .append(com.iridium126.createmanaindustry.client.particles.engine.FeatherLeafDisplayGpu.SPLIT_STRIDE)
+                    .append(";\n");
+            sb.append(mergedSources.apply("chunks/feather_leaf_surface.glsl"));
+        }
+        if(leafJitter)sb.append("vec2 cmi_LeafClipJitter;\n");
         sb.append("""
                 void main() {
                     if(cmi_FeatherPass!=0){
-                        uvec2 indices=texelFetch(cmi_Sorted,(cmi_FeatherWordBase+cmi_FeatherVisibleOffset)/2+gl_InstanceID/2).xy;
-                        uint index=indices[gl_InstanceID&1];int base=int(index)*4;vec3 vertex,normal;vec2 uv;
+                        int rank=gl_InstanceID;
+                        vec2 featherPoint=cmiFeatherQuadPoint(gl_VertexID);
+                """);
+        if(leafJitter)sb.append("cmi_LeafClipJitter=vec2(0);\n");
+        if(sway)sb.append("""
+                        int leafTriangle=-1;
+                        if(cmi_FeatherPass==2){
+                            int splitBase=cmi_LeafSplitBase+rank*cmi_LeafSplitStride;
+                            vec3 split=texelFetch(cmi_Emitters,splitBase).xyz;
+                            leafTriangle=gl_VertexID/9;
+                            int corner=gl_VertexID%9, fan=corner/3+1;
+                            if(fan+1>=int(split[leafTriangle+1])){gl_Position=vec4(0.,0.,2.,1.);return;}
+                            int point=corner%3==0?0:fan+corner%3-1;
+                            vec4 pair=texelFetch(cmi_Emitters,splitBase+1+leafTriangle*3+point/2);
+                            featherPoint=(point&1)==0?pair.xy:pair.zw;
+                            rank=int(split.x);
+                        }
+                """);
+        sb.append("""
+                        uvec2 indices=texelFetch(cmi_Sorted,(cmi_FeatherWordBase+cmi_FeatherVisibleOffset)/2+rank/2).xy;
+                        int base=int(indices[rank&1])*4;vec3 vertex,normal;vec2 uv;
                         vec4 featherPosition=texelFetch(cmi_Pool,base),featherAge=texelFetch(cmi_Pool,base+3);
-                        cmiFeatherVertex(featherPosition,texelFetch(cmi_Pool,base+1),texelFetch(cmi_Pool,base+2),featherAge,cmi_FeatherRight,cmi_FeatherUp,gl_VertexID,vertex,normal,uv);
+                        cmiFeatherPoint(featherPosition,texelFetch(cmi_Pool,base+1),texelFetch(cmi_Pool,base+2),featherAge,cmi_FeatherRight,cmi_FeatherUp,featherPoint,vertex,normal,uv);
                 """);
         if(sway)sb.append("""
-                        uint supportTag=floatBitsToUint(featherAge.z);
-                        if(cmi_FeatherSwayEnabled&&featherPosition.w<0.&&(supportTag&(1u<<18))!=0u){
-                            vec3 surface=vec3(vertex.x,floor(featherPosition.y-.02)+1.,vertex.z);
-                            vertex+=cmiLeafOffset(surface,float((supportTag>>19)&15u)/15.);
+                        if(cmi_FeatherSwayEnabled&&featherPosition.w<0.&&(floatBitsToUint(featherAge.z)&(1u<<18))!=0u){
+                            vec4 face=texelFetch(cmi_Emitters,rank+2);
+                            if(face.z==float(cmi_FeatherSwayStamp)&&face.x>0.){
+                            if(cmi_FeatherPass==1&&face.y!=0.){gl_Position=vec4(0.,0.,2.,1.);return;}
+                            int f=int(face.x);
+                            vec3 origin=vec3(cmiFeatherSupportBlock(featherPosition.xyz));
+                            vec3 point=vertex-origin;
+                            vec3 a=texelFetch(cmi_Emitters,f+1).xyz;
+                            vec3 b=texelFetch(cmi_Emitters,f+2).xyz;
+                            vec3 c=texelFetch(cmi_Emitters,f+3).xyz;
+                            if(leafTriangle<0)leafTriangle=cmiFeatherDiagonal(point.xz,a.xz,b.xz,c.xz)>=0.?0:1;
+                            int second=2,third=3;
+                            if(leafTriangle==1){b=c;c=texelFetch(cmi_Emitters,f+4).xyz;second=3;third=4;}
+                            vertex=origin+cmiFeatherAttach(point,a,b,c,texelFetch(cmi_Emitters,f+5).xyz,
+                                texelFetch(cmi_Emitters,f+second+4).xyz,texelFetch(cmi_Emitters,f+third+4).xyz,
+                                texelFetch(cmi_Emitters,f).yzw,normal);
+                """);
+        if(leafJitter)sb.append("""
+                            vec4 leafJitter=texelFetch(cmi_Emitters,1);
+                            cmi_LeafClipJitter=face.w==1.?leafJitter.xy:leafJitter.zw;
+                """);
+        if(sway)sb.append("""
+                            }
                         }
                 """);
         sb.append("""
@@ -847,12 +908,11 @@ public final class ShaderPackProgramCompiler {
                         uint index=texelFetch(cmi_Sorted,(cmi_LodPass==1?0:131072)+gl_InstanceID).x;
                         vec4 position=texelFetch(cmi_Pool,int(index*2u));
                         vec4 motion=texelFetch(cmi_Pool,int(index*2u+1u));
-                        int vb=gl_VertexID*int(MODEL_VERTEX_FLOATS);
                         vec3 local=vec3(0);vec2 sourceUv=vec2(0);int part=0,axis=4;
                         if(cmi_LodPass==1){
-                            local=vec3(texelFetch(cmi_Geo,vb).x,texelFetch(cmi_Geo,vb+1).x,texelFetch(cmi_Geo,vb+2).x);
-                            sourceUv=vec2(texelFetch(cmi_Geo,vb+3).x,texelFetch(cmi_Geo,vb+4).x);
-                            part=int(texelFetch(cmi_Geo,vb+5).x);axis=int(texelFetch(cmi_Geo,vb+6).x);
+                            vec4 geoA=texelFetch(cmi_Geo,gl_VertexID*2),geoB=texelFetch(cmi_Geo,gl_VertexID*2+1);
+                            local=geoA.xyz;sourceUv=vec2(geoA.w,geoB.x);
+                            part=int(geoB.y);axis=int(geoB.z);
                         }
                         vec3 vertex,normal;vec2 uv;
                         cmiLodVertex(position,motion,local,sourceUv,part,axis,vertex,normal,uv);
@@ -893,13 +953,11 @@ public final class ShaderPackProgramCompiler {
                     uint inst = item.y >> 2u;
                     uint base = inst * 4u;
                     vec4 p0 = gone ? vec4(0.0) : texelFetch(cmi_Pool, int(base + 0u));
-                    vec4 p1 = gone ? vec4(0.0) : texelFetch(cmi_Pool, int(base + 1u));
                     vec4 p2 = gone ? vec4(0.0) : texelFetch(cmi_Pool, int(base + 2u));
                     vec4 p3 = gone ? vec4(0.0) : texelFetch(cmi_Pool, int(base + 3u));
 
-                    uint vb = uint(gl_VertexID) * MODEL_VERTEX_FLOATS;
-                    int pid = int(texelFetch(cmi_Geo, int(vb + 5u)).x);
-                    int normalCode = int(texelFetch(cmi_Geo, int(vb + 6u)).x);
+                    vec4 geoA=texelFetch(cmi_Geo,gl_VertexID*2),geoB=texelFetch(cmi_Geo,gl_VertexID*2+1);
+                    int pid=int(geoB.y),normalCode=int(geoB.z);
 
                     float life = clamp(p3.x / max(p3.y, 1e-5), 0.0, 1.0);
                     uint eid = floatBitsToUint(p3.w);
@@ -910,17 +968,10 @@ public final class ShaderPackProgramCompiler {
 
                     float sizeStart = gone ? 0.0 : texelFetch(cmi_Emitters, int(hb + 5u)).z;
                     float sizeEnd = gone ? 0.0 : texelFetch(cmi_Emitters, int(hb + 5u)).w;
-                    float sizeEase = max(texelFetch(cmi_Emitters, int(hb + 6u)).x, 0.001);
-                    // storm members carry their IDENTITY in p0.w — the header's
-                    // storm slot 18.x selects the constant 1.0 multiplier
-                    float pmul = texelFetch(cmi_Emitters, int(hb + 18u)).x > 0.5 ? 1.0 : p0.w;
-                    float size = cmiModelSize(p0,p3,sizeStart,sizeEnd,sizeEase,texelFetch(cmi_Emitters,int(hb+18u)).x>.5);
-                    float scale = (2.0 * size) / MODEL_ABOVE_FEET;
-
-                    int anim = int(texelFetch(cmi_Emitters, int(hb + 17u)).x);
-                    // Storm members: inner-band members near the chased anchor
-                    // periodically run full vanilla dance cycles.
-                    vec4 stormA = texelFetch(cmi_Emitters, int(hb + 18u));
+                    vec4 sizeAndColor=texelFetch(cmi_Emitters,int(hb+6u));
+                    vec4 stormA=texelFetch(cmi_Emitters,int(hb+18u));
+                    float size=cmiModelSize(p0,p3,sizeStart,sizeEnd,max(sizeAndColor.x,.001),stormA.x>.5);
+                    float scale=(2.0*size)/MODEL_ABOVE_FEET;
                     // HP-death corpse: per-particle death pose + roll timer
                     // (time since death; update.comp counts hp 0 -> -1 over the
                     // vanilla 20-tick window while age keeps the idle sway).
@@ -928,6 +979,12 @@ public final class ShaderPackProgramCompiler {
                     // as dead, matching update.comp's corpse predicate.
                     bool corpse = p3.y <= 0.0;
                     cmiLoadAllayAnimation((item.x>>9u)&262143u,p3.x);
+                    vec4 p1=vec4(0),animationHeader=vec4(0);
+                    if(!gone&&!cmiAllayCachedPose){
+                        p1=texelFetch(cmi_Pool,int(base+1u));
+                        animationHeader=texelFetch(cmi_Emitters,int(hb+17u));
+                    }
+                    int anim=int(animationHeader.x);
                     // ---- carried item (held sword): the carrier segment ------
                     // Only partId-7 vertices arrive through the carrier command
                     // (cmi_SegmentMode == 2), and keygen admitted each instance
@@ -955,7 +1012,7 @@ public final class ShaderPackProgramCompiler {
                         // held-item id: a wave claim overrides the header slot
                         // (storm specs keep 17.z = 0, so the paths never stack)
                         itemId = waveTier > 0.5 ? waveTier
-                                : texelFetch(cmi_Emitters, int(hb + 17u)).z;
+                                : animationHeader.z;
                         }
                         // defensive only: keygen guarantees an item for every
                         // carrier instance; a mismatch means upstream corruption
@@ -972,8 +1029,8 @@ public final class ShaderPackProgramCompiler {
                     float yaw;
                     mat4 M = gone ? mat4(1.0) : cmiAllayAttackPartTransform(p3.x, p3.z,p0.w, p0.xyz, p1.xyz, anim, pid, yaw, carryRamp, p1.w, !corpse && stormA.x > .5);
 
-                    vec3 local = gone ? vec3(0.0) : vec3(texelFetch(cmi_Geo, int(vb)).x, texelFetch(cmi_Geo, int(vb + 1u)).x, texelFetch(cmi_Geo, int(vb + 2u)).x);
-                    vec2 uv = gone ? vec2(0.5) : vec2(texelFetch(cmi_Geo, int(vb + 3u)).x, texelFetch(cmi_Geo, int(vb + 4u)).x);
+                    vec3 local=gone?vec3(0):geoA.xyz;
+                    vec2 uv=gone?vec2(.5):vec2(geoA.w,geoB.x);
                     if (pid == 7 && !gone) {
                         // canonical sprite UV -> the carrier tier's atlas frame
                         int tier = clamp(int(itemId + 0.5), 0, 6);
@@ -1011,7 +1068,7 @@ public final class ShaderPackProgramCompiler {
                     cmi_TexCoord0v = vec4(uv, 0.0, 1.0);
                     cmi_LightCoordv = vec4(240.0, 240.0, 0.0, 1.0); // block light 15 + full sky
 
-                    int cc = max(1, min(8, int(gone ? 1 : texelFetch(cmi_Emitters, int(hb + 6u)).z)));
+                    int cc = max(1, min(8, int(gone ? 1 : sizeAndColor.z)));
                     vec4 tint = vec4(1.0);
                     if (!gone) {
                         if (cc <= 1) tint = texelFetch(cmi_Emitters, int(hb + 8u));

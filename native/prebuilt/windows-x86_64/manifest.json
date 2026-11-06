@@ -1,6 +1,6 @@
 {
   "abi": 12,
-  "version": "12.22.0.0",
+  "version": "12.23.0.0",
   "platform": "windows-x86_64",
   "layout": {
     "ABI": 12,
@@ -100,7 +100,7 @@
     "STORM_HELIX_REFERENCE_OFFSET": 13520,
     "STORM_HELIX_REFERENCE_BYTES": 16
   },
-  "source_sha256": "f050211e1b507661757297b1d40e1e474c244f6337713d045726afd61ab95ad2",
-  "dll_sha256": "1ec6c0ce44b5daf9796dd0b685ccc49e950a8ed27484538f4813648d2c7f756b",
+  "source_sha256": "72cb12c1521f06b1b3b1d247e8e0260e4f3f79a49613dfbdf8b02a36ce5fd48e",
+  "dll_sha256": "b777a1e96079b8bd0c7bb4b0e9e7e6dd955b39850614e892519570c75e932809",
   "embedded_device_programs": true
 }

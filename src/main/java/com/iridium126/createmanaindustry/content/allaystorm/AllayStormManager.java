@@ -147,6 +147,7 @@ public final class AllayStormManager {
         int kind=AllayDome.STARFALL, fallbackReason, checkedPetal=-1, currentPhase=1; int[] groupEnds;
         float centerX,centerY,centerZ,orientation,centerSec; int direction=1;
         int abortReason;
+        long lastDomeGatherSample=Long.MIN_VALUE;
         AllayHelix.Flight helix; final java.util.ArrayDeque<HelixGatherFrame> helixFrames=new java.util.ArrayDeque<>(); HelixGatherFrame.Sample lockedReference; float referenceSample; int referenceVersion; AllayHelix.Selection helixRoster; long lastObstacleTick;
         final it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap memberColumns=new it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap();
         final float start,crownX,crownY,crownZ; float assemble,radius;
@@ -419,7 +420,7 @@ public final class AllayStormManager {
     private static boolean advanceDome(ServerLevel level,Runtime rt,Wave w,ServerPlayer target,long tick,float clock){
         float now=w.start+AllayStarfall.elapsed(clock,w.start);
         if(!w.locked){
-            if(DomeGatherRules.elapsedTicks(clock,w.start)>DomeGatherRules.durationTicks(w.start,w.assemble)&&!w.gathered){w.abortReason=7;return false;}
+            if(DomeGatherRules.elapsedTicks(clock,w.start)>DomeGatherRules.durationTicks(w.start,w.assemble)+DOME_RECEIPT_GRACE&&!w.gathered){w.abortReason=7;return false;}
             if(!w.gathered)return true;
             w.assemble=now;w.lock=now;w.locked=true;w.currentPhase=4;w.end=now+60.25f;
             broadcastWave(level,rt,wavePacket(w,AllayStarfall.LOCK,false,target==null?-1:target.getId()));
@@ -910,14 +911,9 @@ public final class AllayStormManager {
         if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(new StormIdentity(packet.dimension(),packet.epoch())))return;
         for(var w:rt.waves)if(w.id==packet.id()&&StormAttack.regional(w.kind)&&!w.locked&&!w.gathered){
             float now=clockSeconds(level.getGameTime());
-            // A scheduled attack may publish its first flow pause before its
-            // start tick. Readiness itself is still restricted to [start, assemble].
-            if(StormGatherRules.elapsedTicks(now,w.start)>StormGatherRules.durationTicks(w.start,w.assemble))return;
-            if(w.kind==AllayDome.DOME){
-                var flows=packet.flows();
-                if(!flows.extendsState(w.gatherFlows))return;
-                if(flows.revision()!=w.gatherFlows.revision()){w.gatherFlows=flows;broadcastWave(level,rt,wavePacket(w,AllayStarfall.UPDATE,false,-1));}
-            }else if(packet.flows().revision()!=0)return;
+            if(w.kind==AllayDome.DOME){acceptDomeGather(level,rt,data,w,packet);return;}
+            if(StormGatherRules.elapsedTicks(now,w.start)>StormGatherRules.durationTicks(w.start,w.assemble)
+                    ||packet.flows().revision()!=0||packet.completed().length!=0)return;
             HelixGatherFrame.Sample accepted=null;
             if(w.kind==StormAttack.HELIX){
                 float age=AllayStarfall.elapsed(now,w.start)-packet.sampleSec();
@@ -933,14 +929,48 @@ public final class AllayStormManager {
             if(!eligible.equals(expectedEligible))return;
             if(!StormGatherRules.valid(ready,eligible,w.members.length,now,w.start,w.assemble))return;
             expectedEligible.andNot(ready);
-            for(int rank=expectedEligible.nextSetBit(0);rank>=0;rank=expectedEligible.nextSetBit(rank+1)){
-                w.completed.set(rank);
-                w.membership.clear(w.members[rank]);
-                rt.waveReserved.clear(w.members[rank]);
-            }
+            for(int rank=expectedEligible.nextSetBit(0);rank>=0;rank=expectedEligible.nextSetBit(rank+1))releaseGatherRank(rt,w,rank);
             if(accepted!=null){w.lockedReference=accepted;w.referenceSample=packet.sampleSec();w.referenceVersion=packet.referenceVersion();}
             w.gathered=true;return;
         }
+    }
+
+    private static final int DOME_RECEIPT_GRACE=4;
+    private static void acceptDomeGather(ServerLevel level,Runtime rt,AllayStormData data,Wave w,
+            com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket packet){
+        long tick=level.getGameTime(),sampleTick=packet.sampleTick();
+        int duration=DomeGatherRules.durationTicks(w.start,w.assemble);
+        if(sampleTick<0||sampleTick<w.lastDomeGatherSample||sampleTick>tick+1||sampleTick<=tick-20
+                ||StormGatherRules.elapsedTicks(tick,w.start)>duration+DOME_RECEIPT_GRACE)return;
+        int elapsed=StormGatherRules.elapsedTicks(sampleTick,w.start);
+        if(elapsed>duration)return;
+        var ready=BitSet.valueOf(packet.ready());var eligible=BitSet.valueOf(packet.eligible());
+        var exits=BitSet.valueOf(packet.completed());var flows=packet.flows();
+        if(ready.length()>w.members.length||eligible.length()>w.members.length||exits.length()>w.members.length
+                ||!flows.extendsState(w.gatherFlows)||elapsed<0&&!exits.isEmpty())return;
+        w.lastDomeGatherSample=sampleTick;
+        exits.andNot(w.completed);
+        for(int rank=exits.nextSetBit(0);rank>=0;rank=exits.nextSetBit(rank+1))releaseGatherRank(rt,w,rank);
+        if(!exits.isEmpty())broadcastCompletion(level,rt,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(
+                level.dimension().location(),w.epoch,w.id,exits.toLongArray()));
+        if(flows.revision()!=w.gatherFlows.revision()){
+            w.gatherFlows=flows;broadcastWave(level,rt,wavePacket(w,AllayStarfall.UPDATE,false,-1));
+        }
+        if(elapsed<0||ready.isEmpty())return;
+        var expected=new BitSet(w.members.length);
+        for(int rank=0;rank<w.members.length;rank++){
+            if(data.dead.get(w.members[rank])||w.completed.get(rank)){ready.clear(rank);eligible.clear(rank);}
+            else expected.set(rank);
+        }
+        if(!eligible.equals(expected)||!StormGatherRules.ready(ready.cardinality(),expected.cardinality(),elapsed,duration))return;
+        var invalid=(BitSet)ready.clone();invalid.andNot(expected);
+        if(!invalid.isEmpty())return;
+        expected.andNot(ready);
+        for(int rank=expected.nextSetBit(0);rank>=0;rank=expected.nextSetBit(rank+1))releaseGatherRank(rt,w,rank);
+        w.gathered=true;
+    }
+    private static void releaseGatherRank(Runtime rt,Wave w,int rank){
+        w.completed.set(rank);w.membership.clear(w.members[rank]);rt.waveReserved.clear(w.members[rank]);
     }
 
     public static void completeAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket packet,IPayloadContext ctx){
@@ -952,7 +982,8 @@ public final class AllayStormManager {
             accepted=w.completed.toLongArray();break;
         }
         if(accepted==null&&rt.columns.complete(packet.id(),ranks,rt.waveReserved,member->{if(!data.dead.get(member))rt.outer.offer(member,rt.waveReserved);}))accepted=rt.columns.completed(packet.id());
-        if(accepted!=null){var out=new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(packet.dimension(),packet.epoch(),packet.id(),accepted);for(var entry:rt.tracks.entrySet())if(entry.getValue().active){var observer=level.getServer().getPlayerList().getPlayer(entry.getKey());if(observer!=null&&observer.serverLevel()==level)PacketDistributor.sendToPlayer(observer,out);}}
+        if(accepted!=null)broadcastCompletion(level,rt,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(
+                packet.dimension(),packet.epoch(),packet.id(),accepted));
     }
 
     private static void broadcastOuter(ServerLevel level,Runtime rt,com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket packet){

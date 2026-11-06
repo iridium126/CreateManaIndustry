@@ -14,7 +14,7 @@ uint cmiSupportTag(ivec3 block){
     for(uint i=0u;i<8u;i++){
         ivec4 row=featherSupport.rows[(hash+i)&8191u];
         if(row.w==0)break;
-        if(all(equal(row.xyz,block)))return row.w>=2?(1u<<18)|(uint(row.w-2)<<19):0u;
+        if(all(equal(row.xyz,block)))return row.w>=8?1u<<18:0u;
     }
     cmiFeatherRequestKey(block,2);
     return 0u;

@@ -260,9 +260,18 @@ public final class AllayFeatherGpu implements AutoCloseable {
         gpu.bindMergedTbos(com.iridium126.createmanaindustry.client.particles.shaderpack.ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleDrawBufferId(),drawBuffer());setIntUniform(program,"cmi_FeatherWordBase",displayBuffer!=0?0:state[bank]);gpu.bindVao();
         Camera camera=Minecraft.getInstance().gameRenderer.getMainCamera();camera(program,camera);
         setIntUniform(program,"cmi_FeatherPass",1);setIntUniform(program,"cmi_LodPass",0);
-        setIntUniform(program,"cmi_FeatherSwayEnabled",FeatherSupportGpu.INSTANCE.drawable()?1:0);
+        var leafDisplay=FeatherLeafDisplayGpu.INSTANCE;
+        boolean sway=displayBuffer!=0&&loc(program,"cmi_FeatherSwayEnabled")>=0&&leafDisplay.prepare(
+                program,gpu.particleDrawBufferId(),displayBuffer,camera.getPosition());
+        setIntUniform(program,"cmi_FeatherSwayEnabled",sway?1:0);
+        if(sway)setIntUniform(program,"cmi_FeatherSwayStamp",leafDisplay.stamp());
         try{GL11.glDisable(GL11.GL_CULL_FACE);GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,drawBuffer());
-            GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,drawOffset()+11L*4);nativeDrawn=true;
+            GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,drawOffset()+11L*4);
+            if(sway){
+                setIntUniform(program,"cmi_FeatherPass",2);
+                leafDisplay.drawSplits();
+            }
+            nativeDrawn=true;
         }finally{setIntUniform(program,"cmi_FeatherPass",0);GL11.glEnable(GL11.GL_CULL_FACE);}
     }
     private static void camera(int program,Camera camera){
@@ -280,6 +289,6 @@ public final class AllayFeatherGpu implements AutoCloseable {
         ParticleBuffers.INSTANCE.bindVao();GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,drawBuffer());GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,drawOffset()+11L*4);GL11.glEnable(GL11.GL_CULL_FACE);
     }
     public void reset(){clearDisplay();StormCollisionRuntime.releaseFeathers();surface.reset();FeatherSupportGpu.INSTANCE.reset();mayFeathers=mayGold=manual=manualGold=enabled=candidateBirth=candidateGoldBirth=nativeDrawn=false;spawn=goldSpawn=0;remainder=candidateRemainder=goldRemainder=candidateGoldRemainder=0;lastCreationGeneration=lastGoldCreationGeneration=generation=0;warmRadius=-1;prewarmTick=Long.MIN_VALUE;frames=0;world=null;warmX=warmY=warmZ=warmLow=Integer.MAX_VALUE;prewarmKeys.clear();requests.clear();nativeImpacts.clear();nativeImpactIdentity=null;stagedNativeImpacts=0;}
-    @Override public void close(){state[0]=state[1]=0;reset();armedPrograms.clear();featherId=goldId=-1;surface.close();FeatherSupportGpu.INSTANCE.close();com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(nativeImpactBuffer);nativeImpactBuffer=0;nativeImpactUpload=null;}
+    @Override public void close(){state[0]=state[1]=0;reset();armedPrograms.clear();featherId=goldId=-1;surface.close();FeatherSupportGpu.INSTANCE.close();FeatherLeafDisplayGpu.INSTANCE.close();com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(nativeImpactBuffer);nativeImpactBuffer=0;nativeImpactUpload=null;}
     private static void barrier(){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);}
 }

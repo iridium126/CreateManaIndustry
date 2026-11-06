@@ -180,7 +180,13 @@ public class StormDepenetrationGpuValidation extends StarfallGpuValidation {
  public static void main(String[] args)throws Exception{
   GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Sparse depenetration validation",0,0);
   try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();ARBParallelShaderCompile.glMaxShaderCompilerThreadsARB(2);
-   prepare=compile("storm_depenetration_prepare.comp");int schedule=compile("storm_depenetration_schedule.comp"),search=compile("storm_depenetration.comp"),update=compile("update.comp");
+   prepare=compile("storm_depenetration_prepare.comp");int schedule=compile("storm_depenetration_schedule.comp"),search=compile("storm_depenetration.comp");
+   if(Arrays.asList(args).contains("--lifecycle-only")){
+    try{lifecycle(schedule,search);rejectedBeforePublication(schedule,search);check(GL11.glGetError()==0,"Depenetration lifecycle GL state");System.out.println("Storm depenetration lifecycle: "+checks+" assertions passed");}
+    finally{for(int p:new int[]{prepare,schedule,search})deleteProgram(p);}
+    return;
+   }
+   int update=compile("update.comp");
    int probe=compileText("body query",source("chunks/storm_collision.glsl")+"layout(local_size_x=1)in;layout(std430,binding=1)readonly buffer P{vec4 p[];};layout(std430,binding=16)buffer R{ivec4 result;};void main(){CmiStormBody b=cmiStormBody(p[0].xyz);result=ivec4(b.occupied?1:0,b.complete?1:0,0,0);}");
    try{if(Files.exists(Path.of("build/cold-escape/baseline/commit.txt"))){int old=frozenProgram("update.comp");try{roof(old,schedule,search,probe,true);}finally{deleteProgram(old);}}else System.out.println("Frozen before-build unavailable; old-kernel control not run");roof(update,schedule,search,probe,false);exits(schedule,search,probe);lifecycle(schedule,search);rejectedBeforePublication(schedule,search);clockAndCruise(update,schedule,search);performance(schedule,search);check(GL11.glGetError()==0,"Depenetration GL state");System.out.println("Storm depenetration GPU: "+checks+" assertions passed");}finally{for(int p:new int[]{prepare,schedule,search,update,probe})deleteProgram(p);}
   }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}

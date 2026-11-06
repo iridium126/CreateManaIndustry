@@ -420,6 +420,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     private int offsetSSBO = -1;
     private int bakeMetaSSBO = -1;
     private int modelGeoSSBO = -1;
+    private int mergedModelGeometry = -1;
     private int orderOpaqueSSBO = -1;
     private int gridSSBO = -1;
     private int gridExtraBase=-1,gridExtraWords,gridExtraAlignment;
@@ -812,7 +813,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     public void bindMergedTbos(int baseUnit, int poolReadBufferId, int permBufferId) {
         if (this.modelGeoSSBO <= 0 || this.emitterSSBO <= 0)
             return;
-        ensureMergedTbo(0, GL30.GL_R32F, this.modelGeoSSBO);
+        ensureMergedTbo(0, GL30.GL_RGBA32F, this.mergedModelGeometry);
         ensureMergedTbo(1, GL30.GL_RGBA32F, poolReadBufferId);
         ensureMergedTbo(2, GL30.GL_RGBA32F, particleDrawEmitterBufferId());
         ensureMergedTbo(3, GL32.GL_RG32UI, permBufferId);
@@ -869,6 +870,10 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
             FloatBuffer buf = stack.mallocFloat(vertices.length);
             buf.put(vertices).flip();
             this.modelGeoSSBO = createBuffer(4L * vertices.length, buf);
+        }
+        try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
+            float[] packed = AllayModelGeometry.mergedVertices(vertices);
+            this.mergedModelGeometry = createBuffer(4L * packed.length, stack.mallocFloat(packed.length).put(packed).flip());
         }
         bindBase(GL43.GL_SHADER_STORAGE_BUFFER, MODELGEO_BINDING, this.modelGeoSSBO);
 
@@ -1355,6 +1360,8 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(id);
         if (this.modelGeoSSBO > 0)
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.modelGeoSSBO);
+        if (this.mergedModelGeometry > 0)
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.mergedModelGeometry);
         if (this.histSSBO > 0)
             com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(this.histSSBO);
         if (this.offsetSSBO > 0)
@@ -1384,7 +1391,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
         java.util.Arrays.fill(this.additiveFrames, 0);
         java.util.Arrays.fill(this.opaqueFrames, 0);
         this.emitterSSBO = this.indirectSSBO = this.orderAddSSBO = this.orderOpaqueSSBO = -1;
-        this.modelGeoSSBO = this.histSSBO = this.offsetSSBO = this.bakeMetaSSBO = -1;
+        this.mergedModelGeometry = this.modelGeoSSBO = this.histSSBO = this.offsetSSBO = this.bakeMetaSSBO = -1;
         this.gridExtraBase=-1;this.gridExtraWords=0;
         this.gridSSBO = this.damageSSBO = this.hitSSBO = this.playersSSBO = -1;
         this.stormPosSSBO = this.waveContactSSBO = this.modelIndexBuffer = this.vao = -1;

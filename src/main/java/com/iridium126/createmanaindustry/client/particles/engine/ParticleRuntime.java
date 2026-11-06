@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.particles.engine.spatial.NativeStormSimulation;
+
 import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.GlWork;
@@ -224,6 +226,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
     private final ParticleReadbacks readbacks = new ParticleReadbacks();
     private final StormBatchReadbacks stormBatches=new StormBatchReadbacks();
     private final StormProjectionGpu stormProjection=new StormProjectionGpu();
+    public NativeStormDisplayClock.View nativeDisplayView(double worldTick,boolean paused){
+        return NativeStormSimulation.selected()==null?null:stormProjection.playback(worldTick,paused);
+    }
     private long committedGeneration;
     private ParticleHitRay submittedHitRay;
     private long lastCreationGeneration;
@@ -800,7 +805,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 SpatialQueryRuntime.INSTANCE.submitted(GlWork.DEPENETRATION);
             }
             depenDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(depenDone);}
-            if(StarfallGpuBuffers.INSTANCE.navigationReady()){
+            if(StarfallGpuBuffers.INSTANCE.navigationReady()&&StarfallGpuBuffers.INSTANCE.navigationWork()){
                 ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.NAVIGATION,updateFrame,updateGeneration);boolean navDone=false;try{
                 com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(ParticleRuntime.this.programs.domePath());
                 DomeGatherNavigation.run(ParticleRuntime.this.programs.domePath(),AllayStormRuntime.INSTANCE.timeSec(),StarfallGpuBuffers.INSTANCE,ParticleRuntime.this.gpu.dispatchBufferId());

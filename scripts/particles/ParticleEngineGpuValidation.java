@@ -8,6 +8,8 @@ import org.lwjgl.opengl.*;
 import com.iridium126.createmanaindustry.client.particles.engine.*;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.*;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
+import com.iridium126.createmanaindustry.client.allaystorm.StormCollisionPages;
+import com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate;
 import static com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.*;
 
 /** One current driver harness. Rule checks and benchmarks use the same public engine kernels. */
@@ -165,7 +167,11 @@ public final class ParticleEngineGpuValidation {
                 var f=ParticlePrograms.class.getDeclaredField(field);f.setAccessible(true);f.setInt(shaders,program(file));
             }
             var types=com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.values();
-            for(int i=0;i<3;i++)gpu.setEmitterHeader(i,com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().type(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.standard(types[i])).size(.1).life(100,100).build().packed());gpu.uploadDirtyEmitters();
+            for(int i=0;i<3;i++){
+                var header=com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().type(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.standard(types[i])).size(.1).life(100,100).build().packed();
+                if(i==2)header[18*4]=1;
+                gpu.setEmitterHeader(i,header);
+            }gpu.uploadDirtyEmitters();
             var rows=bytes(4*64);for(int i=0;i<4;i++){int at=i*64;rows.putFloat(at,i*.1f).putFloat(at+8,-1).putFloat(at+12,1).putFloat(at+32,1).putFloat(at+36,1).putFloat(at+40,1).putFloat(at+44,1).putFloat(at+52,100).putInt(at+56,i+100).putInt(at+60,Math.min(i,2));}
             gpu.bindCounter(3,0);int currentCounter=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,3);gpu.bindDrawIndirect();int currentCommands=GL11.glGetInteger(GL40.GL_DRAW_INDIRECT_BUFFER_BINDING);
             GL45.glNamedBufferSubData(gpu.particleReadBufferId(),0,rows);GL45.glNamedBufferSubData(currentCounter,0,bytes(16).putInt(0,4));gpu.commitPopulation(1);
@@ -176,6 +182,17 @@ public final class ParticleEngineGpuValidation {
             check(frame.alpha()==1&&Math.abs(frame.timeSec()-1.025f)<1e-6,"missing history uses matching current pose clock");
             var commands=read(frame.commands(),ParticleBuffers.INDIRECT_UINTS*4);check(commands.getInt(ParticleBuffers.IDX_CNT_ADD*4)==1,"display additive list");check(commands.getInt(ParticleBuffers.IDX_CNT_ALPHA*4)==1,"display alpha list");check(commands.getInt(ParticleBuffers.IDX_CNT_MODELOP*4)==2,"display MODEL list");
             check(read(frame.permutation(),(gpu.metaSlotIndex()+1)*8).getInt(gpu.metaSlotIndex()*8)==2,"display permutation metadata");check(read(gpu.particleReadBufferId(),rows.capacity()).equals(rows),"publication preserves simulation bytes");
+            int playback=buffer(bytes(64).putFloat(0,-.5f).putFloat(16,.25f).putFloat(32,.5f).putInt(44,7));
+            int playbackTexture=GL45.glCreateTextures(GL31.GL_TEXTURE_BUFFER);
+            try{
+                GL45.glTextureBuffer(playbackTexture,GL30.GL_RGBA32UI,playback);
+                var view=new NativeStormDisplayClock.View(playbackTexture,7,new NativeStormDisplayClock.Weights(.5f,.5f,0,0));
+                var projected=display.prepare(gpu,shaders,publication,null,.5f,1,camera,new org.joml.Matrix4f(),matrix,view);
+                var rendered=read(projected.pool(),rows.capacity());
+                check(Math.abs(rendered.getFloat(2*64)+.125f)<1e-6f&&rendered.getFloat(64)==rows.getFloat(64),
+                        "Native playback weights affect Storm members only");
+                check(read(gpu.particleReadBufferId(),rows.capacity()).equals(rows),"Native interpolation never mutates simulation");
+            }finally{GL11.glDeleteTextures(playbackTexture);GL15.glDeleteBuffers(playback);}
             int frozenEmitter=gpu.particleDrawEmitterBufferId();check(frozenEmitter!=gpu.emitterBufferId(),"display owns emitter snapshot");var emitterSeed=read(frozenEmitter,64);GL45.glNamedBufferSubData(gpu.emitterBufferId(),0,bytes(64));check(read(frozenEmitter,64).equals(emitterSeed),"staged header cannot change rendered publication");
             int animationProbe=GpuShaderCompiler.compute("frozen animation binding","#version 450 core\nlayout(local_size_x=1)in;uniform usamplerBuffer cmi_AllayAnimation;layout(std430,binding=0)buffer Out{uvec4 row;};void main(){row=texelFetch(cmi_AllayAnimation,0);}");
             try{gpu.bindAllayAnimation(animationProbe);int old=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);GL13.glActiveTexture(GL13.GL_TEXTURE0+SAMPLER_ANIMATION_DRAW);int texture=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);GL13.glActiveTexture(old);int frozenAnimation=GL45.glGetTextureLevelParameteri(texture,0,GL31.GL_TEXTURE_BUFFER_DATA_STORE_BINDING);check(frozenAnimation!=0&&frozenAnimation!=gpu.allayAnimation().buffer(gpu.allayAnimation().readBank()),"display owns candidate pose records");}finally{GL20.glDeleteProgram(animationProbe);}
@@ -377,18 +394,21 @@ public final class ParticleEngineGpuValidation {
         method.setAccessible(true);
         return method;
     }
-    static ByteBuffer stormTick(long sequence,long tick,long gameTime,long identity,boolean active,boolean birth){
-        var data=bytes(STORM_TICK_HEADER_BYTES+(birth?STORM_CONTROL_BYTES:0));
-        data.putInt(0,STORM_TICK_MAGIC).putInt(4,ABI).putInt(8,birth?1:0).putInt(12,active?1:0)
-                .putLong(16,sequence).putLong(24,tick).putLong(32,identity)
-                .putInt(40,active?1:0).putInt(44,19).putFloat(52,64).putFloat(60,8)
-                .putFloat(64,sequence*.1f).putFloat(76,1)
-                .putFloat(80,com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.renderSeconds(gameTime,0))
-                .putFloat(84,6);
-        if(birth){
-            int at=STORM_TICK_HEADER_BYTES;
-            data.putInt(at,STORM_CONTROL_SPAWN).putInt(at+8,1).putLong(at+16,identity);
-        }
+    static ByteBuffer stormTick(long sequence,long tick,long gameTime,long identity,boolean active,boolean birth)throws Exception{
+        return stormTick(sequence,tick,gameTime,identity,active?1:0,birth);
+    }
+    static ByteBuffer stormTick(long sequence,long tick,long gameTime,long identity,int population,boolean birth)throws Exception{
+        String journal="com.iridium126.createmanaindustry.client.particles.engine.spatial.StormControlJournal$";
+        var params=Class.forName(journal+"Parameters").getDeclaredConstructors()[0];params.setAccessible(true);
+        var p=params.newInstance(identity,population>0,population,19,0f,64f,0f,8f,sequence*.1f,0f,0f,1f,
+                com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.renderSeconds(gameTime,0),6f,false);
+        var target=Class.forName(journal+"Target").getDeclaredField("ABSENT");target.setAccessible(true);
+        var spawn=Class.forName(journal+"Command").getDeclaredMethod("spawn",int.class,int.class,boolean.class);spawn.setAccessible(true);
+        var type=Class.forName(journal+"Tick");var ctor=type.getDeclaredConstructors()[0];ctor.setAccessible(true);
+        var input=ctor.newInstance(sequence,tick,gameTime,p,birth?List.of(spawn.invoke(null,0,population,false)):List.of(),
+                null,target.get(null),0L,List.of(),false,null,List.of(),false);
+        var encode=type.getDeclaredMethod("encode",ByteBuffer.class);encode.setAccessible(true);
+        var data=bytes(STORM_TICK_HEADER_BYTES+(birth?STORM_CONTROL_BYTES:0));encode.invoke(input,data);data.clear();
         return data;
     }
     static void nativeStormTimeline(List<Object> cases)throws Exception{
@@ -410,7 +430,7 @@ public final class ParticleEngineGpuValidation {
             long[] worldTimes={(1L<<21)-1,(1L<<21)+3,(1L<<21)+1};
             for(int slot=0;slot<RT_SLOTS;slot++){
                 delay.invoke(null,worker,new int[]{10,50,500}[slot]);
-                var packet=stormTick(slot+1,100+slot,worldTimes[slot],slot<2?1:2,slot<2,slot==0);
+                var packet=stormTick(slot+1,100+slot,worldTimes[slot],slot<2?1:2,slot<2?8:0,slot==0);
                 check((boolean)submit.invoke(null,worker,packet,packet.capacity(),slot,true),"Storm control slot submitted");
                 submitted++;
             }
@@ -423,15 +443,17 @@ public final class ParticleEngineGpuValidation {
                 while((int)poll.invoke(null,worker,sequence)==1){check(System.nanoTime()<until,"Storm completion deadline");Thread.sleep(1);}
                 check((int)consume.invoke(null,worker,sequence)==2,"Storm receipt applied once");
                 consumed++;
-                var output=read(SpatialNative.buffers(bridge,slot)[1],STORM_DISPLAY_HEADER_BYTES+STORM_DISPLAY_RECORD_BYTES);
+                var output=read(SpatialNative.buffers(bridge,slot)[1],STORM_DISPLAY_HEADER_BYTES+8*STORM_DISPLAY_RECORD_BYTES);
                 check(output.getLong(16)==sequence&&output.getLong(24)==100+slot
-                        &&output.getLong(32)==(slot<2?1:2)&&output.getInt(8)==(slot<2?1:0),"Storm display publication identity");
-                if(slot==0)for(int axis=0;axis<3;axis++)
-                    firstPosition[axis]=output.getFloat(STORM_DISPLAY_HEADER_BYTES+axis*Float.BYTES);
+                        &&output.getLong(32)==(slot<2?1:2)&&output.getInt(8)==(slot<2?8:0),"Storm display publication identity and production packet population");
+                int member=STORM_DISPLAY_HEADER_BYTES;
+                while(member<output.capacity()&&output.getInt(member+64)!=0)member+=STORM_DISPLAY_RECORD_BYTES;
+                check(slot==2||member<output.capacity(),"Native publication includes member zero");
+                if(slot==0)for(int axis=0;axis<3;axis++)firstPosition[axis]=output.getFloat(member+axis*Float.BYTES);
                 if(slot==1){
                     float displacement=0;
                     for(int axis=0;axis<3;axis++){
-                        float delta=output.getFloat(STORM_DISPLAY_HEADER_BYTES+axis*Float.BYTES)-firstPosition[axis];
+                        float delta=output.getFloat(member+axis*Float.BYTES)-firstPosition[axis];
                         displacement+=delta*delta;
                     }
                     check(displacement>1e-8f&&displacement<.35f*.35f,"World clock correction preserves one step of member motion");
@@ -465,6 +487,72 @@ public final class ParticleEngineGpuValidation {
         packet.putInt(at,op).putInt(at+4,member).putInt(at+8,span).putInt(at+12,flags)
                 .putLong(at+16,1).putLong(at+24,scope);
         return at+32;
+    }
+    static void nativeDomePartialTerrain(List<Object> cases)throws Exception{
+        SpatialNative.load(Path.of(".gradle/particle-rt/build"));
+        var createBridge=stormMethod("createStormDisplayBuffers",long.class,int.class);
+        var create=stormMethod("createStormControl",int.class,long.class,int.class);
+        var install=stormMethod("installStormDome",long.class,float[].class,int[].class,int[].class);
+        var submit=stormMethod("submitStormTick",long.class,ByteBuffer.class,int.class,int.class,boolean.class);
+        var poll=stormMethod("pollStormTick",long.class,long.class);
+        var consume=stormMethod("consumeStormTick",long.class,long.class);
+        var copy=stormMethod("copyStormDomeBatch",long.class,long.class,ByteBuffer.class);
+        var diagnostics=stormMethod("stormControlDiagnostics",long.class);
+        var close=stormMethod("closeStormControl",long.class);
+        var records=new float[STORM_DOME_MEMBERS*STORM_DOME_RECORD_WORDS];var flows=new int[STORM_DOME_MEMBERS];
+        for(int i=0;i<records.length;i++)records[i]=DomeTemplate.word(4+i);
+        for(int i=0;i<flows.length;i++)flows[i]=DomeTemplate.flowIndex(i);
+        int peer=DomeTemplate.ringCount(0)/2;
+        check(peer>0&&flows[0]==flows[peer],"Dome terrain test uses two ranks in one flow");
+        var hit=DomeTemplate.gatherPoint(0,0).add(0,63.7,0);
+        int x=(int)Math.floor(hit.x),y=(int)Math.floor(hit.y+.3),z=(int)Math.floor(hit.z);
+        var pages=new HashMap<StormCollisionPages.Section,Integer>();
+        for(int sx=-4;sx<=4;sx++)for(int sy=0;sy<9;sy++)for(int sz=-4;sz<=4;sz++)
+            pages.put(new StormCollisionPages.Section(sx,sy,sz),StormCollisionPages.AIR);
+        pages.put(new StormCollisionPages.Section(x>>4,y>>4,z>>4),0);
+        int[] terrain=StormCollisionPages.table(pages);
+        int bit=(x&15)|((z&15)<<4)|((y&15)<<8);
+        long bridge=(long)createBridge.invoke(null,STORM_DISPLAY_HEADER_BYTES+2L*STORM_DISPLAY_RECORD_BYTES+
+                (long)STORM_COLUMN_SLOTS*STORM_COLUMN_MEMBERS*STORM_DISPLAY_COLUMN_BYTES,RT_SLOTS);
+        long worker=(long)create.invoke(null,2,bridge,2),until=System.nanoTime()+25_000_000_000L;
+        boolean retired=false,ready=false,paused=false;
+        try{
+            install.invoke(null,worker,records,DomeTemplate.keys(),flows);
+            var batch=bytes(STORM_DOME_BATCH_BYTES);
+            for(long seq=1;seq<=320&&!(paused&&retired&&ready);seq++){
+                int commands=seq==1?4:0;
+                int terrainBytes=seq==1?terrain.length*4+STORM_TERRAIN_PAGE_BYTES:0;
+                var input=bytes(STORM_TICK_HEADER_BYTES+commands*STORM_CONTROL_BYTES+terrainBytes);
+                input.put(0,stormTick(seq,seq,100+seq,1,2,false),0,STORM_TICK_HEADER_BYTES);
+                input.putInt(8,commands).putInt(40,3).putFloat(64,0);
+                if(seq==1){
+                    input.putInt(88,terrain.length/4).putInt(92,1);
+                    stormCommand(input,0,STORM_CONTROL_SPAWN,0,2,0,0);
+                    int at=stormCommand(input,1,STORM_CONTROL_DOME_STATE,0,1,STORM_DOME_CONTROL_CREATE|1,79);
+                    input.putFloat(at+4,64).putFloat(at+16,input.getFloat(80)).putFloat(at+20,20)
+                            .putFloat(at+24,80).putFloat(at+28,32);
+                    stormCommand(input,2,STORM_CONTROL_DOME_ASSIGN,0,1,0,79);
+                    stormCommand(input,3,STORM_CONTROL_DOME_ASSIGN,1,1,peer,79);
+                    int base=STORM_TICK_HEADER_BYTES+commands*STORM_CONTROL_BYTES;
+                    input.asIntBuffer().put(base/4,terrain);
+                    input.putInt(base+terrain.length*4+(bit>>>5)*4,1<<(bit&31));
+                }
+                check((boolean)submit.invoke(null,worker,input,input.capacity(),-1,false),"partial Dome tick queued");
+                int status;
+                while((status=(int)poll.invoke(null,worker,seq))==1){check(System.nanoTime()<until,"partial Dome completion deadline");Thread.sleep(1);}
+                boolean copied=status==2&&(boolean)copy.invoke(null,worker,seq,batch);
+                consume.invoke(null,worker,seq);
+                check(copied,"partial Dome tick failed "+diagnostics.invoke(null,worker));
+                paused|=Float.isFinite(batch.getFloat(STORM_DOME_PAUSED_OFFSET));
+                retired|=(batch.getInt(STORM_DOME_COMPLETED_OFFSET)&1)!=0;
+                ready|=(batch.getInt(STORM_DOME_READY_OFFSET+(peer>>>5)*4)&(1<<(peer&31)))!=0;
+            }
+            check(paused&&retired&&ready,"partial Dome should pause the flow, release the blocked rank and ready the clear rank");
+        }finally{
+            while(!(boolean)close.invoke(null,worker)){check(System.nanoTime()<until,"partial Dome worker retirement");Thread.sleep(1);}
+            SpatialNative.closeBuffers(bridge);
+        }
+        cases.add(Map.of("case","Native Dome shares a paused flow between blocked and ready ranks","passed",true));
     }
     static void nativeFeatherImpact(List<Object> cases)throws Exception{
         SpatialNative.load(Path.of(".gradle/particle-rt/build"));
@@ -657,6 +745,7 @@ public final class ParticleEngineGpuValidation {
         int p=program("pose_cache.comp");
         int visibility=program("spatial/visibility.comp");
         com.iridium126.createmanaindustry.client.gpu.shader.GpuProgramContract.verify(visibility,"spatial/visibility.comp");
+        cameraOpaqueEnvelope(visibility,cases);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuProgramContract.installSamplers(p);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuProgramContract.verify(p,"pose_cache.comp");
         int modelOffset=ParticleBuffers.IDX_CNT_MODELOP*Integer.BYTES;
@@ -702,16 +791,40 @@ public final class ParticleEngineGpuValidation {
             GL20.glDeleteProgram(p);GL20.glDeleteProgram(visibility);
         }
     }
+    static void cameraOpaqueEnvelope(int program,List<Object> cases){
+        int bounds=buffer(bytes(32784)),masks=buffer(bytes(32+1024*48)),packet=buffer(bytes(128+1024*64));
+        try{
+            bind(1,bounds);bind(3,packet);bind(6,masks);GL20.glUseProgram(program);
+            ui(program,"phase",0);GL43.glDispatchCompute(16,1,1);GL42.glMemoryBarrier(GL42.GL_ALL_BARRIER_BITS);
+            var group=bytes(32);
+            for(int axis=0;axis<3;axis++)group.putInt(axis*4,~Float.floatToRawIntBits(-.25f))
+                    .putInt(16+axis*4,Float.floatToRawIntBits(.25f)^0x80000000);
+            group.putInt(12,1);GL45.glNamedBufferSubData(bounds,0,group);
+            GL41.glProgramUniform1i(program,GL20.glGetUniformLocation(program,"filterOpaque"),1);
+            GL41.glProgramUniform3f(program,GL20.glGetUniformLocation(program,"camera"),0,0,8);
+            for(int sample=0;sample<3;sample++){
+                boolean light=sample==2;float extent=sample==1?0:20;
+                GL41.glProgramUniform1i(program,GL20.glGetUniformLocation(program,"shadowEnabled"),light?1:0);
+                GL41.glProgramUniform3f(program,GL20.glGetUniformLocation(program,"opaqueMin"),extent-1,-1,4);
+                GL41.glProgramUniform3f(program,GL20.glGetUniformLocation(program,"opaqueMax"),extent+1,1,6);
+                GL45.glNamedBufferSubData(bounds,32768,bytes(4));
+                ui(program,"phase",2);GL43.glDispatchCompute(16,1,1);
+                check(read(bounds,32772).getInt(32768)==(sample==1?1:0),"camera candidate count after opaque extent test");
+                check(read(packet,192).getInt(128+44)==(light?257:sample==1?1:0),"light selection is independent from camera coverage");
+            }
+            cases.add(Map.of("case","Camera proof candidates use opaque coverage; shadow remains independent","passed",true));
+        }finally{for(int buffer:new int[]{bounds,masks,packet})GL15.glDeleteBuffers(buffer);}
+    }
     public static void main(String[] args)throws Exception{
         Path out=Path.of(ParticleFixtureOptions.parse(args).getOrDefault("output","build/particle-engine/verify"));Files.createDirectories(out);var result=new LinkedHashMap<String,Object>();var cases=new ArrayList<Object>();result.put("passed",false);
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,6);long window=GLFW.glfwCreateWindow(32,32,"particle engine driver checks",0,0);GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
         try{
             compactPoses(cases);
             if(Arrays.asList(args).contains("--native-helix-only"))nativeHelixLaunch(cases);
-            else if(Arrays.asList(args).contains("--storm-timeline-only")){nativeStormTimeline(cases);nativeFeatherImpact(cases);}
+            else if(Arrays.asList(args).contains("--storm-timeline-only")){nativeStormTimeline(cases);nativeDomePartialTerrain(cases);nativeFeatherImpact(cases);}
             else{localCorrection(cases);contacts(cases);interpolation(cases);displayPublication(cases);featherPixels(cases);conservativeVisibility(cases,!Arrays.asList(args).contains("--gl-only"));glQueries(cases);geometry(cases,!Arrays.asList(args).contains("--gl-only"));for(String shader:List.of("spatial/motion.comp","update.comp","wavecontact.comp","dome_contacts.comp","dome_contact_control.comp","dome_contact_apply.comp","dome_contact_audit.comp","storm_projection.comp"))GL20.glDeleteProgram(program(shader));if(!Arrays.asList(args).contains("--gl-only")){nativeQueries(cases);nativeRing(cases);nativeWorkerQueue(cases);nativeStormTimeline(cases);nativeHelixLaunch(cases);}}
             if(!Arrays.asList(args).contains("--storm-timeline-only")&&!Arrays.asList(args).contains("--native-helix-only")
-                    &&!Arrays.asList(args).contains("--gl-only"))nativeFeatherImpact(cases);
+                    &&!Arrays.asList(args).contains("--gl-only")){nativeDomePartialTerrain(cases);nativeFeatherImpact(cases);}
             check(GL11.glGetError()==0,"GL state");result.put("passed",true);
         }finally{result.put("checks",checks);result.put("cases",cases);result.put("gpu",GL11.glGetString(GL11.GL_RENDERER));result.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("gpu.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
     }

@@ -215,7 +215,21 @@ void main() {
 #if !defined(CMI_KEYGEN_DOMAIN) || CMI_KEYGEN_DOMAIN == 2
     if(matId>=1.5&&matId<2.5&&(cmiRtVisibility(p0.xyz)&1u)==0u){cmiCountRtRejection();return;}
 #endif
-    if(isFeather){if(uFeatherEnabled){uint at=uint(atomicAdd(CMI_FEATHER_WORD(3),1));if(at<CMI_FEATHER_MAX)CMI_FEATHER_WORD(CMI_FEATHER_VISIBLE+at)=int(g);}return;}
+    if(isFeather){
+        if(uFeatherEnabled){
+            uint at=uint(atomicAdd(CMI_FEATHER_WORD(3),1));
+            if(at<CMI_FEATHER_MAX){
+                CMI_FEATHER_WORD(CMI_FEATHER_VISIBLE+at)=int(g);
+                // This is the display buffer. Its ground scratch list is free
+                // to hold visible draw ranks with a resolved leaf attachment.
+                if(p0.w<0.&&(floatBitsToUint(p3.z)&(1u<<18))!=0u){
+                    uint leaf=uint(atomicAdd(CMI_FEATHER_WORD(2),1));
+                    CMI_FEATHER_WORD(CMI_FEATHER_GROUND+leaf)=int(at);
+                }
+            }
+        }
+        return;
+    }
 
     if (matId < 0.5) {
         // ADDITIVE: dense permutation, order irrelevant

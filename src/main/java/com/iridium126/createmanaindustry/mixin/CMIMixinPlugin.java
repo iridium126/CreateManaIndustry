@@ -77,6 +77,8 @@ public class CMIMixinPlugin implements IMixinConfigPlugin {
             return isLoaded(HEX_MOD_ID);
 
         // Mixins targeting iris internals — disable when iris is absent
+        if (mixinClassName.contains(".iris.FeatherLeaf") || mixinClassName.contains(".sodium.FeatherLeaf"))
+            return isLoaded(IRIS_MOD_ID) && isSupportedVersion(SODIUM_MOD_ID, "0.8.13");
         if (mixinClassName.contains(".iris."))
             return isLoaded(IRIS_MOD_ID);
 

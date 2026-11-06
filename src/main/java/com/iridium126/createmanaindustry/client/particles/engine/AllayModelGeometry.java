@@ -49,6 +49,13 @@ public final class AllayModelGeometry {
      */
     public static final int VERTEX_FLOATS = 7;
 
+    public static float[] mergedVertices(float[] vertices) {
+        float[] packed = new float[vertices.length / VERTEX_FLOATS * 8];
+        for (int src = 0, dst = 0; src < vertices.length; src += VERTEX_FLOATS, dst += 8)
+            System.arraycopy(vertices, src, packed, dst, VERTEX_FLOATS);
+        return packed;
+    }
+
     /** Face normalAxis ids, matching the per-vertex attribute from {@link #face}.
      * Declared before the bake block so its cube() calls can use them. */
     static final int AXIS_EAST = 0, AXIS_WEST = 1, AXIS_UP = 2,

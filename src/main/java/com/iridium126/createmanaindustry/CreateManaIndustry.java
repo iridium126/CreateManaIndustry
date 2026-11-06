@@ -171,7 +171,7 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("25");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("26");
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket::handle);
         registrar.playToServer(com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket::handle);
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket::handle);

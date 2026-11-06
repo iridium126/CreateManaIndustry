@@ -19,6 +19,18 @@ final class StormProjectionGpu implements AutoCloseable {
     private long sequence, identity, resourceEpoch;
     private long shownSequence, shownIdentity;
     private long candidateSequence, candidateIdentity, candidateEpoch;
+    private final int[] playback=new int[2];
+    private final int[] playbackViews=new int[2];
+    private final NativeStormDisplayClock clock=new NativeStormDisplayClock();
+    private int playbackBank,playbackStamp;
+    private long candidateWorldTick;
+    private boolean writePlayback,samePlaybackIdentity;
+    private NativeStormDisplayClock.Transition transition;
+
+    NativeStormDisplayClock.View playback(double worldTick,boolean paused){
+        if(identity==0||playbackStamp==0)return null;
+        return new NativeStormDisplayClock.View(playbackViews[playbackBank],playbackStamp,clock.sample(worldTick,System.nanoTime(),paused));
+    }
 
     private void ensure(){
         if(program!=0)return;
@@ -34,6 +46,12 @@ final class StormProjectionGpu implements AutoCloseable {
             clearMap();
             args=GL45.glCreateBuffers();
             GL45.glNamedBufferData(args,12L,GL15.GL_DYNAMIC_COPY);
+            for(int i=0;i<playback.length;i++){
+                playback[i]=GL45.glCreateBuffers();
+                GL45.glNamedBufferData(playback[i],MEMBERS*64L,GL15.GL_DYNAMIC_COPY);
+                playbackViews[i]=GL45.glCreateTextures(GL31.GL_TEXTURE_BUFFER);
+                GL45.glTextureBuffer(playbackViews[i],GL30.GL_RGBA32UI,playback[i]);
+            }
         }catch(RuntimeException|LinkageError failure){close();throw failure;}
     }
     private void clearMap(){
@@ -41,7 +59,8 @@ final class StormProjectionGpu implements AutoCloseable {
     }
     void stage(ParticleBuffers gpu,int current,int previous,int emitter,NativeStormSimulation.FrozenDisplay display){
         if(emitter<0)display=null;
-        if(display==null&&identity==0)return;
+        writePlayback=false;
+        if(display==null&&identity==0){candidateSequence=candidateIdentity=0;return;}
         ensure();
         if(++stamp==0){clearMap();stamp=1;}
         candidateSequence=display==null?0:display.sequence();
@@ -49,6 +68,18 @@ final class StormProjectionGpu implements AutoCloseable {
         candidateEpoch=gpu.identityEpoch();
         boolean reusable=candidateIdentity!=0&&candidateIdentity==identity&&candidateEpoch==resourceEpoch;
         boolean continuous=reusable&&candidateSequence>=sequence&&candidateSequence-sequence<=1;
+        writePlayback=display!=null&&(!reusable||candidateSequence!=sequence);
+        if(writePlayback){
+            candidateWorldTick=display.gameTime();samePlaybackIdentity=reusable;
+            transition=clock.transition(candidateSequence,candidateWorldTick,reusable);
+            bind(13,playback[playbackBank]);bind(15,playback[1-playbackBank]);
+            GpuUniforms.setUIntUniform(program,"uPlaybackPriorStamp",reusable?playbackStamp:0);
+            GpuUniforms.setIntUniform(program,"uPlaybackContinuous",transition.continuous()?1:0);
+            GpuUniforms.setIntUniform(program,"uPlaybackNewAnchor",transition.newAnchor()?1:0);
+            var weights=transition.source();
+            GpuUniforms.uniform4f(program,GpuUniforms.loc(program,"uPlaybackSource"),weights.oldest(),weights.previous(),weights.current(),weights.anchor());
+        }
+        GpuUniforms.setIntUniform(program,"uPlaybackWrite",writePlayback?1:0);
         var starfall=StarfallGpuBuffers.INSTANCE;
         GpuBindings.program(program);
         gpu.bindParticleRead(0);gpu.bindParticleWrite(1);
@@ -89,7 +120,14 @@ final class StormProjectionGpu implements AutoCloseable {
         GpuUniforms.uniform2ui(program,GpuUniforms.loc(program,name),(int)value,(int)(value>>>32));
     }
     void commit(NativeStormSimulation owner){
+        if(writePlayback&&samePlaybackIdentity&&candidateSequence>sequence+1)
+            ClientFrameCapture.INSTANCE.nativeDisplayGap(candidateSequence-sequence-1);
         sequence=candidateSequence;identity=candidateIdentity;resourceEpoch=candidateEpoch;
+        if(writePlayback){
+            playbackBank=1-playbackBank;playbackStamp=stamp;
+            clock.commit(sequence,candidateWorldTick,samePlaybackIdentity,transition);
+            writePlayback=false;
+        }
         if(sequence==0)return;
         shownSequence=identity==shownIdentity?Math.max(shownSequence,sequence):sequence;
         shownIdentity=identity;
@@ -97,6 +135,11 @@ final class StormProjectionGpu implements AutoCloseable {
     }
     @Override public void close(){
         GpuPrograms.delete(program);GpuBufferNames.delete(map);GpuBufferNames.delete(args);
+        for(int i=0;i<playback.length;i++){
+            com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(playbackViews[i]);playbackViews[i]=0;
+            GpuBufferNames.delete(playback[i]);playback[i]=0;
+        }
+        playbackBank=playbackStamp=0;writePlayback=false;
         program=map=args=stamp=0;sequence=identity=resourceEpoch=candidateSequence=candidateIdentity=candidateEpoch=0;
         shownSequence=shownIdentity=0;
     }

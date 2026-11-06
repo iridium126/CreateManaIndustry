@@ -208,13 +208,17 @@ class StormControlSession {
         checked(cuEventDestroy(domeUploadDone));domeUploadDone=nullptr;
     }
     void validateHeader(const StormTick& input,size_t bytes) {
+        auto reject=[&](const char* reason){
+            throw std::runtime_error(std::string("Storm input ")+reason+" (sequence="+std::to_string(input.sequence)
+                +", logical tick="+std::to_string(input.tick)+", identity="+std::to_string(input.identity)+")");
+        };
         bool idleBoundary=!active&&input.identity>identity;
         bool tickOrder=!submitted||input.tick>tick&&(input.tick==tick+1||idleBoundary);
-        if(input.magic!=CMI_RESOURCE_STORM_TICK_MAGIC||input.abi!=CMI_RESOURCE_ABI
-            ||input.sequence!=submitted+1||input.tick>uint64_t(std::numeric_limits<int64_t>::max())
-            ||!tickOrder||input.identity==0||input.identity<identity
-            ||input.active>3||(input.active&2u&&!domeStaged)||input.population>capacity||input.seed>0xffffffu
-            ||input.controls>CMI_RESOURCE_STORM_MAX_CONTROLS
+        if(input.sequence!=submitted+1||!tickOrder||input.tick>uint64_t(std::numeric_limits<int64_t>::max()))reject("order");
+        if(input.identity==0||input.identity<identity||(submitted&&input.identity==identity&&(input.active&1u)&&!active)
+            ||(input.projectedSequence?(input.projectedIdentity!=input.identity||input.projectedSequence>=input.sequence):input.projectedIdentity!=0))reject("identity or display cursor");
+        if(!std::isfinite(input.seconds)||input.seconds<0.f||input.seconds>=104857.6f)reject("world clock");
+        if(input.magic!=CMI_RESOURCE_STORM_TICK_MAGIC||input.abi!=CMI_RESOURCE_ABI||input.controls>CMI_RESOURCE_STORM_MAX_CONTROLS
             ||input.terrainRows>CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS||input.terrainPages>CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES
             ||(input.terrainRows==0?input.terrainPages!=0:input.terrainRows<16||(input.terrainRows&(input.terrainRows-1))!=0)
             ||input.playerCount>CMI_RESOURCE_STORM_PLAYER_LIMIT||input.positionSnapshot>1u
@@ -222,19 +226,16 @@ class StormControlSession {
             ||input.featherImpacts>1u
             ||(input.positionSnapshot&&!input.playerCount)||(!(input.active&1u)&&(input.playerCount||input.columnCaptureCount))
             ||bytes!=sizeof(StormTick)+commandBytes(input.controls)+rowBytes(input.terrainRows)+cellBytes(input.terrainPages)
-                +playerBytes(input.playerCount)
-            ||(!(input.active&1u)&&input.population)
-            ||(submitted&&input.identity==identity&&(input.active&1u)&&!active)
+                +playerBytes(input.playerCount))reject("layout or feedback counts");
+        if(input.active>3||(input.active&2u&&!domeStaged)||input.population>capacity||input.seed>0xffffffu||(!(input.active&1u)&&input.population)
             ||!std::isfinite(input.centerX)||std::abs(input.centerX)>31000000.f
             ||!std::isfinite(input.centerY)||std::abs(input.centerY)>31000000.f
             ||!std::isfinite(input.centerZ)||std::abs(input.centerZ)>31000000.f
             ||!std::isfinite(input.radius)||input.radius<2.f||input.radius>4096.f
             ||!std::isfinite(input.speed)||input.speed<.5f||input.speed>128.f
             ||!std::isfinite(input.rotation)||!std::isfinite(input.conveyor)||!std::isfinite(input.conveyorRate)
-            ||!std::isfinite(input.omega)||!std::isfinite(input.seconds)||input.seconds<0.f||input.seconds>=104857.6f
-            ||!targetPointValid(input.targetBefore)||!targetPointValid(input.targetAfter)||input.targetBefore.w!=0.f
-            ||(input.projectedSequence?(input.projectedIdentity!=input.identity||input.projectedSequence>=input.sequence):input.projectedIdentity!=0))
-            throw std::runtime_error("Invalid or out-of-order Storm tick");
+            ||!std::isfinite(input.omega)||!targetPointValid(input.targetBefore)||!targetPointValid(input.targetAfter)||input.targetBefore.w!=0.f)
+            reject("simulation parameters");
     }
     void validatePayload(const StormTick& input,const unsigned char* commands) {
         for(unsigned i=0;i<input.columnCaptureCount;i++){

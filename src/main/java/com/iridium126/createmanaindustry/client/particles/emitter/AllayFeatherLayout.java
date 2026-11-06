@@ -7,6 +7,7 @@ public final class AllayFeatherLayout {
     public static final int MAX_FEATHERS = 131072;
     public static final int BINDING = 20;
     public static final int HEADER = 32;
+    public static final int LEAF_DISPATCH = 24;
     public static final int GROUND = HEADER, VISIBLE = GROUND + MAX_FEATHERS;
     public static final int IMPULSE_SLOTS = 16384, IMPULSES = VISIBLE + MAX_FEATHERS;
     public static final int REQUEST_SLOTS = 8192, MAX_REQUESTS = 4096;

@@ -283,7 +283,8 @@ public class StormLodGpuValidation extends ModelPopulationGpuValidation {
   var opaqueField=AllayModelGeometry.class.getDeclaredField("OPAQUE_INDEX_COUNT");opaqueField.setAccessible(true);
   int bodyCount=AllayModelGeometry.BODY_OPAQUE_INDEX_COUNT;
   gpu.uploadModelGeometry((float[])geometryField.get(null),(int[])indicesField.get(null),bodyCount,opaqueField.getInt(null));
-  int geometry=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,ParticleBuffers.MODELGEO_BINDING);
+  var packedField=ParticleBuffers.class.getDeclaredField("mergedModelGeometry");packedField.setAccessible(true);
+  int geometry=packedField.getInt(gpu);
   int records=buffer(bytes(64).putFloat(0,-.2f).putFloat(8,-3).putFloat(12,.3f)
           .putFloat(32,.2f).putFloat(40,-3).putFloat(44,.3f));
   int order=buffer(bytes((N+1)*8).putInt(N*8,1));
@@ -301,7 +302,8 @@ public class StormLodGpuValidation extends ModelPopulationGpuValidation {
           .replace("layout(std430,binding=1) readonly buffer LodOrder { uvec2 order[]; };","uniform usamplerBuffer cmi_Sorted;")
           .replace("layout(std430,binding=BIND_MODELGEO) readonly buffer ModelGeo { float v[]; } geo;","uniform samplerBuffer cmi_Geo;")
           .replace("order[(cmi_LodPass==1?0u:131072u)+uint(gl_InstanceID)].x","texelFetch(cmi_Sorted,int((cmi_LodPass==1?0u:131072u)+uint(gl_InstanceID))).x")
-          .replaceAll("geo\\.v\\[([^]]+)\\]","texelFetch(cmi_Geo,int($1)).x")
+          .replace("local=vec3(geo.v[vb],geo.v[vb+1u],geo.v[vb+2u]);uv=vec2(geo.v[vb+3u],geo.v[vb+4u]);part=int(geo.v[vb+5u]);axis=int(geo.v[vb+6u]);",
+                  "vec4 a=texelFetch(cmi_Geo,gl_VertexID*2),b=texelFetch(cmi_Geo,gl_VertexID*2+1);local=a.xyz;uv=vec2(a.w,b.x);part=int(b.y);axis=int(b.z);")
           .replace("records[id*2u+1u]","texelFetch(cmi_Pool,int(id*2u+1u))")
           .replace("records[id*2u]","texelFetch(cmi_Pool,int(id*2u))");
   String prelude="#version 450 core\n"+ParticlePrograms.commonPrelude();
@@ -318,7 +320,7 @@ public class StormLodGpuValidation extends ModelPopulationGpuValidation {
    GL45.glBindTextureUnit(1,atlas);
    lod.bindNative();
    int[] buffers={geometry,records,gpu.particleDrawEmitterBufferId(),order};
-   int[] formats={GL30.GL_R32F,GL30.GL_RGBA32F,GL30.GL_RGBA32F,GL32.GL_RG32UI};
+   int[] formats={GL30.GL_RGBA32F,GL30.GL_RGBA32F,GL30.GL_RGBA32F,GL32.GL_RG32UI};
    for(int i=0;i<buffers.length;i++){
     GL13.glActiveTexture(GL13.GL_TEXTURE0+SAMPLER_MERGED_GEOMETRY+i);
     int texture=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);

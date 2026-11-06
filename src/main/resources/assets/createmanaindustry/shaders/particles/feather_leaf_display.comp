@@ -1,0 +1,104 @@
+#pragma cmi_include chunks/feather_quad.glsl
+#pragma cmi_include chunks/feather_leaf_surface.glsl
+
+layout(local_size_x=64) in;
+layout(std430, binding=0) readonly buffer FeatherParticles {vec4 particles[];};
+layout(std430, binding=1) readonly buffer FeatherVisible {int visible[];};
+layout(std430, binding=2) readonly buffer FeatherLeafSupport {ivec4 support[];};
+layout(std430, binding=3) buffer FeatherLeafDisplay {uvec4 outputRows[];};
+
+uniform uint cmi_LeafStamp;
+
+int cmiFeatherLeafRow(ivec3 block) {
+    uint hash=uint(block.x)*0x8da6b343u^uint(block.y)*0xd8163841u^uint(block.z)*0xcb1ab31fu;
+    hash ^= hash>>16u;
+    for (uint i=0u; i<8u; i++) {
+        ivec4 row=support[(hash+i)&(CMI_LEAF_SUPPORT_ROWS-1u)];
+        if (row.w==0) break;
+        if (all(equal(row.xyz,block))) return row.w;
+    }
+    return 0;
+}
+
+void cmiFeatherSplit(uint rank, vec2 points[4], float sides[4]) {
+    // Only the uncommon diagonal crossings need another draw instance.
+    uint instance=atomicAdd(outputRows[0].y,1u);
+    outputRows[rank+2u].y=floatBitsToUint(1.);
+    uint destination=CMI_LEAF_SPLIT_BASE+CMI_LEAF_SPLIT_STRIDE*instance;
+    vec2 counts;
+    for (uint triangle=0u; triangle<2u; triangle++) {
+        vec2 polygon[6]=vec2[6](vec2(0),vec2(0),vec2(0),vec2(0),vec2(0),vec2(0));
+        int count=0;
+        for (int i=0; i<4; i++) {
+            int j=(i+1)&3;
+            float a=sides[i], b=sides[j];
+            if ((triangle==0u ? a>=0. : a<=0.)) polygon[count++]=points[i];
+            if ((a<0. && b>0.) || (a>0. && b<0.)) {
+                polygon[count++]=mix(points[i],points[j],a/(a-b));
+            }
+        }
+        counts[triangle]=float(count);
+        for (uint pair=0u; pair<3u; pair++) {
+            outputRows[destination+1u+3u*triangle+pair]=
+                    floatBitsToUint(vec4(polygon[2u*pair],polygon[2u*pair+1u]));
+        }
+    }
+    outputRows[destination]=floatBitsToUint(vec4(float(rank),counts,0.));
+}
+
+void main() {
+    uint candidate=gl_GlobalInvocationID.x;
+    uint count=uint(visible[2]);
+    if (candidate>=count) return;
+    if (candidate==0u) {
+        vec4 jitter=cmiTerrainLeafJitter();
+        outputRows[1]=floatBitsToUint(any(isnan(jitter))||any(isinf(jitter))?vec4(0):jitter);
+    }
+    uint rank=uint(visible[CMI_LEAF_GROUND_OFFSET+candidate]);
+    uint slot=uint(visible[CMI_LEAF_VISIBLE_OFFSET+rank])*4u;
+    vec4 feather=particles[slot];
+    if (feather.w>=0. || (floatBitsToUint(particles[slot+3u].z)&(1u<<18))==0u) return;
+    ivec3 block=cmiFeatherSupportBlock(feather.xyz);
+    int row=cmiFeatherLeafRow(block);
+    if (row<8) return;
+    uint face=uint((row>>2)-2);
+    uint base=CMI_LEAF_FACE_BASE+9u*face;
+    uint source=CMI_LEAF_SUPPORT_ROWS+4u*face;
+    outputRows[rank+2u]=floatBitsToUint(vec4(float(base),0.,float(cmi_LeafStamp),float(row&3)));
+    vec3 origin=vec3(block);
+    vec2 a=intBitsToFloat(support[source]).xz;
+    vec2 b=intBitsToFloat(support[source+1u]).xz;
+    vec2 c=intBitsToFloat(support[source+2u]).xz;
+    if (atomicExchange(outputRows[base].x,cmi_LeafStamp)!=cmi_LeafStamp) {
+        vec3 moved[4];
+        for (uint corner=0u; corner<4u; corner++) {
+            vec4 rest=intBitsToFloat(support[source+corner]);
+            vec3 relative=vec3(block-cmi_LeafCameraBlock)-cmi_LeafCameraFraction+rest.xyz;
+            vec3 delta=cmiTerrainLeafOffset(row&3,relative+cameraPosition,rest.w/240.);
+            if (any(isnan(delta))||any(isinf(delta))) delta=vec3(0);
+            moved[corner]=rest.xyz+delta;
+            outputRows[base+1u+corner]=floatBitsToUint(rest);
+            outputRows[base+5u+corner]=floatBitsToUint(vec4(moved[corner],0.));
+        }
+        vec3 n0=normalize(cross(moved[1]-moved[0],moved[2]-moved[0]));
+        vec3 n1=normalize(cross(moved[2]-moved[0],moved[3]-moved[0]));
+        if (n0.y<0.) n0=-n0;
+        if (n1.y<0.) n1=-n1;
+        vec3 bisector=normalize(n0+n1);
+        outputRows[base].yzw=floatBitsToUint(bisector/max(.001,dot(bisector,n0)));
+    }
+    vec2 center=feather.xz-origin.xz;
+    // The diagonal of the unit support square has length sqrt(2).
+    // Its signed cross product cannot vary across this sprite by more than its width.
+    if (abs(cmiFeatherDiagonal(center,a,b,c))>=.15*abs(feather.w)) return;
+    const vec2 points[4]=vec2[4](vec2(0,0),vec2(1,0),vec2(1,1),vec2(0,1));
+    float roll=particles[slot+1u].w;
+    float sides[4];
+    float minimum=1., maximum=-1.;
+    for (int i=0; i<4; i++) {
+        sides[i]=cmiFeatherDiagonal(center+cmiFeatherQuadOffset(feather.w,roll,points[i]),a,b,c);
+        minimum=min(minimum,sides[i]);
+        maximum=max(maximum,sides[i]);
+    }
+    if (minimum<0. && maximum>0.) cmiFeatherSplit(rank,points,sides);
+}

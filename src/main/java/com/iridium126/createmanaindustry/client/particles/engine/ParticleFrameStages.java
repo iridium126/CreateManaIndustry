@@ -33,8 +33,14 @@ public final class ParticleFrameStages {
     public static void draw(String label,Runnable draw){
         if(!GpuTimingObserver.active()){draw.run();return;}
         var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;
+        var publication=scene.publication();
+        draw(label,publication==null?-1:publication.generation(),draw);
+    }
+    public static void draw(String label,long generation,Runnable draw){
+        if(!GpuTimingObserver.active()){draw.run();return;}
+        var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;
         var timer=timers.computeIfAbsent(label,key->new GpuPassTelemetry().named(key));timer.poll();
-        var publication=scene.publication();timer.begin(true,true,scene.renderFrameToken(),publication==null?-1:publication.generation());boolean success=false;
+        timer.begin(true,true,scene.renderFrameToken(),generation);boolean success=false;
         try{draw.run();success=true;}finally{timer.end(success);}
     }
     public static void poll(){timers.values().forEach(GpuPassTelemetry::poll);}

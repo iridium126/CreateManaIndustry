@@ -27,6 +27,10 @@ public final class RtRenderVisibility implements AutoCloseable {
     private final Vector3f submittedLight=new Vector3f();
     private boolean submittedShadow;
     private boolean failed;
+    private GpuReadbackBuffer queryCount;
+    private final java.nio.ByteBuffer countBytes=org.lwjgl.BufferUtils.createByteBuffer(4);
+    private RtQueryWorker.Slot preparedCamera;
+    private long preparedFence,preparedTick,preparedScene,preparedTerrain;
     private String failure="";
     private final Vector3f light=new Vector3f();
     public RtRenderVisibility(Function<String,String> sources,RenderTerrain coverage,boolean lightView){
@@ -42,7 +46,8 @@ public final class RtRenderVisibility implements AutoCloseable {
         if(program!=0)return;
         program=GpuShaderCompiler.compute("RT render candidates","#version 450 core\n"+ParticlePrograms.commonPrelude()+sources.apply("spatial/visibility.comp"));
         GpuProgramContract.verify(program,"spatial/visibility.comp");
-        bounds=buffer(GROUPS*32L);masks=buffer(32+GROUPS*48L);
+        bounds=buffer(GROUPS*32L+16);masks=buffer(32+GROUPS*48L);
+        if(!lightView)queryCount=new GpuReadbackBuffer(4);
         long bytes=128L+ROWS*64L;historyInput=buffer(bytes);historyOutput=buffer(bytes);
     }
     private void pair(String name,long value){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform2ui(program,GpuUniforms.loc(program,name),(int)value,(int)(value>>>32));}
@@ -51,6 +56,22 @@ public final class RtRenderVisibility implements AutoCloseable {
     private static void bind(int at,int value){GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,at,value);}
     private static void barrier(){GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_COMMAND_BARRIER_BIT);}
     private void phase(int value,int groups){ui("phase",value);GpuReplayCommands.dispatchCompute(groups,1,1);barrier();}
+    private void submitPreparedCamera(long scene,SpatialTerrain terrain){
+        if(preparedCamera==null)return;
+        int status=GL32.glClientWaitSync(preparedFence,0,0);
+        if(status==GL32.GL_TIMEOUT_EXPIRED)return;
+        if(status==GL32.GL_WAIT_FAILED)throw new IllegalStateException("Camera candidate fence failed");
+        GL32.glDeleteSync(preparedFence);preparedFence=0;
+        var slot=preparedCamera;preparedCamera=null;
+        countBytes.clear();queryCount.readCompleted(0,4,countBytes);
+        if(scene!=preparedScene||terrain.revision()!=preparedTerrain||countBytes.getInt(0)==0){
+            worker.cancel(slot);
+            if(countBytes.getInt(0)==0)ClientFrameCapture.INSTANCE.emptyCameraQuery();
+        }else{
+            worker.terrain(scene,terrain);
+            worker.submit(slot,preparedTick,scene,1,ROWS,terrain.count());
+        }
+    }
     public int prepare(ParticleBuffers gpu,int pool,int counter,int emitters,int dispatch,long generation,float time,
                        Vec3 camera,boolean enabled,Vector3f ray,float[] planes){
         RtQueryWorker.retire();
@@ -61,6 +82,7 @@ public final class RtRenderVisibility implements AutoCloseable {
             var terrain=coverage.terrain();long scene=coverage.scene();long tick=++frame;
             if(worker==null&&terrain.count()==0)return 0;
             allocate();if(worker==null||program==0)return 0;
+            if(!lightView)submitPreparedCamera(scene,terrain);
             GpuBindings.program(program);
             bind(4,historyInput);bind(5,historyOutput);
             var accepted=worker.take(tick,scene,1);
@@ -89,13 +111,26 @@ public final class RtRenderVisibility implements AutoCloseable {
             boolean needsQuery=submittedGeneration!=generation||submittedScene!=scene||submittedTerrain!=terrain.revision()||submittedCamera==null
                     ||Math.abs(camera.x-submittedCamera.x)>.125||Math.abs(camera.y-submittedCamera.y)>.125||Math.abs(camera.z-submittedCamera.z)>.125
                     ||lightView!=submittedShadow||Math.abs(light.x-submittedLight.x)>.0005f||Math.abs(light.y-submittedLight.y)>.0005f||Math.abs(light.z-submittedLight.z)>.0005f;
-            if(!worker.failed()&&needsQuery){
+            if(!worker.failed()&&needsQuery&&preparedCamera==null){
                 var slot=worker.acquire(tick,scene,1);
                 if(slot!=null){
-                    worker.terrain(scene,terrain);bind(3,slot.input);pair("nonce",slot.nonce);pair("epoch",epoch);pair("sourceTick",tick);pair("scene",scene);
+                    bind(3,slot.input);pair("nonce",slot.nonce);pair("epoch",epoch);pair("sourceTick",tick);pair("scene",scene);
+                    flag("filterOpaque",!lightView);
+                    if(!lightView){
+                        float[] a=terrain.opaqueBounds();
+                        GpuUniforms.setFloatUniform(program,"opaqueMin",a[0],a[1],a[2]);
+                        GpuUniforms.setFloatUniform(program,"opaqueMax",a[3],a[4],a[5]);
+                    }
                     ui("terrainCount",terrain.count());ui("probes",2);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(program,GpuUniforms.loc(program,"timeSec"),time);
                     ParticleFrameStages.draw(lightView?"rt.light.packet":"rt.camera.packet",()->phase(2,ROWS/64));
-                    barrier();if(worker.submit(slot,tick,scene,1,ROWS,terrain.count())){
+                    boolean submitted;
+                    if(lightView){worker.terrain(scene,terrain);submitted=worker.submit(slot,tick,scene,1,ROWS,terrain.count());}
+                    else{
+                        GpuReplayCommands.copyNamedBufferSubData(bounds,queryCount.id(),GROUPS*32L,0,4);
+                        preparedCamera=slot;preparedTick=tick;preparedScene=scene;preparedTerrain=terrain.revision();
+                        preparedFence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);submitted=true;
+                    }
+                    if(submitted){
                         submittedGeneration=generation;submittedScene=scene;submittedTerrain=terrain.revision();submittedCamera=camera;submittedLight.set(light);submittedShadow=lightView;
                     }
                 }
@@ -109,8 +144,10 @@ public final class RtRenderVisibility implements AutoCloseable {
     }
     public String status(){return "render="+(failed?"rt-failed":worker==null?"uninitialized":"rt")+" "+failure+(worker==null?"":" "+worker.description());}
     public void stopWorker(){
+        if(preparedFence!=0)GL32.glDeleteSync(preparedFence);
+        preparedFence=0;preparedCamera=null;
         if(worker!=null)worker.close();worker=null;
         historyScene=historyTerrain=submittedGeneration=submittedScene=submittedTerrain=Long.MIN_VALUE;submittedCamera=null;
     }
-    @Override public void close(){stopWorker();for(int id:new int[]{bounds,masks,historyInput,historyOutput})GpuBufferNames.delete(id);GpuPrograms.delete(program);program=bounds=masks=historyInput=historyOutput=0;failed=false;failure="";}
+    @Override public void close(){stopWorker();if(queryCount!=null)queryCount.close();queryCount=null;for(int id:new int[]{bounds,masks,historyInput,historyOutput})GpuBufferNames.delete(id);GpuPrograms.delete(program);program=bounds=masks=historyInput=historyOutput=0;failed=false;failure="";}
 }

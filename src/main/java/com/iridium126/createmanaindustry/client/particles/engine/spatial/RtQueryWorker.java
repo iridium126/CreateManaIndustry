@@ -83,6 +83,7 @@ public final class RtQueryWorker implements AutoCloseable {
     public boolean submit(Slot slot,long tick,long scene,int kind){
         return submit(slot,tick,scene,kind,capacity,terrainCapacity);
     }
+    void cancel(Slot slot){ring.cancel(slot.ticket);slot.ticket=null;}
     public boolean submit(Slot slot,long tick,long scene,int kind,int members,int terrain){
         int index=Arrays.asList(slots).indexOf(slot);
         if(index<0||slot.live||slot.ticket==null)throw new IllegalStateException("RT slot ownership");

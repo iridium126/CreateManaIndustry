@@ -26,15 +26,16 @@ final class ModelMergeProductionFixture implements AutoCloseable {
         float[] geo=(float[])vertices.get(null);int[] mesh=(int[])indexField.get(null);indices=mesh.length;
         body=AllayModelGeometry.BODY_OPAQUE_INDEX_COUNT;opaque=opaqueField.getInt(null);
         vao=GL30.glGenVertexArrays();GL30.glBindVertexArray(vao);GL15.glGenBuffers(buffers);GL11.glGenTextures(textures);
-        upload(7,packedGeometry(geo));upload(0,geo);upload(1,pool);upload(2,header);upload(3,order);upload(4,storm);upload(5,animation);upload(4,storm);upload(5,animation);
+        upload(7,AllayModelGeometry.mergedVertices(geo));upload(0,geo);upload(1,pool);upload(2,header);upload(3,order);upload(4,storm);upload(5,animation);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER,buffers[6]);GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER,mesh,GL15.GL_STATIC_DRAW);
         for(int i=0;i<7;i++){GL13.glActiveTexture(GL13.GL_TEXTURE10+i);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,textures[i]);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,new int[]{GL30.GL_R32F,GL30.GL_RGBA32F,GL30.GL_RGBA32F,GL32.GL_RG32UI,GL30.GL_R32UI,GL30.GL_RGBA32UI,GL30.GL_RGBA32F}[i],buffers[i==6?7:i]);}
     }
-    static float[] packedGeometry(float[] source){float[] result=new float[source.length/7*8];for(int i=0,j=0;i<source.length;i+=7,j+=8)System.arraycopy(source,i,result,j,7);return result;}
     void bindGeometry(int p){
         GL13.glActiveTexture(GL13.GL_TEXTURE10);
-        boolean reference=referencePrograms.contains(p)||!System.getProperty("cmi.model.draw.variant","full").equals("Geometry");
-        GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,reference?textures[0]:textures[6]);
+        String variant=System.getProperty("cmi.model.draw.variant","full");
+        boolean packed=referencePrograms.contains(p)||variant.equals("aa")?ModelMergeGpuValidation.PRODUCTION_DRAW:
+                variant.equals("Geometry")||variant.equals("full")&&!ModelMergeGpuValidation.READONLY_EXPERIMENT;
+        GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,packed?textures[6]:textures[0]);
     }
     void upload(int index,float[] data){GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,buffers[index]);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,data,GL15.GL_DYNAMIC_DRAW);}
     void upload(int index,int[] data){GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,buffers[index]);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,data,GL15.GL_DYNAMIC_DRAW);}

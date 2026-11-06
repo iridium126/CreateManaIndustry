@@ -655,7 +655,7 @@ extern "C" __global__ void advanceStormVortex(StormStepMember* members,StormTick
         unsigned slot=assignment->slot,rank=assignment->rank,flow=view.flows[rank];
         float pause=attack->paused[flow];
         auto status=bodyTerrain(collision,sample.point);
-        bool unknown=status==CorridorUnknown||navigation.unknown||(member.terrainState&StormCoverageUnknown)!=0u;
+        bool unknown=status==CorridorUnknown||(member.terrainState&StormCoverageUnknown)!=0u;
         bool clipped=(member.terrainState&StormTerrainClipped)!=0u;
         float error=length(position-sample.point);
         if(!unknown&&status==CorridorBlocked&&isinf(pause))
@@ -671,7 +671,7 @@ extern "C" __global__ void advanceStormVortex(StormStepMember* members,StormTick
             &&error<=.4f&&length(velocity-sample.velocity)<=1.f;
         assignment->tracked=ready&&error<.04f;
         assignment->streak=ready?min(3u,assignment->streak+1u):0u;
-        bool noProgress=!unknown&&error>.4f&&(clipped||navigation.blocked);
+        bool noProgress=!unknown&&!navigation.unknown&&error>.4f&&(clipped||navigation.blocked);
         if(noProgress){
             if(assignment->progressSeconds==0.f)assignment->initialError=error;
             assignment->progressSeconds+=dt;

@@ -4,7 +4,7 @@ struct Result {vec4 hint;uvec4 identity;vec4 position,velocity;};
 struct Bound {uvec4 lo,hi;};
 struct GroupProof {uvec4 flags;vec4 occluder,halfExtent;};
 layout(std430,binding=0) readonly buffer Pool {vec4 rows[];} pool;
-layout(std430,binding=1) buffer Bounds {Bound rows[];} bounds;
+layout(std430,binding=1) buffer Bounds {Bound rows[1024];uint cameraQueryCount;} bounds;
 layout(std430,binding=2) readonly buffer Count {uint live;} count;
 layout(std430,binding=3) buffer Packet {uint header[32];Row rows[];} packet;
 layout(std430,binding=4) buffer HistoryInput {uint header[32];Row rows[];} historyInput;
@@ -18,6 +18,8 @@ uniform uint phase,capacity,terrainCount,terrainCapacity,probes;
 uniform uvec2 nonce,epoch,sourceTick,scene;
 uniform float timeSec;
 uniform vec3 camera,shadowRay;
+uniform vec3 opaqueMin,opaqueMax;
+uniform bool filterOpaque;
 uniform vec4 cameraPlanes[6];
 uniform bool shadowEnabled,historyEnabled,mergeHistory,measure;
 uint groupOf(vec3 point){ivec3 cell=ivec3(floor(point/8.));return (uint(cell.x)*92837111u^uint(cell.y)*689287499u^uint(cell.z)*283923481u)&1023u;}
@@ -58,7 +60,7 @@ void main(){
   }
   return;
  }
- if(phase==0u){if(i<1024u){bounds.rows[i].lo=uvec4(0xffffffffu,0xffffffffu,0xffffffffu,0);bounds.rows[i].hi=uvec4(0);visible.rows[i].flags=uvec4(3,0,0,0);}if(i==0u){visible.light=vec4(shadowRay,shadowEnabled?1.:0.);visible.counts=uvec4(0);}return;}
+ if(phase==0u){if(i<1024u){bounds.rows[i].lo=uvec4(0xffffffffu,0xffffffffu,0xffffffffu,0);bounds.rows[i].hi=uvec4(0);visible.rows[i].flags=uvec4(3,0,0,0);}if(i==0u){visible.light=vec4(shadowRay,shadowEnabled?1.:0.);visible.counts=uvec4(0);bounds.cameraQueryCount=0u;}return;}
  if(phase==1u){
   if(!cmiPopulationIndexed(count.live,false)||i>=populationRead.modelCount)return;
   uint slot=cmiPopulationSlot(i,count.live,false);if(slot>=count.live)return;
@@ -80,10 +82,17 @@ void main(){
    uint viewMask=shadowEnabled?2u:1u;
    if(bound.lo.w!=0u&&(visible.rows[group].flags.x&viewMask)!=0u){vec3 lo=lower(bound),hi=upper(bound),center=(lo+hi)*.5;float radius=max(max((hi-lo).x,(hi-lo).y),(hi-lo).z)*.5+1.;
     if(radius<4096.){
-     if(!shadowEnabled){vec3 delta=center-camera;float distance=length(delta);if(distance>.001){row.position=vec4(camera,radius);row.velocity=vec4(.25,.25,.25,distance);row.preferred=vec4(delta/distance,0);row.identity.w=1u;}}
+     if(!shadowEnabled){
+      vec3 delta=center-camera;
+      vec3 spanLo=min(camera-vec3(.25),center-vec3(radius)),spanHi=max(camera+vec3(.25),center+vec3(radius));
+      bool covered=!filterOpaque||(all(greaterThanEqual(spanHi,opaqueMin))&&all(lessThanEqual(spanLo,opaqueMax)));
+      float distance=length(delta);
+      if(covered&&distance>.001){row.position=vec4(camera,radius);row.velocity=vec4(.25,.25,.25,distance);row.preferred=vec4(delta/distance,0);row.identity.w=1u;}
+     }
      else {row.position=vec4(center,radius);row.velocity=vec4(.001,.001,.001,1000000.);row.preferred=vec4(-shadowRay,0);row.identity.w=257u;}
     }
    }packet.rows[i]=row;
+   if(filterOpaque&&!shadowEnabled&&(row.identity.w&1u)!=0u)atomicAdd(bounds.cameraQueryCount,1u);
   }
   if(i==0u){for(uint k=0u;k<32u;k++)packet.header[k]=0u;packet.header[0]=0x41313149u;packet.header[1]=12u;packet.header[2]=nonce.x;packet.header[3]=nonce.y;packet.header[4]=epoch.x;packet.header[5]=epoch.y;packet.header[6]=sourceTick.x;packet.header[7]=sourceTick.y;uvec2 target=sourceTick+uvec2(1,0);if(target.x==0u)target.y++;packet.header[8]=target.x;packet.header[9]=target.y;packet.header[10]=1024u;packet.header[12]=floatBitsToUint(timeSec);packet.header[13]=floatBitsToUint(.05);packet.header[14]=floatBitsToUint(.1);packet.header[16]=scene.x;packet.header[17]=scene.y;packet.header[18]=1u;packet.header[19]=probes;packet.header[20]=1u;packet.header[28]=terrainCount;packet.header[29]=32u+1024u*16u;}return;
  }

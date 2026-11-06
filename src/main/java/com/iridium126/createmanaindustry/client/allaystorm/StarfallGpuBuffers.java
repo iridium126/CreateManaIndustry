@@ -73,7 +73,7 @@ public final class StarfallGpuBuffers implements AutoCloseable {
  private final int[] lookTargets=new int[68];
  public int lookTarget(int slot){return lookTargets[slot];}
  private final boolean[] enabled={false,false},combatEnabled={false,false};private boolean hasWaves;
- private boolean pending,clearStates;private int domainToken=1;
+ private boolean pending,clearStates,rejectedCandidate;private int domainToken=1;
  public StarfallGpuBuffers(){words[0]=domainToken;words[3]=Float.floatToRawIntBits(com.iridium126.createmanaindustry.content.allaystorm.StormMotion.INTERCEPT);resetFlowSource();}
  private void resetFlowSource(){for(int f=0;f<4*66;f++){words[DOME_FLOW_SOURCE+f*2]=0;words[DOME_FLOW_SOURCE+f*2+1]=Float.floatToRawIntBits(Float.POSITIVE_INFINITY);}}
  public static int completionOffset(int slot){return slot<4?slot*384:1536+(slot-4)*2;}
@@ -129,6 +129,7 @@ public final class StarfallGpuBuffers implements AutoCloseable {
   if(domeKeyUploaded==keys.length){words[2]=1;readyVersion++;}
  }
  public boolean navigationReady(){return allocatedStateWords>=STATE_WORDS&&data[0]!=0;}
+ public boolean navigationWork(){return hasDome()||StormCollisionRuntime.returning();}
  public boolean hasDome(){for(int slot=0;slot<4;slot++)if(words[HEADER+ROSTER+slot*WAVE_WORDS+20]==Float.floatToRawIntBits(1f)&&previousIds[slot]!=0)return true;return false;}
  public void rebuild(ClientboundStormWavePacket[] waves){
   for(int slot=0;slot<4;slot++){var p=slot<waves.length?waves[slot]:null;referencePackets[slot]=p!=null&&p.helixAttack()&&p.gatherFrames().length>0?p:null;}
@@ -206,7 +207,12 @@ public final class StarfallGpuBuffers implements AutoCloseable {
     for(int g=0;g<2;g++){int first=g==0?0:p.groupEnds()[0];put(b+56+g*8,0,0,0,h.thrust());put(b+60+g*8,h.finish(),p.groupEnds()[g]-first,h.radius(),h.charge());}
    }
    var finished=completed.get(p.waveId());words[b+19]=Float.floatToRawIntBits(p.members().length-(finished==null?0:finished.cardinality()));
-   if(slot<4&&!p.locked()&&!p.abort()&&p.helixAttack())for(int rank=0;rank<p.members().length;rank++)if(finished==null||!finished.get(rank)){words[GATHER_SOURCE+slot*4+1]++;words[GATHER_SOURCE+16+1536+slot*384+rank/32]|=1<<(rank&31);}
+   if(slot<4&&!p.locked()&&!p.abort()&&(p.dome()||p.helixAttack())){
+    for(int rank=0;rank<p.members().length;rank++)if(finished==null||!finished.get(rank)){
+     words[GATHER_SOURCE+slot*4+1]++;
+     words[GATHER_SOURCE+16+1536+slot*384+rank/32]|=1<<(rank&31);
+    }
+   }
    if(rosterChanged&&!p.abort())for(int rank=0,group=0;rank<p.members().length;rank++){
     while(rank>=p.groupEnds()[group])group++;
     int first=group==0?0:p.groupEnds()[group-1];
@@ -242,18 +248,23 @@ public final class StarfallGpuBuffers implements AutoCloseable {
   }finally{com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(scratch);}
   com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
  }
- private final boolean[] nativeBanks=new boolean[2];
+ private final boolean[] nativeBanks=new boolean[2], navigationBanks=new boolean[2];
+ private long copiedStateBytes;
  private final long[] nativeDisplayGameTimes={-1,-1};
  public void prepare(long generation){prepare(generation,false);}
  public void prepare(long generation,boolean nativeProjection){if(data[0]==0&&!hasWaves&&!hasOuter()&&!StormCollisionRuntime.active()&&!com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keysReady())return;
-  com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.ensure",()->{
+  com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.ensure",generation,()->{
   // Rejected frames may not reach the publication barrier. Buffer clears and
   // bank copies must wait for their earlier shader-storage writes as well.
   com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
   ensure();ensureDomeStateCapacity();ensureDomeKeys();if(clearStates){for(int buffer:state){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,buffer);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);}clearStates=false;}});
   int write=1-read;
   nativeBanks[write]=nativeProjection;nativeDisplayGameTimes[write]=-1;
-  com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.upload",()->{
+  navigationBanks[write]=!nativeProjection&&navigationWork();
+  boolean columns=false;
+  for(int slot=4;slot<previousIds.length;slot++)if(previousIds[slot]!=0){columns=true;break;}
+  boolean liveColumns=columns;
+  com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.upload",generation,()->{
   if(versions[write]!=version){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);
    if(rosterVersions[write]!=rosterVersion){upload.clear();upload.put(words,0,HEADER+ROSTER).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,upload);rosterVersions[write]=rosterVersion;uploadedBytes+=4L*(HEADER+ROSTER);upload.clear();upload.put(words,NAV_MEMBER_BY_RANK,4*12288).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,NAV_MEMBER_BY_RANK*4L,upload);uploadedBytes+=16L*12288;}
    if(gaussianVersions[write]!=gaussianVersion){gaussianVersions[write]=gaussianVersion;upload.clear();upload.put(words,GAUSSIAN,GAUSSIAN_WORDS).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,4L*GAUSSIAN,upload);uploadedBytes+=4L*GAUSSIAN_WORDS;}
@@ -265,31 +276,50 @@ public final class StarfallGpuBuffers implements AutoCloseable {
   if(ackVersions[write]!=ackVersion){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words,HOME_ACK,ROSTER/32).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,HOME_ACK*4L,upload);ackVersions[write]=ackVersion;uploadedBytes+=ROSTER/8;}
   });
   if(!nativeProjection){
-  com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.clear",()->{
-  GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,state[write]);
-  // A rejected frame may reuse its generation. Invalidate recovery scratch
-  // before any consumer; live curves/metadata are rebuilt or copied from read.
-  com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,COLUMN_ARC*4L,(COMPLETIONS-COLUMN_ARC)*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);
-  com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,COMPLETIONS*4L,COMPLETION_WORDS*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);
+  com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.clear",generation,()->{
+  GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,state[write]);
+  if(liveColumns)clearState(COLUMN_ARC,COMPLETIONS-COLUMN_ARC);
+  if(hasWaves||StormCollisionRuntime.returning())clearState(COMPLETIONS,COMPLETION_WORDS);
   });
-  com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.gather_copy",()->{
-  GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,data[write]);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,state[write]);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,GATHER_SOURCE*4L,GATHER_COUNTS*4L,GATHER_SOURCE_WORDS*4L);
+  if(hasWaves)com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.gather_copy",generation,()->{
+   GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,data[write]);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,state[write]);
+   com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,GATHER_SOURCE*4L,GATHER_COUNTS*4L,GATHER_SOURCE_WORDS*4L);
+   copiedStateBytes+=GATHER_SOURCE_WORDS*4L;
   });
-  com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.state_copy",()->{
-  if(allocatedStateWords>=STATE_WORDS){
-
-   GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,state[read]);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,DOME_FLOW_STATE*4L,DOME_FLOW_STATE*4L,DOME_FLOW_WORDS*4L);
-   com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,DOME_PATH_BASE*4L,DOME_PATH_BASE*4L,(OUTER_ARRIVALS-DOME_PATH_BASE)*4L);
-   if(hasOuter())com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,OUTER_ARRIVALS*4L,OUTER_ARRIVALS*4L,ROSTER*4L);
-   com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL31.GL_COPY_WRITE_BUFFER,GL30.GL_R32UI,(DOME_PATH_CONTROL+24)*4L,8,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.IntBuffer)null);
-   for(int slot=0;slot<4;slot++){int id=words[DOME_FLOW_SOURCE+slot*132];if(flowBankIds[read][slot]!=id||clearStates){upload.clear();upload.put(words,DOME_FLOW_SOURCE+slot*132,132).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL31.GL_COPY_WRITE_BUFFER,(DOME_FLOW_STATE+slot*132)*4L,upload);uploadedBytes+=528;}flowBankIds[write][slot]=id;}
+  com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.draw("starfall.prepare.state_copy",generation,()->{
+   GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,state[read]);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,state[write]);
+   if(!nativeBanks[read])copyState(DEPEN_MASK,OUTER_ARRIVALS-DEPEN_MASK);
+   else clearState(DEPEN_MASK,OUTER_ARRIVALS-DEPEN_MASK);
+   if(navigationBanks[write]){
+    if(navigationBanks[read])copyState(DOME_FLOW_STATE,DEPEN_MASK-DOME_FLOW_STATE);
+    else clearState(DOME_FLOW_STATE,DEPEN_MASK-DOME_FLOW_STATE);
+    clearState(DOME_PATH_CONTROL+24,2);
+   }else if(rejectedCandidate)copyState(DOME_FLOW_STATE,DEPEN_MASK-DOME_FLOW_STATE);
+   if(hasOuter())copyState(OUTER_ARRIVALS,ROSTER);
+   for(int slot=0;slot<4;slot++){
+    int id=words[DOME_FLOW_SOURCE+slot*132];
+    if(id!=0&&(!navigationBanks[read]||flowBankIds[read][slot]!=id)){
+     upload.clear();upload.put(words,DOME_FLOW_SOURCE+slot*132,132).flip();
+     com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL31.GL_COPY_WRITE_BUFFER,(DOME_FLOW_STATE+slot*132)*4L,upload);uploadedBytes+=528;
+    }
+    flowBankIds[write][slot]=id;
+   }
+  });
   }
-  });
-  }
+  rejectedCandidate=false;
   domeClockValid[write]=Double.isFinite(preciseDomeClock);if(domeClockValid[write])for(int slot=0;slot<4;slot++){int base=HEADER+ROSTER+slot*WAVE_WORDS;double elapsed=preciseDomeClock-Float.intBitsToFloat(words[base+4]);if(elapsed< -52428.8)elapsed+=104857.6;else if(elapsed>52428.8)elapsed-=104857.6;domeElapsed[write][slot]=(float)elapsed;}
   generations[write]=generation;combatEnabled[write]=hasWaves||StormCollisionRuntime.returning();enabled[write]=combatEnabled[write]||hasOuter();pending=true;
   com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);
  }
+ private void copyState(int start,int words){
+  long offset=start*4L,bytes=words*4L;
+  com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset,offset,bytes);
+  copiedStateBytes+=bytes;
+ }
+ private static void clearState(int start,int words){
+  com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL31.GL_COPY_WRITE_BUFFER,GL30.GL_R32UI,start*4L,words*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);
+ }
+ public long copiedStateBytes(){return copiedStateBytes;}
  public long uploadedBytes(){return uploadedBytes;}
  public void bindPathDispatch(){if(domePathDispatch==0){domePathDispatch=GL15.glGenBuffers();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,domePathDispatch);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.allocate(GL43.GL_SHADER_STORAGE_BUFFER,12,GL15.GL_DYNAMIC_COPY);}GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,29,domePathDispatch);}
  public boolean bind(boolean staged){int i=staged?1-read:read;boolean valid=data[i]!=0&&enabled[i]&&(staged?pending:generations[i]>=0);
@@ -359,8 +389,8 @@ public final class StarfallGpuBuffers implements AutoCloseable {
  public long committedGeneration(){return generations[read];}
  public int committedBuffer(){return generations[read]>=0&&combatEnabled[read]?data[read]:0;}
  public void commit(){if(pending){read=1-read;pending=false;}}
- public void abort(){pending=false;}
- public void invalidate(){Arrays.fill(combatEnabled,false);for(int member=0;member<ROSTER;member++)if(words[OUTER_DATA+member*4]!=0){words[OUTER_DATA+member*4]=0;outerDirty[0].set(member);outerDirty[1].set(member);}Arrays.fill(outerSerial,0);outerCount=0;Arrays.fill(referencePackets,null);for(int bank=0;bank<2;bank++){Arrays.fill(referenceBanks[bank],null);Arrays.fill(recoveries[bank],null);Arrays.fill(recoveryDirty[bank],true);}words[3]=Float.floatToRawIntBits(com.iridium126.createmanaindustry.content.allaystorm.StormMotion.INTERCEPT);Arrays.fill(columnOwners,0);Arrays.fill(columnRestoreTokens,0);Arrays.fill(columnWaiting,false);preciseDomeClock=Double.NaN;for(var ids:flowBankIds)Arrays.fill(ids,0);resetFlowSource();Arrays.fill(domeGatherIds,0);Arrays.fill(domeLocalLocks,Float.NaN);Arrays.fill(domeClockValid,false);Arrays.fill(axisIds,0);Arrays.fill(returningOwners,0);Arrays.fill(words,HOME_ACK,DOME_DATA,0);ackVersion++;completed.clear();Arrays.fill(lastAxes,0);Arrays.fill(lastSides,0);Arrays.fill(gaussianIds,0);Arrays.fill(gaussianMembers,null);Arrays.fill(gaussianVersions,-1);words[0]=++domainToken;words[1]=0;words[2]=domeKeyBuffer!=0&&domeKeyUploaded==com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keyCount()*2?1:0;Arrays.fill(readyColumns,false);readyVersion++;Arrays.fill(readyVersions,-1);clearStates=true;Arrays.fill(generations,-1);Arrays.fill(versions,-1);Arrays.fill(rosterVersions,-1);version++;pending=false;}
+ public void abort(){rejectedCandidate|=data[0]!=0;pending=false;}
+ public void invalidate(){Arrays.fill(combatEnabled,false);Arrays.fill(navigationBanks,false);for(int member=0;member<ROSTER;member++)if(words[OUTER_DATA+member*4]!=0){words[OUTER_DATA+member*4]=0;outerDirty[0].set(member);outerDirty[1].set(member);}Arrays.fill(outerSerial,0);outerCount=0;Arrays.fill(referencePackets,null);for(int bank=0;bank<2;bank++){Arrays.fill(referenceBanks[bank],null);Arrays.fill(recoveries[bank],null);Arrays.fill(recoveryDirty[bank],true);}words[3]=Float.floatToRawIntBits(com.iridium126.createmanaindustry.content.allaystorm.StormMotion.INTERCEPT);Arrays.fill(columnOwners,0);Arrays.fill(columnRestoreTokens,0);Arrays.fill(columnWaiting,false);preciseDomeClock=Double.NaN;for(var ids:flowBankIds)Arrays.fill(ids,0);resetFlowSource();Arrays.fill(domeGatherIds,0);Arrays.fill(domeLocalLocks,Float.NaN);Arrays.fill(domeClockValid,false);Arrays.fill(axisIds,0);Arrays.fill(returningOwners,0);Arrays.fill(words,HOME_ACK,DOME_DATA,0);ackVersion++;completed.clear();Arrays.fill(lastAxes,0);Arrays.fill(lastSides,0);Arrays.fill(gaussianIds,0);Arrays.fill(gaussianMembers,null);Arrays.fill(gaussianVersions,-1);words[0]=++domainToken;words[1]=0;words[2]=domeKeyBuffer!=0&&domeKeyUploaded==com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keyCount()*2?1:0;Arrays.fill(readyColumns,false);readyVersion++;Arrays.fill(readyVersions,-1);clearStates=true;Arrays.fill(generations,-1);Arrays.fill(versions,-1);Arrays.fill(rosterVersions,-1);version++;pending=false;}
  public long bytes(){return data[0]==0?0:8L*(DATA_WORDS+allocatedStateWords)+(domeKeyBuffer==0?0:8L*com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.keyCount())+(domePathDispatch==0?0:12);}
  @Override public void close(){if(domePathDispatch!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(domePathDispatch);domePathDispatch=0;if(domeKeyTexture!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(domeKeyTexture);if(domeKeyBuffer!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(domeKeyBuffer);domeKeyTexture=0;domeKeyBuffer=0;domeKeyUploaded=0;domeKeyFailed=false;for(int i=0;i<2;i++){if(data[i]!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(data[i]);if(state[i]!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(state[i]);if(textures[i]!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(textures[i]);if(stateTextures[i]!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(stateTextures[i]);data[i]=state[i]=textures[i]=stateTextures[i]=0;}if(upload!=null){MemoryUtil.memFree(upload);upload=null;}invalidate();}
 

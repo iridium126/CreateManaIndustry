@@ -1,5 +1,9 @@
 import com.iridium126.createmanaindustry.client.particles.shaderpack.*;
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackInventory;
+import com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout;
+import com.iridium126.createmanaindustry.client.particles.engine.FeatherLeafDisplayGpu;
+import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
+import com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms;
 import com.google.common.collect.ImmutableList;
 import net.irisshaders.iris.helpers.StringPair;
 import net.irisshaders.iris.shaderpack.include.*;
@@ -180,7 +184,7 @@ public final class ModelMaterialGpuValidation {
             check(GL11.glGetError()==0,"Iris DSA atlas operations");
         }finally{field.setInt(atlas,original);com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0,0);com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.bind(0,0);GL11.glDeleteTextures(sentinel);GL11.glDeleteTextures(loaded);}
     }
-    static float mergedFeatherVertices(String vertex,String fragment,String label)throws Exception{
+    static void mergedFeatherVertices(String vertex,String fragment,String label)throws Exception{
         var patched=TransformPatcher.patchVanilla(label,vertex,null,null,null,fragment,net.irisshaders.iris.gl.blending.AlphaTests.ONE_TENTH_ALPHA,false,true,new net.irisshaders.iris.gl.state.ShaderAttributeInputs(true,true,false,true,true),new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
         // Capture CMI's actual output before pack projection/temporal uniforms, which require a live world.
         String input=patched.get(PatchShaderType.VERTEX);check(input.contains("vec4 cmi_VertexLevel;"),"CMI feedback anchor");input=input.replace("vec4 cmi_VertexLevel;","out vec4 cmi_VertexLevel;");
@@ -197,7 +201,6 @@ public final class ModelMaterialGpuValidation {
         var metadata=org.lwjgl.BufferUtils.createByteBuffer((prefix+stride*2)*4);
         for(int bank=0;bank<2;bank++){int base=prefix+bank*stride;metadata.putInt((base+11)*4,6).putInt((base+12)*4,2);metadata.putInt((base+visible)*4,bank==0?1:2).putInt((base+visible+1)*4,bank==0?2:1);}
         int pool=GL15.glGenBuffers(),state=GL15.glGenBuffers(),feedback=GL15.glGenBuffers(),vao=GL30.glGenVertexArrays(),poolTex=GL11.glGenTextures(),stateTex=GL11.glGenTextures(),noise=GL11.glGenTextures();
-        float displacement=0;
         try{
             GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,pool);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,particles,GL15.GL_STATIC_DRAW);GL13.glActiveTexture(GL13.GL_TEXTURE11);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,poolTex);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_RGBA32F,pool);
             GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,state);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,metadata,GL15.GL_STATIC_DRAW);GL13.glActiveTexture(GL13.GL_TEXTURE13);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,stateTex);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL32.GL_RG32UI,state);
@@ -231,21 +234,9 @@ public final class ModelMaterialGpuValidation {
                 int base=prefix+bank*stride;integer(program,"cmi_FeatherWordBase",base);
                 var result=featherVertices(program,base,feedback,false);
                 for(int i=0;i<48;i++){float value=result.getFloat(i*4);check(Float.isFinite(value)&&Math.abs(value)<2,label+" read a MODEL sentinel through the feather index: "+value);}
-                if(sway){
-                    var moving=featherVertices(program,base,feedback,true);
-                    int ground=bank==0?0:96,flight=96-ground;
-                    float changed=0;
-                    for(int i=0;i<96;i+=4){
-                        check(moving.getFloat(flight+i)==result.getFloat(flight+i),label+" flight feather moved with leaves");
-                        changed+=Math.abs(moving.getFloat(ground+i)-result.getFloat(ground+i));
-                    }
-                    check(Float.isFinite(changed)&&changed>1e-5f,label+" support sway reaches the grounded feather vertices");
-                    displacement+=changed;
-                }
                 check(GL11.glGetError()==0,label+" indirect/TBO draw GL error");
             }
         }finally{GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);GL20.glUseProgram(0);GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);for(int t:new int[]{poolTex,stateTex,noise})GL11.glDeleteTextures(t);for(int b:new int[]{pool,state,feedback})GL15.glDeleteBuffers(b);}
-        return displacement;
     }
     private static java.nio.ByteBuffer featherVertices(int program,int base,int feedback,boolean sway){
         integer(program,"cmi_FeatherSwayEnabled",sway?1:0);
@@ -258,11 +249,206 @@ public final class ModelMaterialGpuValidation {
         GL15.glGetBufferSubData(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,0,result);
         return result;
     }
+
+    private static final class NativeLeafReference implements AutoCloseable {
+        final int program, vao, feedback;
+        NativeLeafReference(FeatherLeafSway.Plan leaf, String source) {
+            // Observe the native terrain result just after its own animation,
+            // before projection and pack-specific jitter.
+            String[] probe=switch(leaf.pack()){
+                case "Complementary"->new String[]{"(DoWave\\(position\\.xyz,\\s*mat\\);)","$1 cmiNativeLeaf=position.xyz;"};
+                case "Bliss"->new String[]{"(position\\s*=\\s*mat3\\(gbufferModelView\\)\\s*\\*\\s*worldpos)","cmiNativeLeaf=worldpos; $1"};
+                case "BSL"->new String[]{"(position\\.xyz\\s*=\\s*WavingBlocks\\([^;]+;)","$1 cmiNativeLeaf=position.xyz;"};
+                case "iterationT"->new String[]{"(worldPos\\.xyz\\s*-=\\s*cameraPosition\\.xyz;)","$1 cmiNativeLeaf=worldPos.xyz;"};
+                case "Photon"->new String[]{"(pos\\s*=\\s*pos\\s*-\\s*cameraPosition;)","$1 cmiNativeLeaf=pos;"};
+                case "Sildur’s"->new String[]{"(gl_Position\\s*=\\s*gl_ProjectionMatrix)","cmiNativeLeaf=position.xyz; $1"};
+                case "Solas"->new String[]{"(position\\.xyz\\s*=\\s*getWavingBlocks\\([^;]+;)","$1 cmiNativeLeaf=position.xyz;"};
+                case "Sundial Lite"->new String[]{"(worldPos\\s*-=\\s*waveOffset;)","$1 cmiNativeLeaf=worldPos;"};
+                default->throw new AssertionError(leaf.pack());
+            };
+            int main=source.indexOf("void main");
+            check(main>=0,leaf.pack()+" native terrain main");
+            String patchedMain=source.substring(main).replaceFirst(probe[0],probe[1]);
+            check(!patchedMain.equals(source.substring(main)),leaf.pack()+" native leaf instrumentation");
+            var version=Pattern.compile("(?m)^\\s*#version\\s+(\\d+)[^\\r\\n]*").matcher(source);
+            check(version.find(),leaf.pack()+" native terrain GLSL version");
+            String declaration=Integer.parseInt(version.group(1))<130?"varying vec3":"out vec3";
+            String instrumented=source.substring(0,version.end())+"\n"+declaration+" cmiNativeLeaf;\n"
+                    +source.substring(version.end(),main)+patchedMain;
+            var patched=TransformPatcher.patchVanilla("native-leaf",instrumented,null,null,null,null,
+                    net.irisshaders.iris.gl.blending.AlphaTests.ONE_TENTH_ALPHA,false,true,
+                    new net.irisshaders.iris.gl.state.ShaderAttributeInputs(true,true,false,true,true),
+                    new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
+            int shader=GL20.glCreateShader(GL20.GL_VERTEX_SHADER);
+            GL20.glShaderSource(shader,patched.get(PatchShaderType.VERTEX));GL20.glCompileShader(shader);
+            check(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)!=0,leaf.pack()+" native terrain: "+GL20.glGetShaderInfoLog(shader));
+            program=GL20.glCreateProgram();GL20.glAttachShader(program,shader);
+            GL30.glTransformFeedbackVaryings(program,new String[]{"cmiNativeLeaf","gl_Position"},GL30.GL_INTERLEAVED_ATTRIBS);
+            GL20.glLinkProgram(program);GL20.glDeleteShader(shader);
+            check(GL20.glGetProgrami(program,GL20.GL_LINK_STATUS)!=0,leaf.pack()+" native terrain: "+GL20.glGetProgramInfoLog(program));
+            vao=GL30.glGenVertexArrays();feedback=GL45.glCreateBuffers();
+            GL45.glNamedBufferData(feedback,112,GL15.GL_DYNAMIC_READ);
+        }
+        float[] sample(float[][] corners,int material,float time,float rawCamera,float irisCamera) {
+            GL20.glUseProgram(program);GL30.glBindVertexArray(vao);matrices(program);
+            for(String name:List.of("iris_ModelViewMat","iris_ModelViewMatInverse","iris_ProjMat","gbufferProjection","gbufferModelViewInverse")){
+                GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,name),false,new org.joml.Matrix4f().get(new float[16]));
+            }
+            GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"iris_LightmapTextureMatrix"),false,
+                    new org.joml.Matrix4f().translation(.03125f,.03125f,.03125f).scale(1f/256).get(new float[16]));
+            leafUniforms(program,time,irisCamera);
+            int position=GL20.glGetAttribLocation(program,"iris_Position"), light=GL20.glGetAttribLocation(program,"iris_UV2");
+            int entity=GL20.glGetAttribLocation(program,"mc_Entity"), normal=GL20.glGetAttribLocation(program,"iris_Normal");
+            check(position>=0&&entity>=0,"native terrain attributes");
+            GL20.glVertexAttrib4f(entity,material,0,0,1);
+            if(normal>=0)GL20.glVertexAttrib3f(normal,0,1,0);
+            GL30.glBindBufferBase(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,0,feedback);
+            GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);
+            GL30.glBeginTransformFeedback(GL11.GL_POINTS);
+            for(float[] corner:corners){
+                GL20.glVertexAttrib3f(position,corner[0]-rawCamera,corner[1],corner[2]);
+                if(light>=0)GL30.glVertexAttribI2i(light,0,(int)corner[3]);
+                GL11.glDrawArrays(GL11.GL_POINTS,0,1);
+            }
+            GL30.glEndTransformFeedback();GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);
+            var read=org.lwjgl.BufferUtils.createFloatBuffer(28);
+            GL45.glGetNamedBufferSubData(feedback,0,read);
+            float[] result=new float[28];read.get(result);
+            for(int k=0;k<28;k+=7)result[k]+=rawCamera;
+            return result;
+        }
+        @Override public void close(){
+            GL20.glUseProgram(0);GL30.glDeleteVertexArrays(vao);GL15.glDeleteBuffers(feedback);GL20.glDeleteProgram(program);
+        }
+    }
+
+    private static void leafUniforms(int program,float time,float camera) {
+        integer(program,"worldTime",1300);
+        integer(program,"noisetex",7);
+        for(String name:List.of("rainStrength","rainFactor","weatherStrength","wetness")){
+            GL20.glUniform1f(GL20.glGetUniformLocation(program,name),.45f);
+        }
+        GL20.glUniform1f(GL20.glGetUniformLocation(program,"frameTimeCounter"),time);
+        GL20.glUniform3f(GL20.glGetUniformLocation(program,"cameraPosition"),camera,0,0);
+        GL20.glUniform1f(GL20.glGetUniformLocation(program,"viewWidth"),2560);
+        GL20.glUniform1f(GL20.glGetUniformLocation(program,"viewHeight"),1506);
+    }
+
+    static float leafDisplay(FeatherLeafSway.Plan leaf, String terrain, String label) {
+        int program=GpuShaderCompiler.compute(label,FeatherLeafDisplayGpu.source(FeatherLeafSway.displaySource(leaf,leaf),
+                ModelMaterialGpuValidation::particleSource));
+        int[] buffers=new int[4];
+        GL45.glCreateBuffers(buffers);
+        int noise=0;
+        try (var nativeLeaf=new NativeLeafReference(leaf,terrain)) {
+            var pool=org.lwjgl.BufferUtils.createByteBuffer(4*64);
+            for(int i=0;i<4;i++){
+                int base=i*64;
+                float x=i==0?.5f:.25f;
+                float z=i==0?.5f:.75f;
+                pool.putFloat(base,x).putFloat(base+4,1.004f).putFloat(base+8,z)
+                        .putFloat(base+12,i==2?1:-1).putFloat(base+28,i==0?.23f:0).putInt(base+56,1<<18);
+            }
+            var visible=org.lwjgl.BufferUtils.createByteBuffer((AllayFeatherLayout.VISIBLE+4)*4);
+            visible.putInt(8,3).putInt(48,4);
+            int dispatch=AllayFeatherLayout.LEAF_DISPATCH*4;
+            visible.putInt(dispatch,1).putInt(dispatch+4,1).putInt(dispatch+8,1);
+            for(int i=0;i<4;i++)visible.putInt((AllayFeatherLayout.VISIBLE+i)*4,i);
+            visible.putInt(AllayFeatherLayout.GROUND*4,0).putInt((AllayFeatherLayout.GROUND+1)*4,1)
+                    .putInt((AllayFeatherLayout.GROUND+2)*4,3);
+            var support=org.lwjgl.BufferUtils.createByteBuffer((8192+4)*16);
+            support.putInt(12,10);
+            float[][] corners={{0,1,0,240},{1,1,0,225},{1,1,1,208},{0,1,1,176}};
+            for(int j=0;j<4;j++)for(int k=0;k<4;k++)support.putFloat((8192+j)*16+k*4,corners[j][k]);
+            GL45.glNamedBufferData(buffers[0],pool,GL15.GL_STATIC_DRAW);
+            GL45.glNamedBufferData(buffers[1],visible,GL15.GL_STATIC_DRAW);
+            GL45.glNamedBufferData(buffers[2],support,GL15.GL_STATIC_DRAW);
+            GL45.glNamedBufferData(buffers[3],(FeatherLeafDisplayGpu.SPLIT_BASE+FeatherLeafDisplayGpu.SPLIT_STRIDE)*16L,GL15.GL_DYNAMIC_READ);
+            GL45.glClearNamedBufferData(buffers[3],GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.ByteBuffer)null);
+            GL45.glNamedBufferSubData(buffers[3],0,new int[]{18,0,0,0});
+            for(int i=0;i<4;i++)GL30.glBindBufferBase(GL43.GL_SHADER_STORAGE_BUFFER,i,buffers[i]);
+            GL20.glUseProgram(program);
+            matrices(program);
+            GL13.glActiveTexture(GL13.GL_TEXTURE7);
+            noise=texture(.37f,.61f,.48f,1);
+            GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,buffers[1]);
+            var results=org.lwjgl.BufferUtils.createFloatBuffer(36);
+            var header=org.lwjgl.BufferUtils.createIntBuffer(4);
+            var ranks=org.lwjgl.BufferUtils.createFloatBuffer(16);
+            var split=org.lwjgl.BufferUtils.createFloatBuffer(FeatherLeafDisplayGpu.SPLIT_STRIDE*4);
+            var jitter=org.lwjgl.BufferUtils.createFloatBuffer(4);
+            float displacement=0;
+            float[] previous=null;
+            float[] times={19.25f,19.25f+1f/30,19.25f+1f/60,19.25f+1f/144,19.25f+1f/240,19.375f,19.375f};
+            for(int frame=1;frame<=times.length;frame++){
+                float time=times[frame-1], rawCamera=frame==1?0:.125f;
+                float irisCamera=frame==1?0:31.125f;
+                float[] reference=nativeLeaf.sample(corners,leaf.material(),time,rawCamera,irisCamera);
+                GL20.glUseProgram(program);
+                leafUniforms(program,time,irisCamera);
+                GL20.glUniform3f(GL20.glGetUniformLocation(program,"cmi_LeafCameraFraction"),rawCamera,0,0);
+                GL30.glUniform1ui(GL20.glGetUniformLocation(program,"cmi_LeafStamp"),frame);
+                GL45.glClearNamedBufferSubData(buffers[3],GL30.GL_R32UI,4,4,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.ByteBuffer)null);
+                GL43.glDispatchComputeIndirect(dispatch);
+                GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                GL45.glGetNamedBufferSubData(buffers[3],0,header);
+                GL45.glGetNamedBufferSubData(buffers[3],16,jitter);
+                GL45.glGetNamedBufferSubData(buffers[3],32,ranks);
+                GL45.glGetNamedBufferSubData(buffers[3],FeatherLeafDisplayGpu.FACE_BASE*16L,results);
+                GL45.glGetNamedBufferSubData(buffers[3],FeatherLeafDisplayGpu.SPLIT_BASE*16L,split);
+                check(header.get(0)==18&&header.get(1)==1,label+" one diagonal split");
+                check(ranks.get(0)==FeatherLeafDisplayGpu.FACE_BASE&&ranks.get(1)==1&&ranks.get(2)==frame,
+                        label+" crossing instance references the face");
+                check(ranks.get(4)==ranks.get(12)&&ranks.get(4)==ranks.get(0)&&ranks.get(8)==0,
+                        label+" shared face and unaffected flight");
+                check(ranks.get(5)==0&&ranks.get(13)==0,label+" no expansion inside a native triangle");
+                check(split.get(0)==0,label+" split rank");
+                for(int triangle=0;triangle<2;triangle++){
+                    int points=(int)split.get(1+triangle);
+                    check(points>=3&&points<=5,label+" clipped polygon vertex count");
+                    for(int k=0;k<points*2;k++){
+                        float coordinate=split.get(4+triangle*12+k);
+                        check(coordinate>=0&&coordinate<=1,label+" split UV stays in the sprite");
+                    }
+                }
+                float[] current=new float[12];
+                for(int j=0;j<4;j++)for(int k=0;k<3;k++){
+                    float value=results.get(20+j*4+k);
+                    check(Float.isFinite(value),label+" finite terrain corner");
+                    check(Math.abs(value-reference[j*7+k])<.0003f,
+                            label+" native terrain corner "+j+"/"+k+": "+value+" vs "+reference[j*7+k]);
+                    if(leaf.terrainJitter()&&k<2){
+                        float clip=value-(k==0?rawCamera:0)+jitter.get(2+k)*reference[j*7+6];
+                        check(Math.abs(clip-reference[j*7+3+k])<.00005f,label+" native terrain clip-space jitter");
+                    }
+                    current[j*3+k]=value;
+                    if(frame==1)displacement+=Math.abs(value-corners[j][k]);
+                }
+                if(frame==times.length)check(Arrays.equals(previous,current),label+" identical terrain clock reproduces the surface");
+                previous=current;
+            }
+            check(displacement>1e-5f,label+" native leaf branch moves the supporting face");
+            check(GL11.glGetError()==0,label+" leaf display GL error");
+            return displacement;
+        } finally {
+            GL20.glUseProgram(0);
+            if(noise!=0)GL11.glDeleteTextures(noise);
+            GL15.glDeleteBuffers(buffers);
+            GpuPrograms.delete(program);
+        }
+    }
+    private static String particleSource(String name) {
+        return com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{
+            try { return Files.readString(Path.of("src/main/resources/assets/createmanaindustry",path)); }
+            catch(java.io.IOException error) { throw new java.io.UncheckedIOException(error); }
+        });
+    }
+
     static void run()throws Exception{
         OffscreenIrisPlatform.initialize();
         com.mojang.blaze3d.systems.RenderSystem.initRenderThread();DEFINES.add(new StringPair("MC_NORMAL_MAP","1"));DEFINES.add(new StringPair("MC_SPECULAR_MAP","1"));for(var phase:net.irisshaders.iris.pipeline.WorldRenderingPhase.values())DEFINES.add(new StringPair("MC_RENDER_STAGE_"+phase.name(),Integer.toString(phase.ordinal())));
         atlasBindings();
-        var compiler=new ShaderPackProgramCompiler(name->com.iridium126.createmanaindustry.client.particles.engine.ParticleShaderSource.loadParticle(name,path->{try{return Files.readString(Path.of("src/main/resources/assets/createmanaindustry",path));}catch(Exception e){throw new RuntimeException(e);}}));
+        var compiler=new ShaderPackProgramCompiler(ModelMaterialGpuValidation::particleSource);
         var method=ShaderPackProgramCompiler.class.getDeclaredMethod("buildMergedSource",boolean.class);method.setAccessible(true);var uniform=Pattern.compile("\\buniform\\s+vec4\\s+entityColor\\s*;");int packs=0;
         try(var samples=Files.list(Path.of("run/shaderpacks"))){for(Path sample:samples.filter(p->p.toString().endsWith(".zip")).sorted().toList()){
             var inventory=ShaderPackInventory.readPack(sample);Path root=Path.of("build/model-material-validation",inventory.digest().substring(0,12));Files.createDirectories(root);for(var e:inventory.sources().entrySet()){Path f=root.resolve(e.getKey());Files.createDirectories(f.getParent());Files.writeString(f,e.getValue());}
@@ -304,11 +490,13 @@ public final class ModelMaterialGpuValidation {
             compiler.reset();
             var leafField=ShaderPackProgramCompiler.class.getDeclaredField("leafSway");leafField.setAccessible(true);leafField.set(compiler,leaf);
             boolean exact=g==null&&!uniform.matcher(v).replaceAll("").contains("entityColor");String own=(String)method.invoke(compiler,exact);String merged=new ParticleVertexInjector().patch(exact?uniform.matcher(v).replaceAll(""):v,own,"model-material");check(merged.contains("cmi_ShadowPass"),"CMI injection succeeded "+sample);merged=JcppProcessor.glslPreprocessSource(merged,DEFINES);
-            check(merged.contains("cmiLeafOffset"),"leaf deformation injected "+sample);
+            check(merged.contains("cmiFeatherAttach"),"leaf attachment injected "+sample);
             int model=compile(merged,g,exact?uniform.matcher(f).replaceAll("in vec4 entityColor;"):f,"model",root);GL20.glDeleteProgram(model);
             if(g==null){
                 String featherFragment=exact?uniform.matcher(f).replaceAll("in vec4 entityColor;"):f;
-                float displacement=mergedFeatherVertices(merged,featherFragment,sample.getFileName().toString());
+                mergedFeatherVertices(merged,featherFragment,sample.getFileName().toString());
+            }
+            float displacement=leafDisplay(leaf,terrain,sample.getFileName().toString());
                 var stronger=switch(leaf.pack()){
                     case "Bliss"->Map.of("WAVY_STRENGTH","2.0");
                     case "Complementary"->Map.of("WAVING_I","2.00");
@@ -317,15 +505,12 @@ public final class ModelMaterialGpuValidation {
                 };
                 if(!stronger.isEmpty())try{
                     OPTION_OVERRIDES=stronger;
-                    var variant=FeatherLeafSway.resolve(inventory,preprocess(root,terrainPath));
+                    String variantTerrain=preprocess(root,terrainPath);
+                    var variant=FeatherLeafSway.resolve(inventory,variantTerrain);
                     check(variant!=null&&!variant.source().equals(leaf.source()),"active leaf strength option "+sample);
-                    compiler.reset();leafField.set(compiler,variant);
-                    String strongerOwn=(String)method.invoke(compiler,exact);
-                    String strongerMerged=new ParticleVertexInjector().patch(exact?uniform.matcher(v).replaceAll(""):v,strongerOwn,"model-material-strength");
-                    float strongerDisplacement=mergedFeatherVertices(JcppProcessor.glslPreprocessSource(strongerMerged,DEFINES),featherFragment,sample+" stronger");
+                    float strongerDisplacement=leafDisplay(variant,variantTerrain,sample+" stronger");
                     check(strongerDisplacement>displacement+1e-5f,"leaf strength changes grounded vertex positions "+sample);
                 }finally{OPTION_OVERRIDES=Map.of();}
-            }
             if(sample.getFileName().toString().startsWith("iterationT"))materials(f,true,0,root,false);
             if(sample.getFileName().toString().startsWith("Complementary")){
                 var graph=new IncludeGraph(root,ImmutableList.of(AbsolutePackPath.fromAbsolutePath("/"+base+".vsh"),AbsolutePackPath.fromAbsolutePath("/"+base+".fsh")),false);

@@ -22,6 +22,7 @@ public final class SpatialTerrain implements AutoCloseable {
     private long sourceVersion=Long.MIN_VALUE,revision;
     private Object source;
     private long uploadedRevision=Long.MIN_VALUE;
+    private final float[] opaqueBounds=new float[6];
     SpatialTerrain(int mask){this.mask=mask;}
     public int buffer(){
         if(buffer==0){buffer=GL45.glCreateBuffers();GL45.glNamedBufferData(buffer,CAPACITY*64L,GL15.GL_DYNAMIC_COPY);}
@@ -30,6 +31,7 @@ public final class SpatialTerrain implements AutoCloseable {
     }
     public int count(){return count;}
     public long revision(){return revision;}
+    float[] opaqueBounds(){return opaqueBounds;}
     public ByteBuffer nativeRows(){return staging.asReadOnlyBuffer().order(ByteOrder.nativeOrder()).position(0).limit(count*64);}
     private static List<Box> boxes(Section key,byte[] cells){
         var result=new ArrayList<Box>();
@@ -74,10 +76,17 @@ public final class SpatialTerrain implements AutoCloseable {
             tiles.put(key,new Tile(page.revision(),geometry));
         }
         if(!changed)return;staging.clear();count=0;
+        Arrays.fill(opaqueBounds,0,3,Float.POSITIVE_INFINITY);
+        Arrays.fill(opaqueBounds,3,6,Float.NEGATIVE_INFINITY);
         outer:for(var entry:tiles.entrySet())for(var box:entry.getValue().boxes()){
             if(count>=CAPACITY)break outer;int at=count*64;for(int i=0;i<64;i+=4)staging.putInt(at+i,0);
             var section=entry.getKey();
             staging.putFloat(at,box.x()).putFloat(at+4,box.y()).putFloat(at+8,box.z()).putFloat(at+16,box.sx()).putFloat(at+20,box.sy()).putFloat(at+24,box.sz());
+            if(mask==OPAQUE){
+                opaqueBounds[0]=Math.min(opaqueBounds[0],box.x()-box.sx());opaqueBounds[3]=Math.max(opaqueBounds[3],box.x()+box.sx());
+                opaqueBounds[1]=Math.min(opaqueBounds[1],box.y()-box.sy());opaqueBounds[4]=Math.max(opaqueBounds[4],box.y()+box.sy());
+                opaqueBounds[2]=Math.min(opaqueBounds[2],box.z()-box.sz());opaqueBounds[5]=Math.max(opaqueBounds[5],box.z()+box.sz());
+            }
             staging.putInt(at+32,section.x()).putInt(at+36,section.y()).putInt(at+40,section.z()).putInt(at+44,mask);count++;
         }
         staging.limit(count*64);revision++;

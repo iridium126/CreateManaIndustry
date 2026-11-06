@@ -12,6 +12,10 @@ public final class StormGatherRules {
 
     public static int durationTicks(float start,float deadline){return Math.max(1,Math.round(deadline*20)-Math.round(start*20));}
     public static int elapsedTicks(float now,float start){int ticks=(int)Math.floor(now*20.0f+.0001f)-Math.round(start*20);return ticks< -1048576?ticks+2097152:ticks>1048576?ticks-2097152:ticks;}
+    public static int elapsedTicks(long tick,float start){
+        int elapsed=(int)(tick&2097151)-Math.round(start*20);
+        return elapsed< -1048576?elapsed+2097152:elapsed>1048576?elapsed-2097152:elapsed;
+    }
     public static boolean withinDeadline(float now,float start,float deadline){int elapsed=elapsedTicks(now,start);return elapsed>=0&&elapsed<=durationTicks(start,deadline);}
     public static int required(int eligible,int elapsed,int duration){
         if(eligible<0||eligible>MAX_MEMBERS||duration<1)throw new IllegalArgumentException("Storm gather bounds");

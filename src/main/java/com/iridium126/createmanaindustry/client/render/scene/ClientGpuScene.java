@@ -225,7 +225,8 @@ public final class ClientGpuScene {
             if(lastSimulation!=null&&lastSimulation.generation()==particles.currentGeneration()){
                 frameCoordinator.begin(renderFrameToken());
                 float alpha=simulationClock.alpha();displayTimeSec=AllayStormRuntime.INSTANCE.timeSec()-.05f+alpha*.05f;
-                var display=modelDisplay.prepare(ParticleBuffers.INSTANCE,ParticlePrograms.INSTANCE,lastSimulation,previousSimulation,alpha,displayTimeSec,camera,view,projectionMatrix);
+                var nativeView=particles.nativeDisplayView(simulationClock.completedTick()+(double)alpha,Minecraft.getInstance().isPaused());
+                var display=modelDisplay.prepare(ParticleBuffers.INSTANCE,ParticlePrograms.INSTANCE,lastSimulation,previousSimulation,alpha,displayTimeSec,camera,view,projectionMatrix,nativeView);
                 displayTimeSec=display.timeSec();
                 displayPublicationId=display.id();
                 com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.freezeDisplay(display.id());

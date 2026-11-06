@@ -4,10 +4,14 @@ import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackInve
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession;
 import java.util.*;
 import java.util.regex.Pattern;
+import net.irisshaders.iris.shaderpack.loading.ProgramId;
+import net.irisshaders.iris.shaderpack.programs.ProgramFallbackResolver;
+import net.irisshaders.iris.shaderpack.programs.ProgramSet;
+import net.irisshaders.iris.shaderpack.programs.ProgramSource;
 
 /** Extracts the active leaf branch from the preprocessed terrain program, including its live uniforms. */
 public final class FeatherLeafSway {
-    public record Plan(String pack,int material,String source) {
+    public record Plan(String pack,int material,String source,boolean terrainJitter) {
         public boolean matches(int id){
             return material==16896?id>=0&&(id&0x4e00)==16896:id==material;
         }
@@ -18,13 +22,64 @@ public final class FeatherLeafSway {
     private static final Pattern FUNCTION=Pattern.compile(TYPE+"[ \\t]++(\\w++)\\s*+\\([^{};]*?\\)\\s*+\\{");
     private static final Pattern GLOBAL=Pattern.compile("(uniform[ \\t]++|const[ \\t]++)?"+TYPE+"[ \\t]++([^;{}]++);");
     private static Plan compiled;
+    private static Plan compiledSolid, compiledCutout;
     private static long generation=-1;
     private FeatherLeafSway(){}
-    static void compiled(Plan plan,long session){compiled=plan;generation=session;}
+    static void compiled(Plan solid, Plan cutout, long session) {
+        compiledSolid = solid;
+        compiledCutout = cutout;
+        compiled = cutout != null ? cutout : solid;
+        generation = session;
+    }
+
+    public static boolean matches(int terrain, int material) {
+        Plan plan = terrain == 1 ? compiledSolid : compiledCutout;
+        return plan != null && plan.matches(material);
+    }
     public static Plan current(){
         var session=ShaderPackSession.current();
         return compiled!=null&&generation==session.generation()
                 &&session.ownsPipeline(net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable())?compiled:null;
+    }
+
+    public static Plan terrain(ProgramSet programs, ProgramId pass) {
+        String source = new ProgramFallbackResolver(programs).resolve(pass)
+                .flatMap(ProgramSource::getVertexSource).orElse("");
+        return resolve(ShaderPackSession.current().inventory(), source);
+    }
+
+    public static String displaySource() {
+        return displaySource(compiledSolid, compiledCutout);
+    }
+
+    public static String displaySource(Plan solid, Plan cutout) {
+        var uniforms = new LinkedHashSet<String>();
+        uniforms.add("uniform vec3 cameraPosition;");
+        var functions = new StringBuilder();
+        if (solid != null) appendDisplayPlan(solid, "cmiSolidLeaf", uniforms, functions);
+        boolean shared = solid != null && cutout != null && solid.source.equals(cutout.source);
+        if (cutout != null && !shared) appendDisplayPlan(cutout, "cmiCutoutLeaf", uniforms, functions);
+        return String.join("\n", uniforms) + "\n" + functions +
+                "vec3 cmiTerrainLeafOffset(int pass, vec3 world, float sky) {\n" +
+                (solid != null ? "if (pass == 1) return cmiSolidLeafOffset(world, sky);\n" : "") +
+                (cutout != null ? "if (pass == 2) return " + (shared ? "cmiSolidLeaf" : "cmiCutoutLeaf") + "Offset(world, sky);\n" : "") +
+                "return vec3(0);\n}\n" +
+                "vec4 cmiTerrainLeafJitter() { return vec4(" +
+                (solid != null && solid.terrainJitter ? "cmiSolidLeafJitter()" : "vec2(0)") + "," +
+                (cutout != null && cutout.terrainJitter ? (shared ? "cmiSolidLeaf" : "cmiCutoutLeaf") + "Jitter()" : "vec2(0)") +
+                "); }\n";
+    }
+
+    private static void appendDisplayPlan(Plan plan, String prefix, Set<String> uniforms, StringBuilder functions) {
+        plan.source.lines().forEach(line -> {
+            if (line.startsWith("uniform ")) {
+                uniforms.add(line.replaceAll("\\s+", " ").replace(" ;", ";").strip());
+            } else {
+                functions.append(line.replace("cmiLeaf", prefix)
+                        .replace("cmi_CameraPos", "cameraPosition")
+                        .replace("texture2DLod(", "textureLod(").replace("texture2D(", "texture(")).append('\n');
+            }
+        });
     }
 
     public static Plan resolve(ShaderPackInventory pack,String terrain){
@@ -47,14 +102,16 @@ public final class FeatherLeafSway {
             }
             if(!pack.source("lib/vertex/waving.glsl").isEmpty()){
                 String call=match(body,"blockID\\s*==\\s*105\\b[^;]+?(CalcMove\\s*\\([^;]+);");
-                return make("BSL",105,body,"return "+call.replaceFirst("\\bworldPos\\b","world")+";");
+                return make("BSL",10500,body,"return "+call.replaceFirst("\\bworldPos\\b","world")+";");
             }
             if(!pack.source("Lib/Programs/Gbuffers/Terrain_VS.glsl").isEmpty()){
                 String leaf=block(body,"if\\s*\\(\\s*mc_Entity\\.x\\s*==\\s*7030(?:\\.0)?\\s*\\)");
                 String time=match(body,"float\\s+tick\\s*=\\s*([^;]+);");
                 String weight=match(body,"float\\s+lightWeight\\s*=\\s*([^;]+);").replace("v_blockLight.y","cmiLeafSky");
+                String light = match(body, "v_blockLight\\s*=\\s*([^;]+);").replace("lmcoord", "nativeLight");
                 return make("iterationT",7030,body,"vec3 worldPos=world; float tick="+time+
-                        "; float lightWeight="+weight+"; lightWeight*=lightWeight; lightWeight*=lightWeight;"+leaf+" return worldPos-world;");
+                        "; vec2 nativeLight=vec2(0., cmiLeafSky*(240./256.)+1./32.); cmiLeafSky=("+light+").y;"+
+                        " float lightWeight="+weight+"; lightWeight*=lightWeight; lightWeight*=lightWeight;"+leaf+" return worldPos-world;");
             }
             if(!pack.source("include/vertex/displacement.glsl").isEmpty()){
                 String animate=function(body,"animate_vertex");
@@ -81,6 +138,11 @@ public final class FeatherLeafSway {
         List<Declaration> declarations=declarations(terrain);
         Set<String> needed=new HashSet<>();
         words(body,needed);
+        // These entity programs leave clip coordinates unjittered, even
+        // when their terrain vertex program adds jitter explicitly.
+        boolean terrainJitter = (pack.equals("Complementary") || pack.equals("Solas"))
+                && Pattern.compile("gl_Position\\.xy\\s*=\\s*TAAJitter\\s*\\(").matcher(function(terrain,"main")).find();
+        if (terrainJitter) needed.add("TAAJitter");
         Set<Declaration> selected=new LinkedHashSet<>();
         boolean added;
         do {
@@ -95,12 +157,13 @@ public final class FeatherLeafSway {
         Map<String,String> renamed=new HashMap<>();
         for(var declaration:selected)if(!declaration.uniform())
             renamed.put(declaration.name(),"cmiLeaf_"+declaration.name());
-        StringBuilder glsl=new StringBuilder("#define CMI_LEAF_SWAY\nuniform bool cmi_FeatherSwayEnabled;\nfloat cmiLeafSky;\n");
+        StringBuilder glsl=new StringBuilder("float cmiLeafSky;\n");
         selected.stream().sorted(Comparator.comparingInt(Declaration::start)).forEach(d->
                 glsl.append(rename(d.text(),renamed)).append('\n'));
         glsl.append("vec3 cmiLeafOffset(vec3 world,float sky){ cmiLeafSky=sky; ")
                 .append(rename(body,renamed)).append(" }\n");
-        return new Plan(pack,material,glsl.toString());
+        if (terrainJitter) glsl.append("vec2 cmiLeafJitter(){ return cmiLeaf_TAAJitter(vec2(0),1.0); }\n");
+        return new Plan(pack,material,glsl.toString(),terrainJitter);
     }
     private static void words(String text,Set<String> into){
         var tokens=WORD.matcher(text);

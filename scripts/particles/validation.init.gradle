@@ -331,6 +331,7 @@ allprojects {
             dependsOn 'compileStarfallHarness'
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + sourceSets.main.runtimeClasspath + configurations.compileClasspath + kotlin
             mainClass = 'StormDepenetrationGpuValidation'
+            if(project.hasProperty('depenetrationLifecycleOnly')) args '--lifecycle-only'
             workingDir = project.projectDir
         }
         tasks.register('validateShaderFirstExecutionGpu', JavaExec) {

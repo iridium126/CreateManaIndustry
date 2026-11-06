@@ -187,9 +187,9 @@ public class ModelShadowGpuValidation {
         finally{for(int shader:shaders)GL20.glDeleteShader(shader);GL20.glDeleteProgram(linked);}
         int program=vertexProgram(patched),vao=GL30.glGenVertexArrays();GL30.glBindVertexArray(vao);
         var particle=bytes(64);particle(particle,0,150,0,0,5,1);
-        var geometry=bytes(com.iridium126.createmanaindustry.client.particles.engine.AllayModelGeometry.VERTEX_FLOATS*4);geometry.putFloat(4,16).putFloat(20,0).putFloat(24,0);
+        var geometry=bytes(32);geometry.putFloat(4,16).putFloat(20,0).putFloat(24,0);
         int[] buffers={buffer(geometry),buffer(particle),buffer(headers(2,.3f,false,false)),buffer(bytes(16).putInt(8,1)),buffer(bytes(16))};
-        int[] formats={GL30.GL_R32F,GL30.GL_RGBA32F,GL30.GL_RGBA32F,GL30.GL_RG32UI};int[] textures=new int[4];
+        int[] formats={GL30.GL_RGBA32F,GL30.GL_RGBA32F,GL30.GL_RGBA32F,GL30.GL_RG32UI};int[] textures=new int[4];
         try{
             GL20.glUseProgram(program);String[] names={"cmi_Geo","cmi_Pool","cmi_Emitters","cmi_Sorted"};
             for(int i=0;i<4;i++){textures[i]=GL11.glGenTextures();GL13.glActiveTexture(GL13.GL_TEXTURE0+10+i);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,textures[i]);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,formats[i],buffers[i]);GL20.glUniform1i(GL20.glGetUniformLocation(program,names[i]),10+i);}

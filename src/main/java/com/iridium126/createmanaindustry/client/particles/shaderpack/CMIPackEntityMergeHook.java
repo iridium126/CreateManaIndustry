@@ -21,6 +21,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import top.leonx.irisveil.IrisVeilCompat;
 
 import org.lwjgl.opengl.GL11;
@@ -82,6 +83,9 @@ public final class CMIPackEntityMergeHook {
     private static final PackageDrawCulling SHADOW_CULLING=new PackageDrawCulling();
     private static final Matrix4f shadowReceiverMatrix=new Matrix4f(),shadowInverseMatrix=new Matrix4f();
     private static final Matrix4f shadowProjectionUpload=new Matrix4f(),shadowViewUpload=new Matrix4f(),shadowViewInverseUpload=new Matrix4f();
+    private static final Matrix4f inverseUpload=new Matrix4f();
+    private static final Matrix3f normalUpload=new Matrix3f();
+    private static final float[] matrixWords=new float[16],normalWords=new float[9];
     private static final org.joml.Vector4f shadowPlane=new org.joml.Vector4f();
     private static final org.joml.Vector3f shadowRay=new org.joml.Vector3f();
     private static final float[] shadowReceiverPlanes=new float[24];
@@ -303,12 +307,11 @@ public final class CMIPackEntityMergeHook {
         setMat(progId, "shadowModelView", modelView);
         setMat(progId, "shadowModelViewInverse", shadowViewInverseUpload.set(modelView).invert());
         setFloat3(progId, "cameraPosition", (float) camPos.x, (float) camPos.y, (float) camPos.z);
-        setSamplers(progId);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindTexture(ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindPose(progId);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindRenderClock(progId,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
         ParticleBuffers.INSTANCE.bindAllayAnimation(progId);
-        setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);
         uploadStormItemUniforms(progId);
     }
 
@@ -380,9 +383,9 @@ public final class CMIPackEntityMergeHook {
         var publication=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.publication();
         var captured=CapturedRenderingState.INSTANCE;
         if(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.currentFrameReady())lod.drawNative(publication.generation(),captured.getGbufferModelView(),captured.getGbufferProjection(),projection->{
-            uploadIrisMatrices(progId,projection,new Matrix4f(captured.getGbufferModelView()));
+            uploadIrisMatrices(progId,projection,captured.getGbufferModelView());
             lod.bindNative();
-            setMat(progId,"cmi_LodInverseView",new Matrix4f(captured.getGbufferModelView()).invert());
+            setMat(progId,"cmi_LodInverseView",inverseUpload.set(captured.getGbufferModelView()).invert());
             RenderSystem.enableDepthTest();RenderSystem.depthMask(true);RenderSystem.disableCull();
             setInt(progId,"cmi_LodPass",1);DRAW_TIMING.begin(ModelMergeTelemetry.Segment.LOD1);boolean lod1Drawn=false;
             try{lod.drawBody();lod1Drawn=true;}finally{DRAW_TIMING.end(ModelMergeTelemetry.Segment.LOD1,lod1Drawn);}
@@ -448,27 +451,16 @@ public final class CMIPackEntityMergeHook {
      * gbuffer matrices ourselves, then publish this segment's entity context.
      */
     private static void uploadSegmentUniforms(int progId) {
-        Matrix4f projection = new Matrix4f(CapturedRenderingState.INSTANCE.getGbufferProjection());
-        Matrix4f modelView = new Matrix4f(CapturedRenderingState.INSTANCE.getGbufferModelView());
-        uploadIrisMatrices(progId, projection, modelView);
+        var captured=CapturedRenderingState.INSTANCE;
+        uploadIrisMatrices(progId,captured.getGbufferProjection(),captured.getGbufferModelView());
         uploadNeutralEntityUniforms(progId);
         uploadCmiUniforms(progId);
-        setSamplers(progId);
-    }
-
-    /** Points the merged program's samplerBuffer uniforms at our TBO units. */
-    private static void setSamplers(int progId) {
-        int base = ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE;
-        setInt(progId, "cmi_Geo", base);
-        setInt(progId, "cmi_Pool", base + 1);
-        setInt(progId, "cmi_Emitters", base + 2);
-        setInt(progId, "cmi_Sorted", base + 3);
     }
 
     private static void setMat(int progId, String name, Matrix4f m) {
         int l = loc(progId, name);
         if (l >= 0)
-            GL20.glUniformMatrix4fv(l, false, m.get(new float[16]));
+            GL20.glUniformMatrix4fv(l, false, m.get(matrixWords));
     }
 
     private static void bindSharedResources( ParticleBuffers gpu) {
@@ -495,18 +487,17 @@ public final class CMIPackEntityMergeHook {
         size=loc(progId,"gtextureSize");if(size>=0)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current2i(size,atlas.width(),atlas.height());
     }
 
-    private static void uploadIrisMatrices(int progId, Matrix4f projection, Matrix4f modelView) {
+    private static void uploadIrisMatrices(int progId, Matrix4fc projection, Matrix4fc modelView) {
         int projLoc = GpuUniforms.loc(progId, "iris_ProjMat");
         if (projLoc >= 0)
-            GL20.glUniformMatrix4fv(projLoc, false, projection.get(new float[16]));
+            GL20.glUniformMatrix4fv(projLoc, false, projection.get(matrixWords));
         int mvLoc = GpuUniforms.loc(progId, "iris_ModelViewMat");
         if (mvLoc >= 0)
-            GL20.glUniformMatrix4fv(mvLoc, false, modelView.get(new float[16]));
+            GL20.glUniformMatrix4fv(mvLoc, false, modelView.get(matrixWords));
         int normalLoc = GpuUniforms.loc(progId, "iris_NormalMat");
         if (normalLoc >= 0) {
-            Matrix4f inv = new Matrix4f(modelView).invert();
-            Matrix3f normalMat = new Matrix3f(inv.transpose());
-            GL20.glUniformMatrix3fv(normalLoc, false, normalMat.get(new float[9]));
+            normalUpload.set(inverseUpload.set(modelView).invert().transpose());
+            GL20.glUniformMatrix3fv(normalLoc, false, normalUpload.get(normalWords));
         }
     }
 
@@ -522,7 +513,7 @@ public final class CMIPackEntityMergeHook {
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindPose(progId);
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.bindRenderClock(progId,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.displayTimeSec()-com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.timeSec());
         ParticleBuffers.INSTANCE.bindAllayAnimation(progId);
-        setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);setInt(progId,"cmi_Starfall",ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE+4);
+        setInt(progId,"uStarfallEnabled",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.committedBuffer()>0?1:0);
         uploadStormItemUniforms(progId);
     }
 
@@ -534,8 +525,6 @@ public final class CMIPackEntityMergeHook {
      */
     private static void uploadStormItemUniforms(int progId) {
         com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.uploadUniforms(progId);
-        setVec4Array(progId, "uHeldItemUV",
-                com.iridium126.createmanaindustry.client.particles.engine.HeldItemGeometry.uvTable());
     }
 
     /**
@@ -602,12 +591,6 @@ public final class CMIPackEntityMergeHook {
     private static void setFloat4(int prog, String name, float x, float y, float z, float w) {
         int l = loc(prog, name);
         if (l >= 0) com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.current4f(l, x, y, z, w);
-    }
-
-    private static void setVec4Array(int prog, String name, float[] values) {
-        int l = loc(prog, name);
-        if (l >= 0 && values != null && values.length >= 4)
-            GL20.glUniform4fv(l, values);
     }
 
     private static void setFloatArray(int prog, String name, float[] values) {

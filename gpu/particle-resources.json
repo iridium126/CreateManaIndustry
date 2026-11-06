@@ -186,6 +186,10 @@
     "cmi_Starfall": {
       "unit": "SAMPLER_MERGED_STARFALL",
       "type": 36312
+    },
+    "cmi_StormPlayback": {
+      "unit": "SAMPLER_MERGED_GEOMETRY",
+      "type": 36312
     }
   },
   "layouts": {
@@ -287,6 +291,8 @@
         "NativePublication": { "kind": "ssbo", "binding": 6, "access": "read", "minimumBytes": 64 },
         "NativeDispatch": { "kind": "ssbo", "binding": 7, "access": "write", "minimumBytes": 12 },
         "ProjectionMap": { "kind": "ssbo", "binding": 12, "access": "read_write" },
+        "PriorPlayback": { "kind": "ssbo", "binding": 13, "access": "read" },
+        "NextPlayback": { "kind": "ssbo", "binding": 15, "access": "write" },
         "PriorStormPose": { "kind": "ssbo", "binding": 27, "access": "read" },
         "NextStormPose": { "kind": "ssbo", "binding": 28, "access": "write" },
         "Members": { "kind": "ssbo", "binding": 21, "access": "write" },

@@ -25,6 +25,9 @@ layout(std430,binding=10) readonly buffer Population {uint modelCount;} populati
 layout(std430,binding=11) readonly buffer Emitters {vec4 rows[];} emitters;
 uniform uint phase;
 uniform bool uNativeStormDisplayState;
+uniform usamplerBuffer cmi_StormPlayback;
+uniform uint uStormPlaybackStamp;
+uniform vec4 uStormPlaybackWeights;
 bool cmiNativeRegionalActive(float identity,uint assignment){
  if(!uNativeStormDisplayState)return true;
  uint at=cmiStarMember(identity)*2u;
@@ -67,6 +70,8 @@ void main(){
  if(phase==4u){
   if(i!=0u)return;uint n=commands.cmd[IDX_CNT_GHOST]+commands.cmd[IDX_CNT_ALPHA];uint group=n>=SORT_GROUP_THRESHOLD?1024u:64u;
   CMI_FEATHER_WORD(11)=6;CMI_FEATHER_WORD(12)=CMI_FEATHER_WORD(3);CMI_FEATHER_WORD(13)=0;CMI_FEATHER_WORD(14)=0;
+  // Display-only dispatch over the compact attached-feather ranks.
+  CMI_FEATHER_WORD(24)=(CMI_FEATHER_WORD(2)+63)/64;CMI_FEATHER_WORD(25)=1;CMI_FEATHER_WORD(26)=1;
   dispatchOut.args[6]=(n+group-1u)/group;dispatchOut.args[7]=1u;dispatchOut.args[8]=1u;
   commands.cmd[IDX_CNT_CARRIER]=min(commands.cmd[IDX_CNT_CARRIER],carrierLimit);
   sortMeta.rows[metaSlot]=uvec2(commands.cmd[IDX_CNT_MODELOP],0);return;
@@ -76,6 +81,7 @@ void main(){
  uint hb=floatBitsToUint(p3.w)*VEC4_PER_EMITTER,type=uint(emitters.rows[hb].x);
  uint fields=cmiDisplayFields(type);
  bool relative=(fields&CMI_DISPLAY_CAMERA_RELATIVE)!=0u,model=(fields&CMI_DISPLAY_MODEL)!=0u;
+ bool nativeMember=uStormPlaybackStamp!=0u&&model&&emitters.rows[hb+18u].x>.5;
  if(relative)p0.xyz+=currentCameraDelta;
  uint prior=alpha<1.&&fields!=0u?history.previousSlot[historyBase+i]:0u;
  if(prior>0u&&prior<=min(previousCount.live,capacity)){
@@ -121,6 +127,20 @@ void main(){
     // Evaluate curvature at the display clock while retaining simulation's
     // collision/steering residual. Speed and phase tags never disable history.
     p0.xyz+=displayPoint-mix(beforePoint,afterPoint,alpha);
+   }
+  }
+ }
+ if(nativeMember&&(!uStarfallEnabled||cmiStarAssignment(p0.w)==0u||!cmiNativeRegionalActive(p0.w,cmiStarAssignment(p0.w)))){
+  uint member=cmiStarMember(p0.w);
+  if(member<uint(textureSize(cmi_StormPlayback))/4u){
+   int at=int(member*4u);
+   uvec4 latest=texelFetch(cmi_StormPlayback,at+2);
+   if(latest.w==uStormPlaybackStamp){
+    vec3 point=uintBitsToFloat(latest.xyz)*uStormPlaybackWeights.z;
+    if(uStormPlaybackWeights.x>0.)point+=uintBitsToFloat(texelFetch(cmi_StormPlayback,at).xyz)*uStormPlaybackWeights.x;
+    if(uStormPlaybackWeights.y>0.)point+=uintBitsToFloat(texelFetch(cmi_StormPlayback,at+1).xyz)*uStormPlaybackWeights.y;
+    if(uStormPlaybackWeights.w>0.)point+=uintBitsToFloat(texelFetch(cmi_StormPlayback,at+3).xyz)*uStormPlaybackWeights.w;
+    p0.xyz=point;
    }
   }
  }

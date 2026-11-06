@@ -3,7 +3,8 @@ bool cmiDomeGatherAudit(uint assignment,uint member,vec3 pos,vec3 target,int ter
  uint id=CMI_STATE(state,member*2u),tag=id|0x80000000u,record=cmiNavigationRecord(member);
  uint pause=floatBitsToUint(cmiDomePause(assignment)),frame=CMI_STATE(state,window+7u);
  float error=distance(pos,target);
- int cached=cmiDomePathCache(assignment,pos,target);bool valid=(frame&6u)==0u&&terrain>=0&&cached>=0;
+ int cached=cmiDomePathCache(assignment,pos,target);bool known=(frame&6u)==0u&&terrain>=0;
+ bool valid=known&&(frame&8u)==0u&&cached>=0;
  bool same=CMI_STATE(starStateRead,window)==tag&&CMI_STATE(starStateRead,window+5u)==pause;
  float elapsed=same?uintBitsToFloat(CMI_STATE(starStateRead,window+1u)):0.;
  float initialError=same?uintBitsToFloat(CMI_STATE(starStateRead,window+2u)):error;
@@ -11,7 +12,7 @@ bool cmiDomeGatherAudit(uint assignment,uint member,vec3 pos,vec3 target,int ter
  float occupied=same?uintBitsToFloat(CMI_STATE(starStateRead,window+4u)):0.;
  float evidence=same?uintBitsToFloat(CMI_STATE(starStateRead,window+6u)):0.;
  bool clipped=(frame&1u)!=0u||cached>0;
- occupied=valid&&terrain==1&&!isinf(uintBitsToFloat(pause))?occupied+uDt:0.;bool retire=occupied>=.5;
+ occupied=known&&terrain==1&&!isinf(uintBitsToFloat(pause))?occupied+uDt:0.;bool retire=occupied>=.5;
  if(!valid||error<=.4){elapsed=0.;blocked=0.;evidence=0.;initialError=error;}
  else{
   if(clipped)evidence+=uDt;

@@ -249,11 +249,11 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
             int x=2,y=0,z=2,h=x*0x8da6b343^z*0xcb1ab31f;
             var table=bytes(8192*16);
             int at=((h^(h>>>16))&8191)*16;
-            table.putInt(at,x).putInt(at+4,y).putInt(at+8,z).putInt(at+12,14);
+            table.putInt(at,x).putInt(at+4,y).putInt(at+8,z).putInt(at+12,10);
             put(support,table);bind(2,support);bool(q.tools,"uFeatherSupport",true);
             q.simulate(one(2.25f,1.003f,2.25f,1,true),1,.05f);q.lists(1);bind(2,support);q.ground();
             int tag=read(q.output,64).getInt(56);
-            check((tag&(1<<18))!=0&&((tag>>>19)&15)==12,"settled feather publishes its leaf skylight");
+            check((tag&(1<<18))!=0&&(tag>>>19)==0,"settled feather publishes its leaf attachment");
 
             put(impact,floats(new float[]{2.25f,1.003f,2.25f,1.25f}));
             bind(0,impact);q.range();ui(q.tools,"uPhase",3);ui(q.tools,"uImpactCount",1);dispatch(q.tools,1);
