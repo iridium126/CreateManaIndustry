@@ -25,12 +25,17 @@ public final class RtQueryWorker implements AutoCloseable {
     private long terrainScene=Long.MIN_VALUE,terrainRevision=Long.MIN_VALUE;
     private final int capacity,terrainCapacity;
     private final long epoch;
+    private final String view;
     private boolean closing,released,failed;
     private Slot accepted;
     private String reason="no completed query";
     private String firstFailure="";
     public RtQueryWorker(int capacity,int terrainCapacity,int probes,long epoch,Path modules){
+        this(capacity,terrainCapacity,probes,epoch,modules,"render");
+    }
+    public RtQueryWorker(int capacity,int terrainCapacity,int probes,long epoch,Path modules,String view){
         this.capacity=capacity;this.terrainCapacity=terrainCapacity;this.epoch=epoch;
+        this.view=view;
         try{
             if(!RETIRING.isEmpty())throw new IllegalStateException("Prior RT resources are still retiring");
             SpatialNative.load(modules);bridge=SpatialNative.createBuffers(128L+(capacity+terrainCapacity)*64L,3);
@@ -85,7 +90,7 @@ public final class RtQueryWorker implements AutoCloseable {
             ring.cancel(slot.ticket);slot.ticket=null;failed=true;reason="RT submission refused";return false;
         }
         ring.submit(slot.ticket);slot.tick=tick;slot.scene=scene;slot.kind=kind;slot.members=members;slot.terrainCount=terrain;slot.terrainRevision=terrainRevision;slot.live=true;slot.consumed=false;slot.reported=false;
-        com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.spatial(tick,scene,slot.nonce,index,"submitted",false,null,epoch,kind,members,terrain);
+        com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.spatial(tick,scene,slot.nonce,index,"submitted",false,null,epoch,kind,members,terrain,view);
         return true;
     }
     public void finishConsumers(){
@@ -95,7 +100,7 @@ public final class RtQueryWorker implements AutoCloseable {
         if(worker==0)return;
         while(ring.retirementHead()!=null){var ticket=ring.retirementHead();int i=ticket.slot();var s=slots[i];if(!s.live||!s.consumed||s.fence==0)break;
             if(SpatialNative.recycle(worker,i,s.nonce,s.fence)){
-                com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.spatial(s.tick,s.scene,s.nonce,i,"retired",true,null,epoch,s.kind,s.members,s.terrainCount);
+                com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.spatial(s.tick,s.scene,s.nonce,i,"retired",true,null,epoch,s.kind,s.members,s.terrainCount,view);
                 GL32.glDeleteSync(s.fence);s.fence=0;s.live=s.consumed=false;ring.retire(s.ticket);s.ticket=null;
             }else break;
         }
@@ -106,7 +111,7 @@ public final class RtQueryWorker implements AutoCloseable {
             double[] times=null;
             try{times=SpatialNative.timing(worker,i,s.nonce);}
             catch(RuntimeException|LinkageError failure){capture.invalidate("RT timing unavailable: "+failure);}
-            capture.spatial(s.tick,s.scene,s.nonce,i,event,true,times,epoch,s.kind,s.members,s.terrainCount);s.reported=true;
+            capture.spatial(s.tick,s.scene,s.nonce,i,event,true,times,epoch,s.kind,s.members,s.terrainCount,view);s.reported=true;
         }
     }
     public boolean failed(){return failed;}

@@ -1,25 +1,26 @@
-// One producer for camera/shadow candidates; unknown visibility retains the instance.
+// Consume the actual body draw lists. A later view fills only missing poses.
 layout(local_size_x=64) in;
 layout(std430,binding=0) readonly buffer PosePool {vec4 rows[];} posePool;
 layout(std430,binding=3) readonly buffer PoseCount {uint live;} poseCount;
+layout(std430,binding=1) readonly buffer PoseCommands {uint words[];} poseCommands;
+layout(std430,binding=2) readonly buffer PoseInstances {uvec2 rows[];} poseInstances;
+layout(std430,binding=4) buffer PoseDispatch {uint x,y,z,candidates,computed;} poseDispatch;
 layout(std430,binding=5) readonly buffer PoseEmitters {vec4 rows[];} poseEmitters;
 layout(std430,binding=CMI_RESOURCE_POSE_OUTPUT_BINDING) buffer PoseOutput {uvec4 rows[];} poseOutput;
-#pragma cmi_include chunks/population_read.glsl
-#pragma cmi_include chunks/rt_visibility_read.glsl
 #define CMI_POSE_PRODUCER
 #pragma cmi_include chunks/allay_pose.glsl
 uniform uint poseStamp;
-uniform bool uShadowMayDraw;
+uniform bool uPreparePoseDispatch;
+uniform bool uMeasurePose;
 uniform float uWaveTier[4];
-void main(){
- uint rank=gl_GlobalInvocationID.x;
- if(!cmiPopulationIndexed(poseCount.live,false)||rank>=populationRead.modelCount)return;
- uint slot=cmiPopulationSlot(rank,poseCount.live,false),animationSlot=cmiPopulationAnimation(rank);
- if(slot>=poseCount.live||animationSlot>=262144u)return;
+shared uint computedInGroup;
+bool publishPose(uint rank){
+ uvec2 instance=poseInstances.rows[rank];
+ uint slot=instance.y>>2u,animationSlot=instance.x>>9u;
+ if(slot>=poseCount.live||animationSlot>=262144u)return false;
+ uint outputBase=uint(CMI_RESOURCE_POSE_ANIMATION_ROWS)+animationSlot*uint(CMI_RESOURCE_POSE_ROWS_PER_INSTANCE);
+ if(poseOutput.rows[outputBase].y==poseStamp)return false;
  uint at=slot*4u;vec4 p0=posePool.rows[at],p1=posePool.rows[at+1u],p3=posePool.rows[at+3u];
- // The later Iris view may invalidate its light proof; a camera-hidden
- // model can still be a shadow candidate in that view.
- if((cmiRtVisibility(p0.xyz)&1u)==0u&&!uShadowMayDraw)return;
  uint hb=floatBitsToUint(p3.w)*VEC4_PER_EMITTER;vec4 storm=poseEmitters.rows[hb+18u];
  bool corpse=p3.y<=0.;int animation=int(poseEmitters.rows[hb+17u].x);
  if(storm.x>.5)animation=cmiStormAnimOverride(distance(p0.xyz,poseEmitters.rows[hb+19u].xyz),storm.y,p3.z,uTimeSec);
@@ -37,7 +38,6 @@ void main(){
  }}
  float item=tier>.5?tier:poseEmitters.rows[hb+17u].z;
  float bodyCarry=uStarfallEnabled&&!corpse&&storm.x>.5?carry:0.,yaw=0.;
- uint outputBase=uint(CMI_RESOURCE_POSE_ANIMATION_ROWS)+animationSlot*uint(CMI_RESOURCE_POSE_ROWS_PER_INSTANCE);
  for(int part=0;part<8;part++){
   mat4 transform=cmiAllayAttackPartTransform(p3.x,p3.z,p0.w,p0.xyz,p1.xyz,animation,part,yaw,part==7?carry:bodyCarry,p1.w,!corpse&&storm.x>.5);
   uint outAt=outputBase+1u+uint(part)*3u;
@@ -46,4 +46,26 @@ void main(){
   poseOutput.rows[outAt+2u]=floatBitsToUint(vec4(transform[0].z,transform[1].z,transform[2].z,transform[3].z));
  }
  poseOutput.rows[outputBase]=uvec4(floatBitsToUint(yaw),poseStamp,floatBitsToUint(item),floatBitsToUint(carry));
+ return true;
+}
+void main(){
+ uint count=min(poseCommands.words[IDX_CNT_MODELOP],uint(poseInstances.rows.length()));
+ uint rank=gl_GlobalInvocationID.x;
+ if(uPreparePoseDispatch){
+  if(rank==0u){
+   poseDispatch.x=(count+63u)/64u;poseDispatch.y=1u;poseDispatch.z=1u;
+   if(uMeasurePose){poseDispatch.candidates=count;poseDispatch.computed=0u;}
+  }
+  return;
+ }
+ if(uMeasurePose){
+  if(gl_LocalInvocationIndex==0u)computedInGroup=0u;
+  barrier();
+ }
+ bool computed=rank<count&&publishPose(rank);
+ if(uMeasurePose){
+  if(computed)atomicAdd(computedInGroup,1u);
+  barrier();
+  if(gl_LocalInvocationIndex==0u&&computedInGroup!=0u)atomicAdd(poseDispatch.computed,computedInGroup);
+ }
 }

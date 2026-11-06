@@ -209,12 +209,12 @@ void main() {
         if(member<131072u)atomicOr(lodNear.members[member>>5u],1u<<(member&31u));
     }
 #endif
-#if !defined(CMI_KEYGEN_DOMAIN) || CMI_KEYGEN_DOMAIN == 2
-    if(matId>=1.5&&matId<2.5&&(cmiRtVisibility(p0.xyz)&1u)==0u)return;
-#endif
     bool sharedFate = (abs(emitters.u[hb + 17u].y - 8.0) < .25 || abs(emitters.u[hb + 17u].y - 9.0) < .25);
     if (!sphereVisible(sharedFate ? p0.xyz : p0.xyz - uCamPos, radius))
         return;
+#if !defined(CMI_KEYGEN_DOMAIN) || CMI_KEYGEN_DOMAIN == 2
+    if(matId>=1.5&&matId<2.5&&(cmiRtVisibility(p0.xyz)&1u)==0u){cmiCountRtRejection();return;}
+#endif
     if(isFeather){if(uFeatherEnabled){uint at=uint(atomicAdd(CMI_FEATHER_WORD(3),1));if(at<CMI_FEATHER_MAX)CMI_FEATHER_WORD(CMI_FEATHER_VISIBLE+at)=int(g);}return;}
 
     if (matId < 0.5) {

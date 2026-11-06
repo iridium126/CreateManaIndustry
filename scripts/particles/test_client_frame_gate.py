@@ -1,5 +1,6 @@
 """Synthetic files test gate logic only; they are never performance evidence."""
 import csv,json,tempfile,unittest
+import shutil
 from pathlib import Path
 from compare_client_frames import compare
 class ClientGateTests(unittest.TestCase):
@@ -32,4 +33,32 @@ class ClientGateTests(unittest.TestCase):
                 if mutation=='valid':self.assertTrue(compare(manifest)['frame_gate_pass'])
                 else:
                     with self.assertRaises(ValueError):compare(manifest)
+    def test_particle_engine_simulation_uses_independent_windows_and_p50_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            manifest=self.fixture(root)
+            manifest.update(comparison='particle-engine',factor='simulation')
+            for number,round in enumerate(manifest['rounds']):
+                for index,source in enumerate(round['aa']+round['candidate_aa']):
+                    p=Path(source)
+                    data=json.loads(p.read_text())
+                    active='gl' if index<2 else 'rt'
+                    data.update(backend=f'requested={active} active={active} abi=12',build_sha256='a'*64,
+                                rt_camera_requested=True,receiving_requested=True,shadow_quality='FULL',
+                                process_id=number*6+index)
+                    data.pop('diagnostic_receipt_sha256')
+                    p.write_text(json.dumps(data))
+                for index,source in enumerate(round['ab']):
+                    p=Path(source)
+                    dest=p.with_name(p.stem+'-ab.json')
+                    data=json.loads(p.read_text())
+                    data['process_id']=number*6+4+index
+                    dest.write_text(json.dumps(data))
+                    shutil.copyfile(p.with_suffix('.csv'),dest.with_suffix('.csv'))
+                    shutil.copyfile(p.with_name(p.stem+'-camera.csv'),dest.with_name(dest.stem+'-camera.csv'))
+                    round['ab'][index]=str(dest)
+            self.assertTrue(compare(manifest)['frame_gate_pass'])
+            manifest['rounds'][0]['ab'][0]=manifest['rounds'][0]['aa'][0]
+            with self.assertRaisesRegex(ValueError,'independent'):
+                compare(manifest)
 if __name__=='__main__':unittest.main()

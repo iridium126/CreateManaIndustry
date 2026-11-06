@@ -42,9 +42,13 @@ public final class AllayDome {
         return (float)(Math.ceil(Math.max(8,seconds)*20)/20);
     }
     public static float warningStart(float lock,float radius,int group){return lock;}
-    /** One attack owns one ledger; each target settles the batch once. */
+    /** One attack owns one ledger. A target can settle each sample once. */
     public static final class Contacts {
-        private final java.util.Set<UUID> victims=new java.util.HashSet<>();
-        public boolean add(UUID player){return victims.add(player);}
+        private final java.util.Map<UUID,Long> victims=new java.util.HashMap<>();
+        public boolean add(UUID player,long tick){
+            if(tick<=victims.getOrDefault(player,Long.MIN_VALUE))return false;
+            victims.put(player,tick);
+            return true;
+        }
     }
 }

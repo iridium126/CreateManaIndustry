@@ -1,6 +1,6 @@
 # 性能验证与客户端采集
 
-状态：[完整计划尚未实现](rt-single-step-status.md)。离屏通过仅证明对应代码路径；尚未进入客户端三轮验收。默认 GL，RT 未获准进入 `auto`。不将探针、压缩率或回放微基准换算成 FPS。
+当前默认使用 AUTO 模拟并开启独立的主视图 RT 遮挡。离屏检查范围见 [重构状态](rt-single-step-status.md)。整帧门槛使用受控客户端窗口。
 
 冻结基线位于 `build/particle-engine/baseline/manifest.json`，包括修改前源码、可运行包、实际捕获与历史实机结果，逐文件 SHA-256。清理依赖记录在同级 `cleanup-dependencies.json`。归档不替代当前验证，也不改写旧实机记录。旧五个窗口同进程且攻击阶段不同，只能说明 Dome 卡顿与回退连锁，不能作为三轮对照验收。
 
@@ -36,17 +36,16 @@ python scripts/particles/particle_tool.py package
 固定场景加载和数量仍使用现有服务器业务命令与同一世界备份，避免测试工具直接修改 HP、攻击或结算。客户端共同命令：
 
 ```text
-/cmi particle profile backend gl
 /cmi particle profile off
 /cmi particle profile hardware status
 /cmi particle profile frames 60
 ```
 
-RT 组只将第一条改为 `backend rt`。采集期间关闭聊天、不移动、不切换光影或后端。关闭 VSync、帧率限制和自动粒子节流；先预热编译及加载。每窗至少30秒且1000帧，不足时使用120或300秒。三轮独立进程；每轮 A、相同 A、B 交错运行。提交同前缀 JSON、所有 CSV、profile context 和 debug.log，并注明场景初态及攻击阶段。
+在客户端配置中选择 GL 或 RT 以固定模拟所有者。采集期间关闭聊天并固定相机、光影和设置。关闭 VSync、帧率限制及自动粒子节流，先预热编译和加载。每窗至少 30 秒且 1000 帧。每轮记录基线 A/A、候选 A/A 及 A/B，每个窗口使用独立进程。保留同前缀 JSON、CSV、profile context 和 debug.log，注明场景初态及攻击输入。
 
-分别比较冻结旧基线、新 GL20Hz、新 RT20Hz；新 GL/RT 两侧使用相同插值策略和预算，再独立开关插值。降频收益归于调度，不能归于 RT。30/60/144/240 FPS、变帧率和暂停恢复检查阶段、伤害、生命周期和结算一致。
+使用 `python scripts/particles/compare_client_frames.py manifest.json result.json`。清单设 `"comparison":"particle-engine"`，`"factor"` 选择 `common`、`simulation`、`camera` 或 `light`。每个 `rounds` 项的 `aa`、`candidate_aa`、`ab` 分别保存两个采集 JSON 路径，A/B 顺序为基线和候选。
 
-完整链改善必须超过匹配 A/A 噪声、1% 和0.1ms，且 p95/p99 无稳定退化。旧“三轮都提升20%”门槛不再使用。未匹配相机、初态、阶段或配置的窗口仅作诊断。用户确认玩法与画面后，才决定是否将具体 RT 模块纳入 `auto`。
+完整链的 p50 收益须超过匹配 A/A 噪声，同时达到 1% 和 0.1 ms，p95/p99 须保持在各自的噪声范围内。未匹配相机、初态、阶段或配置的窗口只用于诊断。
 
 ## 当前离屏结果与限制
 
@@ -54,4 +53,4 @@ RT 组只将第一条改为 `backend rt`。采集期间关闭聊天、不移动�
 
 `baseline-aa/bench.json` 为冻结实际捕获的九个独立进程控制实验，三轮 A、AA、B 全部使用相同输入和旧程序。A/AA 均值差约为 0.004、0.074、0.205 ms，整体门槛未通过；其中单轮假性改善不构成采用证据。此结果校准回放噪声，不是新旧引擎性能对比，也不能换算客户端 FPS。
 
-当前没有新架构的客户端完整场景捕获，不能完成旧基线、新 GL20Hz、新 RT20Hz 的整帧对照，也未证明 CUDA 与渲染实际重叠。RT 遮挡内核尚未启用在线剔除。保留这些限制，交付显式候选和回退，等待客户端画面、玩法与性能验收。
+主视图 RT 查询可以在 GL 或 RT 模拟下剔除已证明完全遮挡的实例。RT 投影仍需逐包逐选项的完整阴影差分资格。两个既有窗口的视角和攻击阶段不同，只用于诊断。受控对照和客户端验收由用户执行。

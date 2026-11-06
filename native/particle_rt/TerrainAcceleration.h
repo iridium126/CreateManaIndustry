@@ -100,14 +100,15 @@ public:
             if(hostBoxes[i])cuMemFreeHost(hostBoxes[i]);
         }
     }
-    unsigned update(OptixDeviceContext context,CUstream stream,unsigned slot,const TerrainSnapshot& snapshot,unsigned memberCapacity,unsigned members,CUdeviceptr instances){
+    unsigned update(OptixDeviceContext context,CUstream stream,unsigned slot,const TerrainSnapshot& snapshot,
+                    unsigned memberCapacity,unsigned members,CUdeviceptr instances,bool copyInstances=true){
         for(auto it=retired.begin();it!=retired.end();){auto result=cuEventQuery(it->ready);if(result==CUDA_ERROR_NOT_READY){++it;continue;}checked(result);cuEventDestroy(it->ready);it=retired.erase(it);}
         for(auto it=builds.begin();it!=builds.end();){
             auto result=cuEventQuery(it->ready);if(result==CUDA_ERROR_NOT_READY){++it;continue;}checked(result);
             for(auto& mesh:it->meshes)mesh->finishBuild();cuEventDestroy(it->ready);it=builds.erase(it);
         }
         if(published&&scene==snapshot.scene&&revision==snapshot.revision){
-            if(active)checked(cuMemcpyDtoDAsync(instances+members*sizeof(OptixInstance),templates.device,active*sizeof(OptixInstance),stream));
+            if(active&&copyInstances)checked(cuMemcpyDtoDAsync(instances+members*sizeof(OptixInstance),templates.device,active*sizeof(OptixInstance),stream));
             return active;
         }
         if(scene!=snapshot.scene){for(auto& entry:meshes)retire(stream,std::move(entry.second));meshes.clear();scene=snapshot.scene;}

@@ -85,6 +85,8 @@ public final class ModelShadowGpu implements AutoCloseable {
     public void prepare(int pool,int emitters,int counter,PackageDrawCulling culling,float x,float y,float z,float width,float height,float viewScale,float time,float[] waves,float[] targets,float[] tiers,int population,long generation){
         if(closed)throw new IllegalStateException("Model shadows closed");if(culling.count<0||culling.count>13)throw new IllegalArgumentException("Shadow planes");
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(programs[1],com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(programs[1],"uRtVisibleGroups"),visibilityBuffer!=0?1:0);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setIntUniform(programs[1],"uRtVisibilityMeasure",
+                visibilityBuffer!=0&&ClientFrameCapture.INSTANCE.collecting()?1:0);
         if(visibilityBuffer!=0)GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,29,visibilityBuffer);
         if(groupBuffer>0||lastGroup>0)GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,ModelShadowGroups.BINDING,groupBuffer);
         lastGroup=groupBuffer;

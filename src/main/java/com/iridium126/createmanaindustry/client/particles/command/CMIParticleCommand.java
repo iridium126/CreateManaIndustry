@@ -137,7 +137,6 @@ public final class CMIParticleCommand {
                                 .then(Commands.literal("hardware").then(Commands.literal("status").executes(ctx->{
                                     for(String line:com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.status().split("\n"))tell(ctx,line);return 1;
                                 })))
-                                .then(hardwareBackends())
                                 .then(Commands.literal("frames").then(Commands.argument("seconds",IntegerArgumentType.integer(1,900)).executes(ctx->{
                                     boolean queued=com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.request(IntegerArgumentType.getInteger(ctx,"seconds"));
                                     tell(ctx,queued?"Whole-client frame capture queued; close menus and keep the scene/settings fixed. Results: logs/cmi-particle-frames":"A frame capture is already pending.");return queued?1:0;
@@ -334,13 +333,6 @@ public final class CMIParticleCommand {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static LiteralArgumentBuilder<CommandSourceStack> hardwareBackends(){
-        var root=Commands.literal("backend");
-        for(String name:com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.backends())root.then(Commands.literal(name).executes(ctx->{
-            boolean accepted=com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.request(name);
-            tell(ctx,accepted?"Backend "+name+" queued for the next inactive Storm boundary. Check hardware status for the active backend.":"Unknown backend. Choose auto, gl or rt.");return accepted?1:0;
-        }));return root;
-    }
     private static int profile(CommandContext<CommandSourceStack> ctx) {
         return showProfile(ctx,false);
     }

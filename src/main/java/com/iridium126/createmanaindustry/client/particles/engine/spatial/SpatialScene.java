@@ -23,7 +23,7 @@ public final class SpatialScene implements AutoCloseable {
     private int program,meta,metaTexture,input,output,outputTexture;
     private final int[] states=new int[2],textures=new int[2];
     private int read;
-    private final int probes=Boolean.getBoolean("cmi.particle.wideBudget")?4:2;
+    private final int probes=2;
     private final SpatialTerrain terrain=new SpatialTerrain(SpatialTerrain.COLLISION);
     private GlSpatialIndex glIndex;
     private long glQueries;

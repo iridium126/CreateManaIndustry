@@ -5,6 +5,7 @@ import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
 import java.nio.IntBuffer;
 import com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient;
+import com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers;
 import com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState;
 import com.iridium126.createmanaindustry.content.allaystorm.*;
@@ -124,7 +125,12 @@ public final class StormLodGpu implements AutoCloseable {
         nativeDrawn=true;
     }
     /** Native variant reads the same buffers through the engine's existing texture-buffer views. */
-    public void bindNative(){ParticleBuffers.INSTANCE.bindMergedTbos(10,records[bank],order[bank]);ParticleBuffers.INSTANCE.bindVao();GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,commands[bank]);}
+    public void bindNative(){
+        var gpu=ParticleBuffers.INSTANCE;
+        gpu.bindMergedTbos(GpuResourceConstants.SAMPLER_MERGED_GEOMETRY,records[bank],order[bank]);
+        gpu.bindVao();
+        GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,commands[bank]);
+    }
     public void drawBody(){
         bodyTiming.begin(ParticleDiagnostics.INSTANCE.enabled(),ParticleDiagnostics.INSTANCE.enabled(),ParticleDiagnostics.INSTANCE.lastFrame(),generation);
         try{GL40.glDrawElementsIndirect(GL11.GL_TRIANGLES,GL11.GL_UNSIGNED_INT,0L);}finally{bodyTiming.end();}

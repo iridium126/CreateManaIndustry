@@ -869,21 +869,24 @@ public final class AllayStormManager {
         Track t = rt.tracks.get(player.getUUID());
         if (t == null || !t.active)
             return;
-        if(!packet.dimension().equals(level.dimension().location()))return;
-        if(rt.columns.contact(player,data,StormIdentity.of(level,data),packet.waveId(),packet.epoch(),packet.sampleSec(),new Vec3(packet.relX(),packet.relY(),packet.relZ())))return;
+        if(!packet.dimension().equals(level.dimension().location())
+                ||!validContactSample(level.getGameTime(),packet.sampleTick(),packet.sampleSec()))return;
+        if(rt.columns.contact(player,data,StormIdentity.of(level,data),packet.waveId(),packet.epoch(),packet.sampleTick(),
+                packet.sampleSec(),new Vec3(packet.relX(),packet.relY(),packet.relZ())))return;
         Wave w = null;
         for (Wave cand : rt.waves)
             if (cand.id == packet.waveId()) {
                 w = cand;
                 break;
             }
-        if (w == null || (w.kind==AllayDome.STARFALL && !player.getUUID().equals(w.target)))
+        if (w == null)
             return;
         if(packet.epoch()!=w.epoch||!player.isAlive()||player.isSpectator()||!Float.isFinite(packet.sampleSec()))return;
         if(AllayStarfall.elapsed(packet.sampleSec(),w.lock)<0||AllayStarfall.elapsed(packet.sampleSec(),w.end)>=0)return;
         if(!w.locked||w.membership.isEmpty()||(StormAttack.regional(w.kind)&&!w.gathered))return;
         Vec3 contact=new Vec3(packet.relX(),packet.relY(),packet.relZ());
-        if(!Double.isFinite(contact.x)||!Double.isFinite(contact.y)||!Double.isFinite(contact.z)||!w.reported.add(player.getUUID()))return;
+        if(!Double.isFinite(contact.x)||!Double.isFinite(contact.y)||!Double.isFinite(contact.z)
+                ||!w.reported.add(player.getUUID(),packet.sampleTick()))return;
 
         // position-only source: the contact point feeds isDamageSourceBlocked's
         // direction check (null source position = shield can never block) and
@@ -893,6 +896,13 @@ public final class AllayStormManager {
                         .getHolderOrThrow(CMIDamageTypes.STORM_PECK),
                 contact);
         player.hurt(source, (float) ServerConfig.stormWaveDamage);
+    }
+
+    static boolean validContactSample(long now,long sampleTick,float sampleSeconds){
+        if(sampleTick<0||sampleTick>now+1||sampleTick<=now-20||!Float.isFinite(sampleSeconds))return false;
+        // A sweep lies within the tick ending at sampleTick, including the wrapped boundary.
+        float offset=AllayStarfall.elapsed(sampleSeconds,clockSeconds(sampleTick));
+        return offset>=-.06f&&offset<=.01f;
     }
 
     public static void gatheredAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackGatheredPacket packet,IPayloadContext ctx){

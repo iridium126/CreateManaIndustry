@@ -14,6 +14,7 @@ struct BridgeTicket {
     uint64_t value{};
 };
 BridgeTicket releaseQueryInput(void* bridge,unsigned slot);
+bool queryInputReleased(void* bridge,unsigned slot,uint64_t value);
 void acquireBridgeLease(void* bridge);
 void releaseBridgeLease(void* bridge);
 void validateBridgeCapacity(void* bridge,size_t bytes,unsigned slots);

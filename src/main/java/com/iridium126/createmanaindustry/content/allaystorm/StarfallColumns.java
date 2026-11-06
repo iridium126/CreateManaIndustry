@@ -21,7 +21,7 @@ public final class StarfallColumns {
     private static final class Active {
         final ClientboundStormColumnPacket packet;
         final BitSet completed=new BitSet();
-        final java.util.Set<UUID> reported=new java.util.HashSet<>();
+        final AllayDome.Contacts reported=new AllayDome.Contacts();
         Active(ClientboundStormColumnPacket packet){this.packet=packet;}
     }
     private final LinkedHashMap<Integer,Active> columns=new LinkedHashMap<>();
@@ -117,13 +117,13 @@ public final class StarfallColumns {
         return Double.isFinite(base)&&gatherY>base+6;
     }
 
-    /** Returns true only after final validation and exactly-once admission. */
-    public boolean contact(ServerPlayer player,AllayStormData data,StormIdentity identity,int id,long epoch,float sample,Vec3 contact){
+    /** Returns true after admitting this attack sample, including when vanilla blocks damage. */
+    public boolean contact(ServerPlayer player,AllayStormData data,StormIdentity identity,int id,long epoch,long sampleTick,float sample,Vec3 contact){
         Active a=columns.get(id);if(a==null||a.completed.cardinality()==64||!data.active||!player.isAlive()||player.isSpectator()||identity.epoch()!=epoch)return false;
         var p=a.packet;if(!p.dimension().equals(player.level().dimension().location())||p.epoch()!=epoch||!Float.isFinite(sample))return false;
-        float at=time(p,sample);if(at<p.assemble()||at>=p.end())return false;
+        if(AllayStarfall.elapsed(sample,p.assemble())<0||AllayStarfall.elapsed(sample,p.end())>=0)return false;
         if(!Double.isFinite(contact.x)||!Double.isFinite(contact.y)||!Double.isFinite(contact.z))return false;
-        if(!a.reported.add(player.getUUID()))return false;
+        if(!a.reported.add(player.getUUID(),sampleTick))return false;
         var source=new DamageSource(player.registryAccess().registryOrThrow(Registries.DAMAGE_TYPE).getHolderOrThrow(CMIDamageTypes.STORM_PECK),contact);
         player.hurt(source,(float)ServerConfig.stormWaveDamage);return true;
     }

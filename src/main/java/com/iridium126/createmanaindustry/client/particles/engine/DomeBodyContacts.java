@@ -14,8 +14,6 @@ public final class DomeBodyContacts {
     public static void register(Programs value){programs.put(value.solve(),value);}
     public static Programs unregister(int solver){return programs.remove(solver);}
     public static int[] related(int solver){var p=programs.get(solver);return p==null?new int[]{solver}:new int[]{p.control(),p.solve(),p.apply(),p.audit()};}
-    private static int diagnosticRuns;
-    private static void stamp(int[] q,int i){if(q!=null)GL33.glQueryCounter(q[i],GL33.GL_TIMESTAMP);}
     private static void barrier() { com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL43.GL_COMMAND_BARRIER_BIT); }
     private static void indirect(long offset) { ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchComputeIndirect(offset);barrier(); }
     public static void run(int gridProgram,int program,int original,int previous,int pool,int counter,int grid,float time,float dt,int players,StarfallGpuBuffers stars) {
@@ -23,7 +21,6 @@ public final class DomeBodyContacts {
     }
     static void run(int gridProgram,int program,int original,int previous,int pool,int counter,int grid,float time,float dt,int players,StarfallGpuBuffers stars,int roster,int dispatch) {
         if(!stars.hasDome()||!stars.domeReady())return;
-        int[] timing=null;if(Boolean.getBoolean("cmi.storm.profile")&&++diagnosticRuns==120){timing=new int[7];for(int k=0;k<timing.length;k++)timing[k]=GL15.glGenQueries();}stamp(timing,0);
         var passes=programs.getOrDefault(program,new Programs(program,program,program,program));
         boolean legacy=passes.control()==passes.solve(); // Frozen before-build GPU fixtures only.
         stars.bind(program,true);int state=stars.candidateStateBuffer();
@@ -33,21 +30,20 @@ public final class DomeBodyContacts {
         GpuUniforms.setIntUniform(gridProgram,"uCandidateStormRoster",roster!=0?1:0);
         for(int part:related(program))GpuUniforms.setIntUniform(part,"uCandidateStormRoster",roster!=0?1:0);
         for(int part:related(program)){stars.bindUniforms(part,true);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(part,GpuUniforms.loc(part,"uTimeSec"),time);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(part,GpuUniforms.loc(part,"uDt"),dt);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(part,GpuUniforms.loc(part,"uPlayerCount"),players);}
-        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.control());com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(passes.control(),GpuUniforms.loc(passes.control(),"uMode"),4);ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);barrier();stamp(timing,1);
+        com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.control());com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(passes.control(),GpuUniforms.loc(passes.control(),"uMode"),4);ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);barrier();
         int oldIndirect=dispatch>=0?dispatch:GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING);GpuBindings.bind(GL43.GL_DISPATCH_INDIRECT_BUFFER,state);
         try {
             long full=(StarfallGpuBuffers.DOME_CONTACT_ARGS+4)*4L;
             GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,grid);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.clearBufferSubData(GL43.GL_SHADER_STORAGE_BUFFER,GL30.GL_R32UI,0,ParticleBuffers.GRID_TABLE*4L,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(java.nio.IntBuffer)null);barrier();
-            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(gridProgram);indirect(full);stamp(timing,2);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(gridProgram);indirect(full);
             GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,0,original);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,14,previous);
             if(legacy)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uMode"),0);
-            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.solve());indirect(full);stamp(timing,3);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.solve());indirect(full);
             if(legacy)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uMode"),3);
-            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.apply());indirect(full);stamp(timing,4);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.apply());indirect(full);
             if(legacy)com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uMode"),5);
-            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.audit());indirect(full);stamp(timing,5);
-            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.control());com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(passes.control(),GpuUniforms.loc(passes.control(),"uMode"),6);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(4,1,1);barrier();stamp(timing,6);
-            if(timing!=null){long before=GL33.glGetQueryObjectui64(timing[0],GL15.GL_QUERY_RESULT);for(int k=1;k<timing.length;k++){long after=GL33.glGetQueryObjectui64(timing[k],GL15.GL_QUERY_RESULT);System.out.println("Dome body GPU pass "+k+" ms="+(after-before)/1e6);before=after;}for(int query:timing)GL15.glDeleteQueries(query);}
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.audit());indirect(full);
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(passes.control());com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(passes.control(),GpuUniforms.loc(passes.control(),"uMode"),6);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(4,1,1);barrier();
         } finally {
             GpuUniforms.setIntUniform(gridProgram,"uCandidateStormRoster",0);
             GpuBindings.bind(GL43.GL_DISPATCH_INDIRECT_BUFFER,oldIndirect);

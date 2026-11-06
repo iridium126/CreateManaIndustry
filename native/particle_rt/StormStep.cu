@@ -647,9 +647,14 @@ extern "C" __global__ void advanceStormVortex(StormStepMember* members,StormTick
         if(unknown)atomicAdd(&view.batch->unknown[slot],1u);
         else if(occupied)atomicAdd(&view.batch->blocked[slot],1u);
     }
+    bool canContact=__float_as_uint(tick.targetAfter.w)!=0u
+        &&(member.terrainState&(StormCoverageUnknown|StormDiscontinuity|StormEmbedded))==0u;
     if(assignment&&helix&&assignment->phase==DomeAttack&&(member.terrainState&StormDiscontinuity)==0u){
-        HelixContactReference path{*attack,*helix,HelixReference(helix->current),vec3(assignment->helixLocal)};
-        stormContact(view,*attack,*assignment,tick,elapsed,dt,vec3(member.previous),position,member.terrainState,cap,path);
+        if(canContact){
+            HelixContactReference path{*attack,*helix,HelixReference(helix->current),vec3(assignment->helixLocal)};
+            stormContact(view.batch->contacts[assignment->slot],tick.targetBefore,tick.targetAfter,
+                tick.seconds,attack->lockedAt,attack->end,elapsed,dt,vec3(member.previous),position,member.terrainState,cap,path);
+        }
         auto displacement=position-vec3(member.previous);
         bool clipped=(member.terrainState&StormTerrainClipped)!=0u;
         bool blocked=(member.terrainState&StormCoverageUnknown)==0u&&helixBlocked(*assignment,clipped,dt,
@@ -658,8 +663,11 @@ extern "C" __global__ void advanceStormVortex(StormStepMember* members,StormTick
             domeComplete(view,*assignment,*route);
     }
     if(assignment&&attack&&!helix&&view.records&&assignment->phase==DomeAttack&&(member.terrainState&StormDiscontinuity)==0u){
-        DomeContactReference path{view,*attack,assignment->rank};
-        stormContact(view,*attack,*assignment,tick,elapsed,dt,vec3(member.previous),position,member.terrainState,cap,path);
+        if(canContact){
+            DomeContactReference path{view,*attack,assignment->rank};
+            stormContact(view.batch->contacts[assignment->slot],tick.targetBefore,tick.targetAfter,
+                tick.seconds,attack->lockedAt,attack->end,elapsed,dt,vec3(member.previous),position,member.terrainState,cap,path);
+        }
         bool slow=length(position-vec3(member.previous))<.2f*dt;
         bool blocked=(member.terrainState&StormTerrainClipped)!=0u||slow;
         assignment->blockedSeconds=blocked?assignment->blockedSeconds+dt:0.f;

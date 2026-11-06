@@ -65,6 +65,8 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     public int displayVisibility(){return displayVisibility;}
     public void bindVisibility(int program){
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uRtVisibleGroups"),displayVisibility!=0?1:0);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setIntUniform(program,"uRtVisibilityMeasure",
+                displayVisibility!=0&&ClientFrameCapture.INSTANCE.collecting()?1:0);
         if(displayVisibility!=0)GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,29,displayVisibility);
     }
     private int displayPool,displayCommands,displayAdd,displayOpaque,displayPermutation,displayGroups;

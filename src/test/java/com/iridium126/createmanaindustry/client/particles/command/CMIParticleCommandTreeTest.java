@@ -53,7 +53,7 @@ class CMIParticleCommandTreeTest {
         rejects(dispatcher,"cmi particle profile querysequence moving_A 15");rejects(dispatcher,"cmi particle profile querysequence moving_A 129");rejects(dispatcher,"cmi particle profile querysequence moving_A");
         // No experimental backend can be enabled before its qualification gates pass.
         rejects(dispatcher,"cmi particle profile backend grid100");
-        accepts(dispatcher,"cmi particle profile hardware status");for(String backend:new String[]{"auto","gl","rt"})accepts(dispatcher,"cmi particle profile backend "+backend);
+        accepts(dispatcher,"cmi particle profile hardware status");for(String backend:new String[]{"auto","gl","rt"})rejects(dispatcher,"cmi particle profile backend "+backend);
         for(String backend:new String[]{"rt-aabb","rt-triangle","tensor","tensor-control","cuda-control","copy"})rejects(dispatcher,"cmi particle profile backend "+backend);
     }
     @Test void shaderpackSummaryAndDetailsParse(){

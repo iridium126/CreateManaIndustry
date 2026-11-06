@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
+import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -9,6 +11,41 @@ class AllayFeatherLifecycleTest {
     }
     private static boolean flag(AllayFeatherGpu owner,String name) throws Exception {
         var field=AllayFeatherGpu.class.getDeclaredField(name);field.setAccessible(true);return field.getBoolean(owner);
+    }
+    @Test void automaticEmissionUsesTheCurrentHorizontalRadius() throws Exception {
+        var owner=AllayFeatherGpu.INSTANCE;owner.reset();
+        int featherRate=ClientConfig.allayFeatherMaxSpawnPerSecond,goldRate=ClientConfig.allayGoldMaxSpawnPerSecond;
+        ClientConfig.allayFeatherMaxSpawnPerSecond=1000;ClientConfig.allayGoldMaxSpawnPerSecond=2000;
+        var center=new Vec3(-1000,192,2000);
+        try {
+            assertTrue(owner.prepareAutomatic(center.add(0,-500,63),center,32,.05f,1));
+            assertTrue(flag(owner,"candidateBirth"));assertTrue(flag(owner,"candidateGoldBirth"));
+            assertTrue(owner.prepareAutomatic(center.add(0,500,64),center,32,.05f,1));
+            assertFalse(owner.prepareAutomatic(center.add(0,0,64.001),center,32,.05f,1));
+            assertFalse(owner.creates());
+            assertTrue(owner.prepareAutomatic(center.add(0,0,64.001),center,33,.05f,1));
+            assertFalse(owner.prepareAutomatic(null,center,32,.05f,1));
+            assertFalse(owner.prepareAutomatic(center,null,32,.05f,1));
+            assertFalse(owner.prepareAutomatic(center,center,0,.05f,1));
+
+            // Leaving the radius discards fractional automatic work.
+            set(owner,"remainder",.99);set(owner,"goldRemainder",.99);
+            assertFalse(owner.prepareAutomatic(center.add(65,0,0),center,32,.05f,1));
+            owner.idle();
+            assertTrue(owner.prepareAutomatic(center,center,32,.0001f,1));
+            assertFalse(owner.creates());
+
+            owner.commit(1);
+            set(owner,"enabled",true);set(owner,"mayFeathers",true);set(owner,"mayGold",true);
+            assertFalse(owner.prepareAutomatic(null,null,0,.05f,1));
+            assertTrue(owner.needsPlayers());assertTrue(flag(owner,"mayGold"));
+            set(owner,"manual",true);set(owner,"manualGold",true);
+            assertFalse(owner.prepareAutomatic(null,null,0,.05f,1));
+            assertTrue(owner.creates());assertTrue(flag(owner,"candidateBirth"));assertTrue(flag(owner,"candidateGoldBirth"));
+        } finally {
+            owner.reset();
+            ClientConfig.allayFeatherMaxSpawnPerSecond=featherRate;ClientConfig.allayGoldMaxSpawnPerSecond=goldRate;
+        }
     }
     @Test void delayedZeroCannotDisableNewFeathers() throws Exception {
         var owner=AllayFeatherGpu.INSTANCE;owner.reset();

@@ -51,17 +51,18 @@ struct StormContactCurve {
     }
 };
 
+// The caller filters invalid targets and unverified terrain before building
+// the path. Only the contact interval and endpoints cross this device call.
 template<class Reference>
-__device__ void stormContact(StormDomeView view,const StormDome& attack,const StormDomeMember& assignment,
-        StormTick tick,float elapsed,float dt,vec3 before,vec3 after,unsigned terrainState,float speedCap,const Reference& reference) {
-    unsigned target=__float_as_uint(tick.targetAfter.w);
-    if(target==0||(terrainState&(StormCoverageUnknown|StormDiscontinuity|StormEmbedded))!=0)return;
-    auto& result=view.batch->contacts[assignment.slot];
+__device__ void stormContact(StormDomeHit& result,float4 targetBeforeRow,float4 targetAfterRow,
+        float seconds,float lockedAt,float endAt,float elapsed,float dt,vec3 before,vec3 after,
+        unsigned terrainState,float speedCap,const Reference& reference) {
+    unsigned target=__float_as_uint(targetAfterRow.w);
     if(atomicAdd(&result.target,0u)!=0)return;
-    float first=fmaxf(0.f,(attack.lockedAt-elapsed+dt)/dt);
-    float last=fminf(1.f,(attack.end-elapsed+dt)/dt);
+    float first=fmaxf(0.f,(lockedAt-elapsed+dt)/dt);
+    float last=fminf(1.f,(endAt-elapsed+dt)/dt);
     if(first>last||last<0.f||first>1.f)return;
-    auto targetBefore=vec3(tick.targetBefore),targetAfter=vec3(tick.targetAfter);
+    auto targetBefore=vec3(targetBeforeRow),targetAfter=vec3(targetAfterRow);
     float alpha;
     vec3 position(0.f);
     if((terrainState&StormTerrainClipped)!=0){
@@ -96,8 +97,8 @@ __device__ void stormContact(StormDomeView view,const StormDome& attack,const St
         if(!hit)return;
     }
     float age=elapsed+(alpha-1.f)*dt;
-    if(age<attack.lockedAt||age>=attack.end)return;
+    if(age<lockedAt||age>=endAt)return;
     if(atomicCAS(&result.target,0u,target)!=0u)return;
-    float seconds=tick.seconds+(alpha-1.f)*dt;
-    result.pointTime=position.row(seconds<0.f?seconds+104857.6f:seconds);
+    float hitTime=seconds+(alpha-1.f)*dt;
+    result.pointTime=position.row(hitTime<0.f?hitTime+104857.6f:hitTime);
 }

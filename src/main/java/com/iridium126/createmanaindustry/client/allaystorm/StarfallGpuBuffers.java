@@ -260,7 +260,7 @@ public final class StarfallGpuBuffers implements AutoCloseable {
    upload.clear();upload.put(words,HEADER+ROSTER,GAUSSIAN-HEADER-ROSTER).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,4L*(HEADER+ROSTER),upload);uploadedBytes+=4L*(GAUSSIAN-HEADER-ROSTER);
    upload.clear();upload.put(words,GATHER_SOURCE,GATHER_SOURCE_WORDS).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,GATHER_SOURCE*4L,upload);uploadedBytes+=4L*GATHER_SOURCE_WORDS;
    upload.clear();upload.put(words,DOME_FLOW_SOURCE,DOME_FLOW_WORDS).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,DOME_FLOW_SOURCE*4L,upload);uploadedBytes+=4L*DOME_FLOW_WORDS;upload.clear();upload.put(words,HELIX_GATHER_FRAMES,4*HELIX_FRAME_WORDS).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,HELIX_GATHER_FRAMES*4L,upload);uploadedBytes+=16L*HELIX_FRAME_WORDS;versions[write]=version;
-  }uploadOuter(write);prepareRecovery(write);if(readyVersions[write]!=readyVersion){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words,1,3).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,4,upload);uploadedBytes+=12;readyVersions[write]=readyVersion;}
+  }if(!nativeProjection)uploadOuter(write);prepareRecovery(write);if(readyVersions[write]!=readyVersion){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words,1,3).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,4,upload);uploadedBytes+=12;readyVersions[write]=readyVersion;}
   if(domeLoaded&&!domeUploaded[write]){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words,DOME_DATA,GATHER_SOURCE-DOME_DATA).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,DOME_DATA*4L,upload);uploadedBytes+=4L*(GATHER_SOURCE-DOME_DATA);upload.clear();upload.put(words,DOME_FLOW_MAP,12288).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,DOME_FLOW_MAP*4L,upload);uploadedBytes+=4L*12288;domeUploaded[write]=true;}
   if(ackVersions[write]!=ackVersion){GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,data[write]);upload.clear();upload.put(words,HOME_ACK,ROSTER/32).flip();com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,HOME_ACK*4L,upload);ackVersions[write]=ackVersion;uploadedBytes+=ROSTER/8;}
   });
@@ -338,6 +338,11 @@ public final class StarfallGpuBuffers implements AutoCloseable {
  public void nativeDisplayGameTime(long gameTime){if(pending&&nativeBanks[1-read])nativeDisplayGameTimes[1-read]=gameTime;}
  public long nativeDisplayGameTime(){return generations[read]>=0&&nativeBanks[read]?nativeDisplayGameTimes[read]:-1;}
  public boolean nativeProjectionReady(){return pending&&nativeBanks[1-read]&&state[1-read]!=0;}
+ public void restartGlState(){
+  clearStates=true;
+  for(var ids:flowBankIds)Arrays.fill(ids,0);
+  Arrays.fill(domeLocalLocks,Float.NaN);
+ }
  public void bindRenderClock(int program,float offset){
   bindDomeClock(program,read);
   if(domeClockValid[read]){float[] elapsed=domeElapsed[read].clone();for(int i=0;i<elapsed.length;i++)elapsed[i]+=offset;GL41.glProgramUniform4fv(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uDomeElapsed"),elapsed);}

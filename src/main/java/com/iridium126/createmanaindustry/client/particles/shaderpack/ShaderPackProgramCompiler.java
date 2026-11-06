@@ -145,8 +145,8 @@ public final class ShaderPackProgramCompiler {
     private final ShaderInstance[] receiverShaders=new ShaderInstance[3];
     private final int[] receiverSamplers=new int[3];
     private String receiverStatus="effective material programs not checked";
-    private boolean unshadowed(){return !com.iridium126.createmanaindustry.client.particles.engine.ShadowQualityFrame.current().receivesShadows()&&receiverShaders[0]!=null&&sessionGeneration==com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().generation();}
-    public String receiverStatus(){return com.iridium126.createmanaindustry.client.particles.engine.ShadowQualityFrame.current().receivesShadows()?"native (FULL)":(unshadowed()?"unshadowed: ":"native receiving fallback: ")+receiverStatus;}
+    private boolean unshadowed(){return !com.iridium126.createmanaindustry.client.particles.engine.ShadowQualityFrame.receivesShadows()&&receiverShaders[0]!=null&&sessionGeneration==com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().generation();}
+    public String receiverStatus(){return com.iridium126.createmanaindustry.client.particles.engine.ShadowQualityFrame.receivesShadows()?"native":(unshadowed()?"unshadowed: ":"native receiving fallback: ")+receiverStatus;}
     private String featherOptimization="pending";
     public String featherOptimization(){return "shared entity program; "+featherOptimization;}
     private final java.util.Map<ShaderInstance,Uniform> placeholderUniforms=new java.util.IdentityHashMap<>();

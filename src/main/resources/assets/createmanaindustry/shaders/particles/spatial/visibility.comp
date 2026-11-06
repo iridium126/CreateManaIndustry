@@ -7,16 +7,19 @@ layout(std430,binding=0) readonly buffer Pool {vec4 rows[];} pool;
 layout(std430,binding=1) buffer Bounds {Bound rows[];} bounds;
 layout(std430,binding=2) readonly buffer Count {uint live;} count;
 layout(std430,binding=3) buffer Packet {uint header[32];Row rows[];} packet;
-layout(std430,binding=4) readonly buffer HistoryInput {uint header[32];Row rows[];} historyInput;
-layout(std430,binding=5) readonly buffer HistoryOutput {uint header[32];Result rows[];} historyOutput;
-layout(std430,binding=6) buffer Visible {vec4 light;GroupProof rows[];} visible;
+layout(std430,binding=4) buffer HistoryInput {uint header[32];Row rows[];} historyInput;
+layout(std430,binding=5) buffer HistoryOutput {uint header[32];Result rows[];} historyOutput;
+layout(std430,binding=6) buffer Visible {vec4 light;uvec4 counts;GroupProof rows[];} visible;
 layout(std430,binding=7) readonly buffer Emitters {vec4 rows[];} emitters;
+layout(std430,binding=8) readonly buffer ReceivedInput {uint header[32];Row rows[];} receivedInput;
+layout(std430,binding=9) readonly buffer ReceivedOutput {uint header[32];Result rows[];} receivedOutput;
 #pragma cmi_include chunks/population_read.glsl
 uniform uint phase,capacity,terrainCount,terrainCapacity,probes;
 uniform uvec2 nonce,epoch,sourceTick,scene;
 uniform float timeSec;
 uniform vec3 camera,shadowRay;
-uniform bool shadowEnabled,historyEnabled;
+uniform vec4 cameraPlanes[6];
+uniform bool shadowEnabled,historyEnabled,mergeHistory,measure;
 uint groupOf(vec3 point){ivec3 cell=ivec3(floor(point/8.));return (uint(cell.x)*92837111u^uint(cell.y)*689287499u^uint(cell.z)*283923481u)&1023u;}
 uint ordered(float value){uint bits=floatBitsToUint(value);return (bits&0x80000000u)!=0u?~bits:bits^0x80000000u;}
 float restored(uint value){return uintBitsToFloat((value&0x80000000u)!=0u?value^0x80000000u:~value);}
@@ -26,8 +29,8 @@ bool historicalHidden(uint at,vec3 lo,vec3 hi){
  Row inputRow=historyInput.rows[at];Result result=historyOutput.rows[at];
  if((inputRow.identity.w&1u)==0u||any(notEqual(result.identity,inputRow.identity))||result.hint.x!=0.)return false;
  vec3 center;
- if(at<1024u){if(any(greaterThan(abs(inputRow.position.xyz-camera),inputRow.velocity.xyz)))return false;center=inputRow.position.xyz+inputRow.preferred.xyz*inputRow.velocity.w;}
- else {if(!shadowEnabled||any(greaterThan(abs(inputRow.preferred.xyz+shadowRay),inputRow.velocity.xyz*.999)))return false;center=inputRow.position.xyz;}
+ if(!shadowEnabled){if(any(greaterThan(abs(inputRow.position.xyz-camera),inputRow.velocity.xyz)))return false;center=inputRow.position.xyz+inputRow.preferred.xyz*inputRow.velocity.w;}
+ else {if(any(greaterThan(abs(inputRow.preferred.xyz+shadowRay),inputRow.velocity.xyz*.999)))return false;center=inputRow.position.xyz;}
  float radius=inputRow.position.w;
  return all(greaterThanEqual(lo,center-vec3(radius)))&&all(lessThanEqual(hi,center+vec3(radius)));
 }
@@ -41,34 +44,61 @@ bool historyValid(){
 }
 void main(){
  uint i=gl_GlobalInvocationID.x;
- if(phase==0u){if(i<1024u){bounds.rows[i].lo=uvec4(0xffffffffu,0xffffffffu,0xffffffffu,0);bounds.rows[i].hi=uvec4(0);visible.rows[i].flags=uvec4(3,0,0,0);}if(i==0u)visible.light=vec4(shadowRay,shadowEnabled?1.:0.);return;}
+ if(phase==4u){
+  if(i<1024u){
+   Row inputRow=receivedInput.rows[i];
+   if(!mergeHistory||(inputRow.identity.w&1u)!=0u){
+    historyInput.rows[i]=inputRow;
+    historyOutput.rows[i]=receivedOutput.rows[i];
+   }
+  }
+  if(i<32u){
+   historyInput.header[i]=receivedInput.header[i];
+   historyOutput.header[i]=receivedOutput.header[i];
+  }
+  return;
+ }
+ if(phase==0u){if(i<1024u){bounds.rows[i].lo=uvec4(0xffffffffu,0xffffffffu,0xffffffffu,0);bounds.rows[i].hi=uvec4(0);visible.rows[i].flags=uvec4(3,0,0,0);}if(i==0u){visible.light=vec4(shadowRay,shadowEnabled?1.:0.);visible.counts=uvec4(0);}return;}
  if(phase==1u){
   if(!cmiPopulationIndexed(count.live,false)||i>=populationRead.modelCount)return;
   uint slot=cmiPopulationSlot(i,count.live,false);if(slot>=count.live)return;
   vec4 p0=pool.rows[slot*4u],p3=pool.rows[slot*4u+3u];uint hb=floatBitsToUint(p3.w)*VEC4_PER_EMITTER;
   bool storm=emitters.rows[hb+18u].x>.5;float size=max(emitters.rows[hb+5u].z,emitters.rows[hb+5u].w)*(storm?1.:p0.w);
-  float radius=8.*max(size,0.)+1.;vec3 lo=p0.xyz-vec3(radius),hi=p0.xyz+vec3(radius);uint group=groupOf(p0.xyz);
+  float radius=8.*max(size,0.)+1.;
+  if(!shadowEnabled){
+   vec3 relative=p0.xyz-camera;
+   for(int k=0;k<6;k++){
+    vec4 plane=cameraPlanes[k];
+    if(dot(plane.xyz,relative)+plane.w < -radius*dot(abs(plane.xyz),vec3(1.)))return;
+   }
+  }
+  vec3 lo=p0.xyz-vec3(radius),hi=p0.xyz+vec3(radius);uint group=groupOf(p0.xyz);
   for(uint axis=0u;axis<3u;axis++){atomicMin(bounds.rows[group].lo[axis],ordered(lo[axis]));atomicMax(bounds.rows[group].hi[axis],ordered(hi[axis]));}atomicAdd(bounds.rows[group].lo.w,1u);return;
  }
  if(phase==2u){
-  if(i<2048u){uint group=i&1023u;Bound bound=bounds.rows[group];Row row;row.position=vec4(0,0,0,.34);row.velocity=vec4(0);row.identity=uvec4(i,group,0,0);row.preferred=vec4(0);
-   if(bound.lo.w!=0u){vec3 lo=lower(bound),hi=upper(bound),center=(lo+hi)*.5;float radius=max(max((hi-lo).x,(hi-lo).y),(hi-lo).z)*.5+1.;
-    if(radius<4096.&&(i<1024u||shadowEnabled)){
-     if(i<1024u){vec3 delta=center-camera;float distance=length(delta);if(distance>.001){row.position=vec4(camera,radius);row.velocity=vec4(.25,.25,.25,distance);row.preferred=vec4(delta/distance,0);row.identity.w=1u;}}
+  if(i<1024u){uint group=i;Bound bound=bounds.rows[group];Row row;row.position=vec4(0,0,0,.34);row.velocity=vec4(0);row.identity=uvec4(i,group,0,0);row.preferred=vec4(0);
+   uint viewMask=shadowEnabled?2u:1u;
+   if(bound.lo.w!=0u&&(visible.rows[group].flags.x&viewMask)!=0u){vec3 lo=lower(bound),hi=upper(bound),center=(lo+hi)*.5;float radius=max(max((hi-lo).x,(hi-lo).y),(hi-lo).z)*.5+1.;
+    if(radius<4096.){
+     if(!shadowEnabled){vec3 delta=center-camera;float distance=length(delta);if(distance>.001){row.position=vec4(camera,radius);row.velocity=vec4(.25,.25,.25,distance);row.preferred=vec4(delta/distance,0);row.identity.w=1u;}}
      else {row.position=vec4(center,radius);row.velocity=vec4(.001,.001,.001,1000000.);row.preferred=vec4(-shadowRay,0);row.identity.w=257u;}
     }
    }packet.rows[i]=row;
   }
-  if(i==0u){for(uint k=0u;k<32u;k++)packet.header[k]=0u;packet.header[0]=0x41313149u;packet.header[1]=12u;packet.header[2]=nonce.x;packet.header[3]=nonce.y;packet.header[4]=epoch.x;packet.header[5]=epoch.y;packet.header[6]=sourceTick.x;packet.header[7]=sourceTick.y;uvec2 target=sourceTick+uvec2(1,0);if(target.x==0u)target.y++;packet.header[8]=target.x;packet.header[9]=target.y;packet.header[10]=2048u;packet.header[12]=floatBitsToUint(timeSec);packet.header[13]=floatBitsToUint(.05);packet.header[14]=floatBitsToUint(.1);packet.header[16]=scene.x;packet.header[17]=scene.y;packet.header[18]=1u;packet.header[19]=probes;packet.header[20]=1u;packet.header[28]=terrainCount;packet.header[29]=32u+2048u*16u;}return;
+  if(i==0u){for(uint k=0u;k<32u;k++)packet.header[k]=0u;packet.header[0]=0x41313149u;packet.header[1]=12u;packet.header[2]=nonce.x;packet.header[3]=nonce.y;packet.header[4]=epoch.x;packet.header[5]=epoch.y;packet.header[6]=sourceTick.x;packet.header[7]=sourceTick.y;uvec2 target=sourceTick+uvec2(1,0);if(target.x==0u)target.y++;packet.header[8]=target.x;packet.header[9]=target.y;packet.header[10]=1024u;packet.header[12]=floatBitsToUint(timeSec);packet.header[13]=floatBitsToUint(.05);packet.header[14]=floatBitsToUint(.1);packet.header[16]=scene.x;packet.header[17]=scene.y;packet.header[18]=1u;packet.header[19]=probes;packet.header[20]=1u;packet.header[28]=terrainCount;packet.header[29]=32u+1024u*16u;}return;
  }
- if(phase==3u&&i<1024u&&historyEnabled&&bounds.rows[i].lo.w!=0u&&historyValid()){vec3 lo=lower(bounds.rows[i]),hi=upper(bounds.rows[i]);uint flags=3u;
-  if(historicalHidden(i,lo,hi))flags&=~1u;
-  if(historicalHidden(i+1024u,lo,hi)){
-   uint at=i+1024u;flags&=~2u;Row prior=historyInput.rows[at];
+ if(phase==3u&&i<1024u&&bounds.rows[i].lo.w!=0u){
+  if(measure){atomicAdd(visible.counts.x,bounds.rows[i].lo.w);atomicAdd(visible.counts.y,1u);}
+  if(!historyEnabled||!historyValid())return;
+  vec3 lo=lower(bounds.rows[i]),hi=upper(bounds.rows[i]);uint flags=3u;
+  if(!shadowEnabled&&historicalHidden(i,lo,hi))flags&=~1u;
+  if(shadowEnabled&&historicalHidden(i,lo,hi)){
+   uint at=i;flags&=~2u;Row prior=historyInput.rows[at];
    visible.rows[i].flags.yzw=floatBitsToUint(max(vec3(0),prior.velocity.xyz*.999-abs(prior.preferred.xyz+shadowRay)));
    visible.rows[i].occluder=historyOutput.rows[at].position;
    visible.rows[i].halfExtent=historyOutput.rows[at].velocity;
   }
   visible.rows[i].flags.x=flags;
+  if(measure&&flags!=3u)atomicAdd(visible.counts.z,1u);
  }
 }

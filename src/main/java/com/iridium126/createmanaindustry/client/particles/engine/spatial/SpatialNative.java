@@ -54,6 +54,7 @@ public final class SpatialNative {
     static native long createStormControl(int capacity,long displayBridge,int probes);
     static native void installStormTerrain(long worker,long revision,java.nio.ByteBuffer rows,int count);
     static native boolean submitStormTick(long worker,java.nio.ByteBuffer packet,int bytes,int displaySlot,boolean timed);
+    static native boolean prepareStormDisplaySlot(long worker,int slot);
     static native double[] stormTickTiming(long worker,long sequence);
     static native void delayStormControl(long worker,int milliseconds);
     static native int pollStormTick(long worker,long sequence);

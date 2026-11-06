@@ -1,7 +1,9 @@
 // Unknown groups and changed light coverage retain the complete draw.
 struct CmiRtGroupProof {uvec4 flags;vec4 occluder,halfExtent;};
-layout(std430,binding=29) readonly buffer RtVisibleGroups {vec4 light;CmiRtGroupProof rows[];} rtVisibleGroups;
+layout(std430,binding=29) buffer RtVisibleGroups {vec4 light;uvec4 counts;CmiRtGroupProof rows[];} rtVisibleGroups;
 uniform bool uRtVisibleGroups;
+uniform bool uRtVisibilityMeasure;
+void cmiCountRtRejection(){if(uRtVisibilityMeasure)atomicAdd(rtVisibleGroups.counts.w,1u);}
 uint cmiRtGroup(vec3 point){ivec3 cell=ivec3(floor(point/8.));return (uint(cell.x)*92837111u^uint(cell.y)*689287499u^uint(cell.z)*283923481u)&1023u;}
 uint cmiRtVisibility(vec3 point){return uRtVisibleGroups?rtVisibleGroups.rows[cmiRtGroup(point)].flags.x:3u;}
 bool cmiRtShadowVisible(vec3 point,vec3 ray,vec3 camera,vec4 shadowPlanes[6],bool shadowViewValid){

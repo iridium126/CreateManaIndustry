@@ -93,7 +93,7 @@ final class NativeStormControl {
                 int buffer=SpatialNative.buffers(displayBridge,slot)[1];
                 displaySlots[slot]=new DisplaySlot(slot,buffer);
             }
-            int probes=Boolean.getBoolean("cmi.particle.wideBudget")?4:2;
+            int probes=2;
             worker=SpatialNative.createStormControl(capacity,displayBridge,probes);
             domeResult=result;
         }catch(RuntimeException|LinkageError error){
@@ -208,7 +208,7 @@ final class NativeStormControl {
         }
     }
     private DisplaySlot freeDisplay(){
-        for(var slot:displaySlots)if(slot.sequence==0)return slot;
+        for(var slot:displaySlots)if(slot.sequence==0&&SpatialNative.prepareStormDisplaySlot(worker,slot.index))return slot;
         return null;
     }
     private void drain(){
@@ -218,6 +218,7 @@ final class NativeStormControl {
             if(status!=COMPLETE&&status!=FAILED)throw new IllegalStateException("Unknown Storm receipt "+status);
             var capture=ClientFrameCapture.INSTANCE;
             boolean measured=capture.tracksStorm(captureEpoch,tick.sequence());
+            long consumeStart=measured?System.nanoTime():0;
             double[] gpuTimes=null;
             if(measured&&status==COMPLETE){
                 try{gpuTimes=SpatialNative.stormTickTiming(worker,tick.sequence());}
@@ -230,7 +231,6 @@ final class NativeStormControl {
             }
             status=SpatialNative.consumeStormTick(worker,tick.sequence());
             journal.receive(tick.sequence(),status==COMPLETE);
-            if(measured)capture.stormCompleted(captureEpoch,tick.sequence(),journal.committed()==tick.sequence(),gpuTimes);
             for(var slot:displaySlots)if(slot.sequence==tick.sequence()){
                 slot.complete=true;
                 if(status==COMPLETE&&!retiring&&failure.isEmpty()&&journal.committed()==tick.sequence())published=slot;
@@ -246,6 +246,8 @@ final class NativeStormControl {
                     batch.snapshots().forEach(snapshotFeedback);
                 }catch(RuntimeException|LinkageError error){stop(error.toString());}
             }
+            if(measured)capture.stormCompleted(captureEpoch,tick.sequence(),journal.committed()==tick.sequence(),gpuTimes,
+                    (System.nanoTime()-consumeStart)*1e-6);
         }
     }
     void service(){
@@ -265,10 +267,13 @@ final class NativeStormControl {
                     packet=MemoryUtil.memRealloc(packet,tick.bytes()).order(ByteOrder.LITTLE_ENDIAN);
                 }
                 int bytes=tick.encode(packet);
+                long inputEnd=timed?System.nanoTime():0;
                 var display=freeDisplay();
+                long releaseEnd=timed?System.nanoTime():0;
                 if(!SpatialNative.submitStormTick(worker,packet,bytes,display==null?-1:display.index,timed)){
                     stop("Native Storm submission refused");return;
                 }
+                long enqueueEnd=timed?System.nanoTime():0;
                 if(display!=null){
                     display.sequence=tick.sequence();
                     display.tick=tick.tick();
@@ -278,7 +283,8 @@ final class NativeStormControl {
                 journal.sent(tick);
                 if(timed)capture.stormSubmitted(captureEpoch,tick.sequence(),tick.parameters().identity(),tick.tick(),
                         display==null?-1:display.index,tick.parameters().population(),terrainCount,journal.queued(),
-                        journal.inFlight(),bytes,(System.nanoTime()-cpuStart)*1e-6);
+                        journal.inFlight(),bytes,(System.nanoTime()-cpuStart)*1e-6,(inputEnd-cpuStart)*1e-6,
+                        (releaseEnd-inputEnd)*1e-6,(enqueueEnd-releaseEnd)*1e-6);
             }
         }catch(RuntimeException|LinkageError error){stop(error.toString());}
     }

@@ -2,34 +2,30 @@ package com.iridium126.createmanaindustry.client.particles.engine;
 
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.ParticleShadowQuality;
-import net.neoforged.neoforge.common.ModConfigSpec;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ParticleShadowQualityTest {
     @Test void strategiesAreIndependentAndFullIsDefault(){
-        assertEquals(7,ParticleShadowQuality.values().length);
-        assertEquals(ParticleShadowQuality.FULL,((ModConfigSpec.ConfigValue<?>)ClientConfig.SPEC.getValues().get("allayStorm.shaderPackShadowQuality")).getDefault());
+        assertEquals(4,ParticleShadowQuality.values().length);
+        assertEquals(ParticleShadowQuality.FULL,ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("allayStorm.shaderPackShadowQuality").getDefault());
+        assertEquals(com.iridium126.createmanaindustry.infrastructure.config.StormSimulationBackend.AUTO,
+                ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("allayStorm.simulationBackend").getDefault());
+        assertEquals(true,ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("particles.rtCameraOcclusion").getDefault());
+        assertEquals(true,ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("particles.receiveShadows").getDefault());
         for(var q:ParticleShadowQuality.values()){
-            assertEquals(q==ParticleShadowQuality.FULL,q.receivesShadows());
             assertEquals(q!=ParticleShadowQuality.OFF,q.castsShadows());
+            assertEquals(q==ParticleShadowQuality.COARSE,q.groupsStorm());
         }
-        assertFalse(ParticleShadowQuality.COARSE.projectsFrustum());
-        assertTrue(ParticleShadowQuality.FRUSTUM.projectsFrustum());
-        assertTrue(ParticleShadowQuality.SHADOW_HIZ.shadowDepth());
-        assertFalse(ParticleShadowQuality.SHADOW_HIZ.screenDepth());
-        assertTrue(ParticleShadowQuality.SCREEN_HIZ.screenDepth());
-        assertFalse(ParticleShadowQuality.SCREEN_HIZ.shadowDepth());
-        assertEquals("SHADOW_HIZ+SCREEN_HIZ",ParticleShadowQuality.COMBINED_HIZ.label());
     }
     @Test void movedKeysHaveNoLegacyAliases(){
         for(String key:new String[]{"partitionMaxParticles","sameFateMaxParticles"}){
-            assertNotNull(ClientConfig.SPEC.getValues().get("greatTricks."+key));
-            assertNull(ClientConfig.SPEC.getValues().get("particles."+key));
+            assertNotNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("greatTricks."+key));
+            assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("particles."+key));
         }
-        assertNotNull(ClientConfig.SPEC.getValues().get("hexcasting.hexPatternGpuBudgetMiB"));
-        assertNotNull(ClientConfig.SPEC.getValues().get("packages.packageGpuAuthority"));
-        assertNull(ClientConfig.SPEC.getValues().get("particles.packageGpuAuthority"));
+        assertNotNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("hexcasting.hexPatternGpuBudgetMiB"));
+        assertNotNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("packages.packageGpuAuthority"));
+        assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("particles.packageGpuAuthority"));
     }
     @Test void qualityReloadDoesNotSplitAFrame(){
         var before=ClientConfig.shaderPackShadowQuality;

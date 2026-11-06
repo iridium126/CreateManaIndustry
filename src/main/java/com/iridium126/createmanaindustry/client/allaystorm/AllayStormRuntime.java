@@ -224,6 +224,7 @@ public final class AllayStormRuntime {
     private double stormCorrectionHz = 5.0;
     /** Next member index to schedule for spawning (skips dead members). */
     private int stormSpawnCursor = 0;
+    private boolean glRecovery;
 
     // ---- synced player collection (storm repulsion + readback near-test) -----
 
@@ -411,6 +412,7 @@ public final class AllayStormRuntime {
         centerClock.reset();
         this.stormIdentity = null;
         this.stormActive = false;
+        glRecovery=false;
         this.pendingStormSpawns = 0;
         this.stormHeaderWritten = false;
         this.stormEmitId = -1;
@@ -664,7 +666,8 @@ public final class AllayStormRuntime {
     public boolean anyWaveActive(){for(var w:waveSlots)if(w!=null&&w.alive&&!w.packet.abort())return true;return false;}
     public void outer(com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket packet){
         var identity=identity();if(identity==null||!identity.dimension().equals(packet.dimension())||identity.epoch()!=packet.epoch())return;
-        if(nativeInputs==null)starfallGpu.outer(packet);else nativeInputs.outer(packet);
+        starfallGpu.outer(packet);
+        if(nativeInputs!=null)nativeInputs.outer(packet);
         if(packet.operation()==1)StormFeedback.INSTANCE.outerReleased(packet);
     }
     public void completeAttack(com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket packet){
@@ -837,7 +840,7 @@ public final class AllayStormRuntime {
             }else if(packet.column()){
                 var p=packet.landings();
                 candidate=overlaps(before,after,p[0]-16,p[1]-5,p[2]-16,p[0]+16,p[1]+5,p[2]+16);
-            }else if(packet.starfall())candidate=player==wave.targetEntityId;
+            }else if(packet.starfall())candidate=packet.locked();
             else{
                 double x=packet.centerX(),y=packet.centerY(),z=packet.centerZ(),r=packet.crownRadius()+4;
                 candidate=packet.locked()&&overlaps(before,after,x-r,y-3,z-r,x+r,y+r,z+r);
@@ -869,6 +872,19 @@ public final class AllayStormRuntime {
         if(nativeInputs==inputs)nativeInputs=null;
     }
     public boolean nativeInputOwned(){return nativeInputs!=null;}
+    public boolean glRecovery(){return glRecovery;}
+    public void recoverGlSimulation(){
+        if(!stormActive)return;
+        glRecovery=true;
+        stormSpawnCursor=0;
+        pendingStormSpawns=stormCount;
+        starfallGpu.restartGlState();
+        starfallDirty=true;
+        if(nativeInputs!=null)nativeInputs.recoverDamage(hit->
+                com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.enqueueDamageEntry(
+                        hit.member(),hit.damage(),hit.kbX(),hit.kbZ(),hit.light(),
+                        ParticleBuffers.DAMAGE_FLAG_MEMBER|(hit.died()?ParticleBuffers.DAMAGE_FLAG_DIED:0)));
+    }
     public int nativeProjectionEmitter(){return stormActive?stormEmitId:-1;}
     public boolean stageNativeCorrection(int member,float x,float y,float z,float arrival,
                                          float vx,float vy,float vz,float strength){

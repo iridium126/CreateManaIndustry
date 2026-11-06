@@ -21,20 +21,21 @@ final class StormBatchReadbacks implements AutoCloseable {
         final GpuReadbackBuffer storage=new GpuReadbackBuffer(BYTES);
         long fence,tick,epoch;
         StormIdentity identity;
+        net.minecraft.client.player.LocalPlayer target;
         boolean published;
     }
     private final ArrayDeque<Batch> pending=new ArrayDeque<>(),free=new ArrayDeque<>();
     private final ByteBuffer data=BufferUtils.createByteBuffer(BYTES);
     private long waitsFailed;
 
-    Batch stage(int source,long tick,long epoch,StormIdentity identity){
+    Batch stage(int source,long tick,long epoch,StormIdentity identity,net.minecraft.client.player.LocalPlayer target){
         var batch=free.pollFirst();if(batch==null)batch=new Batch();
         try{
             GpuReplayCommands.memoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
             GpuReplayCommands.copyNamedBufferSubData(source,batch.storage.id(),0,0,BYTES);
             batch.fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
             if(batch.fence==0)throw new IllegalStateException("Storm attack batch fence unavailable");
-            batch.tick=tick;batch.epoch=epoch;batch.identity=identity;batch.published=false;
+            batch.tick=tick;batch.epoch=epoch;batch.identity=identity;batch.target=target;batch.published=false;
             pending.addLast(batch);return batch;
         }catch(RuntimeException|LinkageError failure){batch.storage.close();throw failure;}
     }
@@ -56,10 +57,11 @@ final class StormBatchReadbacks implements AutoCloseable {
                     data.clear();batch.storage.readCompleted(0,4,data);
                     int count=Math.min(CAPACITY,Math.max(0,data.getInt(0)));
                     if(count!=0)batch.storage.readCompleted(4,count*STRIDE*Float.BYTES,data);
-                    StormFeedback.INSTANCE.acceptWaveSnapshot(ParticleReadbacks.entries(data,0,CAPACITY,STRIDE));
+                    boolean targetCurrent=batch.target!=null&&batch.target==net.minecraft.client.Minecraft.getInstance().player;
+                    StormFeedback.INSTANCE.acceptWaveSnapshot(batch.tick,targetCurrent,ParticleReadbacks.entries(data,0,CAPACITY,STRIDE));
                 }
             }finally{
-                batch.identity=null;
+                batch.identity=null;batch.target=null;
                 if(free.size()<WARM_SLOTS)free.addLast(batch);else batch.storage.close();
             }
         }

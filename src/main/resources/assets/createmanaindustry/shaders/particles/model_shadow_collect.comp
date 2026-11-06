@@ -31,7 +31,6 @@ void main(){
     if(header+18u>=uint(headers.length()))return;
     float material=headers[header+7u].x;if(material<1.5||material>=2.5)return;
     bool storm=headers[header+18u].x>.5;
-    if(!cmiRtShadowVisible(p0.xyz,uShadowRay,uCamera,uShadowViewPlanes,uShadowViewEnabled))return;
     float size=cmiModelSize(p0,p3,headers[header+5u].z,headers[header+5u].w,headers[header+6u].x,storm);
     float scale=2.0*size/MODEL_ABOVE_FEET;vec2 dimensions=uNativeSize*scale;
     if(!(dimensions.x>0.0&&dimensions.y>0.0))return;
@@ -48,6 +47,7 @@ void main(){
     if(uShadowDepthEnabled&&cmiShadowDepthReject(center,vec3(8.*max(size,0.)+1.)))return;
     if(uScreenDepthEnabled&&cmiScreenDepthReject(center,vec3(8.*max(size,0.)+1.)))return;
 #endif
+    if(!cmiRtShadowVisible(p0.xyz,uShadowRay,uCamera,uShadowViewPlanes,uShadowViewEnabled)){cmiCountRtRejection();return;}
     uint row=atomicAdd(cmd[IDX_CNT_MODELOP],1u);items[row]=uvec2(rowData.y<<9u,i<<2u);
     if(cmiModelCarrier(storm,p3.y,p3.z,p0.w,headers[header+17u].z,particles[4u*i+1u].w)){
         uint carrier=atomicAdd(cmd[IDX_CNT_CARRIER],1u);if(carrier<(uCarrierLimit==0u?uint(CARRIER_CAP):uCarrierLimit))items[uCarrierBase+carrier]=uvec2(rowData.y<<9u,i<<2u);

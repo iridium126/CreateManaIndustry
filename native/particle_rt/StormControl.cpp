@@ -9,11 +9,19 @@
 #include <cstring>
 #include <limits>
 #include <vector>
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 
 namespace {
 constexpr unsigned slots=CMI_RESOURCE_RT_SLOTS, block=256;
-constexpr int idle=0, pending=1, complete=2, failed=4, undrained=5;
+constexpr int idle=0, pending=1, complete=2, failed=4, undrained=5, queued=6, reserved=7;
 void CUDA_CB injectedDelay(void* value){Sleep(DWORD(reinterpret_cast<uintptr_t>(value)));}
+struct DomeUpload {
+    std::vector<unsigned char> bytes;
+    size_t records{},keys{},flows{};
+};
 struct TickSlot {
     CUevent done{};
     std::array<CUevent,8> marks{};
@@ -25,8 +33,14 @@ struct TickSlot {
     void* playerUpload{};
     StormDomeBatch* domeBatch{};
     StormTick tick{};
-    int state{};
+    std::atomic<int> state{};
     int display=-1;
+    BridgeTicket ticket{};
+    std::vector<unsigned char> payload;
+    std::shared_ptr<const TerrainSnapshot> geometry;
+    std::unique_ptr<DomeUpload> templateUpload;
+    std::string error;
+    unsigned delay{};
 };
 struct DisplaySlot {
     BridgeTicket ticket{};
@@ -64,6 +78,24 @@ class StormControlSession {
     bool active{},stopped{};
     unsigned delayNext{};
     std::string error;
+    std::thread worker;
+    std::mutex queueMutex;
+    std::condition_variable queueReady;
+    uint64_t queuedThrough{};
+    bool closing{},domeStaged{};
+    std::atomic<bool> workerFailed{};
+    std::unique_ptr<DomeUpload> pendingDome;
+
+    void work() {
+        for(uint64_t next=1;;++next){
+            {
+                std::unique_lock<std::mutex> lock(queueMutex);
+                queueReady.wait(lock,[&]{return closing||next<=queuedThrough;});
+                if(closing)return;
+            }
+            run(ring[(next-1)%slots]);
+        }
+    }
 
     void allocate(CUdeviceptr& dst,size_t bytes) {
         reserveBytes(bytes);
@@ -75,6 +107,11 @@ class StormControlSession {
     void remember(const char* cause) {
         stopped=true;
         if(error.empty())error=cause;
+    }
+    void rememberTickFailure(const char* stage,const StormTick& input,const char* cause) {
+        auto message=std::string(stage)+" (sequence="+std::to_string(input.sequence)
+            +", tick="+std::to_string(input.tick)+", identity="+std::to_string(input.identity)+"): "+cause;
+        remember(message.c_str());
     }
     static bool vectorFinite(float4 v) {
         return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z)&&std::isfinite(v.w);
@@ -167,13 +204,13 @@ class StormControlSession {
         checked(cuMemFreeHost(domeUpload));domeUpload=nullptr;
         checked(cuEventDestroy(domeUploadDone));domeUploadDone=nullptr;
     }
-    void validate(const StormTick& input,const unsigned char* commands,size_t bytes) {
+    void validateHeader(const StormTick& input,size_t bytes) {
         bool idleBoundary=!active&&input.identity>identity;
         bool tickOrder=!submitted||input.tick>tick&&(input.tick==tick+1||idleBoundary);
         if(input.magic!=CMI_RESOURCE_STORM_TICK_MAGIC||input.abi!=CMI_RESOURCE_ABI
             ||input.sequence!=submitted+1||input.tick>uint64_t(std::numeric_limits<int64_t>::max())
             ||!tickOrder||input.identity==0||input.identity<identity
-            ||input.active>3||(input.active&2u&&!domeRecords)||input.population>capacity||input.seed>0xffffffu
+            ||input.active>3||(input.active&2u&&!domeStaged)||input.population>capacity||input.seed>0xffffffu
             ||input.controls>CMI_RESOURCE_STORM_MAX_CONTROLS
             ||input.terrainRows>CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS||input.terrainPages>CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES
             ||(input.terrainRows==0?input.terrainPages!=0:input.terrainRows<16||(input.terrainRows&(input.terrainRows-1))!=0)
@@ -195,6 +232,8 @@ class StormControlSession {
             ||!targetPointValid(input.targetBefore)||!targetPointValid(input.targetAfter)||input.targetBefore.w!=0.f
             ||(input.projectedSequence?(input.projectedIdentity!=input.identity||input.projectedSequence>=input.sequence):input.projectedIdentity!=0))
             throw std::runtime_error("Invalid or out-of-order Storm tick");
+    }
+    void validatePayload(const StormTick& input,const unsigned char* commands) {
         for(unsigned i=0;i<input.columnCaptureCount;i++){
             auto row=input.columnCaptures[i];
             if(row.x>=columnSlots||!row.y||row.y>=0x1000000u||!row.z||row.w)
@@ -420,6 +459,7 @@ public:
                 checked(cuMemAllocHost(reinterpret_cast<void**>(&s.receipt),sizeof(StormStepReceipt)));
                 allocate(s.deviceReceipt,sizeof(StormStepReceipt));
             }
+            worker=std::thread([this]{work();});
         } catch (...) {
             if(stream)cuStreamSynchronize(stream); // failed initialization owns no shared slots
             release();
@@ -427,6 +467,14 @@ public:
         }
     }
     void release() {
+        if(worker.joinable()){
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                closing=true;
+            }
+            queueReady.notify_one();
+            worker.join();
+        }
         if(context)cuCtxSetCurrent(context);
         destroyStormSpatial(spatial);
         for(auto& s:ring){
@@ -460,17 +508,18 @@ public:
         geometry=copyTerrainSnapshot(1,revision,rows,count,bytes,CMI_RESOURCE_STORM_SPATIAL_TERRAIN_LIMIT);
     }
     void installDome(JNIEnv* env,jfloatArray records,jintArray keys,jintArray flows){
-        if(stopped||domeRecords)throw std::runtime_error("Dome table installation is one-shot");
+        if(stopped||domeStaged)throw std::runtime_error("Dome table installation is one-shot");
         if(!records||!keys||!flows)throw std::runtime_error("Missing Dome template arrays");
         auto recordCount=env->GetArrayLength(records),keyCount=env->GetArrayLength(keys),flowCount=env->GetArrayLength(flows);
         if(recordCount!=domeMembers*CMI_RESOURCE_STORM_DOME_RECORD_WORDS||flowCount!=domeMembers
             ||keyCount<domeMembers*CMI_RESOURCE_STORM_DOME_NODE_WORDS||keyCount>67108864)
             throw std::runtime_error("Invalid Dome template layout");
         size_t recordBytes=size_t(recordCount)*4,keyBytes=size_t(keyCount)*4,flowBytes=size_t(flowCount)*4;
-        bind();
         try {
-            checked(cuMemAllocHost(&domeUpload,recordBytes+keyBytes+flowBytes));
-            auto bytes=static_cast<unsigned char*>(domeUpload);
+            auto upload=std::make_unique<DomeUpload>();
+            upload->bytes.resize(recordBytes+keyBytes+flowBytes);
+            upload->records=recordBytes;upload->keys=keyBytes;upload->flows=flowBytes;
+            auto bytes=upload->bytes.data();
             env->GetFloatArrayRegion(records,0,recordCount,reinterpret_cast<jfloat*>(bytes));
             env->GetIntArrayRegion(keys,0,keyCount,reinterpret_cast<jint*>(bytes+recordBytes));
             env->GetIntArrayRegion(flows,0,flowCount,reinterpret_cast<jint*>(bytes+recordBytes+keyBytes));
@@ -489,56 +538,103 @@ public:
                     ||row[3]+row[7]>domeMembers||row[10]<=0.f||!validSpan(row[0],row[1])||!validSpan(row[8],row[12]))
                     throw std::runtime_error("Invalid Dome template record");
             }
-            allocate(domeRecords,recordBytes);allocate(domeKeys,keyBytes);allocate(domeFlowsDevice,flowBytes);
-            checked(cuEventCreate(&domeUploadDone,CU_EVENT_DISABLE_TIMING));
-            checked(cuMemcpyHtoDAsync(domeRecords,bytes,recordBytes,stream));
-            checked(cuMemcpyHtoDAsync(domeKeys,bytes+recordBytes,keyBytes,stream));
-            checked(cuMemcpyHtoDAsync(domeFlowsDevice,bytes+recordBytes+keyBytes,flowBytes,stream));
-            checked(cuEventRecord(domeUploadDone,stream));
+            pendingDome=std::move(upload);
+            domeStaged=true;
         }catch(const std::exception& e){remember(e.what());throw;}
+    }
+    void uploadDome(DomeUpload& upload){
+        auto records=upload.records,keys=upload.keys,flows=upload.flows;
+        checked(cuMemAllocHost(&domeUpload,upload.bytes.size()));
+        std::memcpy(domeUpload,upload.bytes.data(),upload.bytes.size());
+        auto bytes=static_cast<unsigned char*>(domeUpload);
+        allocate(domeRecords,records);allocate(domeKeys,keys);allocate(domeFlowsDevice,flows);
+        checked(cuEventCreate(&domeUploadDone,CU_EVENT_DISABLE_TIMING));
+        checked(cuMemcpyHtoDAsync(domeRecords,bytes,records,stream));
+        checked(cuMemcpyHtoDAsync(domeKeys,bytes+records,keys,stream));
+        checked(cuMemcpyHtoDAsync(domeFlowsDevice,bytes+records+keys,flows,stream));
+        checked(cuEventRecord(domeUploadDone,stream));
+    }
+    bool prepareDisplay(unsigned index){
+        if(!displayBridge||stopped)return false;
+        auto& display=displayRing.at(index);
+        if(display.state==idle){
+            display.ticket=releaseQueryInput(displayBridge,index);
+            display.state=reserved;
+        }
+        return display.state==reserved&&queryInputReleased(displayBridge,index,display.ticket.value);
     }
     bool submit(const void* source,size_t bytes,int displayIndex,bool timed) {
         if(stopped||submitted-consumed==slots)return false;
         if(!source||bytes<sizeof(StormTick))throw std::runtime_error("Storm input buffer too small");
         StormTick input;std::memcpy(&input,source,sizeof(input));
         auto commands=static_cast<const unsigned char*>(source)+sizeof(input);
-        validate(input,commands,bytes); // fail before changing state or claiming a slot
+        validateHeader(input,bytes);
         if(displayIndex< -1||displayIndex>=int(slots)||(displayIndex>=0&&!displayBridge))
             throw std::runtime_error("Invalid native display slot");
-        if(displayIndex>=0&&displayRing[displayIndex].state!=idle)
-            throw std::runtime_error("Native display slot still has an owner");
-        bind();
-        collectDomeUpload();
+        if(displayIndex>=0){
+            const auto& display=displayRing[displayIndex];
+            if(display.state!=idle&&(display.state!=reserved||!queryInputReleased(displayBridge,unsigned(displayIndex),display.ticket.value)))
+                throw std::runtime_error("Native display slot still has an owner");
+        }
         auto& s=ring[submitted%slots];
+        s.payload.assign(commands,static_cast<const unsigned char*>(source)+bytes);
         s.timed=timed;
-        if(timed)for(auto& mark:s.marks)if(!mark)checked(cuEventCreate(&mark,CU_EVENT_DEFAULT));
-        auto mark=[&](unsigned stage){if(timed)checked(cuEventRecord(s.marks[stage],stream));};
-        if(input.terrainRows){
-            if(!terrainRows)allocate(terrainRows,rowBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS));
-            if(!terrainCells)allocate(terrainCells,cellBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES));
-            if(!s.terrainUpload)checked(cuMemAllocHost(&s.terrainUpload,maxTerrainUpload()));
-            std::memcpy(s.terrainUpload,commands+commandBytes(input.controls),rowBytes(input.terrainRows)+cellBytes(input.terrainPages));
-        }
-        if(input.playerCount){
-            size_t limit=playerBytes(CMI_RESOURCE_STORM_PLAYER_LIMIT);
-            if(!devicePlayers)allocate(devicePlayers,limit);
-            if(!s.playerUpload)checked(cuMemAllocHost(&s.playerUpload,limit));
-            auto start=commands+commandBytes(input.controls)+rowBytes(input.terrainRows)+cellBytes(input.terrainPages);
-            std::memcpy(s.playerUpload,start,playerBytes(input.playerCount));
-        }
+        s.ticket={};
+        s.error.clear();
         if(displayIndex>=0){
             auto& display=displayRing[displayIndex];
-            display.ticket=releaseQueryInput(displayBridge,unsigned(displayIndex));
+            if(display.state==idle)display.ticket=releaseQueryInput(displayBridge,unsigned(displayIndex));
             display.sequence=input.sequence;
             display.state=pending;
+            s.ticket=display.ticket;
         }
-        s.tick=input;s.state=pending;s.display=displayIndex;
+        s.tick=input;
+        s.display=displayIndex;
+        s.geometry=geometry;
+        s.templateUpload=std::move(pendingDome);
+        s.delay=delayNext;delayNext=0;
+        s.state=queued;
         submitted=input.sequence;tick=input.tick;identity=input.identity;active=(input.active&1u)!=0;
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            queuedThrough=submitted;
+        }
+        queueReady.notify_one();
+        return true;
+    }
+    void run(TickSlot& s){
+        auto& input=s.tick;
+        auto commands=s.payload.data();
+        bool timed=s.timed;
+        bool active=(input.active&1u)!=0;
+        auto mark=[&](unsigned stage){if(timed)checked(cuEventRecord(s.marks[stage],stream));};
+        const char* stage="Storm input validation";
         try {
-            if(delayNext){
-                auto delay=delayNext;delayNext=0;
-                checked(cuLaunchHostFunc(stream,injectedDelay,reinterpret_cast<void*>(uintptr_t(delay))));
+            bind();
+            if(workerFailed)throw std::runtime_error("Cancelled after prior native Storm fault");
+            validatePayload(input,commands);
+            stage="Storm input upload";
+            collectDomeUpload();
+            if(s.templateUpload){
+                uploadDome(*s.templateUpload);
+                s.templateUpload.reset();
             }
+            if(timed)for(auto& event:s.marks)if(!event)checked(cuEventCreate(&event,CU_EVENT_DEFAULT));
+            if(input.terrainRows){
+                if(!terrainRows)allocate(terrainRows,rowBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS));
+                if(!terrainCells)allocate(terrainCells,cellBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES));
+                if(!s.terrainUpload)checked(cuMemAllocHost(&s.terrainUpload,maxTerrainUpload()));
+                std::memcpy(s.terrainUpload,commands+commandBytes(input.controls),rowBytes(input.terrainRows)+cellBytes(input.terrainPages));
+            }
+            if(input.playerCount){
+                size_t limit=playerBytes(CMI_RESOURCE_STORM_PLAYER_LIMIT);
+                if(!devicePlayers)allocate(devicePlayers,limit);
+                if(!s.playerUpload)checked(cuMemAllocHost(&s.playerUpload,limit));
+                auto start=commands+commandBytes(input.controls)+rowBytes(input.terrainRows)+cellBytes(input.terrainPages);
+                std::memcpy(s.playerUpload,start,playerBytes(input.playerCount));
+            }
+            if(s.delay)
+                checked(cuLaunchHostFunc(stream,injectedDelay,reinterpret_cast<void*>(uintptr_t(s.delay))));
             mark(0);
             if(input.terrainRows){
                 auto rows=rowBytes(input.terrainRows);
@@ -548,6 +644,7 @@ public:
                 terrainRevision++;
             }
             if(input.playerCount)checked(cuMemcpyHtoDAsync(devicePlayers,s.playerUpload,playerBytes(input.playerCount),stream));
+            stage="Storm controls";
             applyControls(s,input,commands);
             if(input.positionSnapshot||input.columnCaptureCount)ensureBatch();
             auto view=domeView((input.active&2u)!=0);
@@ -557,10 +654,12 @@ public:
             }
             mark(1);
             if(active&&input.population){
+                stage="Storm spatial query";
                 checked(cuMemsetD32Async(domeSearches,0,2,stream));
                 StormTerrain terrain{reinterpret_cast<const int4*>(terrainRows),reinterpret_cast<const uint32_t*>(terrainCells),terrainMask,terrainRevision};
                 auto hints=queryStormSpatial(*spatial,unsigned((input.sequence-1)%slots),prepareSpatial,members,input,
-                    geometry.get(),timed?s.marks.data()+2:nullptr);
+                    s.geometry.get(),timed?s.marks.data()+2:nullptr);
+                stage="Storm member advance";
                 void* args[]={&members,&input,&terrain,&view,&devicePlayers,&hints};launch(advance,input.population,args);
                 mark(5);
                 if(input.positionSnapshot){
@@ -568,6 +667,7 @@ public:
                     launch(positionSnapshot,input.population,snapshotArgs);
                 }
             }else for(unsigned stage=2;stage<=5;stage++)mark(stage);
+            stage="Storm batch readback";
             if(view.batch){
                 if(input.columnCaptureCount){
                     void* args[]={&members,&input,&view};
@@ -581,8 +681,9 @@ public:
                 checked(cuMemcpyDtoHAsync(s.domeBatch,domeBatch,batchBytes(input),stream));
             }
             mark(6);
+            stage="Storm display and receipt";
             CUdeviceptr output{};
-            const auto* ticket=displayIndex<0?nullptr:&displayRing[displayIndex].ticket;
+            const auto* ticket=s.display<0?nullptr:&s.ticket;
             if(ticket){
                 CUDA_EXTERNAL_SEMAPHORE_WAIT_PARAMS wait{};
                 wait.params.fence.value=ticket->value;
@@ -607,20 +708,33 @@ public:
             checked(cuMemcpyDtoHAsync(s.receipt,s.deviceReceipt,sizeof(StormStepReceipt),stream));
             mark(7);
             checked(cuEventRecord(s.done,stream));
+            s.state=pending;
         } catch(const std::exception& e) {
-            remember(e.what());
+            s.error=std::string(stage)+": "+e.what();
+            workerFailed=true;
             s.state=cuEventRecord(s.done,stream)==CUDA_SUCCESS?failed:undrained;
         }
-        return true;
     }
     int poll(uint64_t sequence) {
         if(sequence!=consumed+1||sequence>submitted)throw std::runtime_error("Storm receipt is not the oldest input");
         auto& s=ring[consumed%slots];
+        if(s.state==queued)return pending;
+        if(!s.error.empty())rememberTickFailure("Storm enqueue failed",s.tick,s.error.c_str());
         if(s.state==pending){
             bind();
             auto state=cuEventQuery(s.done);
             if(state==CUDA_ERROR_NOT_READY)return pending;
-            if(state!=CUDA_SUCCESS){remember("Storm CUDA completion failed");s.state=undrained;}
+            if(state!=CUDA_SUCCESS){
+                const char* name=nullptr;
+                const char* description=nullptr;
+                cuGetErrorName(state,&name);
+                cuGetErrorString(state,&description);
+                auto detail=std::string(name?name:"CUDA error")+" ("+std::to_string(int(state))+")";
+                if(description)detail+=std::string(": ")+description;
+                rememberTickFailure("Storm CUDA completion failed",s.tick,detail.c_str());
+                workerFailed=true;
+                s.state=undrained;
+            }
             else if(s.receipt->sequence!=s.tick.sequence||s.receipt->tick!=s.tick.tick||s.receipt->identity!=s.tick.identity){
                 remember("Storm CUDA receipt identity mismatch");s.state=failed;
             } else s.state=complete;
@@ -644,6 +758,7 @@ public:
             display.state=s.state==undrained?undrained:complete;
         }
         if(s.state!=undrained)s.state=idle;
+        s.geometry.reset();
         ++consumed;
         return result;
     }
@@ -651,7 +766,7 @@ public:
         auto& display=displayRing.at(index);
         if(display.sequence!=sequence||!fence)throw std::runtime_error("Invalid native display retirement");
         if(display.state!=complete)return false;
-        for(const auto& earlier:displayRing)if(earlier.state&&earlier.sequence<sequence)return false;
+        for(const auto& earlier:displayRing)if(earlier.sequence&&earlier.sequence<sequence)return false;
         using Wait=unsigned(APIENTRY*)(void*,unsigned,unsigned long long);
         auto wait=reinterpret_cast<Wait>(wglGetProcAddress("glClientWaitSync"));
         if(!wait)throw std::runtime_error("Display fence polling unavailable");
@@ -659,6 +774,7 @@ public:
         if(status==0x911Bu)return false;
         if(status!=0x911Au&&status!=0x911Cu)throw std::runtime_error("Native display fence failed");
         display={};
+        if(!stopped)prepareDisplay(index);
         return true;
     }
     bool copyDomeBatch(uint64_t sequence,void* destination,size_t bytes){
@@ -689,7 +805,15 @@ public:
     }
     bool close() {
         if(consumed!=submitted)return false;
-        for(const auto& display:displayRing)if(display.state!=idle)return false;
+        for(unsigned index=0;index<slots;++index){
+            auto& display=displayRing[index];
+            if(display.state==reserved){
+                if(!queryInputReleased(displayBridge,index,display.ticket.value))return false;
+                retireQueryWithoutOutput(displayBridge,index,display.ticket.value);
+                display={};
+            }
+            if(display.state!=idle)return false;
+        }
         bind();
         // Without a trustworthy fence, keep the allocations quarantined
         // rather than allowing them to alias another session.
@@ -721,6 +845,10 @@ extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(submitStormTick)(JNIEnv* env,jcla
         if(!packet||bytes<0||env->GetDirectBufferCapacity(packet)<bytes)throw std::runtime_error("Storm input must be a direct buffer");
         return session(handle).submit(env->GetDirectBufferAddress(packet),size_t(bytes),display,timed);
     } catch(const std::exception& e){fail(env,e);return JNI_FALSE;}
+}
+extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(prepareStormDisplaySlot)(JNIEnv* env,jclass,jlong handle,jint index) {
+    try { return session(handle).prepareDisplay(unsigned(index)); }
+    catch(const std::exception& e){fail(env,e);return JNI_FALSE;}
 }
 extern "C" JNIEXPORT jdoubleArray JNICALL JNI_NAME(stormTickTiming)(JNIEnv* env,jclass,jlong handle,jlong sequence){
     try{

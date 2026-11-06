@@ -843,6 +843,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 setIntUniform(ParticleRuntime.this.programs.emit(),"uHexTickReady",1);
                 setUIntUniform(ParticleRuntime.this.programs.emit(), "uTotalSpawn", totalSpawn);
                 setUIntUniform(ParticleRuntime.this.programs.emit(), "uEmitCount", entryCount);
+                setIntUniform(ParticleRuntime.this.programs.emit(),"uRecoverStorm",AllayStormRuntime.INSTANCE.glRecovery()?1:0);
                 setUIntUniform(ParticleRuntime.this.programs.emit(),"uHexParameterBase",entryCount*ParticleBuffers.EMIT_ENTRY_FLOATS);
 
                 // storm style 3 (analytic spawn): instance seed + the
@@ -1063,7 +1064,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             candidate=frameCoordinator.candidate(nextGeneration,ParticleRuntime.this.gpu.particleWriteBufferId(),Math.max(0,finalPerm),
                     ParticleRuntime.this.gpu.indirectBufferId(),ParticleRuntime.this.gpu.counterBufferId(slot),ParticleRuntime.this.gpu.candidatePopulationBuffer(),nextGeneration,stormVersion,packageVersion);
             // All driver work and version checks precede owner promotion.
-            if(attackBatch)stormBatch=stormBatches.stage(gpu.waveContactBufferId(),simulationTick,gpu.identityEpoch(),AllayStormRuntime.INSTANCE.identity());
+            if(attackBatch)stormBatch=stormBatches.stage(gpu.waveContactBufferId(),simulationTick,gpu.identityEpoch(),
+                    AllayStormRuntime.INSTANCE.identity(),targetIdentity);
             snapshot= ParticleRuntime.this.readbacks.freeSlot();
             if(snapshot!=null) {
                 snapshot.published=false;snapshot.generation=nextGeneration;snapshot.epoch=ParticleRuntime.this.gpu.identityEpoch();snapshot.hitRay=submittedHitRay;

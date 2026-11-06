@@ -32,17 +32,26 @@ public final class ClientFrameCapture {
         }catch(java.io.IOException failure){return "unavailable";}
     }
     private static final class ShadowSlot {com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer storage;long fence,frame,generation,display;Window owner;}
+    private static final class VisibilitySlot {
+        com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer storage;
+        long fence,frame;
+        boolean light,pose;
+        Window owner;
+    }
     private record SpatialKey(long worker,int kind,long scene,long nonce) {}
     private record StormKey(long worker,long sequence) {}
     private record StormSubmission(long frame,long identity,long tick,int slot,int members,int terrain,int queued,
-                                   int inFlight,int inputBytes,double cpuMs) {}
+                                   int inFlight,int inputBytes,double cpuMs,double inputMs,double releaseMs,double enqueueMs) {}
     private final ShadowSlot[] shadowSlots={new ShadowSlot(),new ShadowSlot(),new ShadowSlot()};
+    private final VisibilitySlot[] visibilitySlots=java.util.stream.Stream.generate(VisibilitySlot::new).limit(12).toArray(VisibilitySlot[]::new);
+    private final java.nio.ByteBuffer visibilityBytes=org.lwjgl.BufferUtils.createByteBuffer(16);
     private static final class Window {
         static final class Stage {long generation;double cpu,gpu;int cpuSamples,gpuSamples;Stage(long generation){this.generation=generation;}}
         final Map<Long,Integer> indices=new HashMap<>();
         final Map<Integer,Map<String,Stage>> stages=new TreeMap<>();
         final Map<Integer,Map<String,Object>> riftVisibility=new TreeMap<>();
         final List<String> spatial=new ArrayList<>();
+        final List<String> visibility=new ArrayList<>(),poses=new ArrayList<>();
         final Set<SpatialKey> spatialTickets=new HashSet<>();
         final Map<StormKey,StormSubmission> stormTickets=new HashMap<>();
         final List<String> stormSamples=new ArrayList<>();
@@ -75,16 +84,16 @@ public final class ClientFrameCapture {
     public boolean busy(){return window!=null||requestedSeconds!=0;}
     public boolean tracksSpatial(long worker,int kind,long scene,long nonce){return window!=null&&window.spatialTickets.contains(new SpatialKey(worker,kind,scene,nonce));}
     public void stormSubmitted(long worker,long sequence,long identity,long tick,int slot,int members,int terrain,
-                               int queued,int inFlight,int inputBytes,double cpuMs){
+                               int queued,int inFlight,int inputBytes,double cpuMs,double inputMs,double releaseMs,double enqueueMs){
         var w=window;if(w==null||!w.collecting)return;
         long frame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken();
         w.stormTickets.put(new StormKey(worker,sequence),
-                new StormSubmission(frame,identity,tick,slot,members,terrain,queued,inFlight,inputBytes,cpuMs));
+                new StormSubmission(frame,identity,tick,slot,members,terrain,queued,inFlight,inputBytes,cpuMs,inputMs,releaseMs,enqueueMs));
     }
     public boolean tracksStorm(long worker,long sequence){
         return window!=null&&window.stormTickets.containsKey(new StormKey(worker,sequence));
     }
-    public void stormCompleted(long worker,long sequence,boolean applied,double[] gpuTimes){
+    public void stormCompleted(long worker,long sequence,boolean applied,double[] gpuTimes,double consumeMs){
         var w=window;if(w==null)return;
         var s=w.stormTickets.remove(new StormKey(worker,sequence));
         if(s==null)return;
@@ -97,10 +106,11 @@ public final class ClientFrameCapture {
         row.append(',').append(gpuTimes==null?-1:(int)gpuTimes[7]);
         row.append(',').append(gpuTimes==null?-1:(long)gpuTimes[7]*
                 com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.STORM_DISPLAY_RECORD_BYTES);
+        row.append(',').append(s.inputMs()).append(',').append(s.releaseMs()).append(',').append(s.enqueueMs()).append(',').append(consumeMs);
         w.stormSamples.add(row.toString());
     }
     /** ABI and statistics schema are independent. Timings are fetched only after completion. */
-    public void spatial(long sourceTick,long scene,long nonce,int slot,String event,boolean consumed,double[] times,long worker,int kind,int members,int terrain){
+    public void spatial(long sourceTick,long scene,long nonce,int slot,String event,boolean consumed,double[] times,long worker,int kind,int members,int terrain,String view){
         var w=window;if(w==null)return;var key=new SpatialKey(worker,kind,scene,nonce);
         if(event.equals("submitted")){if(!w.collecting)return;w.spatialTickets.add(key);}
         else if(!w.spatialTickets.contains(key))return;
@@ -108,7 +118,7 @@ public final class ClientFrameCapture {
         long frame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken();
         var row=new StringBuilder().append(frame).append(',').append(sourceTick).append(',').append(sourceTick+1).append(',').append(scene).append(',').append(nonce).append(',').append(slot).append(",12,2,").append(event).append(',').append(consumed);
         for(int i=0;i<5;i++)row.append(',').append(times!=null&&i<times.length?times[i]:Double.NaN);
-        row.append(',').append(worker).append(',').append(kind==0?"motion":"render").append(',').append(members).append(',').append(terrain);w.spatial.add(row.toString());
+        row.append(',').append(worker).append(',').append(kind==0?"motion":view).append(',').append(members).append(',').append(terrain);w.spatial.add(row.toString());
         if(event.equals("retired"))w.spatialTickets.remove(key);
     }
     public void invalidate(String reason){if(collecting()){window.invalid=reason;stop();}}
@@ -118,6 +128,7 @@ public final class ClientFrameCapture {
         if(window==null&&requestedSeconds==0)return;
         frameId++;head=System.nanoTime();active=-1;
         pollShadow();
+        pollVisibility(false);
         if(timer!=null){timer.poll();ParticleDiagnostics.INSTANCE.pollFrameSamples();ParticleFrameStages.poll();}
         if(window!=null&&!window.collecting&&((++window.draining>=8&&timer.pending()==0&&window.spatialTickets.isEmpty()
                 &&window.stormTickets.isEmpty())||head-window.stopped>5_000_000_000L))finish();
@@ -145,11 +156,14 @@ public final class ClientFrameCapture {
             m.put("shadow_path_at_start",com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.performanceShadowPath():"Iris unavailable");
             m.put("engine_source_sha256",ParticlePrograms.INSTANCE.diagnosticSourceDigest());m.put("native_module_version",com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialNative.loadedVersion());
             m.put("profile_context_file",ParticleDiagnostics.INSTANCE.exportActiveProfileContext());
+            m.put("rt_camera_requested",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.rtCameraOcclusion);
+            m.put("receiving_requested",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleReceiveShadows);
+            m.put("rt_visibility_start",com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.particleVisibilityStatus());
             m.put("gold_visible","unavailable: additive command combines materials; no same-generation material census");
             m.put("stage_scope","same scene-frame tagged asynchronous ranges; ranges may nest and must not be summed; absent stages are unavailable/inactive, not zero");
             m.put("stage_hierarchy","world.render contains world.section.*, world.terrain.*, iris.shadow.whole and integrated CMI work; world.section.* are sequential submission sections (may include batch flushes and CMI hooks), terrain and effects are children, never add them to sections; iris.shadow.whole contains draw.pack.model-shadow; submission.pack.merge-whole contains draw.pack.merge and state capture/restore; iris.translucents.begin contains rift.target.whole, iris.translucents.depth-copy and existing deferred; rift.target.whole contains rift.target.prepare/sky/depth-copy/deferred/clouds/composite/history-publish/restore; missing optional children remain unknown; irisveil.before-deferred.callbacks contains registered bridge callbacks (placement depends on bridge); solid_particles.native.* are children of world.section.solid_particles only; batch.type may be nested in batch.all; update.input_state contains starfall.prepare.*; world.effect.whole.<id> contains world.effect.<id>. cpu_ranges/gpu_ranges count repeated executions; when CPU calls are recorded, unequal counts make GPU totals unknown; GPU-only producers have no CPU count; missing ranges remain unknown.");
             com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.install(this::stageSample);ParticleDiagnostics.INSTANCE.frameSampling(true);
-            m.put("process_id",ProcessHandle.current().pid());m.put("process_started",ProcessHandle.current().info().startInstant().map(Object::toString).orElse("unavailable"));m.put("simulation_hz",20);m.put("display_interpolation",!Boolean.getBoolean("cmi.particle.noInterpolation"));m.put("query_budget",Boolean.getBoolean("cmi.particle.wideBudget")?"4/64/8":"2/32/4");m.put("backend",com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.identity());
+            m.put("process_id",ProcessHandle.current().pid());m.put("process_started",ProcessHandle.current().info().startInstant().map(Object::toString).orElse("unavailable"));m.put("simulation_hz",20);m.put("display_interpolation",true);m.put("query_budget","2/32/4");m.put("backend",com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.identity());
             m.put("hardware",com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.status());
             m.put("attack_stage_scope","CPU packet contract stage; per-member GPU phases require input freeze");
             m.put("dimension",mc.level.dimension().location().toString());m.put("size",List.of(width,height));m.put("fps_limit",limit);m.put("vsync",vsync);
@@ -245,6 +259,43 @@ public final class ClientFrameCapture {
         }
     }
     private void closeShadow(){for(var slot:shadowSlots){if(slot.fence!=0)org.lwjgl.opengl.GL32.glDeleteSync(slot.fence);slot.fence=0;slot.owner=null;if(slot.storage!=null)slot.storage.close();slot.storage=null;}}
+    public void visibilitySubmitted(int buffer,boolean light){
+        viewStatsSubmitted(buffer,light,false);
+    }
+    public void poseSubmitted(int buffer,boolean light){
+        viewStatsSubmitted(buffer,light,true);
+    }
+    private void viewStatsSubmitted(int buffer,boolean light,boolean pose){
+        if(buffer==0||!collecting()||active<0)return;
+        for(var slot:visibilitySlots)if(slot.fence==0){
+            if(slot.storage==null)slot.storage=new com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer(16);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(org.lwjgl.opengl.GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyNamedBufferSubData(buffer,slot.storage.id(),pose?12:16,0,pose?8:16);
+            slot.fence=org.lwjgl.opengl.GL32.glFenceSync(org.lwjgl.opengl.GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
+            slot.frame=window.sceneFrames[active];slot.light=light;slot.pose=pose;slot.owner=window;
+            return;
+        }
+    }
+    private void pollVisibility(boolean closing){
+        for(var slot:visibilitySlots){
+            if(slot.fence!=0){
+                int status=org.lwjgl.opengl.GL32.glClientWaitSync(slot.fence,0,0);
+                if(status==org.lwjgl.opengl.GL32.GL_TIMEOUT_EXPIRED&&!closing)continue;
+                if(slot.owner==window&&(status==org.lwjgl.opengl.GL32.GL_ALREADY_SIGNALED
+                        ||status==org.lwjgl.opengl.GL32.GL_CONDITION_SATISFIED)){
+                    visibilityBytes.clear();
+                    slot.storage.readCompleted(0,slot.pose?8:16,visibilityBytes);
+                    String view=slot.frame+","+(slot.light?"light":"camera")+","+visibilityBytes.getInt(0)+","+visibilityBytes.getInt(4);
+                    if(slot.pose){
+                        long bytes=(long)visibilityBytes.getInt(4)*(com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.POSE_ROWS_PER_INSTANCE+3)*16;
+                        window.poses.add(view+","+bytes);
+                    }else window.visibility.add(view+","+visibilityBytes.getInt(8)+","+visibilityBytes.getInt(12));
+                }
+                org.lwjgl.opengl.GL32.glDeleteSync(slot.fence);slot.fence=0;slot.owner=null;
+            }
+            if(closing&&slot.storage!=null){slot.storage.close();slot.storage=null;}
+        }
+    }
     public void camera(long frame,net.minecraft.client.Camera camera,org.joml.Matrix4fc projection){
         if(active<0||window.sceneFrames[active]!=frame)return;
         var position=camera.getPosition();double[] values={position.x,position.y,position.z,camera.getYRot(),camera.getXRot(),projection.m11()>0?Math.toDegrees(2*Math.atan(1.0/projection.m11())):Double.NaN};
@@ -268,7 +319,7 @@ public final class ClientFrameCapture {
         if(window!=null)window.metadata.put("rift_visibility_at_end",com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.metadata());
         if(window!=null)window.metadata.put("shadow_path_at_end",com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.performanceShadowPath():"Iris unavailable");
         if(window!=null&&com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE)window.metadata.put("target_sky_visibility_at_end",com.iridium126.createmanaindustry.client.render.shaderpack.RiftIrisUniforms.visibilityMetadata());
-        Window w=window;pollShadow();closeShadow();com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.install(null);ParticleDiagnostics.INSTANCE.frameSampling(false);ParticleFrameStages.close();window=null;timer.close();timer=null;level=null;
+        Window w=window;pollShadow();closeShadow();pollVisibility(true);com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.install(null);ParticleDiagnostics.INSTANCE.frameSampling(false);ParticleFrameStages.close();window=null;timer.close();timer=null;level=null;
         Path directory=Minecraft.getInstance().gameDirectory.toPath().resolve("logs/cmi-particle-frames");
         w.metadata.put("invalid_reason",w.invalid);w.metadata.put("samples",w.size);w.metadata.put("requested_seconds",w.seconds);w.metadata.put("skipped_gpu",w.skippedGpu);
         w.metadata.put("stage_records",w.stageEntries);
@@ -276,6 +327,7 @@ public final class ClientFrameCapture {
         w.metadata.put("storm_unconsumed_at_export",w.stormTickets.size());
         w.metadata.put("storm_gpu_scope","CUDA tick segments may overlap OpenGL and frame intervals");
         w.metadata.put("rt_native_owned_bytes",com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialNative.bytes());
+        w.metadata.put("rt_visibility_end",com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.particleVisibilityStatus());
         w.metadata.put("spatial_scope","submissions created during this window; lifecycle receipts drain after stop");
         w.metadata.put("interval_ms",statistics(w.interval,w.size));w.metadata.put("cpu_submit_ms",statistics(w.cpu,w.size));w.metadata.put("gpu_ms",statistics(w.gpu,w.size));
         double total=0;for(int i=0;i<w.size;i++)total+=w.interval[i];w.metadata.put("measured_seconds",total/1000);w.metadata.put("average_fps",total>0?w.size*1000/total:0);
@@ -300,8 +352,14 @@ public final class ClientFrameCapture {
                     for(int i=0;i<w.size;i++){out.write(w.frames[i]+","+w.sceneFrames[i]+","+w.generations[i]);for(var counts:w.submissions)out.write(","+counts[i]);out.write(","+w.shadowGenerations[i]+"\n");}
                 }
                 Files.write(directory.resolve(name+"-spatial.csv"),java.util.stream.Stream.concat(java.util.stream.Stream.of("scene_frame,source_tick,target_tick,scene_epoch,nonce,slot,native_abi,statistics_schema,event,consumed,external_input_wait_ms,validate_and_instance_prepare_ms,ias_maintenance_ms,probe_and_parameter_upload_ms,seal_and_signal_ms,worker_epoch,query_kind,members,terrain_boxes"),w.spatial.stream()).toList(),StandardOpenOption.CREATE_NEW);
+                Files.write(directory.resolve(name+"-rt-visibility.csv"),java.util.stream.Stream.concat(
+                        java.util.stream.Stream.of("scene_frame,view,candidates,groups,proof_groups,rejected_instances"),
+                        w.visibility.stream()).toList(),StandardOpenOption.CREATE_NEW);
+                Files.write(directory.resolve(name+"-poses.csv"),java.util.stream.Stream.concat(
+                        java.util.stream.Stream.of("scene_frame,view,candidates,computed,bytes_written"),
+                        w.poses.stream()).toList(),StandardOpenOption.CREATE_NEW);
                 Files.write(directory.resolve(name+"-storm.csv"),java.util.stream.Stream.concat(java.util.stream.Stream.of(
-                        "scene_frame,worker,identity,tick,sequence,display_slot,member_range,terrain_boxes,queued,in_flight,input_bytes,applied,cpu_submit_ms,gpu_control_ms,gpu_instance_prepare_ms,gpu_ias_ms,gpu_trace_ms,gpu_step_ms,gpu_feedback_ms,gpu_display_ms,display_records,display_record_bytes"),
+                        "scene_frame,worker,identity,tick,sequence,display_slot,member_range,terrain_boxes,queued,in_flight,input_bytes,applied,cpu_submit_ms,gpu_control_ms,gpu_instance_prepare_ms,gpu_ias_ms,gpu_trace_ms,gpu_step_ms,gpu_feedback_ms,gpu_display_ms,display_records,display_record_bytes,cpu_input_ms,cpu_gl_release_poll_ms,cpu_native_enqueue_ms,cpu_feedback_consume_ms"),
                         w.stormSamples.stream()).toList(),StandardOpenOption.CREATE_NEW);
                 try(var out=Files.newBufferedWriter(directory.resolve(name+"-camera.csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,x,y,z,yaw_degrees,pitch_degrees,vertical_fov_degrees\n");

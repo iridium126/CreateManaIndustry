@@ -24,7 +24,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 public final class StarfallColumnGameTests {
     private record Fixture(StarfallColumns columns,AllayStormData data,StormIdentity identity,
                            ClientboundStormColumnPacket packet,FakePlayer trigger,FakePlayer other,Vec3 contact,BitSet reserved) {
-        boolean hit(FakePlayer player,float sample,Vec3 point,long epoch){return columns.contact(player,data,identity,packet.id(),epoch,sample,point);}
+        boolean hit(FakePlayer player,float sample,Vec3 point,long epoch){return columns.contact(player,data,identity,packet.id(),epoch,player.level().getGameTime(),sample,point);}
         boolean hit(FakePlayer player){return hit(player,StarfallColumns.clock(player.level().getGameTime()),contact,packet.epoch());}
         void tick(List<net.minecraft.server.level.ServerPlayer> players){columns.tick(trigger.serverLevel(),data,packet.centerX(),packet.centerZ(),players,reserved,()->999,p->{});}
     }
@@ -105,10 +105,27 @@ public final class StarfallColumnGameTests {
         h.assertTrue(f.hit(f.other),"Armored bloom contact rejected");float health=f.other.getHealth();
         h.assertTrue(health>13&&health<20,"Vanilla armor did not reduce bloom damage");
         float now=StarfallColumns.clock(h.getLevel().getGameTime());
-        // Batch settlement remains once per target even after vanilla i-frames expire.
+        // A replay of the same simulation sample stays rejected.
         f.other.invulnerableTime=0;
         h.assertTrue(!f.hit(f.other,now,f.contact,f.packet.epoch()),"Duplicate event settled the same attack twice");
         h.assertTrue(f.other.getHealth()==health,"Concurrent members bypassed vanilla i-frames");h.succeed();
+    }
+    @GameTest(template="storm_combat_test",timeoutTicks=40)
+    public static void bloomAllowsNewSamplesAndUsesVanillaCooldown(GameTestHelper h){
+        var f=fixture(h);
+        long tick=h.getLevel().getGameTime();
+        var point=f.contact;
+        h.assertTrue(f.columns.contact(f.other,f.data,f.identity,f.packet.id(),f.packet.epoch(),tick-1,
+                StarfallColumns.clock(tick),point),"First contact was rejected");
+        float health=f.other.getHealth();
+        h.assertTrue(f.columns.contact(f.other,f.data,f.identity,f.packet.id(),f.packet.epoch(),tick,
+                StarfallColumns.clock(tick),point),"A different sample was suppressed by the attack ledger");
+        h.assertTrue(f.other.getHealth()==health,"The repeat contact bypassed vanilla invulnerability");
+        f.other.invulnerableTime=10;
+        h.assertTrue(f.columns.contact(f.other,f.data,f.identity,f.packet.id(),f.packet.epoch(),tick+1,
+                StarfallColumns.clock(tick),point),"Later contact was rejected");
+        h.assertTrue(f.other.getHealth()<health,"Vanilla cooldown expired but the attack could not damage again");
+        h.succeed();
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40)
     public static void bloomUsesVanillaShieldAndTotem(GameTestHelper h){

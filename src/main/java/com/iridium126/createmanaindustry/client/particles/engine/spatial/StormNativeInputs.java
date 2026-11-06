@@ -23,6 +23,8 @@ public final class StormNativeInputs {
     private final StormControlJournal journal=new StormControlJournal();
     private final SpatialTerrain spatialTerrain=new SpatialTerrain(SpatialTerrain.COLLISION);
     private final ArrayList<StormControlJournal.Command> pending=new ArrayList<>();
+    public record RecoveryDamage(long sequence,int member,float damage,float kbX,float kbZ,float light,boolean died) {}
+    private final java.util.ArrayDeque<RecoveryDamage> recoveryDamage=new java.util.ArrayDeque<>();
     private final ClientboundStormWavePacket[] helixPackets=new ClientboundStormWavePacket[STORM_DOME_SLOTS];
     private final HelixGatherRecovery[] helixRecovery=new HelixGatherRecovery[STORM_DOME_SLOTS];
     private final int[] outerCycles=new int[131072];
@@ -39,13 +41,17 @@ public final class StormNativeInputs {
     long generation(){return generation;}
     String failure(){return failure;}
     void displayCommitted(long identity,long sequence){
-        if(identity==generation)projectedSequence=Math.max(projectedSequence,sequence);
+        if(identity!=generation)return;
+        projectedSequence=Math.max(projectedSequence,sequence);
+        while(!recoveryDamage.isEmpty()&&recoveryDamage.getFirst().sequence()<=projectedSequence)
+            recoveryDamage.removeFirst();
     }
     public void stop(String reason){if(failure.isEmpty())failure=reason;journal.stop();}
     public void lifecycle(boolean active){
         generation=Math.incrementExact(generation);
         this.active=active;
         projectedSequence=0;
+        recoveryDamage.clear();
         lastPositionSnapshot=Long.MIN_VALUE;
         needsDome=false;
         invalidateTargetEdge();
@@ -66,7 +72,13 @@ public final class StormNativeInputs {
         return true;
     }
     public void damage(int member,float damage,float kbX,float kbZ,float light,boolean died){
-        if(active)add(StormControlJournal.Command.damage(member,damage,kbX,kbZ,light,died));
+        if(active){
+            add(StormControlJournal.Command.damage(member,damage,kbX,kbZ,light,died));
+            recoveryDamage.addLast(new RecoveryDamage(journal.nextSequence(),member,damage,kbX,kbZ,light,died));
+        }
+    }
+    public void recoverDamage(java.util.function.Consumer<RecoveryDamage> sink){
+        while(!recoveryDamage.isEmpty())sink.accept(recoveryDamage.removeFirst());
     }
     public void correction(int member,float x,float y,float z,float arrival,float vx,float vy,float vz,float strength){
         if(active)add(StormControlJournal.Command.correction(member,

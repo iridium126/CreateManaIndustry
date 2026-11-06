@@ -21,12 +21,14 @@ def camera_matches(a,b):
     return len(a)==len(b)==6 and all(abs(yaw_delta(x,y) if i==3 else x-y)<=.001 for i,(x,y) in enumerate(zip(a,b)))
 
 
-def load(path, production_builds=False):
+def load(path, production_builds=False, particle_engine=False):
     path=Path(path);meta=json.loads(path.read_text())
     with path.with_suffix('.csv').open(newline='') as stream:rows=list(csv.DictReader(stream))
-    for key in ('dimension','size','fps_limit','vsync','gpu','driver','context','engine_source_sha256','diagnostic_receipt_sha256','auto_throttle'):
+    required=('dimension','size','fps_limit','vsync','gpu','driver','context','engine_source_sha256','auto_throttle')
+    if not particle_engine:required+=('diagnostic_receipt_sha256',)
+    for key in required:
         if key not in meta:raise ValueError('missing capture context: '+key)
-    if meta['engine_source_sha256']=='unavailable' or (not production_builds and meta['diagnostic_receipt_sha256'] in ('none','unavailable')):raise ValueError('unqualified/missing diagnostic source receipt')
+    if meta['engine_source_sha256']=='unavailable' or (not production_builds and not particle_engine and meta['diagnostic_receipt_sha256'] in ('none','unavailable')):raise ValueError('unqualified/missing diagnostic source receipt')
     if meta.get('invalid_reason') or len(rows)<1000 or meta.get('measured_seconds',0)<30:
         raise ValueError(f'{path}: invalid/short capture; requires 30 seconds and 1000 frames')
     values=[float(row['interval_ms']) for row in rows]
@@ -49,13 +51,16 @@ def load(path, production_builds=False):
     counts={}
     for key in ('live','model_input'):
         known=[int(r[key]) for r in rows if int(r[key])>=0]
-        if len(known)<len(rows)*.95:raise ValueError('same-generation particle counts unavailable')
+        minimum=min(len(rows)*.95,meta['measured_seconds']*10) if particle_engine else len(rows)*.95
+        if len(known)<minimum:raise ValueError('same-generation particle counts unavailable')
         counts[key]=statistics.median(known)
     attacks=Counter(re.sub(r'\b\d+:(?=helix/|dome/|starfall/)','',r['attack_contract_stage']) for r in rows)
     return dict(path=str(path),metadata=meta,times=times,average_fps=1000/statistics.mean(values),frames=len(rows),camera=signature,counts=counts,attack_distribution={k:v/len(rows) for k,v in attacks.items()})
 
 
 def compare(manifest):
+    if manifest.get('comparison') == 'particle-engine':
+        return compare_particle_engine(manifest)
     if manifest.get('comparison') == 'production-builds':
         return compare_builds(manifest)
     rounds=manifest.get('rounds',[]);out=[];processes=set();fixed_context=None;fixed_camera=None
@@ -89,6 +94,68 @@ def compare(manifest):
         out.append(dict(round=index+1,aa=aa,candidate_aa=candidate_aa,ab=ab,p50_gain_ms=gain,threshold_ms=threshold,passed=gain>threshold and tails))
     return dict(rounds=out,frame_gate_pass=len(out)>=3 and all(r['passed'] for r in out),
                 production_replacement=False,reason='Frame gate only. Candidate still requires full physics/event, visual, compatibility and lifecycle qualification.')
+
+
+def compare_particle_engine(manifest):
+    """Independent process A/A and A/B rounds for one isolated particle optimization."""
+    factor=manifest['factor']
+    changed={'common':'build','simulation':'simulation','camera':'camera','light':'casting'}[factor]
+    same_scene=None
+    same_population=None
+    configurations=None
+    processes=set()
+    results=[]
+    for number,round in enumerate(manifest['rounds'],1):
+        pairs={name:[load(path,particle_engine=True) for path in round[name]] for name in ('aa','candidate_aa','ab')}
+        if any(len(pair)!=2 for pair in pairs.values()):raise ValueError('each round requires three pairs')
+        baseline,candidate=pairs['ab']
+        def config(c):
+            m=c['metadata']
+            match=re.search(r'\bactive=(gl|rt)\b(?!-)',m.get('backend',''))
+            if not match or type(m.get('rt_camera_requested')) is not bool or type(m.get('receiving_requested')) is not bool:
+                raise ValueError('missing actual simulation or camera/receiver configuration')
+            return dict(build=m.get('build_sha256'),simulation=match[1],camera=m['rt_camera_requested'],
+                        casting=m.get('shadow_quality'),receiving=m['receiving_requested'])
+        a,b=config(baseline),config(candidate)
+        if {key for key in a if a[key]!=b[key]}!={changed}:raise ValueError('expected exactly one changed factor')
+        if any(not re.fullmatch('[0-9a-f]{64}',str(conf['build'])) for conf in (a,b)):raise ValueError('missing distribution build identity')
+        if configurations is None:configurations=(a,b)
+        if configurations!=(a,b):raise ValueError('factor configurations differ across rounds')
+        if factor=='simulation' and (a['simulation'],b['simulation'])!=('gl','rt'):raise ValueError('simulation pair must be GL to RT')
+        if factor=='camera' and (a['camera'],b['camera'])!=(False,True):raise ValueError('camera pair must enable RT')
+        if factor=='light' and (a['casting'],b['casting'])!=('FULL','RT'):raise ValueError('shadow pair must be FULL to RT')
+        for side,captures,expected in (('baseline',pairs['aa']+[baseline],a),('candidate',pairs['candidate_aa']+[candidate],b)):
+            for c in captures:
+                m=c['metadata']
+                pid=(m.get('process_id'),m.get('process_started'))
+                if any(value in (None,'unavailable') for value in pid) or pid in processes:
+                    raise ValueError('each window requires an independent client process')
+                processes.add(pid)
+                if config(c)!=expected or m['auto_throttle'] is not False:
+                    raise ValueError('unmatched factor configuration or auto throttle enabled')
+                context=re.sub(r'; (?:session|backend|engine|shadow_quality)=[^;]*','',m['context'])
+                scene=(context,tuple(m[key] for key in ('dimension','size','fps_limit','vsync','gpu','driver')),
+                       m.get('rift_config'))
+                if same_scene is None:same_scene=(scene,c['camera']);same_population=c
+                if same_scene[0]!=scene or not camera_matches(same_scene[1],c['camera']):
+                    raise ValueError('unmatched scene, pack/options or fixed view')
+                if any(abs(c['counts'][k]-v)>max(1,v*.001) for k,v in same_population['counts'].items()):
+                    raise ValueError('unmatched simulated population')
+                stages=same_population['attack_distribution']
+                if any(abs(c['attack_distribution'].get(k,0)-stages.get(k,0))>.05 for k in stages.keys()|c['attack_distribution'].keys()):
+                    raise ValueError('unmatched attack stages')
+                if factor in ('camera','light'):
+                    path=Path(c['path'])
+                    with path.with_name(path.stem+'-rt-visibility.csv').open(newline='') as stream:
+                        skipped=sum(int(row['rejected_instances']) for row in csv.DictReader(stream) if row['view']==factor)
+                    if (side=='candidate')!=(skipped>0):raise ValueError('expected measurable RT instance rejection only in candidate')
+        noise={p:max(abs(pair[0]['times'][p]-pair[1]['times'][p]) for pair in (pairs['aa'],pairs['candidate_aa']))
+               for p in ('p50','p95','p99')}
+        saving=baseline['times']['p50']-candidate['times']['p50']
+        tails=all(candidate['times'][p]-baseline['times'][p]<=noise[p] for p in ('p95','p99'))
+        passed=saving>=max(.1,.01*baseline['times']['p50']) and saving>noise['p50'] and tails
+        results.append(dict(round=number,**pairs,p50_gain_ms=saving,noise_ms=noise,tails_pass=tails,passed=passed))
+    return dict(factor=factor,rounds=results,frame_gate_pass=len(results)>=3 and all(r['passed'] for r in results))
 
 
 def compare_builds(manifest):

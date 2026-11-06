@@ -58,4 +58,8 @@ BridgeTicket releaseQueryInput(void* h,unsigned index){
     return {b->context,s.source.pointer,s.destination.pointer,s.input.cuda,s.done.cuda,b->bytes,s.value};
 }
 void consumeQueryOutput(void* h,unsigned slot,uint64_t value){auto* b=(Bridge*)h;if(b->slots.at(slot).value!=value)throw std::runtime_error("Shared query fence generation mismatch");b->await(slot);}
+bool queryInputReleased(void* h,unsigned index,uint64_t value){
+    auto& slot=static_cast<Bridge*>(h)->slots.at(index);
+    return slot.value==value&&slot.input.fence->GetCompletedValue()>=value;
+}
 void retireQueryWithoutOutput(void* h,unsigned slot,uint64_t value){auto* b=(Bridge*)h;auto& s=b->slots.at(slot);if(s.value!=value)throw std::runtime_error("Failed query fence generation mismatch");hr(s.done.fence->Signal(value));b->await(slot);}

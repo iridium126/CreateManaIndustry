@@ -152,6 +152,12 @@ public final class ClientGpuScene {
     }
     private boolean preparedFrameReady(){return levelFrame.ready()&&frameCoordinator.publication()!=null&&frameLevel==Minecraft.getInstance().level;}
     public boolean currentFrameReady(){return preparedFrameReady();}
+    public void breakStormDisplayHistory(){modelDisplay.breakHistory();}
+    public void prepareParticleShadowPoses(int commands,int instances){modelDisplay.prepareShadowPoses(commands,instances);}
+    public int prepareParticleLightVisibility(net.minecraft.world.phys.Vec3 camera,org.joml.Vector3f ray){
+        return modelDisplay.prepareLightVisibility(camera,ray);
+    }
+    public String particleVisibilityStatus(){return modelDisplay.visibilityStatus();}
     /** Called after Iris pipeline setup but before any shadow camera/state is installed. */
     public boolean prepareCurrentFrame(){
         if(!levelFrame.primary()||levelCamera==null||frameLevel!=Minecraft.getInstance().level)return false;
@@ -218,7 +224,7 @@ public final class ClientGpuScene {
             }
             if(lastSimulation!=null&&lastSimulation.generation()==particles.currentGeneration()){
                 frameCoordinator.begin(renderFrameToken());
-                float alpha=Boolean.getBoolean("cmi.particle.noInterpolation")?1:simulationClock.alpha();displayTimeSec=AllayStormRuntime.INSTANCE.timeSec()-.05f+alpha*.05f;
+                float alpha=simulationClock.alpha();displayTimeSec=AllayStormRuntime.INSTANCE.timeSec()-.05f+alpha*.05f;
                 var display=modelDisplay.prepare(ParticleBuffers.INSTANCE,ParticlePrograms.INSTANCE,lastSimulation,previousSimulation,alpha,displayTimeSec,camera,view,projectionMatrix);
                 displayTimeSec=display.timeSec();
                 displayPublicationId=display.id();

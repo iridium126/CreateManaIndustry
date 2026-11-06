@@ -38,9 +38,12 @@ public final class RtTopologyReplayGpu {
         """;
     private static void ui(int p,String name,int value){GL41.glProgramUniform1ui(p,GL20.glGetUniformLocation(p,name),value);}
     public static void main(String[] args)throws Exception{
-        int seconds=Integer.getInteger("cmi.replay.seconds",900),members=Integer.getInteger("cmi.replay.members",65536),terrain=4096,faultPeriod=Integer.getInteger("cmi.replay.faultPeriod",3000);
+        var options=ParticleFixtureOptions.parse(args);
+        int seconds=Integer.parseInt(options.getOrDefault("seconds","900"));
+        int members=Integer.parseInt(options.getOrDefault("members","65536")),terrain=4096;
+        int faultPeriod=Integer.parseInt(options.getOrDefault("fault-period","3000"));
         if(seconds<1||seconds>3600||members<1||members>131072||faultPeriod<14)throw new IllegalArgumentException("Bounded replay dimensions required");
-        Path out=Path.of(System.getProperty("cmi.benchmark.output","build/particle-engine/topology"));Files.createDirectories(out);
+        Path out=Path.of(options.getOrDefault("output","build/particle-engine/topology"));Files.createDirectories(out);
         if(!GLFW.glfwInit())throw new IllegalStateException("GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,6);
         long window=GLFW.glfwCreateWindow(32,32,"RT fixed input topology control",0,0);GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
         long[] bridges=new long[2],workers=new long[2];long submitted=0,consumed=0,retired=0;int program=0,steps=0;

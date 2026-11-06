@@ -25,6 +25,8 @@ public final class ClientConfig {
     private static ModConfigSpec.IntValue PARTICLE_MAX_COUNT, PARTICLE_FADE_DISTANCE;
     private static ModConfigSpec.DoubleValue PARTICLE_BUDGET_MS;
     private static ModConfigSpec.EnumValue<ParticleShadowQuality> STORM_SHADOW_QUALITY;
+    private static ModConfigSpec.EnumValue<StormSimulationBackend> STORM_BACKEND;
+    private static ModConfigSpec.BooleanValue RT_CAMERA_OCCLUSION, PARTICLE_RECEIVE_SHADOWS;
     private static ModConfigSpec.IntValue ALLAY_FEATHER_RATE, ALLAY_GOLD_RATE, STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT, PARTICLE_HEX_PATTERN_REDIRECT;
     private static ModConfigSpec.IntValue HEX_PATTERN_GPU_BUDGET;
@@ -69,15 +71,17 @@ public final class ClientConfig {
         PARTICLE_SHADER_PACK_INTEGRATION = BUILDER
                 .comment("Enable shader pack integration for model particles.")
                 .define("shaderPackIntegration", true);
+        RT_CAMERA_OCCLUSION = BUILDER.comment("Use hardware RT for particle camera occlusion.")
+                .define("rtCameraOcclusion", true);
+        PARTICLE_RECEIVE_SHADOWS = BUILDER.comment("Receive native shader-pack shadows on particles.")
+                .define("receiveShadows", true);
         BUILDER.pop();
 
         BUILDER.comment("Allay Storm visuals; these options do not change combat or simulation.").push("allayStorm");
-        STORM_SHADOW_QUALITY = BUILDER.comment("FULL preserves existing shadow casting and receiving. Lower modes request no receiving where a native material contract is proven.",
-                "COARSE skips cylinder members only when the whole cylinder shadow cannot enter the main view.",
-                "FRUSTUM adds per-member shadow-volume tests. SHADOW_HIZ uses current-light depth; SCREEN_HIZ uses historical main depth.",
-                "COMBINED_HIZ requests both; unavailable or unqualified stages fall back to geometric tests. OFF disables all MODEL shadow submissions.",
-                "Lower modes can affect voxelization/GI/volumetrics. Unproven no-receiving contracts preserve native rendering and receiving, never force self-drawing.",
-                "Feathers and distant LOD never cast shadows. Changes apply at a frame boundary.")
+        STORM_BACKEND = BUILDER.comment("AUTO uses RT and falls back to GL on failure. RT freezes on failure.")
+                .defineEnum("simulationBackend", StormSimulationBackend.AUTO);
+        STORM_SHADOW_QUALITY = BUILDER.comment("FULL uses Iris casting. COARSE can reject the whole Storm body.",
+                "RT uses qualified light occlusion. OFF disables particle shadow casting.")
                 .defineEnum("shaderPackShadowQuality", ParticleShadowQuality.FULL);
         RIFT_SKY_CLIPPING=BUILDER.comment("Clip target sky to the current portal; sky history and lighting may differ.").define("riftSkyClipping",true);
         RIFT_CULLING=BUILDER.comment("NONE, FRUSTUM, FRUSTUM_DEPTH. Unqualified depth falls back to frustum. Combat continues.").defineEnum("riftCulling",RiftCulling.FRUSTUM_DEPTH);
@@ -137,6 +141,8 @@ public final class ClientConfig {
     public static int particleFadeDistance = 96;
     public static boolean shaderPackIntegration = true;
     public static ParticleShadowQuality shaderPackShadowQuality = ParticleShadowQuality.FULL;
+    public static volatile StormSimulationBackend stormSimulationBackend = StormSimulationBackend.AUTO;
+    public static volatile boolean rtCameraOcclusion = true, particleReceiveShadows = true;
     public static int allayFeatherMaxSpawnPerSecond = 1000, allayGoldMaxSpawnPerSecond = 2000;
     public static int stormLod1Distance = 1024, stormLodDistance = 4096;
     public static boolean hexParticleRedirect = true, hexPatternRedirect = true;
@@ -165,6 +171,9 @@ public final class ClientConfig {
             particleFadeDistance = PARTICLE_FADE_DISTANCE.get();
             shaderPackIntegration = PARTICLE_SHADER_PACK_INTEGRATION.get();
             shaderPackShadowQuality = STORM_SHADOW_QUALITY.get();
+            stormSimulationBackend = STORM_BACKEND.get();
+            rtCameraOcclusion = RT_CAMERA_OCCLUSION.get();
+            particleReceiveShadows = PARTICLE_RECEIVE_SHADOWS.get();
             allayFeatherMaxSpawnPerSecond = ALLAY_FEATHER_RATE.get();
             allayGoldMaxSpawnPerSecond = ALLAY_GOLD_RATE.get();
             stormLod1Distance = STORM_LOD_1_DISTANCE.get();

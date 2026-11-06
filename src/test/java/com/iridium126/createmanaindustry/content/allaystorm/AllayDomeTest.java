@@ -28,9 +28,17 @@ class AllayDomeTest {
  }
  @Test void independentVictimsAndWaves(){
   var contacts=new AllayDome.Contacts();UUID a=UUID.randomUUID(),b=UUID.randomUUID();
-  assertTrue(contacts.add(a));assertFalse(contacts.add(a));assertTrue(contacts.add(b));assertFalse(contacts.add(b));
-  assertFalse(contacts.add(a));assertFalse(contacts.add(b));
-  assertTrue(new AllayDome.Contacts().add(a));
+  assertTrue(contacts.add(a,12));assertFalse(contacts.add(a,12));
+  assertTrue(contacts.add(b,12));assertFalse(contacts.add(b,12));
+  assertFalse(contacts.add(a,11));assertTrue(contacts.add(a,13));
+  assertTrue(new AllayDome.Contacts().add(a,12));
+ }
+ @Test void contactSampleChecksClockWrapAndStaleness(){
+  long wrap=1L<<21;
+  assertTrue(AllayStormManager.validContactSample(wrap,wrap,StarfallColumns.clock(wrap-1)));
+  assertFalse(AllayStormManager.validContactSample(wrap,wrap-20,StarfallColumns.clock(wrap-20)));
+  assertFalse(AllayStormManager.validContactSample(wrap,wrap+2,StarfallColumns.clock(wrap+2)));
+  assertFalse(AllayStormManager.validContactSample(wrap,wrap,2f));
  }
  @Test void lockedAreaOutlivesOriginalTarget(){
   assertFalse(AllayDome.targetRequired(AllayDome.DOME,false));

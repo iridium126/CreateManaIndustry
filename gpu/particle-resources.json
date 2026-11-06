@@ -253,10 +253,12 @@
         "Bounds": { "kind": "ssbo", "binding": 1, "access": "read_write" },
         "Count": { "kind": "ssbo", "binding": 2, "access": "read" },
         "Packet": { "kind": "ssbo", "binding": 3, "access": "write", "layout": "spatialInput", "minimumBytes": 128 },
-        "HistoryInput": { "kind": "ssbo", "binding": 4, "access": "read", "layout": "spatialInput", "minimumBytes": 128 },
-        "HistoryOutput": { "kind": "ssbo", "binding": 5, "access": "read", "layout": "spatialOutput", "minimumBytes": 128 },
-        "Visible": { "kind": "ssbo", "binding": 6, "access": "write", "minimumBytes": 16 },
+        "HistoryInput": { "kind": "ssbo", "binding": 4, "access": "read_write", "layout": "spatialInput", "minimumBytes": 128 },
+        "HistoryOutput": { "kind": "ssbo", "binding": 5, "access": "read_write", "layout": "spatialOutput", "minimumBytes": 128 },
+        "Visible": { "kind": "ssbo", "binding": 6, "access": "read_write", "minimumBytes": 32 },
         "Emitters": { "kind": "ssbo", "binding": 7, "access": "read" },
+        "ReceivedInput": { "kind": "ssbo", "binding": 8, "access": "read", "minimumBytes": 128 },
+        "ReceivedOutput": { "kind": "ssbo", "binding": 9, "access": "read", "minimumBytes": 128 },
         "PopulationRead": { "kind": "ssbo", "binding": 24, "access": "read", "minimumBytes": 32 }
       },
       "barriers": ["shader_storage", "buffer_update"]
@@ -264,13 +266,14 @@
     "pose_cache.comp": {
       "resources": {
         "PosePool": { "kind": "ssbo", "binding": 0, "access": "read", "layout": "particle" },
+        "PoseCommands": { "kind": "ssbo", "binding": 1, "access": "read" },
+        "PoseInstances": { "kind": "ssbo", "binding": 2, "access": "read" },
         "PoseCount": { "kind": "ssbo", "binding": 3, "access": "read" },
+        "PoseDispatch": { "kind": "ssbo", "binding": 4, "access": "read_write", "minimumBytes": 20 },
         "PoseEmitters": { "kind": "ssbo", "binding": 5, "access": "read" },
-        "PopulationRead": { "kind": "ssbo", "binding": 24, "access": "read", "minimumBytes": 32 },
-        "RtVisibleGroups": { "kind": "ssbo", "binding": 29, "access": "read", "minimumBytes": 16 },
-        "PoseOutput": { "kind": "ssbo", "binding": 30, "access": "write" }
+        "PoseOutput": { "kind": "ssbo", "binding": 30, "access": "read_write" }
       },
-      "barriers": ["shader_storage", "texture_fetch"]
+      "barriers": ["shader_storage", "texture_fetch", "command"]
     },
     "storm_projection.comp": {
       "resources": {

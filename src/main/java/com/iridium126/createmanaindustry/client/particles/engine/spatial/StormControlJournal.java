@@ -225,6 +225,7 @@ final class StormControlJournal {
         append(tick,tick,parameters,commands,terrain,target,projectedSequence,players,positionSnapshot,geometry,columnCaptures);
     }
     long nextLogicalTick(){return written==0?1:lastTick+1;}
+    long nextSequence(){return written+1;}
     void appendWorldSample(long gameTime,Parameters parameters,List<Command> commands,StormControlTerrain terrain,
                            Target target,long projectedSequence,List<Float4> players,boolean positionSnapshot,
                            Geometry geometry,List<ColumnSnapshotClient.NativeCapture> columnCaptures){

@@ -52,6 +52,7 @@ uniform uint uTotalSpawn;
 uniform uint uEmitCount;
 uniform uint uDirectHexBatch;
 uniform uint uCapacity;
+uniform bool uRecoverStorm;
 // storm style 3: the RAW 24-bit instance seed (integer-valued float, NOT
 // normalized to [0,1)), the signed angular velocity, and the CPU-side
 // growth-law phase integrals
@@ -191,6 +192,13 @@ void main() {
     if (spawnStyle > 2.5 && spawnStyle < 3.5) {
         // ---- storm member: deterministic identity + analytic spawn -------
         uint memberIdx = uint(emitCmd.entries[eb + 9u] + 0.5) + inner;
+        if(uRecoverStorm&&memberIdx<uint(memberMap.m.length())){
+            uint previousSlot=floatBitsToUint(memberMap.m[memberIdx]);
+            if(previousSlot>0u&&previousSlot<=combatPrevious.live&&previousSlot<=uint(readBuf.data.length())/4u){
+                uint at=(previousSlot-1u)*4u;
+                if(floatBitsToUint(readBuf.data[at+3u].w)==eid&&cmiStarMember(readBuf.data[at].w)==memberIdx)return;
+            }
+        }
         uint hbS = eid * VEC4_PER_EMITTER;
         vec4 stormA = emitters.u[hbS + 18u];
         vec3 anchor = emitters.u[hbS + 19u].xyz;

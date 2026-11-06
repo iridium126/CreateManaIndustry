@@ -31,9 +31,10 @@ allprojects {
             classpath=files(layout.buildDirectory.dir('particle-gpu'))+sourceSets.main.runtimeClasspath+configurations.compileClasspath+kotlin
             mainClass='ParticleEngineGpuValidation'
             maxHeapSize='4g'
-            systemProperty 'cmi.particle.output',file(project.findProperty('particleOutput')?:'build/particle-engine/verify').absolutePath
+            args "--output=${file(project.findProperty('particleOutput')?:'build/particle-engine/verify').absolutePath}"
             if(project.hasProperty('particleGlOnly'))args '--gl-only'
             if(project.hasProperty('particleStormTimelineOnly'))args '--storm-timeline-only'
+            if(project.hasProperty('particleNativeHelixOnly'))args '--native-helix-only'
             workingDir=project.projectDir
         }
         ['replayParticleGpu':'ParticleReplayGpu','runParticleSuite':project.findProperty('particleSuite')?:'ParticleEngineGpuValidation'].each{taskName,entry->
@@ -54,12 +55,14 @@ allprojects {
                 }
                 maxHeapSize='5g';workingDir=project.projectDir
                 doFirst{file(project.findProperty('particleOutput')?:'build/particle-engine/verify').mkdirs()}
-                systemProperty 'cmi.benchmark.output',file(project.findProperty('particleOutput')?:'build/particle-engine/verify').absolutePath
-                if(project.hasProperty('particleCapture'))systemProperty 'cmi.particle.capture',file(project.property('particleCapture')).absolutePath
-                if(project.hasProperty('particleSamples'))systemProperty 'cmi.particle.samples',project.property('particleSamples')
-                if(project.hasProperty('particleReplaySeconds'))systemProperty 'cmi.replay.seconds',project.property('particleReplaySeconds')
-                if(project.hasProperty('particleReplayMembers'))systemProperty 'cmi.replay.members',project.property('particleReplayMembers')
-                if(project.hasProperty('particleReplayFaultPeriod'))systemProperty 'cmi.replay.faultPeriod',project.property('particleReplayFaultPeriod')
+                if(entry in ['ParticleReplayGpu','RtTopologyReplayGpu','ParticleEngineGpuValidation']){
+                    args "--output=${file(project.findProperty('particleOutput')?:'build/particle-engine/verify').absolutePath}"
+                    if(project.hasProperty('particleCapture'))args "--capture=${file(project.property('particleCapture')).absolutePath}"
+                    if(project.hasProperty('particleSamples'))args "--samples=${project.property('particleSamples')}"
+                    if(project.hasProperty('particleReplaySeconds'))args "--seconds=${project.property('particleReplaySeconds')}"
+                    if(project.hasProperty('particleReplayMembers'))args "--members=${project.property('particleReplayMembers')}"
+                    if(project.hasProperty('particleReplayFaultPeriod'))args "--fault-period=${project.property('particleReplayFaultPeriod')}"
+                }
             }
         }
     }

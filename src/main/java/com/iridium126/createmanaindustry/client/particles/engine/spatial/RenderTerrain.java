@@ -63,7 +63,8 @@ public final class RenderTerrain implements AutoCloseable {
     }
 
     boolean prepare(Vec3 camera){
-        var next=Minecraft.getInstance().level;
+        var client=Minecraft.getInstance();
+        var next=client==null?null:client.level;
         if(next!=level){
             close();level=next;
             if(level!=null){cache=new StormCollisionCache();scene=SCENES.getAndIncrement();active=this;}

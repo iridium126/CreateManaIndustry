@@ -42,7 +42,7 @@ public final class NativeStormSimulation {
         if(batch.identity()!=inputs.generation()||storm.identity()==null)return;
         var sound=batch.sound();
         var hit=batch.contact();
-        StormFeedback.INSTANCE.acceptNativeColumn(batch.id(),batch.token(),batch.completed(),batch.installed(),
+        StormFeedback.INSTANCE.acceptNativeColumn(batch.tick(),batch.id(),batch.token(),batch.completed(),batch.installed(),
                 sound==null?null:new net.minecraft.world.phys.Vec3(sound.x(),sound.y(),sound.z()),
                 hit==null?null:new StormFeedback.NativeHit(hit.target(),hit.x(),hit.y(),hit.z(),hit.time()));
     }
@@ -80,7 +80,9 @@ public final class NativeStormSimulation {
                 com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn("[CMI particles] Native Storm initialization failed",failure);
             }
         }
-        if(control!=null)control.service();
+        if(control!=null)try(var timing=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("rt.storm.service")){
+            control.service();
+        }
     }
     public FrozenDisplay display(){return retired||control==null?null:control.display(inputs.generation());}
     public void displayCommitted(long identity,long sequence){inputs.displayCommitted(identity,sequence);}

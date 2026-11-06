@@ -60,26 +60,46 @@ public final class AllayFeatherGpu implements AutoCloseable {
     }
     public void prepare(float dt,float throttle,ParticleRuntime runtime,float partial){
         var mc=Minecraft.getInstance();if(world!=mc.level){reset();world=mc.level;}
-        spawn=goldSpawn=0;candidateBirth=manual;candidateGoldBirth=manualGold;candidateRemainder=remainder;candidateGoldRemainder=goldRemainder;
-        Vec3 center=null;radius=0;
-        if(AllayStormRuntime.INSTANCE.active()){center=AllayStormRuntime.INSTANCE.center();radius=AllayStormRuntime.INSTANCE.radius();}
-        else if(StormLodClient.active()&&mc.level!=null){var sample=StormLodClient.CENTERS.sample(mc.level.getGameTime(),partial);if(sample!=null){center=new Vec3(sample.x(),sample.y(),sample.z());radius=sample.radius();}}
-        if(center!=null&&mc.level!=null){
-            origin=center;double scale=dt*Math.clamp(throttle,0,1);
-            double want=remainder+proposals(ClientConfig.allayFeatherMaxSpawnPerSecond,radius)*scale;
-            spawn=(int)want;candidateRemainder=want-spawn;candidateBirth|=spawn>0;
-            want=goldRemainder+proposals(ClientConfig.allayGoldMaxSpawnPerSecond,radius)*scale;
-            goldSpawn=(int)want;candidateGoldRemainder=want-goldSpawn;candidateGoldBirth|=goldSpawn>0;
-            if(spawn>0&&(prewarmTick==Long.MIN_VALUE||mc.level.getGameTime()-prewarmTick>=20
-                    ||warmX!=((int)Math.floor(origin.x)>>4)||warmY!=((int)Math.floor(origin.y)>>4)||warmZ!=((int)Math.floor(origin.z)>>4)||warmRadius!=(int)Math.ceil(2*radius/16)+1||warmLow!=(int)Math.floor((origin.y-8)/16))){
-                prewarmStorm();prewarmTick=mc.level.getGameTime();}
-        }else candidateRemainder=candidateGoldRemainder=0;
-        surface.frame(mc.level,center,radius,center!=null&&ClientConfig.allayGoldMaxSpawnPerSecond>0);
+        Vec3 center=null;double stormRadius=0;
+        var storm=AllayStormRuntime.INSTANCE;
+        if(storm.active()){center=storm.center();stormRadius=storm.radius();}
+        else if(StormLodClient.active()&&mc.level!=null){
+            var sample=StormLodClient.CENTERS.sample(mc.level.getGameTime(),partial);
+            if(sample!=null){center=new Vec3(sample.x(),sample.y(),sample.z());stormRadius=sample.radius();}
+        }
+        Vec3 player=mc.level!=null&&mc.player!=null?mc.player.position():null;
+        boolean automatic=prepareAutomatic(player,center,stormRadius,dt,throttle);
+        if(automatic&&spawn>0&&(prewarmTick==Long.MIN_VALUE||mc.level.getGameTime()-prewarmTick>=20
+                ||warmX!=((int)Math.floor(origin.x)>>4)||warmY!=((int)Math.floor(origin.y)>>4)||warmZ!=((int)Math.floor(origin.z)>>4)||warmRadius!=(int)Math.ceil(2*radius/16)+1||warmLow!=(int)Math.floor((origin.y-8)/16))){
+            prewarmStorm();prewarmTick=mc.level.getGameTime();
+        }
+        surface.frame(mc.level,center,radius,automatic&&ClientConfig.allayGoldMaxSpawnPerSecond>0);
         enabled=mayFeathers||mayGold||candidateBirth||candidateGoldBirth;requestFrame=(frames&7)==0;
         if(!enabled)return;
         allocate();candidate=1-bank;
         if(hasFeathers()){featherId=runtime.ensureEmitter(AllayFeatherSpecs.FEATHER);ParticleAtlas.ALLAY.ensureLoaded();}
         if(mayGold||candidateGoldBirth)goldId=runtime.ensureEmitter(AllayGoldSpecs.GOLD);
+    }
+    boolean prepareAutomatic(Vec3 player,Vec3 center,double stormRadius,float dt,float throttle){
+        spawn=goldSpawn=0;
+        candidateBirth=manual;candidateGoldBirth=manualGold;
+        candidateRemainder=candidateGoldRemainder=0;
+        if(player==null||center==null||!Double.isFinite(stormRadius)||stormRadius<=0){
+            prewarmTick=Long.MIN_VALUE;
+            return false;
+        }
+        double dx=player.x-center.x,dz=player.z-center.z,limit=2*stormRadius;
+        if(!(dx*dx+dz*dz<=limit*limit)){
+            prewarmTick=Long.MIN_VALUE;
+            return false;
+        }
+        origin=center;radius=stormRadius;
+        double scale=dt*Math.clamp(throttle,0,1);
+        double want=remainder+proposals(ClientConfig.allayFeatherMaxSpawnPerSecond,radius)*scale;
+        spawn=(int)want;candidateRemainder=want-spawn;candidateBirth|=spawn>0;
+        want=goldRemainder+proposals(ClientConfig.allayGoldMaxSpawnPerSecond,radius)*scale;
+        goldSpawn=(int)want;candidateGoldRemainder=want-goldSpawn;candidateGoldBirth|=goldSpawn>0;
+        return true;
     }
     private void prewarmStorm(){
         int cx=(int)Math.floor(origin.x)>>4,cy=(int)Math.floor(origin.y)>>4,cz=(int)Math.floor(origin.z)>>4,r=(int)Math.ceil(2*radius/16)+1,low=(int)Math.floor((origin.y-8)/16);

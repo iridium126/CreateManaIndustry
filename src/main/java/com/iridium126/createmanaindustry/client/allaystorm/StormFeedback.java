@@ -171,7 +171,7 @@ public final class StormFeedback {
         var owner=runtime.contactAuthority(id);
         var attack=runtime.wavePacket(id);
         if(mc.level==null||owner==null||attack==null||attack.column())return;
-        nativeContact(owner,hit);
+        nativeContact(owner,tick,hit);
         var effective=runtime.nativeEffectiveRoster(id);
         var ready=java.util.BitSet.valueOf(readyWords);
         ready.and(effective);
@@ -192,7 +192,7 @@ public final class StormFeedback {
                 mc.level.dimension().location(),owner.epoch(),owner.id(),enough?ready.toLongArray():new long[0],
                 enough?effective.toLongArray():new long[0],flows,reference,referenceSeconds));
     }
-    public void acceptNativeColumn(int id,int token,long completed,long installed,Vec3 sound,NativeHit hit){
+    public void acceptNativeColumn(long tick,int id,int token,long completed,long installed,Vec3 sound,NativeHit hit){
         var runtime=AllayStormRuntime.INSTANCE;
         var owner=runtime.contactAuthority(id);
         var attack=runtime.columnPacket(id);
@@ -201,7 +201,7 @@ public final class StormFeedback {
         if(sound!=null)runtime.columnTouchSound(id,(float)sound.x,(float)sound.y,(float)sound.z);
         for(long remaining=installed;remaining!=0;remaining&=remaining-1)
             ColumnSnapshotClient.INSTANCE.installed(id,Long.numberOfTrailingZeros(remaining),token);
-        nativeContact(owner,hit);
+        nativeContact(owner,tick,hit);
         if(completed!=0&&runtime.feedbackState().authority())nativeCompletions(owner,new long[]{completed});
     }
     private void nativeCompletions(AllayStormRuntime.ContactAuthority owner,long[] ranks){
@@ -210,15 +210,15 @@ public final class StormFeedback {
         if(level!=null)PacketDistributor.sendToServer(new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(
                 level.dimension().location(),owner.epoch(),owner.id(),ranks));
     }
-    private void nativeContact(AllayStormRuntime.ContactAuthority owner,NativeHit hit){
+    private void nativeContact(AllayStormRuntime.ContactAuthority owner,long tick,NativeHit hit){
         var mc=Minecraft.getInstance();
         if(hit==null||mc.player==null||mc.player.getId()!=hit.target()||mc.level==null
                 ||!mc.player.isAlive()||mc.player.isSpectator()
-                ||!AllayStormRuntime.INSTANCE.acceptsContactNow(owner.id(),hit.time())||!reported.add(owner))return;
+                ||!AllayStormRuntime.INSTANCE.acceptsContactNow(owner.id(),hit.time())||!acceptSample(owner,tick))return;
         PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(mc.level.dimension().location(),
-                owner.id(),owner.epoch(),hit.time(),hit.x(),hit.y(),hit.z()));
+                owner.id(),owner.epoch(),tick,hit.time(),hit.x(),hit.y(),hit.z()));
     }
-    public void acceptWaveSnapshot(float[] entries) {
+    public void acceptWaveSnapshot(long tick,boolean targetCurrent,float[] entries) {
         retireWaves();
         if (entries == null)
             return;
@@ -253,8 +253,8 @@ public final class StormFeedback {
             if(member== -3){StormCollisionRuntime.arrived(id,Math.round(entries[o+2]));continue;}
             if(member== -2){if(w!=null){int word=Math.round(entries[o+2]),bits=Math.round(entries[o+3])|(Math.round(entries[o+4])<<16);if(word>=0&&word<384){var mask=completions.computeIfAbsent(id,k->new java.util.BitSet());for(int bit=0;bit<32;bit++)if((bits&(1<<bit))!=0)mask.set(word*32+bit);}}continue;}
             if(member<0){if(w!=null)AllayStormRuntime.INSTANCE.columnTouchSound(id,entries[o+2],entries[o+3],entries[o+4]);continue;}
-            if(w==null||!AllayStormRuntime.INSTANCE.acceptsContactNow(id,entries[o+5])||!reported.add(w))continue;
-            PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),entries[o+5],entries[o+2],entries[o+3],entries[o+4]));
+            if(!targetCurrent||w==null||!AllayStormRuntime.INSTANCE.acceptsContactNow(id,entries[o+5])||!acceptSample(w,tick))continue;
+            PacketDistributor.sendToServer(new ServerboundStormWaveContactPacket(Minecraft.getInstance().level.dimension().location(),id,w.epoch(),tick,entries[o+5],entries[o+2],entries[o+3],entries[o+4]));
         }
         var mc=Minecraft.getInstance();
         if(mc.level!=null&&AllayStormRuntime.INSTANCE.feedbackState().authority()){
@@ -291,7 +291,12 @@ public final class StormFeedback {
 
     public static final StormFeedback INSTANCE=new StormFeedback(com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime.INSTANCE);
     private final StormParticlePort particles;
-    private final java.util.Set<AllayStormRuntime.ContactAuthority> reported=new java.util.HashSet<>();
+    private final java.util.Map<AllayStormRuntime.ContactAuthority,Long> reported=new java.util.HashMap<>();
+    private boolean acceptSample(AllayStormRuntime.ContactAuthority attack,long tick){
+        if(tick<=reported.getOrDefault(attack,Long.MIN_VALUE))return false;
+        reported.put(attack,tick);
+        return true;
+    }
     public StormFeedback(StormParticlePort particles) {this.particles=java.util.Objects.requireNonNull(particles);}
     public void reset() {outerReported.clear();stormPosPending=false;stormPosIdentity=null;correctionClock.reset();lastSnapshotGameTime=Long.MIN_VALUE;reported.clear();gathered.clear();flowRevisions.clear();flowTick=Long.MIN_VALUE;completions.clear();completionTick=Long.MIN_VALUE;}
     public void retireWaves() {
@@ -302,7 +307,7 @@ public final class StormFeedback {
         completions.keySet().removeIf(id->AllayStormRuntime.INSTANCE.contactAuthority(id)==null);
         flowRevisions.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
         gathered.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
-        reported.removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
+        reported.keySet().removeIf(key->!key.equals(AllayStormRuntime.INSTANCE.contactAuthority(key.id())));
     }
     private long attackSequence;
     public void reportHit(int member, Vec3 hit) {

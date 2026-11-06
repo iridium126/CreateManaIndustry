@@ -194,6 +194,19 @@ def lifecycle(args):
     if not report['passed']:
         raise SystemExit(1)
 
+def frames(args):
+    from compare_client_frames import compare
+    manifest=json.loads(args.manifest.read_text(encoding="utf-8"))
+    if manifest.get("comparison")!="particle-engine":
+        raise ValueError("A particle-engine frame comparison manifest is required")
+    output=args.output / "frames.json"
+    if output.exists():
+        raise FileExistsError(output)
+    report=compare(manifest)
+    write(output,report)
+    print(f"Frame gate: {report['frame_gate_pass']}; evidence: {output}")
+    if not report["frame_gate_pass"]:
+        raise SystemExit(1)
 
 def package(args):
     """Build and audit the ordinary distribution; never produce alternate install ZIPs."""
@@ -208,7 +221,7 @@ def package(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("verify", "replay", "bench", "analyze", "lifecycle", "topology", "package"):
+    for name in ("verify", "replay", "bench", "analyze", "frames", "lifecycle", "topology", "package"):
         p = sub.add_parser(name)
         p.add_argument("--output", type=Path, default=ROOT / "build/particle-engine" / name)
         p.set_defaults(action=globals()[name])
@@ -217,6 +230,8 @@ def main():
             p.add_argument("--suite", action="append", default=[])
         elif name == "replay":
             p.add_argument("--capture", type=Path, required=True)
+        elif name == "frames":
+            p.add_argument("--manifest", type=Path, required=True)
         elif name == "lifecycle":
             p.add_argument("--capture", type=Path, required=True)
             p.add_argument("--require-drained", action="store_true")

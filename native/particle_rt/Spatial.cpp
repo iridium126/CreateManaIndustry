@@ -26,6 +26,8 @@ void rtChecked(OptixResult r,const char* call){if(r!=OPTIX_SUCCESS)throw std::ru
 struct Guard {SRWLOCK& lock;Guard(SRWLOCK& l):lock(l){AcquireSRWLockExclusive(&lock);}~Guard(){ReleaseSRWLockExclusive(&lock);}};
 struct Engine {
     std::unique_ptr<TerrainAcceleration> terrainCache;
+    uint64_t staticScene{},staticRevision{};
+    bool staticIas{};
     CUcontext context{};CUstream stream{};OptixDeviceContext optix{};CUmodule grid{};CUfunction validate{},prepare{},seal{};
     OptixModule module{};OptixProgramGroup groups[3]{};OptixPipeline pipeline{};OptixShaderBindingTable sbt{};
     CUdeviceptr vertices{},indices{},unitGas{},instances{},gas{},scratch{},params{},records{},temporary{},stormHints{};size_t owned{},gasBytes{},scratchBytes{};
@@ -60,9 +62,9 @@ struct Engine {
         checked(cuMemcpyHtoDAsync(params,&p,sizeof(p),stream));
         rt(optixLaunch(pipeline,stream,params,sizeof(p),&sbt,std::max(1u,p.members),1,1));
     }
-    unsigned publishTerrain(unsigned slot,const TerrainSnapshot& snapshot,SpatialParams& p,unsigned dynamicInstances){
+    unsigned publishTerrain(unsigned slot,const TerrainSnapshot& snapshot,SpatialParams& p,unsigned dynamicInstances,bool copyInstances=true){
         if(!terrainCache)terrainCache=std::make_unique<TerrainAcceleration>(terrainCapacity);
-        unsigned count=terrainCache->update(optix,stream,slot,snapshot,capacity,dynamicInstances,instances);
+        unsigned count=terrainCache->update(optix,stream,slot,snapshot,capacity,dynamicInstances,instances,copyInstances);
         p.terrainViews=terrainCache->deviceViews();p.terrainRows=terrainCache->deviceRows();
         return count;
     }
@@ -70,13 +72,22 @@ struct Engine {
         auto& p=host[slot];p={};p.input=(unsigned*)ticket.input;p.output=(unsigned*)ticket.output;p.instances=(OptixInstance*)instances;p.unit=unitHandle;p.capacity=capacity;p.nonce=nonce;p.epoch=epoch;p.generation=generation;p.horizon=.1f;p.scene=scene;p.terrainCapacity=terrainCapacity;p.probes=probes;p.kind=kind;p.members=members;p.terrainCount=terrain;
         CUDA_EXTERNAL_SEMAPHORE_WAIT_PARAMS wait{};wait.params.fence.value=ticket.value;checked(cuEventRecord(marks[0],stream));checked(cuWaitExternalSemaphoresAsync(&ticket.inputReady,&wait,1,stream));checked(cuEventRecord(marks[1],stream));
         unsigned terrainInstances=terrain,dynamicInstances=kind==0?members:0;
+        bool staticRender=kind!=0&&snapshot&&!referenceRefit;
+        bool reuseStatic=staticRender&&staticIas&&staticScene==scene&&staticRevision==snapshot->revision;
         if(snapshot){
             if(snapshot->scene!=scene||snapshot->rows.size()!=terrain)throw std::runtime_error("Terrain snapshot ownership mismatch");
-            terrainInstances=publishTerrain(slot,*snapshot,p,dynamicInstances);
+            terrainInstances=publishTerrain(slot,*snapshot,p,dynamicInstances,!reuseStatic);
         }
         unsigned prepareRows=members+(snapshot?0u:terrain);
         void* args[]={&p};checked(cuLaunchKernel(validate,1,1,1,1,1,1,0,stream,args,nullptr));checked(cuLaunchKernel(prepare,std::max(1u,(prepareRows+255)/256),1,1,256,1,1,0,stream,args,nullptr));checked(cuEventRecord(marks[2],stream));
-        buildIas(p,dynamicInstances+terrainInstances);checked(cuEventRecord(marks[3],stream));trace(p);checked(cuEventRecord(marks[4],stream));checked(cuLaunchKernel(seal,1,1,1,1,1,1,0,stream,args,nullptr));
+        if(reuseStatic)
+            p.traversable=handle;
+        else{
+            buildIas(p,dynamicInstances+terrainInstances);
+            staticIas=staticRender;
+            if(staticRender){staticScene=scene;staticRevision=snapshot->revision;}
+        }
+        checked(cuEventRecord(marks[3],stream));trace(p);checked(cuEventRecord(marks[4],stream));checked(cuLaunchKernel(seal,1,1,1,1,1,1,0,stream,args,nullptr));
         checked(cuMemcpyDtoHAsync(receipts+slot,ticket.output+11*sizeof(unsigned),sizeof(unsigned),stream));
         CUDA_EXTERNAL_SEMAPHORE_SIGNAL_PARAMS done{};done.params.fence.value=ticket.value;checked(cuSignalExternalSemaphoresAsync(&ticket.outputReady,&done,1,stream));checked(cuEventRecord(marks[5],stream));
     }

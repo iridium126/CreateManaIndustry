@@ -68,17 +68,18 @@ public final class ParticleEngineGpuValidation {
         int p=program("partition_emit.comp"),n=18*64,baseWord=9;
         var inputs=bytes(64);inputs.putFloat(40,1).putInt(60,2);
         var jobs=bytes(n);jobs.putFloat(16,1).putInt(28,10).putInt(44,3);
-        var previous=bytes(n*2);previous.putInt(n+28,4).putInt(n+44,2);
+        var previous=bytes(n*2);previous.putInt(n+28,4).putInt(n+44,3);
         int a=buffer(inputs),b=buffer(jobs),old=buffer(previous),pool=buffer(bytes(64*64)),edges=buffer(bytes((64+baseWord)*4));
         try{
             bind(0,a);bind(1,b);bind(5,pool);bind(6,old);bind(31,edges);
             ui(p,"uHistoryBase",baseWord);ui(p,"uEmitter",0);GL41.glProgramUniform1i(p,GL20.glGetUniformLocation(p,"uHistoryEnabled"),1);GL41.glProgramUniform1f(p,GL20.glGetUniformLocation(p,"uFadeDistance"),128);GL41.glProgramUniform1f(p,GL20.glGetUniformLocation(p,"uViewportHeight"),64);
             GL41.glProgramUniformMatrix4fv(p,GL20.glGetUniformLocation(p,"uView"),false,new org.joml.Matrix4f().get(new float[16]));GL41.glProgramUniformMatrix4fv(p,GL20.glGetUniformLocation(p,"uProjection"),false,new org.joml.Matrix4f().get(new float[16]));
-            for(int consecutive:new int[]{1,0}){
+            for(int scenario=0;scenario<3;scenario++){
+                int consecutive=scenario==1?0:1;
+                if(scenario==2){previous.putInt(n+44,2);GL45.glNamedBufferSubData(old,0,previous);}
                 GL41.glProgramUniform1i(p,GL20.glGetUniformLocation(p,"uHistoryConsecutive"),consecutive);GL20.glUseProgram(p);GL43.glDispatchCompute(1,1,1);var mapped=read(edges,(64+baseWord)*4);
-                check(mapped.getInt((baseWord+10)*4)==(consecutive==1?5:0),"partition domain reorder preserves producer identity");
-                check(mapped.getInt((baseWord+11)*4)==(consecutive==1?6:0),"partition previous ordinal mapping");
-                check(mapped.getInt((baseWord+12)*4)==0,"new partition ordinal is a birth");
+                for(int i=0;i<3;i++)check(mapped.getInt((baseWord+10+i)*4)==(scenario==0?5+i:0),
+                    "partition ordinals match only across consecutive, equal-sized layouts");
             }
             cases.add(Map.of("case","Partition producer history across domain reorder, new ordinals and generation gaps","passed",true));
         }finally{for(int id:new int[]{a,b,old,pool,edges})GL15.glDeleteBuffers(id);GL20.glDeleteProgram(p);}
@@ -91,6 +92,7 @@ public final class ParticleEngineGpuValidation {
         int input=buffer(inputs),job=buffer(jobs),before=buffer(old),next=buffer(bytes(stride)),count=buffer(bytes(16).putInt(0,5)),pool=buffer(bytes(capacity*64)),nodes=buffer(bytes(capacity*64)),debris=buffer(bytes(64)),edges=buffer(bytes((capacity+baseWord)*4));
         int reserve=program("shared_fate_reserve.comp"),emit=program("shared_fate_emit.comp"),display=program("shared_fate_display.comp");
         int oldNodes=buffer(bytes(capacity*64)),displayNodes=buffer(bytes(capacity*64));
+        int ribbonDispatch=buffer(bytes(16).putInt(0,20));
         try{
             for(int variant=0;variant<4;variant++){
                 jobs.putInt(28,1).putFloat(144+8,variant==3?0:1);GL45.glNamedBufferSubData(job,0,jobs);
@@ -111,7 +113,7 @@ public final class ParticleEngineGpuValidation {
                 check(state.getInt(156)==5&&state.getInt(152)==gen,"external reservation commits offset and generation together");
                 if(variant==0){
                     var prior=bytes(capacity*64);for(int i=0;i<20;i++)prior.putFloat(i*64,20+i).putFloat(i*64+12,.1f).putFloat(i*64+20,1).putFloat(i*64+28,.2f).putFloat(i*64+32,.3f);
-                    GL45.glNamedBufferSubData(oldNodes,0,prior);bind(0,nodes);bind(1,oldNodes);bind(2,displayNodes);ui(display,"uCount",20);
+                    GL45.glNamedBufferSubData(oldNodes,0,prior);bind(0,nodes);bind(1,oldNodes);bind(2,displayNodes);bind(3,ribbonDispatch);
                     GL41.glProgramUniform3f(display,GL20.glGetUniformLocation(display,"uCurrentCameraDelta"),-2,0,0);GL41.glProgramUniform3f(display,GL20.glGetUniformLocation(display,"uPreviousCameraDelta"),-5,0,0);
                     for(int fps:new int[]{30,60,144,240})for(int sample=0;sample<=fps;sample++){
                         float alpha=(float)sample/fps;GL41.glProgramUniform1f(display,GL20.glGetUniformLocation(display,"uAlpha"),alpha);GL20.glUseProgram(display);GL43.glDispatchCompute(1,1,1);var rendered=read(displayNodes,20*64);
@@ -121,7 +123,7 @@ public final class ParticleEngineGpuValidation {
                 }
             }
             cases.add(Map.of("case","Shared Fate producer edges, topology changes, identity reuse, skipped generations and ribbon display 30/60/144/240 FPS","passed",true));
-        }finally{for(int id:new int[]{input,job,before,next,count,pool,nodes,debris,edges,oldNodes,displayNodes})GL15.glDeleteBuffers(id);for(int p:new int[]{reserve,emit,display})GL20.glDeleteProgram(p);}
+        }finally{for(int id:new int[]{input,job,before,next,count,pool,nodes,debris,edges,oldNodes,displayNodes,ribbonDispatch})GL15.glDeleteBuffers(id);for(int p:new int[]{reserve,emit,display})GL20.glDeleteProgram(p);}
     }
     static byte readByte(int b,int offset){var v=bytes(1);GL45.glGetNamedBufferSubData(b,offset,v);return v.get(0);}
     static double sphereEntry(float[] row){
@@ -158,8 +160,8 @@ public final class ParticleEngineGpuValidation {
         try(var display=new ModelRenderPublication(ParticleEngineGpuValidation::source)){
             check(gpu.init(1024,4),"display physical arena");
             gpu.allayAnimation().ensure(4);var animationSeed=bytes(64).putInt(0,0x12345678);GL45.glNamedBufferSubData(gpu.allayAnimation().buffer(gpu.allayAnimation().readBank()),0,animationSeed);
-            for(String field:new String[]{"keygen","radixHist","radixScan","radixScatter"}){
-                String file=switch(field){case "radixHist"->"radix_hist.comp";case "radixScan"->"radix_scan.comp";case "radixScatter"->"radix_scatter.comp";default->"keygen.comp";};
+            for(String field:new String[]{"keygen","ordinaryKeygen","radixHist","radixScan","radixScatter"}){
+                String file=switch(field){case "ordinaryKeygen"->"keygen_ordinary.comp";case "radixHist"->"radix_hist.comp";case "radixScan"->"radix_scan.comp";case "radixScatter"->"radix_scatter.comp";default->"keygen_model.comp";};
                 var f=ParticlePrograms.class.getDeclaredField(field);f.setAccessible(true);f.setInt(shaders,program(file));
             }
             var types=com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.values();
@@ -176,7 +178,7 @@ public final class ParticleEngineGpuValidation {
             check(read(frame.permutation(),(gpu.metaSlotIndex()+1)*8).getInt(gpu.metaSlotIndex()*8)==2,"display permutation metadata");check(read(gpu.particleReadBufferId(),rows.capacity()).equals(rows),"publication preserves simulation bytes");
             int frozenEmitter=gpu.particleDrawEmitterBufferId();check(frozenEmitter!=gpu.emitterBufferId(),"display owns emitter snapshot");var emitterSeed=read(frozenEmitter,64);GL45.glNamedBufferSubData(gpu.emitterBufferId(),0,bytes(64));check(read(frozenEmitter,64).equals(emitterSeed),"staged header cannot change rendered publication");
             int animationProbe=GpuShaderCompiler.compute("frozen animation binding","#version 450 core\nlayout(local_size_x=1)in;uniform usamplerBuffer cmi_AllayAnimation;layout(std430,binding=0)buffer Out{uvec4 row;};void main(){row=texelFetch(cmi_AllayAnimation,0);}");
-            try{gpu.bindAllayAnimation(animationProbe);int old=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);GL13.glActiveTexture(GL13.GL_TEXTURE15);int texture=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);GL13.glActiveTexture(old);int frozenAnimation=GL45.glGetTextureLevelParameteri(texture,0,GL31.GL_TEXTURE_BUFFER_DATA_STORE_BINDING);check(frozenAnimation!=gpu.allayAnimation().buffer(gpu.allayAnimation().readBank()),"display owns animation snapshot");GL45.glNamedBufferSubData(gpu.allayAnimation().buffer(gpu.allayAnimation().readBank()),0,bytes(64));check(read(frozenAnimation,64).getInt(0)==0x12345678,"next animation cannot mutate main/shadow inputs");}finally{GL20.glDeleteProgram(animationProbe);}
+            try{gpu.bindAllayAnimation(animationProbe);int old=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);GL13.glActiveTexture(GL13.GL_TEXTURE0+SAMPLER_ANIMATION_DRAW);int texture=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);GL13.glActiveTexture(old);int frozenAnimation=GL45.glGetTextureLevelParameteri(texture,0,GL31.GL_TEXTURE_BUFFER_DATA_STORE_BINDING);check(frozenAnimation!=0&&frozenAnimation!=gpu.allayAnimation().buffer(gpu.allayAnimation().readBank()),"display owns candidate pose records");}finally{GL20.glDeleteProgram(animationProbe);}
             gpu.clearDisplayResources();cases.add(Map.of("case","display complete publication","passed",true));
         }finally{shaders.delete();gpu.free();}
     }
@@ -458,12 +460,185 @@ public final class ParticleEngineGpuValidation {
         }
         check(SpatialNative.ownedBytes()==0,"Storm session and bridge retired");
     }
+    static int stormCommand(ByteBuffer packet,int row,int op,int member,int span,int flags,long scope){
+        int at=STORM_TICK_HEADER_BYTES+row*STORM_CONTROL_BYTES;
+        packet.putInt(at,op).putInt(at+4,member).putInt(at+8,span).putInt(at+12,flags)
+                .putLong(at+16,1).putLong(at+24,scope);
+        return at+32;
+    }
+    static void nativeHelixLaunch(List<Object> cases)throws Exception{
+        SpatialNative.load(Path.of(".gradle/particle-rt/build"));
+        var createBridge=stormMethod("createStormDisplayBuffers",long.class,int.class);
+        var create=stormMethod("createStormControl",int.class,long.class,int.class);
+        var submit=stormMethod("submitStormTick",long.class,ByteBuffer.class,int.class,int.class,boolean.class);
+        var prepare=stormMethod("prepareStormDisplaySlot",long.class,int.class);
+        var poll=stormMethod("pollStormTick",long.class,long.class);
+        var consume=stormMethod("consumeStormTick",long.class,long.class);
+        var diagnostics=stormMethod("stormControlDiagnostics",long.class);
+        var recycle=stormMethod("recycleStormDisplay",long.class,int.class,long.class,long.class);
+        var copyBatch=stormMethod("copyStormDomeBatch",long.class,long.class,ByteBuffer.class);
+        var close=stormMethod("closeStormControl",long.class);
+        int members=STORM_HELIX_MEMBERS,slot=STORM_DOME_SLOTS-1,id=71;
+        long scope=((long)slot<<32)|id;
+        long bridge=(long)createBridge.invoke(null,STORM_DISPLAY_HEADER_BYTES+(long)members*STORM_DISPLAY_RECORD_BYTES+
+                (long)STORM_COLUMN_SLOTS*STORM_COLUMN_MEMBERS*STORM_DISPLAY_COLUMN_BYTES,RT_SLOTS);
+        long worker=(long)create.invoke(null,members,bridge,2),until=System.nanoTime()+20_000_000_000L;
+        boolean drained=true;
+        try{
+            float targetX=0,targetY=0,targetZ=0;
+            for(long sequence=1;sequence<=5;sequence++){
+                int count=sequence==1?1:sequence==2?members+5:sequence==3||sequence==5?1:0;
+                int terrainRows=sequence==1?128:0;
+                var packet=bytes(STORM_TICK_HEADER_BYTES+count*STORM_CONTROL_BYTES+terrainRows*STORM_TERRAIN_ROW_BYTES);
+                packet.put(0,stormTick(sequence,200+sequence,200+sequence,1,true,false),0,STORM_TICK_HEADER_BYTES);
+                packet.putInt(8,count).putInt(12,members).putInt(88,terrainRows);
+                if(sequence==1){
+                    stormCommand(packet,0,STORM_CONTROL_SPAWN,0,members,0,0);
+                    int base=STORM_TICK_HEADER_BYTES+count*STORM_CONTROL_BYTES;
+                    for(int i=0;i<terrainRows;i++)packet.putInt(base+i*STORM_TERRAIN_ROW_BYTES+12,-1);
+                    for(int x=-1;x<=0;x++)for(int y=3;y<=4;y++)for(int z=-1;z<=0;z++){
+                        int h=x*0x8da6b343^y*0xd8163841^z*0xcb1ab31f,index=(h^(h>>>16))&(terrainRows-1);
+                        while(packet.getInt(base+index*STORM_TERRAIN_ROW_BYTES+12)!=-1)index=(index+1)&(terrainRows-1);
+                        int at=base+index*STORM_TERRAIN_ROW_BYTES;
+                        packet.putInt(at,x).putInt(at+4,y).putInt(at+8,z).putInt(at+12,-2);
+                    }
+                }
+                if(sequence==2||sequence==3||sequence==5){
+                    int phase=sequence==2?1:sequence==3?2:0;
+                    int at=stormCommand(packet,0,STORM_CONTROL_HELIX_STATE,phase==0?0:1,1,
+                            phase|(sequence==2?STORM_DOME_CONTROL_CREATE:0),scope);
+                    if(phase!=0)packet.putFloat(at,10f).putFloat(at+4,.13f).putFloat(at+8,2f)
+                            .putFloat(at+16,30f).putFloat(at+20,32f).putFloat(at+24,64f).putFloat(at+28,1f);
+                }
+                if(sequence==2){
+                    int frame=stormCommand(packet,1,STORM_CONTROL_HELIX_FRAME,0,1,0,scope);
+                    packet.putFloat(frame,17f).putFloat(frame+8,.25f).putFloat(frame+12,1f).putFloat(frame+20,64f);
+                    stormCommand(packet,2,STORM_CONTROL_HELIX_FRAME,1,1,0,scope);
+                    int orientation=stormCommand(packet,3,STORM_CONTROL_HELIX_FRAME,2,1,0,scope);
+                    packet.putFloat(orientation+12,1f);
+                    stormCommand(packet,4,STORM_CONTROL_HELIX_FRAME,3,1,0,scope);
+                    for(int rank=0;rank<members;rank++){
+                        int at=stormCommand(packet,5+rank,STORM_CONTROL_HELIX_ASSIGN,rank,1,rank,scope);
+                        packet.putFloat(at,(rank%16-8)*.5f).putFloat(at+4,(rank%8-4)*.5f);
+                    }
+                }
+                if(sequence==4){
+                    int target=STORM_TICK_TARGET_OFFSET;
+                    packet.putFloat(target,targetX-.1f).putFloat(target+4,targetY).putFloat(target+8,targetZ)
+                            .putFloat(target+16,targetX+.1f).putFloat(target+20,targetY).putFloat(target+24,targetZ).putInt(target+28,89);
+                }
+                int display=(int)((sequence-1)%RT_SLOTS);
+                while(!(boolean)prepare.invoke(null,worker,display)){
+                    check(System.nanoTime()<until,"Helix display reservation deadline");
+                    Thread.sleep(1);
+                }
+                check((boolean)submit.invoke(null,worker,packet,packet.capacity(),display,true),"Helix submission "+sequence);
+                drained=false;
+                int status;
+                while((status=(int)poll.invoke(null,worker,sequence))==1){
+                    check(System.nanoTime()<until,"Helix completion deadline "+sequence);Thread.sleep(1);
+                }
+                check(status==2,"Helix completion "+sequence+": "+diagnostics.invoke(null,worker));
+                if(sequence>=2&&sequence<=4){
+                    var batch=bytes(STORM_DOME_BATCH_BYTES);
+                    check((boolean)copyBatch.invoke(null,worker,sequence,batch),"Helix batch available");
+                    int at=STORM_HELIX_REFERENCE_OFFSET+slot*STORM_HELIX_REFERENCE_BYTES;
+                    check(batch.getInt(slot*4)==id&&batch.getInt(at)==17&&batch.getInt(at+4)==1,"Helix reference published");
+                    int contact=STORM_DOME_CONTACT_OFFSET+slot*STORM_DOME_CONTACT_BYTES;
+                    check(batch.getInt(contact)==(sequence==4?89:0),"Helix reduces the moving target contact into its attack batch");
+                }
+                check((int)consume.invoke(null,worker,sequence)==2,"Helix receipt consumed "+sequence);
+                var result=read(SpatialNative.buffers(bridge,display)[1],STORM_DISPLAY_HEADER_BYTES+members*STORM_DISPLAY_RECORD_BYTES);
+                check(result.getInt(8)==members&&result.getLong(STORM_DISPLAY_SEQUENCE_OFFSET)==sequence,"Helix display published");
+                if(sequence>=2){
+                    int phase=sequence==2?1:sequence<=4?3:4;
+                    float targetDistance=Float.POSITIVE_INFINITY;
+                    for(int row=0;row<members;row++){
+                        int record=STORM_DISPLAY_HEADER_BYTES+row*STORM_DISPLAY_RECORD_BYTES;
+                        int key=record+STORM_DISPLAY_KEY_OFFSET;
+                        int flags=result.getInt(key+12);
+                        check(result.getInt(key+4)==id&&((flags>>>STORM_DISPLAY_KIND_SHIFT)&15)==2
+                                &&((flags>>>STORM_DISPLAY_PHASE_SHIFT)&15)==phase,"Helix display member phase "+sequence);
+                        if(sequence==3&&(flags&15)==0){
+                            float x=result.getFloat(record),y=result.getFloat(record+4),z=result.getFloat(record+8);
+                            float distance=x*x+(y-64)*(y-64)+z*z;
+                            if(distance<targetDistance){targetX=x;targetY=y;targetZ=z;targetDistance=distance;}
+                        }
+                    }
+                    if(sequence==3)check(Float.isFinite(targetDistance),"A thrust member is in known air for the contact fixture");
+                }
+                long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);
+                try{while(!(boolean)recycle.invoke(null,worker,display,sequence,fence)){
+                    check(System.nanoTime()<until,"Helix display retirement deadline");Thread.sleep(1);
+                }}finally{GL32.glDeleteSync(fence);}
+                drained=true;
+            }
+        }finally{
+            if(drained){
+                while(!(boolean)close.invoke(null,worker)){check(System.nanoTime()<until,"Helix session retirement");Thread.sleep(1);}
+                SpatialNative.closeBuffers(bridge);
+            }
+        }
+        check(SpatialNative.ownedBytes()==0,"Helix session and bridge retired");
+        cases.add(Map.of("case","Native Helix gather, thrust and return", "members",members,"passed",true));
+    }
+    static void compactPoses(List<Object> cases){
+        int p=program("pose_cache.comp");
+        int visibility=program("spatial/visibility.comp");
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuProgramContract.verify(visibility,"spatial/visibility.comp");
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuProgramContract.installSamplers(p);
+        com.iridium126.createmanaindustry.client.gpu.shader.GpuProgramContract.verify(p,"pose_cache.comp");
+        int modelOffset=ParticleBuffers.IDX_CNT_MODELOP*Integer.BYTES;
+        int poseBase=POSE_ANIMATION_ROWS*16, stride=POSE_ROWS_PER_INSTANCE*16;
+        int pool=buffer(bytes(128).putFloat(12,1).putFloat(52,20).putFloat(76,1).putFloat(116,20));
+        int commands=buffer(bytes(ParticleBuffers.INDIRECT_UINTS*4).putInt(modelOffset,1));
+        int items=buffer(bytes(16).putInt(0,1<<9));
+        int live=buffer(bytes(4).putInt(0,2));
+        int dispatch=buffer(bytes(20));
+        int emitters=buffer(bytes(ParticleBuffers.VEC4_PER_EMITTER*16));
+        int output=buffer(bytes(poseBase+3*stride));
+        int animation=buffer(bytes(16*12));
+        int texture=GL45.glCreateTextures(GL31.GL_TEXTURE_BUFFER);
+        try{
+            GL45.glTextureBuffer(texture,GL30.GL_RGBA32UI,animation);
+            GL45.glBindTextureUnit(SAMPLER_ANIMATION_DRAW,texture);
+            bind(0,pool);bind(1,commands);bind(2,items);bind(3,live);bind(4,dispatch);bind(5,emitters);bind(POSE_OUTPUT_BINDING,output);
+            GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,dispatch);
+            GL20.glUseProgram(p);ui(p,"poseStamp",71);
+            GL41.glProgramUniform1i(p,GL20.glGetUniformLocation(p,"uMeasurePose"),1);
+            for(int view=0;view<2;view++){
+                if(view==1){
+                    GL45.glNamedBufferSubData(commands,modelOffset,bytes(4).putInt(0,2));
+                    GL45.glNamedBufferSubData(items,8,bytes(8).putInt(0,2<<9).putInt(4,4));
+                    GL45.glNamedBufferSubData(output,poseBase+stride+8,bytes(4).putInt(0,0x12345678));
+                }
+                GL41.glProgramUniform1i(p,GL20.glGetUniformLocation(p,"uPreparePoseDispatch"),1);
+                GL43.glDispatchCompute(1,1,1);GL42.glMemoryBarrier(GL43.GL_COMMAND_BARRIER_BIT|GL43.GL_SHADER_STORAGE_BARRIER_BIT);
+                GL41.glProgramUniform1i(p,GL20.glGetUniformLocation(p,"uPreparePoseDispatch"),0);
+                GL43.glDispatchComputeIndirect(0);
+                GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+                var receipt=bytes(2*stride);
+                GL45.glGetNamedBufferSubData(output,poseBase+stride,receipt);
+                check(receipt.getInt(4)==71&&receipt.getInt(stride+4)==(view==0?0:71),"View list produces only its drawable poses");
+                if(view==1)check(receipt.getInt(8)==0x12345678,"Shadow view reused the camera pose");
+                var stats=read(dispatch,20);
+                check(stats.getInt(12)==view+1&&stats.getInt(16)==1,"Only computed poses contribute to statistics");
+            }
+            cases.add(Map.of("case","Compact camera and shadow pose lists", "passed",true));
+        }finally{
+            GL11.glDeleteTextures(texture);
+            for(int id:new int[]{pool,commands,items,live,dispatch,emitters,output,animation})GL15.glDeleteBuffers(id);
+            GL20.glDeleteProgram(p);GL20.glDeleteProgram(visibility);
+        }
+    }
     public static void main(String[] args)throws Exception{
-        Path out=Path.of(System.getProperty("cmi.particle.output","build/particle-engine/verify"));Files.createDirectories(out);var result=new LinkedHashMap<String,Object>();var cases=new ArrayList<Object>();result.put("passed",false);
+        Path out=Path.of(ParticleFixtureOptions.parse(args).getOrDefault("output","build/particle-engine/verify"));Files.createDirectories(out);var result=new LinkedHashMap<String,Object>();var cases=new ArrayList<Object>();result.put("passed",false);
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,6);long window=GLFW.glfwCreateWindow(32,32,"particle engine driver checks",0,0);GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
         try{
-            if(Arrays.asList(args).contains("--storm-timeline-only"))nativeStormTimeline(cases);
-            else{localCorrection(cases);contacts(cases);interpolation(cases);displayPublication(cases);featherPixels(cases);conservativeVisibility(cases,!Arrays.asList(args).contains("--gl-only"));glQueries(cases);geometry(cases,!Arrays.asList(args).contains("--gl-only"));for(String shader:List.of("spatial/motion.comp","update.comp","wavecontact.comp","dome_contacts.comp","dome_contact_control.comp","dome_contact_apply.comp","dome_contact_audit.comp","storm_projection.comp"))GL20.glDeleteProgram(program(shader));if(!Arrays.asList(args).contains("--gl-only")){nativeQueries(cases);nativeRing(cases);nativeWorkerQueue(cases);nativeStormTimeline(cases);}}
+            compactPoses(cases);
+            if(Arrays.asList(args).contains("--native-helix-only"))nativeHelixLaunch(cases);
+            else if(Arrays.asList(args).contains("--storm-timeline-only"))nativeStormTimeline(cases);
+            else{localCorrection(cases);contacts(cases);interpolation(cases);displayPublication(cases);featherPixels(cases);conservativeVisibility(cases,!Arrays.asList(args).contains("--gl-only"));glQueries(cases);geometry(cases,!Arrays.asList(args).contains("--gl-only"));for(String shader:List.of("spatial/motion.comp","update.comp","wavecontact.comp","dome_contacts.comp","dome_contact_control.comp","dome_contact_apply.comp","dome_contact_audit.comp","storm_projection.comp"))GL20.glDeleteProgram(program(shader));if(!Arrays.asList(args).contains("--gl-only")){nativeQueries(cases);nativeRing(cases);nativeWorkerQueue(cases);nativeStormTimeline(cases);nativeHelixLaunch(cases);}}
             check(GL11.glGetError()==0,"GL state");result.put("passed",true);
         }finally{result.put("checks",checks);result.put("cases",cases);result.put("gpu",GL11.glGetString(GL11.GL_RENDERER));result.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("gpu.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
     }

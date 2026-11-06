@@ -6,6 +6,7 @@ import org.lwjgl.opengl.*;
 import org.joml.Matrix4f;
 import com.iridium126.createmanaindustry.client.particles.engine.*;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
+import static com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_MERGED_GEOMETRY;
 
 /** Production analytic kernels and extended-depth MRT, executed on the real driver. */
 public class StormLodGpuValidation extends ModelPopulationGpuValidation {
@@ -274,6 +275,86 @@ public class StormLodGpuValidation extends ModelPopulationGpuValidation {
   }
  }
  static int texture(int format){int t=GL11.glGenTextures();GL11.glBindTexture(GL11.GL_TEXTURE_2D,t);GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,format,16,16,0,format==GL30.GL_DEPTH_COMPONENT32F?GL11.GL_DEPTH_COMPONENT:GL11.GL_RGBA,GL11.GL_FLOAT,0L);return t;}
+ static void mergedBindings()throws Exception{
+  var gpu=ParticleBuffers.INSTANCE;
+  check(gpu.init(1024,4),"Merged LOD requires production particle buffers");
+  var geometryField=AllayModelGeometry.class.getDeclaredField("VERTICES");geometryField.setAccessible(true);
+  var indicesField=AllayModelGeometry.class.getDeclaredField("INDICES");indicesField.setAccessible(true);
+  var opaqueField=AllayModelGeometry.class.getDeclaredField("OPAQUE_INDEX_COUNT");opaqueField.setAccessible(true);
+  int bodyCount=AllayModelGeometry.BODY_OPAQUE_INDEX_COUNT;
+  gpu.uploadModelGeometry((float[])geometryField.get(null),(int[])indicesField.get(null),bodyCount,opaqueField.getInt(null));
+  int geometry=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,ParticleBuffers.MODELGEO_BINDING);
+  int records=buffer(bytes(64).putFloat(0,-.2f).putFloat(8,-3).putFloat(12,.3f)
+          .putFloat(32,.2f).putFloat(40,-3).putFloat(44,.3f));
+  int order=buffer(bytes((N+1)*8).putInt(N*8,1));
+  int commands=buffer(bytes(40).putInt(0,bodyCount).putInt(4,1).putInt(20,6).putInt(24,1));
+  var lod=StormLodGpu.INSTANCE;
+  var field=StormLodGpu.class.getDeclaredField("bank");field.setAccessible(true);int bank=field.getInt(lod);
+  var bankBuffers=new ArrayList<int[]>();
+  for(String name:List.of("records","order","commands")){
+   field=StormLodGpu.class.getDeclaredField(name);field.setAccessible(true);bankBuffers.add((int[])field.get(lod));
+  }
+  bankBuffers.get(0)[bank]=records;bankBuffers.get(1)[bank]=order;bankBuffers.get(2)[bank]=commands;
+  // Use the production vertex geometry through the sampler types used by Iris.
+  String vertex=source("storm_lod.vsh")
+          .replace("layout(std430,binding=0) readonly buffer LodRecords { vec4 records[]; };","uniform samplerBuffer cmi_Pool;")
+          .replace("layout(std430,binding=1) readonly buffer LodOrder { uvec2 order[]; };","uniform usamplerBuffer cmi_Sorted;")
+          .replace("layout(std430,binding=BIND_MODELGEO) readonly buffer ModelGeo { float v[]; } geo;","uniform samplerBuffer cmi_Geo;")
+          .replace("order[(cmi_LodPass==1?0u:131072u)+uint(gl_InstanceID)].x","texelFetch(cmi_Sorted,int((cmi_LodPass==1?0u:131072u)+uint(gl_InstanceID))).x")
+          .replaceAll("geo\\.v\\[([^]]+)\\]","texelFetch(cmi_Geo,int($1)).x")
+          .replace("records[id*2u+1u]","texelFetch(cmi_Pool,int(id*2u+1u))")
+          .replace("records[id*2u]","texelFetch(cmi_Pool,int(id*2u))");
+  String prelude="#version 450 core\n"+ParticlePrograms.commonPrelude();
+  int program=GpuShaderCompiler.graphics("Iris LOD sampler probe",prelude+vertex,prelude+source("model.fsh"));
+  int fbo=GL30.glGenFramebuffers(),color=texture(GL30.GL_RGBA32F),depth=texture(GL30.GL_DEPTH_COMPONENT32F),atlas=assetTexture();
+  try{
+   GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,fbo);
+   GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,color,0);
+   GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,depth,0);
+   GL20.glDrawBuffers(new int[]{GL30.GL_COLOR_ATTACHMENT0});
+   check(GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER)==GL30.GL_FRAMEBUFFER_COMPLETE,"Merged LOD framebuffer");
+   GL11.glViewport(0,0,16,16);GL11.glEnable(GL11.GL_DEPTH_TEST);GL11.glDepthFunc(GL11.GL_LESS);
+   GL11.glDisable(GL11.GL_BLEND);GL11.glDisable(GL11.GL_CULL_FACE);GL11.glDepthMask(true);
+   GL45.glBindTextureUnit(1,atlas);
+   lod.bindNative();
+   int[] buffers={geometry,records,gpu.particleDrawEmitterBufferId(),order};
+   int[] formats={GL30.GL_R32F,GL30.GL_RGBA32F,GL30.GL_RGBA32F,GL32.GL_RG32UI};
+   for(int i=0;i<buffers.length;i++){
+    GL13.glActiveTexture(GL13.GL_TEXTURE0+SAMPLER_MERGED_GEOMETRY+i);
+    int texture=GL11.glGetInteger(GL31.GL_TEXTURE_BINDING_BUFFER);
+    check(texture!=0,"Missing merged LOD texture at slot "+i);
+    check(GL45.glGetTextureLevelParameteri(texture,0,GL31.GL_TEXTURE_BUFFER_DATA_STORE_BINDING)==buffers[i],"Wrong merged LOD buffer at slot "+i);
+    check(GL45.glGetTextureLevelParameteri(texture,0,GL11.GL_TEXTURE_INTERNAL_FORMAT)==formats[i],"Wrong merged LOD format at slot "+i);
+   }
+   GL13.glActiveTexture(GL13.GL_TEXTURE0);
+   GL20.glUseProgram(program);
+   GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_Geo"),SAMPLER_MERGED_GEOMETRY);
+   GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_Pool"),SAMPLER_MERGED_GEOMETRY+1);
+   GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_Sorted"),SAMPLER_MERGED_GEOMETRY+3);
+   GL20.glUniform1i(GL20.glGetUniformLocation(program,"uSprite"),1);
+   float[] identity=new Matrix4f().get(new float[16]);
+   GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"ModelViewMat"),false,identity);
+   GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"cmi_LodInverseView"),false,identity);
+   GL20.glUniformMatrix4fv(GL20.glGetUniformLocation(program,"ProjMat"),false,new Matrix4f().ortho(-1,1,-.5f,1.5f,.05f,20).get(new float[16]));
+   for(int grade=1;grade<=2;grade++){
+    GL30.glClearBufferfv(GL11.GL_COLOR,0,new float[]{0,0,0,0});
+    GL30.glClearBufferfv(GL11.GL_DEPTH,0,new float[]{1});
+    GL20.glUniform1i(GL20.glGetUniformLocation(program,"cmi_LodPass"),grade);
+    if(grade==1)lod.drawBody();else lod.drawPixel();
+    var pixels=bytes(16*16*4);GL11.glReadPixels(0,0,16,16,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pixels);
+    boolean lit=false;for(int i=3;i<pixels.capacity();i+=4)lit|=pixels.get(i)!=0;
+    check(lit,"Merged LOD"+grade+" did not produce pixels");
+   }
+   check(GL11.glGetError()==0,"Merged LOD GL error");
+  }finally{
+   GL20.glUseProgram(0);deleteProgram(program);
+   for(int[] bankBuffer:bankBuffers)bankBuffer[bank]=0;
+   gpu.free();
+   for(int b:new int[]{records,order,commands})GL15.glDeleteBuffers(b);
+   for(int t:new int[]{color,depth,atlas})GL11.glDeleteTextures(t);
+   GL30.glDeleteFramebuffers(fbo);
+  }
+ }
  static void target()throws Exception{
   com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
   int render=graphics("storm_lod.vsh","model.fsh"),composite=graphics("storm_lod_composite.vsh","storm_lod_composite.fsh");
@@ -300,6 +381,6 @@ public class StormLodGpuValidation extends ModelPopulationGpuValidation {
  }
  public static void main(String[] args)throws Exception{
   GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Storm LOD validation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));members();nearCoverage();check(GL11.glGetError()==0,"Member GL error");target();hardCutoff();projection();if(Arrays.asList(args).contains("--benchmark")){computeBenchmark();residentBenchmark();renderBenchmark();}check(GL11.glGetError()==0,"Final GL error");System.out.println("Storm LOD GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));members();nearCoverage();check(GL11.glGetError()==0,"Member GL error");target();mergedBindings();hardCutoff();projection();if(Arrays.asList(args).contains("--benchmark")){computeBenchmark();residentBenchmark();renderBenchmark();}check(GL11.glGetError()==0,"Final GL error");System.out.println("Storm LOD GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
  }
 }

@@ -21,6 +21,7 @@ public final class ModelRenderPublication implements AutoCloseable {
         final java.nio.ByteBuffer parameterBytes=org.lwjgl.BufferUtils.createByteBuffer(DisplayParameters.BYTES);
         long frozenGeneration=-1;
         long fence;
+        float alpha,time;
         final ModelShadowGroups groups=new ModelShadowGroups();
     }
     private final Slot[] slots={new Slot(),new Slot(),new Slot()};
@@ -33,6 +34,9 @@ public final class ModelRenderPublication implements AutoCloseable {
     private final ProfileSlot[] profiles={new ProfileSlot(),new ProfileSlot(),new ProfileSlot()};
     private final java.nio.ByteBuffer profileBytes=java.nio.ByteBuffer.allocate(PROFILE_BYTES).order(java.nio.ByteOrder.nativeOrder());
     private final float[] planes=new float[24];
+    private final float[] viewValues=new float[16];
+    private final Matrix4f clip=new Matrix4f();
+    private final Vector4f plane=new Vector4f();
     private int program,capacity,carrierCapacity,nextSlot;
     private int frozenEmitters;
     private long emitterRevision=-1,emitterEpoch=-1;
@@ -41,9 +45,15 @@ public final class ModelRenderPublication implements AutoCloseable {
     private Slot selected;
     private final java.util.function.Function<String,String> sources;
     private final ModelPosePublication poses;
-    private final com.iridium126.createmanaindustry.client.particles.engine.spatial.RtRenderVisibility visibility;
+    private final com.iridium126.createmanaindustry.client.particles.engine.spatial.RenderTerrain visibilityTerrain=
+            new com.iridium126.createmanaindustry.client.particles.engine.spatial.RenderTerrain();
+    private final com.iridium126.createmanaindustry.client.particles.engine.spatial.RtRenderVisibility visibility,lightVisibility;
     public ModelRenderPublication(){this(ParticlePrograms::loadParticlePlain);}
-    public ModelRenderPublication(java.util.function.Function<String,String> sources){this.sources=sources;poses=new ModelPosePublication(sources);visibility=new com.iridium126.createmanaindustry.client.particles.engine.spatial.RtRenderVisibility(sources);}
+    public ModelRenderPublication(java.util.function.Function<String,String> sources){
+        this.sources=sources;poses=new ModelPosePublication(sources);
+        visibility=new com.iridium126.createmanaindustry.client.particles.engine.spatial.RtRenderVisibility(sources,visibilityTerrain,false);
+        lightVisibility=new com.iridium126.createmanaindustry.client.particles.engine.spatial.RtRenderVisibility(sources,visibilityTerrain,true);
+    }
     public record Frame(long id,int pool,int commands,int counter,int permutation,float alpha,float timeSec) {}
 
     private static int buffer(long bytes){int b=GL45.glCreateBuffers();GL45.glNamedBufferData(b,Math.max(16,bytes),GL15.GL_DYNAMIC_COPY);if(GL45.glGetNamedBufferParameteri64(b,GL15.GL_BUFFER_SIZE)<bytes){GpuBufferNames.delete(b);throw new IllegalStateException("Display allocation failed");}return b;}
@@ -108,10 +118,14 @@ public final class ModelRenderPublication implements AutoCloseable {
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1f(program,GpuUniforms.loc(program,"uTimeSec"),trajectoryTime<0?trajectoryTime+104857.6f:trajectoryTime);
         bind(20,s.feathers);phase(3,1);
         GpuBindings.bind(GL43.GL_DISPATCH_INDIRECT_BUFFER,s.dispatch);ui(program,"phase",2);GpuReplayCommands.dispatchComputeIndirect(36);barrier();
-        gpu.displayVisibility(visibility.prepare(gpu,s.pool,s.counter,frozenEmitters,s.dispatch,current.generation(),timeSec,cameraNow));
+        if(ShadowQualityFrame.current()!=com.iridium126.createmanaindustry.infrastructure.config.ParticleShadowQuality.RT)
+            lightVisibility.stopWorker();
         float far=1;while(far<Math.max(16,ClientConfig.particleFadeDistance*2))far*=2;
-        var matrix=new Matrix4f(projection).mul(view);var plane=new Vector4f();for(int k=0;k<6;k++){matrix.frustumPlane(k,plane);plane.normalize3();planes[k*4]=plane.x;planes[k*4+1]=plane.y;planes[k*4+2]=plane.z;planes[k*4+3]=plane.w;}
-        var pos=camera.getPosition();float[] viewValues=view.get(new float[16]);
+        clip.set(projection).mul(view);
+        for(int k=0;k<6;k++){clip.frustumPlane(k,plane);plane.normalize3();planes[k*4]=plane.x;planes[k*4+1]=plane.y;planes[k*4+2]=plane.z;planes[k*4+3]=plane.w;}
+        gpu.displayVisibility(visibility.prepare(gpu,s.pool,s.counter,frozenEmitters,s.dispatch,
+                current.generation(),timeSec,cameraNow,ShadowQualityFrame.cameraRt(),null,planes));
+        var pos=camera.getPosition();view.get(viewValues);
         for(int role=1;role<=2;role++){
             gpu.beginBindings();int keygen=role==1?shaders.ordinaryKeygen():shaders.keygen();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(keygen);
             bind(0,s.pool);bind(2,s.commands);bind(3,s.counter);bind(5,frozenEmitters);
@@ -134,6 +148,7 @@ public final class ModelRenderPublication implements AutoCloseable {
             GpuReplayCommands.dispatchComputeIndirect(role==1?0:12);barrier();
         }
         s.groups.commit(0,current.generation());
+        ClientFrameCapture.INSTANCE.visibilitySubmitted(gpu.displayVisibility(),false);
         bind(7,s.commands);bind(8,s.dispatch);bind(9,s.first);phase(4,1);
         int read=s.first,write=s.second;
         for(int pass=0;pass<ParticleBuffers.RADIX_PASSES;pass++){
@@ -146,9 +161,25 @@ public final class ModelRenderPublication implements AutoCloseable {
         gpu.setDisplayResources(s.pool,s.commands,s.add,s.opaque,read,s.groups.buffer(0,current.generation()),history?alpha:1);
         com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu.INSTANCE.publishDisplay(
                 current.generation(),history?alpha:1,cameraNow);
-        int animation=poses.publish(gpu,current,s.pool,frozenEmitters,s.dispatch,timeSec,history?alpha:1);
+        s.alpha=history?alpha:1;
+        s.time=timeSec;
+        int animation=poses.begin(gpu);
+        if(animation!=0)poses.publish(gpu,s.pool,s.counter,frozenEmitters,s.commands,read,s.time,s.alpha,"display.pose");
         gpu.displayFrozenInputs(frozenEmitters,animation,poses.stamp());gpu.beginBindings();return new Frame(++publicationId,s.pool,s.commands,s.counter,read,history?alpha:1,timeSec);
     }
+    public void prepareShadowPoses(int commands,int instances){
+        Slot s=selected;
+        if(s!=null)poses.publish(ParticleBuffers.INSTANCE,s.pool,s.counter,frozenEmitters,
+                commands,instances,s.time,s.alpha,"display.pose.shadow");
+    }
+    public int prepareLightVisibility(net.minecraft.world.phys.Vec3 camera,org.joml.Vector3f ray){
+        Slot s=selected;
+        if(s==null)return 0;
+        return lightVisibility.prepare(ParticleBuffers.INSTANCE,s.pool,s.counter,frozenEmitters,s.dispatch,
+                s.frozenGeneration,s.time,camera,true,ray,null);
+    }
+    public String visibilityStatus(){return "camera "+visibility.status()+"; light "+lightVisibility.status();}
+    public void breakHistory(){identityEpoch=-1;}
     public void endFrame(){if(selected!=null){selected.fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);selected=null;}}
     /** Draw counts come from the frozen publication, independently of simulation cadence. */
     public void captureCounts(){
@@ -179,7 +210,7 @@ public final class ModelRenderPublication implements AutoCloseable {
         }
     }
     @Override public void close(){
-        endFrame();poses.close();visibility.close();
+        endFrame();poses.close();visibility.close();lightVisibility.close();visibilityTerrain.close();
         for(var slot:profiles){if(slot.fence!=0)GL32.glDeleteSync(slot.fence);slot.fence=0;if(slot.data!=null)slot.data.close();slot.data=null;}
         for(Slot s:slots){
             s.groups.close();if(s.fence!=0)GL32.glDeleteSync(s.fence);s.fence=0;
