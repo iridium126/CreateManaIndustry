@@ -16,7 +16,7 @@ struct StormTick {
     uint32_t terrainRows, terrainPages;
     float4 targetBefore, targetAfter;
     uint64_t projectedSequence, projectedIdentity;
-    uint32_t playerCount, positionSnapshot, columnCaptureCount, reserved;
+    uint32_t playerCount, positionSnapshot, columnCaptureCount, featherImpacts;
     uint4 columnCaptures[CMI_RESOURCE_STORM_COLUMN_CAPTURE_LIMIT];
 };
 struct StormControl {
@@ -153,6 +153,9 @@ struct StormDomeBatch {
     StormPositionBatch positions;
     float columnCaptures[CMI_RESOURCE_STORM_COLUMN_CAPTURE_LIMIT][columnMembers][CMI_RESOURCE_STORM_COLUMN_CAPTURE_FLOATS];
 };
+constexpr unsigned featherImpactLimit=CMI_RESOURCE_STORM_FEATHER_IMPACT_LIMIT;
+struct StormFeatherCell { int state,x,y,z; float4 impact; };
+struct StormFeatherReceipt { uint32_t count,reserved[3]; float4 rows[featherImpactLimit]; };
 struct StormDomeView {
     const float* records;
     const uint32_t* keys;
@@ -166,6 +169,7 @@ struct StormDomeView {
     StormRoute* routes;
     uint32_t* pathSearches;
     StormDomeBatch* batch;
+    StormFeatherCell* featherCells;
 };
 
 // Member storage is stable across ticks. Identity guards births, deaths,

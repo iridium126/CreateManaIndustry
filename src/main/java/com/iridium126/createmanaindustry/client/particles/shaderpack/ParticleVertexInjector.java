@@ -9,6 +9,7 @@ import io.github.douira.glsl_transformer.ast.node.external_declaration.Declarati
 import io.github.douira.glsl_transformer.ast.node.external_declaration.ExternalDeclaration;
 import io.github.douira.glsl_transformer.ast.node.statement.CompoundStatement;
 import io.github.douira.glsl_transformer.ast.node.type.specifier.BuiltinNumericTypeSpecifier;
+import io.github.douira.glsl_transformer.ast.node.type.qualifier.StorageQualifier;
 import io.github.douira.glsl_transformer.ast.print.ASTPrinter;
 import io.github.douira.glsl_transformer.ast.query.match.AutoHintedMatcher;
 import io.github.douira.glsl_transformer.ast.query.Root;
@@ -176,6 +177,7 @@ public final class ParticleVertexInjector {
         var mainFuncDecl = cmiMainBody.getAncestor(ExternalDeclaration.class);
 
         List<ExternalDeclaration> decls = new ArrayList<>();
+        boolean usesLeafSway=!params.strict&&params.cmiVertexSource.contains("cmiLeafOffset");
         for (var child : cmiTree.getChildren()) {
             if (child == mainFuncDecl) continue;
             if (child instanceof DeclarationExternalDeclaration dex
@@ -184,7 +186,7 @@ public final class ParticleVertexInjector {
                     .anyMatch(m -> hasGlobalDeclaration(packRoot, m.getName().getName()));
                 if (clash) {
                     if (params.strict) throw new IllegalArgumentException("Merged vertex declaration collision");
-                    continue;
+                    if(!usesLeafSway||!replaceCompatibleUniform(packRoot,t))continue;
                 }
             }
             decls.add(child);
@@ -216,6 +218,29 @@ public final class ParticleVertexInjector {
         var dims = new HashMap<String, Integer>();
         removeExtensionAttributes(packRoot, dims);
         replaceExtensionAttributes(packRoot, dims, params.extensionValues);
+    }
+
+    /** Leaf helpers execute before the pack's declarations, so shared uniforms must be declared there too. */
+    private static boolean replaceCompatibleUniform(Root root,TypeAndInitDeclaration imported){
+        if(imported.getMembers().size()!=1||!uniform(imported))return false;
+        var incoming=imported.getMembers().getFirst();
+        String name=incoming.getName().getName(),type=ASTPrinter.printSimple(imported.getType().getTypeSpecifier());
+        for(var node:root.nodeIndex.getStream(DeclarationExternalDeclaration.class).distinct().toList()){
+            if(!(node.getDeclaration() instanceof TypeAndInitDeclaration original)||!uniform(original)
+                    ||!type.equals(ASTPrinter.printSimple(original.getType().getTypeSpecifier())))continue;
+            for(var member:original.getMembers())if(member.getName().getName().equals(name)
+                    &&member.getArraySpecifier()==null&&incoming.getArraySpecifier()==null){
+                if(original.getMembers().size()==1)node.detachAndDelete();
+                else member.detachAndDelete();
+                return true;
+            }
+        }
+        return false;
+    }
+    private static boolean uniform(TypeAndInitDeclaration declaration){
+        var qualifiers=declaration.getType().getTypeQualifier();
+        return qualifiers!=null&&qualifiers.getParts().stream().anyMatch(part->
+                part instanceof StorageQualifier q&&q.storageType==StorageQualifier.StorageType.UNIFORM);
     }
 
     // NOTE: the transformer field must be passed as the parser argument to

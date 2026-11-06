@@ -748,6 +748,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
 
                 if(pass!=2)com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(updateProgram);
                 if(pass==1)feathers.bind(updateProgram);
+                if(pass>=2)feathers.bindModelImpacts(updateProgram);
                 if(pass==0)setFloatUniform(updateProgram, "uDt", dt);
                 if(pass==1){setUIntUniform(updateProgram,"uHexCurrentTick",hexTick);setIntUniform(updateProgram,"uHexTickReady",1);}
                 setFloatUniform(updateProgram, "uTimeSec", AllayStormRuntime.INSTANCE.timeSec());

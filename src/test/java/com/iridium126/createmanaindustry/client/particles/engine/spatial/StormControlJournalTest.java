@@ -54,7 +54,7 @@ class StormControlJournalTest {
             float seconds=StarfallColumnRules.renderSeconds(gameTime,0);
             var active=new StormControlJournal.Parameters(2,true,1,19,1,100,2,8,0,0,1,1,seconds,6,false);
             log.appendWorldSample(gameTime,active,List.of(),null,StormControlJournal.Target.ABSENT,
-                    0,List.of(),false,null,List.of());
+                    0,List.of(),false,null,List.of(),false);
         }
         for(int i=0;i<gameTimes.length;i++){
             var input=log.sendable();

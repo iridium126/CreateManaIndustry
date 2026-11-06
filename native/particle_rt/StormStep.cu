@@ -52,6 +52,33 @@ __device__ void home(StormTick tick,float seed,vec3& position,vec3& velocity) {
         tick.speed,center(tick),position,velocity);
 }
 __device__ constexpr float dt=.05f;
+__device__ void featherImpact(StormFeatherCell* cells,vec3 point,float incomingY){
+    if(!cells)return;
+    int x=__float2int_rd(point.x*.5f),y=__float2int_rd(point.y*.5f),z=__float2int_rd(point.z*.5f);
+    unsigned hash=unsigned(x)*0x8da6b343u^unsigned(y)*0xd8163841u^unsigned(z)*0xcb1ab31fu;
+    hash^=hash>>16u;
+    float strength=clamp(.5f-incomingY*.25f,0.f,3.5f);
+    for(unsigned probe=0;probe<8;probe++){
+        auto& cell=cells[(hash+probe)&(featherImpactLimit-1)];
+        int state=atomicCAS(&cell.state,0,1);
+        if(state==1)return;
+        if(state==2){
+            if(cell.x!=x||cell.y!=y||cell.z!=z)continue;
+            if(atomicCAS(&cell.state,2,1)!=2)return;
+        }
+        if(state==0||strength>cell.impact.w){
+            cell.x=x;cell.y=y;cell.z=z;cell.impact=point.row(strength);
+        }
+        __threadfence();atomicExch(&cell.state,2);
+        return;
+    }
+}
+__device__ unsigned liveSweep(StormCollision& collision,StormFeatherCell* cells,vec3& position,vec3& velocity){
+    float incomingY=velocity.y;
+    unsigned flags=collision.sweep(position,velocity,dt);
+    if(collision.hitDown)featherImpact(cells,collision.impactPoint,incomingY);
+    return flags;
+}
 __device__ vec3 repelPlayers(vec3 position,const float4* players,unsigned count){
     constexpr float radius=3.f,weight=14.f;
     vec3 result(0.f);
@@ -143,7 +170,10 @@ __device__ bool stepColumn(StormDomeView view,StormTick tick,StormStepMember& me
     if(speed>move.speedCap)velocity=velocity*(move.speedCap/speed);
     velocity=correctedVelocity(member,tick,position,velocity,move.speedCap,true);
     auto before=position;
+    float impactY=move.bloomStarted?fminf(member.velocity.y,velocity.y):velocity.y;
     unsigned flags=terrain.sweep(position,velocity,dt);
+    if(move.bloomStarted)featherImpact(view.featherCells,move.bloomPoint,impactY);
+    else if(terrain.hitDown)featherImpact(view.featherCells,terrain.impactPoint,impactY);
     if((flags&StormCoverageUnknown)!=0u&&state.phase==columnBloom){
         state.phase=columnExit;
         state.release=now;
@@ -163,6 +193,11 @@ __device__ bool stepColumn(StormDomeView view,StormTick tick,StormStepMember& me
     member.terrainState=flags;
     return true;
 }
+}
+
+extern "C" __global__ void compactStormFeatherImpacts(const StormFeatherCell* cells,StormFeatherReceipt* receipt) {
+    unsigned index=blockIdx.x*blockDim.x+threadIdx.x;
+    if(index<featherImpactLimit&&cells[index].state==2)receipt->rows[atomicAdd(&receipt->count,1u)]=cells[index].impact;
 }
 
 __device__ void applyStormControlRow(StormStepMember* members,StormTick tick,StormControl command,StormDomeView dome,unsigned rank) {
@@ -455,7 +490,7 @@ extern "C" __global__ void advanceStormVortex(StormStepMember* members,StormTick
         member.previous=member.position;
         velocity=velocity*(1.f-1.88621f*dt);
         velocity=correctedVelocity(member,tick,position,velocity,tick.speed,false);
-        member.terrainState=collision.sweep(position,velocity,dt);
+        member.terrainState=liveSweep(collision,view.featherCells,position,velocity);
         member.position=position.row(0.f);member.velocity=velocity.row(member.damageLight);
         member.age+=dt;member.hurt=fmaxf(0.f,member.hurt-2.f*dt);
         member.hp=fmaxf(-1.f,member.hp-dt);
@@ -475,7 +510,7 @@ extern "C" __global__ void advanceStormVortex(StormStepMember* members,StormTick
             member.previous=member.position;
             auto end=position+velocity*dt;
             if(collision.body(position).complete&&collision.body(end).complete){
-                member.terrainState=collision.sweep(position,velocity,dt);
+                member.terrainState=liveSweep(collision,view.featherCells,position,velocity);
             }else{
                 position=end;
                 member.terrainState=StormCoverageUnknown;
@@ -582,7 +617,7 @@ extern "C" __global__ void advanceStormVortex(StormStepMember* members,StormTick
     velocity=correctedVelocity(member,tick,position,velocity,cap,false);
     member.previous=member.position;
     auto motionBeforeSweep=velocity;
-    member.terrainState=collision.sweep(position,velocity,dt);
+    member.terrainState=liveSweep(collision,view.featherCells,position,velocity);
     constexpr unsigned fullyKnownEmbedding=StormCoverageUnknown|StormEmbedded;
     if((member.terrainState&fullyKnownEmbedding)==StormEmbedded&&tick.tick>=member.recoveryTick
         &&atomicAdd(view.pathSearches+1,1u)<16u){

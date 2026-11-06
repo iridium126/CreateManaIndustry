@@ -29,6 +29,7 @@ final class NativeStormControl {
                           StormControlJournal.Float4 sound) {}
     record OuterFeedback(long identity,int[] rows) {}
     record PositionFeedback(long identity,long tick,float[] rows) {}
+    record FeatherFeedback(long identity,float[] rows) {}
     record SnapshotFeedback(long identity,long tick,float seconds,ClientboundStormColumnSnapshotRequest request,float[] values) {}
     private record Batches(List<RegionalFeedback> regional,List<ColumnFeedback> columns,OuterFeedback outer,
                            PositionFeedback positions,List<SnapshotFeedback> snapshots) {
@@ -61,12 +62,14 @@ final class NativeStormControl {
     private final Consumer<ColumnFeedback> columnFeedback;
     private final Consumer<OuterFeedback> outerFeedback;
     private final Consumer<PositionFeedback> positionFeedback;
+    private final Consumer<FeatherFeedback> featherFeedback;
     private final Consumer<SnapshotFeedback> snapshotFeedback;
     private final ByteBuffer domeResult;
     private final DisplaySlot[] displaySlots=new DisplaySlot[RT_SLOTS];
     private DisplaySlot published;
     private ByteBuffer packet;
     private ByteBuffer terrainUpload;
+    private ByteBuffer featherResult;
     private long worker,displayBridge;
     private int terrainCount;
     private boolean retiring,domeInstalled;
@@ -74,13 +77,15 @@ final class NativeStormControl {
 
     NativeStormControl(Path modules,int capacity,StormControlJournal journal,Consumer<RegionalFeedback> feedback,
                        Consumer<ColumnFeedback> columnFeedback,Consumer<OuterFeedback> outerFeedback,
-                       Consumer<PositionFeedback> positionFeedback,Consumer<SnapshotFeedback> snapshotFeedback){
+                       Consumer<PositionFeedback> positionFeedback,Consumer<SnapshotFeedback> snapshotFeedback,
+                       Consumer<FeatherFeedback> featherFeedback){
         this.journal=journal;
         this.feedback=feedback;
         this.columnFeedback=columnFeedback;
         this.outerFeedback=outerFeedback;
         this.positionFeedback=positionFeedback;
         this.snapshotFeedback=snapshotFeedback;
+        this.featherFeedback=featherFeedback;
         SpatialNative.load(modules);
         packet=MemoryUtil.memAlloc(STORM_TICK_HEADER_BYTES+16*STORM_CONTROL_BYTES)
                 .order(ByteOrder.LITTLE_ENDIAN);
@@ -225,8 +230,20 @@ final class NativeStormControl {
                 catch(RuntimeException|LinkageError error){capture.invalidate("Native Storm timing unavailable: "+error);}
             }
             var batch=Batches.EMPTY;
+            FeatherFeedback feather=null;
             if(status==COMPLETE&&!retiring&&failure.isEmpty()){
-                try{batch=feedback(tick);}
+                try{
+                    batch=feedback(tick);
+                    if(tick.featherImpacts()){
+                        if(featherResult==null)featherResult=MemoryUtil.memAlloc(STORM_FEATHER_IMPACT_LIMIT*16).order(ByteOrder.LITTLE_ENDIAN);
+                        int count=SpatialNative.copyStormFeatherImpacts(worker,tick.sequence(),featherResult);
+                        if(count>0){
+                            float[] rows=new float[count*4];
+                            featherResult.asFloatBuffer().get(rows);
+                            feather=new FeatherFeedback(tick.parameters().identity(),rows);
+                        }
+                    }
+                }
                 catch(RuntimeException|LinkageError error){stop(error.toString());}
             }
             status=SpatialNative.consumeStormTick(worker,tick.sequence());
@@ -243,6 +260,7 @@ final class NativeStormControl {
                     batch.columns().forEach(columnFeedback);
                     if(batch.outer()!=null)outerFeedback.accept(batch.outer());
                     if(batch.positions()!=null)positionFeedback.accept(batch.positions());
+                    if(feather!=null)featherFeedback.accept(feather);
                     batch.snapshots().forEach(snapshotFeedback);
                 }catch(RuntimeException|LinkageError error){stop(error.toString());}
             }
@@ -309,6 +327,7 @@ final class NativeStormControl {
             MemoryUtil.memFree(packet);
             MemoryUtil.memFree(domeResult);
             if(terrainUpload!=null){MemoryUtil.memFree(terrainUpload);terrainUpload=null;}
+            if(featherResult!=null){MemoryUtil.memFree(featherResult);featherResult=null;}
             return true;
         }catch(RuntimeException|LinkageError error){stop(error.toString());return false;}
     }

@@ -5,6 +5,8 @@ struct StormCollision {
     int3 cached{};
     int page=-1;
     bool hasPage=false;
+    bool hitDown=false;
+    vec3 impactPoint{0.f};
 
     __device__ static bool same(int3 a,int3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;}
     __device__ static int3 block(vec3 p){return make_int3(__float2int_rd(p.x),__float2int_rd(p.y),__float2int_rd(p.z));}
@@ -51,6 +53,7 @@ struct StormCollision {
         return same(key,lo)&&same(key,hi);
     }
     __device__ unsigned sweep(vec3& position,vec3& velocity,float dt){
+        hitDown=false;
         auto end=position+velocity*dt;
         if(airSweep(position,end)){position=end;return 0;}
         auto before=body(position);
@@ -67,7 +70,10 @@ struct StormCollision {
             (axis==0?next.x:axis==1?next.y:next.z)+=move;
             auto probe=body(next);
             if(!probe.complete)result|=StormCoverageUnknown;
-            if(probe.occupied){v=0.f;result|=StormTerrainClipped;}
+            if(probe.occupied){
+                if(axis==1&&move<0.f){hitDown=true;impactPoint=position;}
+                v=0.f;result|=StormTerrainClipped;
+            }
             else position=next;
         }
         return result;

@@ -137,7 +137,7 @@ public final class ShaderPackProgramCompiler {
     private final ParticleVertexInjector injector = new ParticleVertexInjector();
 
     /** Preprocessed TBO sources, cached per overlay variant and resource generation. */
-    private final String[] mergedVertexSources = new String[2];
+    private final String[] mergedVertexSources = new String[4];
 
     private ShaderInstance entitiesShader;
     private ShaderInstance ghostShader;
@@ -149,6 +149,9 @@ public final class ShaderPackProgramCompiler {
     public String receiverStatus(){return com.iridium126.createmanaindustry.client.particles.engine.ShadowQualityFrame.receivesShadows()?"native":(unshadowed()?"unshadowed: ":"native receiving fallback: ")+receiverStatus;}
     private String featherOptimization="pending";
     public String featherOptimization(){return "shared entity program; "+featherOptimization;}
+    private FeatherLeafSway.Plan leafSway;
+    private String leafSwayStatus="pending";
+    public String leafSwayStatus(){return leafSwayStatus;}
     private final java.util.Map<ShaderInstance,Uniform> placeholderUniforms=new java.util.IdentityHashMap<>();
     private int carrierGtextureUnit=-1;
     private String optimizationReport="pending";
@@ -210,6 +213,9 @@ public final class ShaderPackProgramCompiler {
      * for /cmi particle shaderpack status.
      */
     public boolean ensureCompiled() {
+        return ensureCompiled(true);
+    }
+    private boolean ensureCompiled(boolean allowLeafSway) {
         WorldRenderingPipeline pipeline = Iris.getPipelineManager().getPipelineNullable();
         if (!(pipeline instanceof IrisRenderingPipeline))
             return false;
@@ -233,6 +239,11 @@ public final class ShaderPackProgramCompiler {
             entityContext=ModelEntityContext.resolve(programSet.getPack().getIdMap());
 
             var resolver = new ProgramFallbackResolver(programSet);
+            if(allowLeafSway){
+                var terrain=resolver.resolve(ProgramId.TerrainCutout).flatMap(ProgramSource::getVertexSource).orElse("");
+                leafSway=FeatherLeafSway.resolve(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().inventory(),terrain);
+                leafSwayStatus=leafSway==null?"inactive in effective terrain program":leafSway.pack()+" leaf motion";
+            }
             var refProgram = resolver.resolve(ProgramId.Entities).orElse(null);
             if (refProgram == null)
                 return fail("pack has no Entities program source (fallback chain exhausted)");
@@ -366,6 +377,7 @@ public final class ShaderPackProgramCompiler {
             // Shadow track: compiled last and fully isolated --
             // any failure here only costs particle shadows, never the merge.
             this.compileShadow(accessor, programSet, properties, resolver);
+            FeatherLeafSway.compiled(leafSway,session);
 
             CreateManaIndustry.LOGGER.info(
                     "[CMI particles] pack entity merge ready ({}+{}, gtexture {}/{}, inherited alphaTest={})",
@@ -374,6 +386,13 @@ public final class ShaderPackProgramCompiler {
             CreateManaIndustry.LOGGER.info("[CMI particles] model entity context: allayId={}, {}",entityContext.allayId(),blendPlan.report());
             return true;
         } catch (Exception e) {
+            if(leafSway!=null&&allowLeafSway){
+                String reason=describeCompileFailure(e);
+                reset();
+                boolean ready=ensureCompiled(false);
+                leafSwayStatus="native static feather fallback: "+reason;
+                return ready;
+            }
             releasePrograms();
             this.gtextureUnit = -1;
             this.ghostGtextureUnit = -1;
@@ -423,6 +442,7 @@ public final class ShaderPackProgramCompiler {
 
     /** Drops compiled state (pipeline changed, reload, or failure). */
     public void reset() {
+        leafSway=null;leafSwayStatus="pending";FeatherLeafSway.compiled(null,-1);
         releasePrograms();optimizationReport="pending";sourceProgram="pending";featherOptimization="pending";
         receiverStatus="effective material programs not checked";
         entityContext=ModelEntityContext.NEUTRAL;blendPlan=ModelBlendPlan.LEGACY;
@@ -559,7 +579,7 @@ public final class ShaderPackProgramCompiler {
             // Plain overlay variant: shadows are depth-only and the shadow
             // program's own entityColor handling (if any) is left untouched —
             // our out declaration must not collide with its uniform include.
-            var context = ShadowVertexContext.prepare(this.buildMergedSource(false), vertRef,
+            var context = ShadowVertexContext.prepare(this.buildMergedSource(false,false), vertRef,
                     refProgram.getGeometrySource().orElse(null), refProgram.getTessControlSource().orElse(null),
                     refProgram.getTessEvalSource().orElse(null), fragRef);
             this.shadowOptimization = context.reason();
@@ -704,7 +724,10 @@ public final class ShaderPackProgramCompiler {
      * approximation.</p>
      */
     private String buildMergedSource(boolean withEntityColor) {
-        int variant = withEntityColor ? 1 : 0;
+        return buildMergedSource(withEntityColor,leafSway!=null);
+    }
+    private String buildMergedSource(boolean withEntityColor,boolean sway) {
+        int variant = (withEntityColor ? 1 : 0)+(sway?2:0);
         if (this.mergedVertexSources[variant] != null)
             return this.mergedVertexSources[variant];
 
@@ -798,12 +821,23 @@ public final class ShaderPackProgramCompiler {
         sb.append(mergedSources.apply("chunks/feather_record.glsl")).append('\n');
         sb.append("uniform int cmi_FeatherPass,cmi_FeatherWordBase; uniform vec3 cmi_FeatherRight,cmi_FeatherUp;\n");
         sb.append("const int cmi_FeatherVisibleOffset = ").append(com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.VISIBLE).append(";\n");
+        if(sway)sb.append(leafSway.source());
         sb.append("""
                 void main() {
                     if(cmi_FeatherPass!=0){
                         uvec2 indices=texelFetch(cmi_Sorted,(cmi_FeatherWordBase+cmi_FeatherVisibleOffset)/2+gl_InstanceID/2).xy;
                         uint index=indices[gl_InstanceID&1];int base=int(index)*4;vec3 vertex,normal;vec2 uv;
-                        cmiFeatherVertex(texelFetch(cmi_Pool,base),texelFetch(cmi_Pool,base+1),texelFetch(cmi_Pool,base+2),texelFetch(cmi_Pool,base+3),cmi_FeatherRight,cmi_FeatherUp,gl_VertexID,vertex,normal,uv);
+                        vec4 featherPosition=texelFetch(cmi_Pool,base),featherAge=texelFetch(cmi_Pool,base+3);
+                        cmiFeatherVertex(featherPosition,texelFetch(cmi_Pool,base+1),texelFetch(cmi_Pool,base+2),featherAge,cmi_FeatherRight,cmi_FeatherUp,gl_VertexID,vertex,normal,uv);
+                """);
+        if(sway)sb.append("""
+                        uint supportTag=floatBitsToUint(featherAge.z);
+                        if(cmi_FeatherSwayEnabled&&featherPosition.w<0.&&(supportTag&(1u<<18))!=0u){
+                            vec3 surface=vec3(vertex.x,floor(featherPosition.y-.02)+1.,vertex.z);
+                            vertex+=cmiLeafOffset(surface,float((supportTag>>19)&15u)/15.);
+                        }
+                """);
+        sb.append("""
                         cmi_VertexLevel=vec4(vertex-cmi_CameraPos,1);cmi_NormalLevel=normal;
                         cmi_TexCoord0v=vec4(uv,0,1);cmi_LightCoordv=vec4(240,240,0,1);cmi_Tint=vec4(1);
                 """);

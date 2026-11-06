@@ -32,6 +32,7 @@ struct TickSlot {
     void* controlUpload{};
     void* playerUpload{};
     StormDomeBatch* domeBatch{};
+    StormFeatherReceipt* featherReceipt{};
     StormTick tick{};
     std::atomic<int> state{};
     int display=-1;
@@ -57,11 +58,13 @@ class StormControlSession {
     CUmodule module{};
     CUfunction control{},controlBatch{},advance{},seal{},domePrepare{},domeFinish{},positionSnapshot{},prepareSpatial{},captureColumns{};
     CUfunction displayPrepare{},displayPublish{},displaySeal{};
+    CUfunction compactFeather{};
     CUdeviceptr members{},deviceControls{},devicePlayers{};
     CUdeviceptr terrainRows{},terrainCells{};
     unsigned terrainMask{},terrainRevision{};
     CUdeviceptr domeAttacks{},helixAttacks{},domeAssignments{},domeRoutes{},domeSearches{},domeBatch{};
     CUdeviceptr columns{},columnStates{},columnRestores{};
+    CUdeviceptr featherCells{},featherResult{};
     CUdeviceptr domeRecords{},domeKeys{},domeFlowsDevice{};
     void* domeUpload{};
     CUevent domeUploadDone{};
@@ -159,7 +162,7 @@ class StormControlSession {
         return op.op==CMI_RESOURCE_STORM_CONTROL_HELIX_FRAME||op.op==CMI_RESOURCE_STORM_CONTROL_HELIX_RECOVERY
             ||op.op==CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW;
     }
-    StormDomeView domeView(bool hasTemplate) const {
+    StormDomeView domeView(bool hasTemplate,bool feathers=false) const {
         return {
             hasTemplate?reinterpret_cast<const float*>(domeRecords):nullptr,
             hasTemplate?reinterpret_cast<const uint32_t*>(domeKeys):nullptr,
@@ -169,7 +172,7 @@ class StormControlSession {
             reinterpret_cast<StormColumnRestore*>(columnRestores),
             reinterpret_cast<StormDomeMember*>(domeAssignments),
             reinterpret_cast<StormRoute*>(domeRoutes),reinterpret_cast<uint32_t*>(domeSearches),
-            reinterpret_cast<StormDomeBatch*>(domeBatch)
+            reinterpret_cast<StormDomeBatch*>(domeBatch),feathers?reinterpret_cast<StormFeatherCell*>(featherCells):nullptr
         };
     }
     void ensureColumns(){
@@ -216,7 +219,7 @@ class StormControlSession {
             ||(input.terrainRows==0?input.terrainPages!=0:input.terrainRows<16||(input.terrainRows&(input.terrainRows-1))!=0)
             ||input.playerCount>CMI_RESOURCE_STORM_PLAYER_LIMIT||input.positionSnapshot>1u
             ||input.columnCaptureCount>CMI_RESOURCE_STORM_COLUMN_CAPTURE_LIMIT
-            ||input.reserved
+            ||input.featherImpacts>1u
             ||(input.positionSnapshot&&!input.playerCount)||(!(input.active&1u)&&(input.playerCount||input.columnCaptureCount))
             ||bytes!=sizeof(StormTick)+commandBytes(input.controls)+rowBytes(input.terrainRows)+cellBytes(input.terrainPages)
                 +playerBytes(input.playerCount)
@@ -442,6 +445,7 @@ public:
             checked(cuModuleGetFunction(&control,module,"applyStormControl"));
             checked(cuModuleGetFunction(&controlBatch,module,"applyStormControlBatch"));
             checked(cuModuleGetFunction(&advance,module,"advanceStormVortex"));
+            checked(cuModuleGetFunction(&compactFeather,module,"compactStormFeatherImpacts"));
             checked(cuModuleGetFunction(&prepareSpatial,module,"prepareStormSpatial"));
             checked(cuModuleGetFunction(&positionSnapshot,module,"publishStormPositions"));
             checked(cuModuleGetFunction(&captureColumns,module,"captureStormColumns"));
@@ -484,6 +488,7 @@ public:
             if(s.controlUpload)cuMemFreeHost(s.controlUpload);
             if(s.playerUpload)cuMemFreeHost(s.playerUpload);
             if(s.domeBatch)cuMemFreeHost(s.domeBatch);
+            if(s.featherReceipt)cuMemFreeHost(s.featherReceipt);
             if(s.done)cuEventDestroy(s.done);
             for(auto mark:s.marks)if(mark)cuEventDestroy(mark);
         }
@@ -492,7 +497,7 @@ public:
         if(deviceControls)cuMemFree(deviceControls);
         if(devicePlayers)cuMemFree(devicePlayers);
         for(auto allocation:{columns,columnStates,columnRestores})if(allocation)cuMemFree(allocation);
-        for(auto allocation:{domeAttacks,helixAttacks,domeAssignments,domeRoutes,domeSearches,domeBatch,domeRecords,domeKeys,domeFlowsDevice})
+        for(auto allocation:{domeAttacks,helixAttacks,domeAssignments,domeRoutes,domeSearches,domeBatch,domeRecords,domeKeys,domeFlowsDevice,featherCells,featherResult})
             if(allocation)cuMemFree(allocation);
         if(domeUpload)cuMemFreeHost(domeUpload);
         if(domeUploadDone)cuEventDestroy(domeUploadDone);
@@ -647,7 +652,14 @@ public:
             stage="Storm controls";
             applyControls(s,input,commands);
             if(input.positionSnapshot||input.columnCaptureCount)ensureBatch();
-            auto view=domeView((input.active&2u)!=0);
+            bool feathers=input.featherImpacts&&active&&input.population;
+            if(feathers){
+                if(!featherCells)allocate(featherCells,sizeof(StormFeatherCell)*featherImpactLimit);
+                if(!featherResult)allocate(featherResult,sizeof(StormFeatherReceipt));
+                checked(cuMemsetD8Async(featherCells,0,sizeof(StormFeatherCell)*featherImpactLimit,stream));
+                checked(cuMemsetD32Async(featherResult,0,1,stream));
+            }
+            auto view=domeView((input.active&2u)!=0,feathers);
             if(view.batch){
                 void* args[]={&view,&input};
                 checked(cuLaunchKernel(domePrepare,domeSlots,1,1,128,1,1,0,stream,args,nullptr));
@@ -668,6 +680,12 @@ public:
                 }
             }else for(unsigned stage=2;stage<=5;stage++)mark(stage);
             stage="Storm batch readback";
+            if(feathers){
+                if(!s.featherReceipt)checked(cuMemAllocHost(reinterpret_cast<void**>(&s.featherReceipt),sizeof(StormFeatherReceipt)));
+                void* args[]={&featherCells,&featherResult};
+                launch(compactFeather,featherImpactLimit,args);
+                checked(cuMemcpyDtoHAsync(s.featherReceipt,featherResult,sizeof(StormFeatherReceipt),stream));
+            }
             if(view.batch){
                 if(input.columnCaptureCount){
                     void* args[]={&members,&input,&view};
@@ -785,6 +803,17 @@ public:
         std::memcpy(destination,s.domeBatch,batchBytes(s.tick));
         return true;
     }
+    unsigned copyFeatherImpacts(uint64_t sequence,void* destination,size_t bytes){
+        if(poll(sequence)!=complete)throw std::runtime_error("Feather result is not ready");
+        auto& s=ring[consumed%slots];
+        if(!s.tick.featherImpacts||!s.tick.population||!(s.tick.active&1u)||!s.featherReceipt)return 0;
+        unsigned count=std::min(s.featherReceipt->count,featherImpactLimit);
+        if(count){
+            if(!destination||bytes<sizeof(float4)*count)throw std::runtime_error("Feather result buffer too small");
+            std::memcpy(destination,s.featherReceipt->rows,sizeof(float4)*count);
+        }
+        return count;
+    }
     std::array<double,8> timing(uint64_t sequence){
         if(poll(sequence)!=complete)throw std::runtime_error("Storm timing requires a completed receipt");
         auto& s=ring[consumed%slots];
@@ -884,6 +913,13 @@ extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(copyStormDomeBatch)(JNIEnv* env,j
         if(size<0)throw std::runtime_error("Dome result must be a direct buffer");
         return session(handle).copyDomeBatch(uint64_t(sequence),env->GetDirectBufferAddress(destination),size_t(size));
     }catch(const std::exception& e){fail(env,e);return JNI_FALSE;}
+}
+extern "C" JNIEXPORT jint JNICALL JNI_NAME(copyStormFeatherImpacts)(JNIEnv* env,jclass,jlong handle,jlong sequence,jobject destination) {
+    try {
+        auto bytes=destination?env->GetDirectBufferCapacity(destination):-1;
+        if(bytes<0)throw std::runtime_error("Feather result must be a direct buffer");
+        return jint(session(handle).copyFeatherImpacts(sequence,env->GetDirectBufferAddress(destination),size_t(bytes)));
+    } catch(const std::exception& e){fail(env,e);return 0;}
 }
 extern "C" JNIEXPORT jstring JNICALL JNI_NAME(stormControlDiagnostics)(JNIEnv* env,jclass,jlong handle) {
     try { return env->NewStringUTF(session(handle).diagnostics().c_str()); }

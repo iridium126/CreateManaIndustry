@@ -346,10 +346,12 @@ void main() {
 #pragma cmi_include chunks/collision_sweep.glsl
     if(cmiStormEmbedded)vel=p1.xyz;
     if(isFeather&&cmiStormMissing){pos=p0.xyz;vel=p1.xyz;swept=true;landed=false;}
-    if(isModel&&(landed||cmiColumnBloomStarted)){
+#ifndef CMI_COLUMN_REPLAY
+    if(isModel&&!cmiColumnRecoveryFrame&&(landed||cmiColumnBloomStarted)){
         float impactY=cmiColumnBloomStarted?min(p1.y,cmiBeforeSweepVelocity.y):cmiBeforeSweepVelocity.y;
         cmiFeatherDisturb(cmiColumnBloomStarted?cmiColumnBloomPoint:pos,clamp(-impactY*.25+.5,0.,3.5));
     }
+#endif
     if(isFeather&&landed){
         p0.w=-abs(p0.w);vel=vec3(0);roll=cmiFeatherRoll(p1,p2,p3.x+uDt);
         p3.z=uintBitsToFloat(floatBitsToUint(p3.z)|32768u);

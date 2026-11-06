@@ -180,7 +180,7 @@ public final class ModelMaterialGpuValidation {
             check(GL11.glGetError()==0,"Iris DSA atlas operations");
         }finally{field.setInt(atlas,original);com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(0,0);com.iridium126.createmanaindustry.client.gpu.state.GpuTexture2DState.bind(0,0);GL11.glDeleteTextures(sentinel);GL11.glDeleteTextures(loaded);}
     }
-    static void mergedFeatherVertices(String vertex,String fragment,String label)throws Exception{
+    static float mergedFeatherVertices(String vertex,String fragment,String label)throws Exception{
         var patched=TransformPatcher.patchVanilla(label,vertex,null,null,null,fragment,net.irisshaders.iris.gl.blending.AlphaTests.ONE_TENTH_ALPHA,false,true,new net.irisshaders.iris.gl.state.ShaderAttributeInputs(true,true,false,true,true),new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
         // Capture CMI's actual output before pack projection/temporal uniforms, which require a live world.
         String input=patched.get(PatchShaderType.VERTEX);check(input.contains("vec4 cmi_VertexLevel;"),"CMI feedback anchor");input=input.replace("vec4 cmi_VertexLevel;","out vec4 cmi_VertexLevel;");
@@ -189,9 +189,15 @@ public final class ModelMaterialGpuValidation {
         int prefix=16384+4096,stride=com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.WORDS,visible=com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.VISIBLE;
         var particles=org.lwjgl.BufferUtils.createByteBuffer(3*64);
         for(int i=0;i<3;i++){int at=i*64;particles.putFloat(at,i==0?0:(i==1?.25f:-.25f)).putFloat(at+12,i==0?100000:1).putFloat(at+52,60);}
+        boolean sway=GL20.glGetUniformLocation(program,"cmi_FeatherSwayEnabled")>=0;
+        if(sway){
+            particles.putFloat(64+4,1.004f).putFloat(64+12,-1).putInt(64+56,(1<<18)|(15<<19));
+            particles.putInt(128+56,(1<<18)|(15<<19));
+        }
         var metadata=org.lwjgl.BufferUtils.createByteBuffer((prefix+stride*2)*4);
         for(int bank=0;bank<2;bank++){int base=prefix+bank*stride;metadata.putInt((base+11)*4,6).putInt((base+12)*4,2);metadata.putInt((base+visible)*4,bank==0?1:2).putInt((base+visible+1)*4,bank==0?2:1);}
-        int pool=GL15.glGenBuffers(),state=GL15.glGenBuffers(),feedback=GL15.glGenBuffers(),vao=GL30.glGenVertexArrays(),poolTex=GL11.glGenTextures(),stateTex=GL11.glGenTextures();
+        int pool=GL15.glGenBuffers(),state=GL15.glGenBuffers(),feedback=GL15.glGenBuffers(),vao=GL30.glGenVertexArrays(),poolTex=GL11.glGenTextures(),stateTex=GL11.glGenTextures(),noise=GL11.glGenTextures();
+        float displacement=0;
         try{
             GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,pool);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,particles,GL15.GL_STATIC_DRAW);GL13.glActiveTexture(GL13.GL_TEXTURE11);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,poolTex);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_RGBA32F,pool);
             GL15.glBindBuffer(GL31.GL_TEXTURE_BUFFER,state);GL15.glBufferData(GL31.GL_TEXTURE_BUFFER,metadata,GL15.GL_STATIC_DRAW);GL13.glActiveTexture(GL13.GL_TEXTURE13);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,stateTex);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL32.GL_RG32UI,state);
@@ -205,14 +211,52 @@ public final class ModelMaterialGpuValidation {
                 if(kind==GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER)GL20.glUniform1i(location,13);
             }
             integer(program,"cmi_FeatherPass",1);integer(program,"cmi_LodPass",0);GL20.glUniform3f(GL20.glGetUniformLocation(program,"cmi_FeatherRight"),1,0,0);GL20.glUniform3f(GL20.glGetUniformLocation(program,"cmi_FeatherUp"),0,1,0);
+            GL20.glUniform1f(GL20.glGetUniformLocation(program,"frameTimeCounter"),19.25f);
+            GL20.glUniform1f(GL20.glGetUniformLocation(program,"wetness"),.45f);
+            GL20.glUniform1f(GL20.glGetUniformLocation(program,"rainStrength"),.65f);
+            GL20.glUniform1f(GL20.glGetUniformLocation(program,"rainFactor"),.65f);
+            GL20.glUniform1f(GL20.glGetUniformLocation(program,"weatherStrength"),.45f);
+            if(GL20.glGetUniformLocation(program,"noisetex")>=0){
+                var pattern=org.lwjgl.BufferUtils.createByteBuffer(16);
+                pattern.putInt(0,0xf0508090).putInt(4,0xd0406020).putInt(8,0xb0304050).putInt(12,0xf060a0e0);
+                GL13.glActiveTexture(GL13.GL_TEXTURE7);GL11.glBindTexture(GL11.GL_TEXTURE_2D,noise);
+                GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,GL11.GL_RGBA8,2,2,0,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE,pattern);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_LINEAR);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_LINEAR);
+                integer(program,"noisetex",7);
+            }
+            integer(program,"worldTime",1300);
             GL11.glEnable(GL30.GL_RASTERIZER_DISCARD);GL15.glBindBuffer(GL40.GL_DRAW_INDIRECT_BUFFER,state);
             for(int bank=0;bank<2;bank++){
-                int base=prefix+bank*stride;integer(program,"cmi_FeatherWordBase",base);GL30.glBeginTransformFeedback(GL11.GL_TRIANGLES);GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,(base+11)*4L);GL30.glEndTransformFeedback();GL42.glMemoryBarrier(GL42.GL_TRANSFORM_FEEDBACK_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
-                var result=org.lwjgl.BufferUtils.createByteBuffer(192);GL15.glBindBuffer(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,feedback);GL15.glGetBufferSubData(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,0,result);
+                int base=prefix+bank*stride;integer(program,"cmi_FeatherWordBase",base);
+                var result=featherVertices(program,base,feedback,false);
                 for(int i=0;i<48;i++){float value=result.getFloat(i*4);check(Float.isFinite(value)&&Math.abs(value)<2,label+" read a MODEL sentinel through the feather index: "+value);}
+                if(sway){
+                    var moving=featherVertices(program,base,feedback,true);
+                    int ground=bank==0?0:96,flight=96-ground;
+                    float changed=0;
+                    for(int i=0;i<96;i+=4){
+                        check(moving.getFloat(flight+i)==result.getFloat(flight+i),label+" flight feather moved with leaves");
+                        changed+=Math.abs(moving.getFloat(ground+i)-result.getFloat(ground+i));
+                    }
+                    check(Float.isFinite(changed)&&changed>1e-5f,label+" support sway reaches the grounded feather vertices");
+                    displacement+=changed;
+                }
                 check(GL11.glGetError()==0,label+" indirect/TBO draw GL error");
             }
-        }finally{GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);GL20.glUseProgram(0);GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);for(int t:new int[]{poolTex,stateTex})GL11.glDeleteTextures(t);for(int b:new int[]{pool,state,feedback})GL15.glDeleteBuffers(b);}
+        }finally{GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);GL20.glUseProgram(0);GL20.glDeleteProgram(program);GL30.glDeleteVertexArrays(vao);for(int t:new int[]{poolTex,stateTex,noise})GL11.glDeleteTextures(t);for(int b:new int[]{pool,state,feedback})GL15.glDeleteBuffers(b);}
+        return displacement;
+    }
+    private static java.nio.ByteBuffer featherVertices(int program,int base,int feedback,boolean sway){
+        integer(program,"cmi_FeatherSwayEnabled",sway?1:0);
+        GL30.glBeginTransformFeedback(GL11.GL_TRIANGLES);
+        GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,(base+11)*4L);
+        GL30.glEndTransformFeedback();
+        GL42.glMemoryBarrier(GL42.GL_TRANSFORM_FEEDBACK_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+        var result=org.lwjgl.BufferUtils.createByteBuffer(192);
+        GL15.glBindBuffer(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,feedback);
+        GL15.glGetBufferSubData(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,0,result);
+        return result;
     }
     static void run()throws Exception{
         OffscreenIrisPlatform.initialize();
@@ -239,9 +283,49 @@ public final class ModelMaterialGpuValidation {
                 Files.writeString(root.resolve("receiver-status.txt"),receiver.pack()+": native fragment scene/cloud perturbation and directional response passed for default + six option cases; production segment/deferred/postprocessing/cost matrix still required\n");
             }else Files.writeString(root.resolve("receiver-status.txt"),receiver.pack()+": INCOMPLETE: "+receiver.reason()+"\n");
             int nativeProgram=compile(v,g,f,"native",root);GL20.glDeleteProgram(nativeProgram);
+            String terrainPath=java.util.stream.Stream.of("gbuffers_terrain_cutout","gbuffers_terrain","gbuffers_textured_lit","gbuffers_textured")
+                    .flatMap(name->java.util.stream.Stream.of("world0/"+name+".vsh",name+".vsh"))
+                    .filter(path->Files.exists(root.resolve(path))).findFirst().orElseThrow();
+            String terrain=preprocess(root,terrainPath);
+            var leaf=FeatherLeafSway.resolve(inventory,terrain);
+            check(leaf!=null,"effective leaf deformation "+sample);
+            String leafSwitch=switch(leaf.pack()){
+                case "Bliss"->"WAVY_PLANTS";
+                case "BSL"->"WAVING_LEAF";
+                case "iterationT"->"WAVING_PLANTS";
+                case "Sildur’s"->"Waving_Leaves";
+                case "Sundial Lite"->"PLANT_WAVE";
+                default->"WAVING_LEAVES";
+            };
+            try{
+                OPTION_OVERRIDES=Map.of(leafSwitch,"false");
+                check(FeatherLeafSway.resolve(inventory,preprocess(root,terrainPath))==null,"disabled leaf option "+sample);
+            }finally{OPTION_OVERRIDES=Map.of();}
+            compiler.reset();
+            var leafField=ShaderPackProgramCompiler.class.getDeclaredField("leafSway");leafField.setAccessible(true);leafField.set(compiler,leaf);
             boolean exact=g==null&&!uniform.matcher(v).replaceAll("").contains("entityColor");String own=(String)method.invoke(compiler,exact);String merged=new ParticleVertexInjector().patch(exact?uniform.matcher(v).replaceAll(""):v,own,"model-material");check(merged.contains("cmi_ShadowPass"),"CMI injection succeeded "+sample);merged=JcppProcessor.glslPreprocessSource(merged,DEFINES);
+            check(merged.contains("cmiLeafOffset"),"leaf deformation injected "+sample);
             int model=compile(merged,g,exact?uniform.matcher(f).replaceAll("in vec4 entityColor;"):f,"model",root);GL20.glDeleteProgram(model);
-            if(g==null)mergedFeatherVertices(merged,exact?uniform.matcher(f).replaceAll("in vec4 entityColor;"):f,sample.getFileName().toString());
+            if(g==null){
+                String featherFragment=exact?uniform.matcher(f).replaceAll("in vec4 entityColor;"):f;
+                float displacement=mergedFeatherVertices(merged,featherFragment,sample.getFileName().toString());
+                var stronger=switch(leaf.pack()){
+                    case "Bliss"->Map.of("WAVY_STRENGTH","2.0");
+                    case "Complementary"->Map.of("WAVING_I","2.00");
+                    case "Sundial Lite"->Map.of("PLANT_WAVE_STRENGTH","2.0");
+                    default->Map.<String,String>of();
+                };
+                if(!stronger.isEmpty())try{
+                    OPTION_OVERRIDES=stronger;
+                    var variant=FeatherLeafSway.resolve(inventory,preprocess(root,terrainPath));
+                    check(variant!=null&&!variant.source().equals(leaf.source()),"active leaf strength option "+sample);
+                    compiler.reset();leafField.set(compiler,variant);
+                    String strongerOwn=(String)method.invoke(compiler,exact);
+                    String strongerMerged=new ParticleVertexInjector().patch(exact?uniform.matcher(v).replaceAll(""):v,strongerOwn,"model-material-strength");
+                    float strongerDisplacement=mergedFeatherVertices(JcppProcessor.glslPreprocessSource(strongerMerged,DEFINES),featherFragment,sample+" stronger");
+                    check(strongerDisplacement>displacement+1e-5f,"leaf strength changes grounded vertex positions "+sample);
+                }finally{OPTION_OVERRIDES=Map.of();}
+            }
             if(sample.getFileName().toString().startsWith("iterationT"))materials(f,true,0,root,false);
             if(sample.getFileName().toString().startsWith("Complementary")){
                 var graph=new IncludeGraph(root,ImmutableList.of(AbsolutePackPath.fromAbsolutePath("/"+base+".vsh"),AbsolutePackPath.fromAbsolutePath("/"+base+".fsh")),false);

@@ -96,6 +96,7 @@ __device__ void startColumnBloom(StormColumnMember& member,const StormColumn& co
 
 struct ColumnMotion {
     vec3 velocity{0.f},exitVelocity{0.f};
+    vec3 bloomPoint{0.f};
     float marker{},speedCap{6.f};
     bool engaged{},exited{},bloomStarted{};
 };
@@ -133,7 +134,7 @@ __device__ ColumnMotion advanceColumn(StormColumnMember& member,const StormColum
     vec3 point=position,motion(0.f);
     if(member.phase==columnDescent&&columnFloor(terrain,position)&&fract(position.y)<.04f){
         startColumnBloom(member,column,position,now-step);
-        result.bloomStarted=true;
+        result.bloomStarted=true;result.bloomPoint=position;
     }
     if(member.phase==columnDescent){
         float total=member.arc[64],move=fminf(remaining,fmaxf(0.f,total-member.distance));
@@ -151,7 +152,7 @@ __device__ ColumnMotion advanceColumn(StormColumnMember& member,const StormColum
         auto local=point-vec3(column.landingTop);
         if(columnFloor(terrain,point)&&local.x*local.x+local.z*local.z<=16.f){
             startColumnBloom(member,column,point,now-remaining/columnSpeed);
-            result.bloomStarted=true;
+            result.bloomStarted=true;result.bloomPoint=point;
         }else{
             member.phase=columnExit;
             member.release=now-remaining/columnSpeed;

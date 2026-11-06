@@ -4,7 +4,21 @@ layout(local_size_x=64) in;
 #pragma cmi_include chunks/storm_collision.glsl
 layout(std430,binding=1) buffer Pool {vec4 data[];} pool;
 layout(std430,binding=18) readonly buffer Players {vec4 data[];} players;
-uniform uint uPhase,uPlayerCount,uMovementBase;
+layout(std430,binding=0) readonly buffer NativeImpacts {vec4 rows[];} nativeImpacts;
+layout(std430,binding=2) readonly buffer FeatherSupport {ivec4 rows[];} featherSupport;
+uniform uint uPhase,uPlayerCount,uMovementBase,uImpactCount;
+uniform bool uFeatherSupport;
+uint cmiSupportTag(ivec3 block){
+    if(!uFeatherSupport)return 0u;
+    uint hash=cmiFeatherCellHash(block);
+    for(uint i=0u;i<8u;i++){
+        ivec4 row=featherSupport.rows[(hash+i)&8191u];
+        if(row.w==0)break;
+        if(all(equal(row.xyz,block)))return row.w>=2?(1u<<18)|(uint(row.w-2)<<19):0u;
+    }
+    cmiFeatherRequestKey(block,2);
+    return 0u;
+}
 void main(){
     uint rank=gl_GlobalInvocationID.x;
     if(uPhase==0u){
@@ -15,9 +29,13 @@ void main(){
         if(rank>=uPlayerCount)return;vec4 movement=players.data[uMovementBase+rank];if(movement.w<=0.)return;
         cmiFeatherDisturb(movement.xyz,movement.w);return;
     }
+    if(uPhase==3u){
+        if(rank<uImpactCount){vec4 impact=nativeImpacts.rows[rank];cmiFeatherDisturb(impact.xyz,impact.w);}
+        return;
+    }
     if(rank>=uint(CMI_FEATHER_WORD(2)))return;uint slot=uint(CMI_FEATHER_WORD(CMI_FEATHER_GROUND+rank)),b=slot*4u;
     vec4 p0=pool.data[b],p1=pool.data[b+1u],p2=pool.data[b+2u],p3=pool.data[b+3u];if(p0.w>=0.)return;
-    uint tag=floatBitsToUint(p3.z);
+    uint tag=floatBitsToUint(p3.z)&0x3ffffu;
     if((tag&32768u)!=0u){p0.y+=.002+.004*cmiFeatherHash(p2.x*91.31+p2.y*47.17+float(tag&15u));tag&=~32768u;}
     vec3 support=p0.xyz-vec3(0,.02,0);cmiFeatherRequest(support);
     bool known=cmiStormKnown(support),supported=known&&cmiStormSolid(support);
@@ -25,6 +43,6 @@ void main(){
     if(known&&(!supported||lift.y>0.)){
         p0.w=abs(p0.w);p1.xyz=lift;p1.w-=(p2.z+p2.w*(p3.x+.05))*p3.x;
         tag=(tag&0x3000fu)|(uint(ceil((p3.x+.5)*20.))<<4u);
-    }
+    }else if(supported)tag|=cmiSupportTag(ivec3(floor(support+vec3(.0001))));
     pool.data[b]=p0;pool.data[b+1u]=p1;pool.data[b+3u].z=uintBitsToFloat(tag);
 }

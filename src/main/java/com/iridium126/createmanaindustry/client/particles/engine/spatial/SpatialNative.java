@@ -61,6 +61,7 @@ public final class SpatialNative {
     static native int consumeStormTick(long worker,long sequence);
     static native void installStormDome(long worker,float[] records,int[] keys,int[] flows);
     static native boolean copyStormDomeBatch(long worker,long sequence,java.nio.ByteBuffer destination);
+    static native int copyStormFeatherImpacts(long worker,long sequence,java.nio.ByteBuffer destination);
     static native boolean recycleStormDisplay(long worker,int slot,long sequence,long fence);
     static native String stormControlDiagnostics(long worker);
     static native boolean closeStormControl(long worker);

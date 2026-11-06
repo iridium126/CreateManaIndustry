@@ -1,6 +1,6 @@
 # 粒子引擎重构状态
 
-本轮普通构建使用原生预编译模块 `12.21.0.0` 和 ABI 12。Storm 模拟默认为 AUTO，主视图 RT 遮挡独立启用。模拟、投影与接收设置见[客户端配置](particle-engine-install.md)。
+本轮普通构建使用原生预编译模块 `12.22.0.0` 和 ABI 12。Storm 模拟默认为 AUTO，主视图 RT 遮挡独立启用。模拟、投影与接收设置见[客户端配置](particle-engine-install.md)。
 
 当前代码中：
 

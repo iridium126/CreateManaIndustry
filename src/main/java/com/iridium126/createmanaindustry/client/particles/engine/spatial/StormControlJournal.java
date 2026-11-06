@@ -168,7 +168,7 @@ final class StormControlJournal {
     record Geometry(long revision,int count,byte[] rows) {}
     record Tick(long sequence,long tick,long gameTime,Parameters parameters,List<Command> commands,StormControlTerrain terrain,
                 Target target,long projectedSequence,List<Float4> players,boolean positionSnapshot,Geometry geometry,
-                List<ColumnSnapshotClient.NativeCapture> columnCaptures) {
+                List<ColumnSnapshotClient.NativeCapture> columnCaptures,boolean featherImpacts) {
         int bytes(){
             return STORM_TICK_HEADER_BYTES+commands.size()*STORM_CONTROL_BYTES+(terrain==null?0:terrain.bytes())
                     +players.size()*STORM_PLAYER_BYTES;
@@ -183,7 +183,7 @@ final class StormControlJournal {
                     .putFloat(p.seconds()).putFloat(p.speed()).putInt(terrain==null?0:terrain.rows()).putInt(terrain==null?0:terrain.pages());
             target.write(out);
             out.putLong(projectedSequence).putLong(projectedSequence==0?0:p.identity());
-            out.putInt(players.size()).putInt(positionSnapshot?1:0).putInt(columnCaptures.size()).putInt(0);
+            out.putInt(players.size()).putInt(positionSnapshot?1:0).putInt(columnCaptures.size()).putInt(featherImpacts?1:0);
             for(int i=0;i<STORM_COLUMN_CAPTURE_LIMIT;i++){
                 if(i<columnCaptures.size()){
                     var capture=columnCaptures.get(i);
@@ -222,19 +222,19 @@ final class StormControlJournal {
     void append(long tick,Parameters parameters,List<Command> commands,StormControlTerrain terrain,Target target,
                 long projectedSequence,List<Float4> players,boolean positionSnapshot,Geometry geometry,
                 List<ColumnSnapshotClient.NativeCapture> columnCaptures){
-        append(tick,tick,parameters,commands,terrain,target,projectedSequence,players,positionSnapshot,geometry,columnCaptures);
+        append(tick,tick,parameters,commands,terrain,target,projectedSequence,players,positionSnapshot,geometry,columnCaptures,false);
     }
     long nextLogicalTick(){return written==0?1:lastTick+1;}
     long nextSequence(){return written+1;}
     void appendWorldSample(long gameTime,Parameters parameters,List<Command> commands,StormControlTerrain terrain,
                            Target target,long projectedSequence,List<Float4> players,boolean positionSnapshot,
-                           Geometry geometry,List<ColumnSnapshotClient.NativeCapture> columnCaptures){
+                           Geometry geometry,List<ColumnSnapshotClient.NativeCapture> columnCaptures,boolean featherImpacts){
         append(nextLogicalTick(),gameTime,parameters,commands,terrain,target,projectedSequence,players,
-                positionSnapshot,geometry,columnCaptures);
+                positionSnapshot,geometry,columnCaptures,featherImpacts);
     }
     private void append(long tick,long gameTime,Parameters parameters,List<Command> commands,StormControlTerrain terrain,
                         Target target,long projectedSequence,List<Float4> players,boolean positionSnapshot,Geometry geometry,
-                        List<ColumnSnapshotClient.NativeCapture> columnCaptures){
+                        List<ColumnSnapshotClient.NativeCapture> columnCaptures,boolean featherImpacts){
         boolean idleBoundary=!lastActive&&parameters.identity()>lastIdentity;
         boolean tickOrder=written==0||tick>lastTick&&(tick==lastTick+1||idleBoundary);
         if(tick<0||!tickOrder)
@@ -246,7 +246,7 @@ final class StormControlJournal {
         if(columnCaptures.size()>STORM_COLUMN_CAPTURE_LIMIT)
             throw new IllegalArgumentException("Too many Starfall column captures");
         var input=new Tick(written+1,tick,gameTime,parameters,List.copyOf(commands),terrain,target,projectedSequence,
-                List.copyOf(players),positionSnapshot,geometry,List.copyOf(columnCaptures));
+                List.copyOf(players),positionSnapshot,geometry,List.copyOf(columnCaptures),featherImpacts);
         log.addLast(input);unsent.addLast(input);written++;lastTick=tick;
         lastIdentity=parameters.identity();lastActive=parameters.active();
     }

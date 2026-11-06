@@ -6,6 +6,7 @@ import com.iridium126.createmanaindustry.client.allaystorm.*;
 import com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient;
 import com.iridium126.createmanaindustry.client.particles.emitter.*;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers;
+import com.iridium126.createmanaindustry.content.allaystorm.StormIdentity;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Camera;
@@ -27,6 +28,10 @@ public final class AllayFeatherGpu implements AutoCloseable {
     private final Set<StormCollisionPages.Section> requests=new LinkedHashSet<>();
     private final Set<StormCollisionPages.Section> prewarmKeys=new LinkedHashSet<>();
     private final Set<Integer> armedPrograms=new HashSet<>();
+    private final ArrayDeque<float[]> nativeImpacts=new ArrayDeque<>();
+    private StormIdentity nativeImpactIdentity;
+    private ByteBuffer nativeImpactUpload;
+    private int nativeImpactBuffer,stagedNativeImpacts;
     private int displayBuffer;
     private int bank,candidate,featherId=-1,goldId=-1,spawn,goldSpawn,frames;
     private long generation,lastCreationGeneration,lastGoldCreationGeneration;
@@ -138,6 +143,14 @@ public final class AllayFeatherGpu implements AutoCloseable {
         setIntUniform(program,"uFeatherRequestFrame",requestFrame()?1:0);
         if(enabled){GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER,BINDING,buffer(),offset(candidate),BYTES);setUIntUniform(program,"uFeatherGridBase",state[candidate]-ParticleBuffers.GRID_TABLE);}
     }
+    void bindModelImpacts(int program){
+        boolean active=hasFeathers();
+        setIntUniform(program,"uFeatherEnabled",active?1:0);
+        if(active){
+            ParticleBuffers.INSTANCE.bindGrid();
+            setUIntUniform(program,"uFeatherGridBase",state[candidate]-ParticleBuffers.GRID_TABLE);
+        }
+    }
     public void players(int count){
         if(!hasFeathers()||count==0)return;int p=ParticlePrograms.INSTANCE.featherTools();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(p);bind(p);
         ParticleBuffers.INSTANCE.bindPlayers();setUIntUniform(p,"uPhase",1);setUIntUniform(p,"uPlayerCount",count);
@@ -158,8 +171,12 @@ public final class AllayFeatherGpu implements AutoCloseable {
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((leaves+gold+63)/64,1,1);barrier();
     }
     public void ground(){
+        stagedNativeImpacts=0;
+        if(!hasFeathers()||!Objects.equals(nativeImpactIdentity,AllayStormRuntime.INSTANCE.identity()))nativeImpacts.clear();
         if(!hasFeathers())return;int p=ParticlePrograms.INSTANCE.featherTools();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(p);bind(p);
         ParticleBuffers.INSTANCE.bindParticleWrite(1);StormCollisionRuntime.bindCurrent(p);
+        FeatherSupportGpu.INSTANCE.bind(p,Minecraft.getInstance()==null?null:Minecraft.getInstance().level);
+        publishNativeImpacts(p);
         setUIntUniform(p,"uPhase",0);com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);barrier();
         setUIntUniform(p,"uPhase",2);
         try{
@@ -170,8 +187,36 @@ public final class AllayFeatherGpu implements AutoCloseable {
             ParticleBuffers.INSTANCE.bindDispatch();
         }
     }
+    public void acceptNativeImpacts(StormIdentity identity,float[] rows){
+        if(!hasFeathers()||rows.length==0)return;
+        if(!identity.equals(nativeImpactIdentity)){nativeImpacts.clear();stagedNativeImpacts=0;nativeImpactIdentity=identity;}
+        nativeImpacts.addLast(rows);
+    }
+    private void publishNativeImpacts(int program){
+        if(nativeImpacts.isEmpty())return;
+        if(nativeImpactBuffer==0){
+            int bytes=com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.STORM_FEATHER_IMPACT_LIMIT*16;
+            nativeImpactBuffer=GL45.glCreateBuffers();
+            GL45.glNamedBufferData(nativeImpactBuffer,bytes,GL15.GL_STREAM_DRAW);
+            nativeImpactUpload=BufferUtils.createByteBuffer(bytes);
+        }
+        GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,0,nativeImpactBuffer);
+        setUIntUniform(program,"uPhase",3);
+        for(float[] batch:nativeImpacts){
+            nativeImpactUpload.clear().limit(batch.length*4);
+            nativeImpactUpload.asFloatBuffer().put(batch);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.namedBufferSubData(nativeImpactBuffer,0,nativeImpactUpload);
+            int count=batch.length/4;
+            setUIntUniform(program,"uImpactCount",count);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((count+63)/64,1,1);
+            barrier();stagedNativeImpacts++;
+        }
+    }
     public void idle(){remainder=candidateRemainder;goldRemainder=candidateGoldRemainder;frames++;}
     public void commit(long nextGeneration){
+        for(int i=0;i<stagedNativeImpacts;i++)nativeImpacts.removeFirst();
+        stagedNativeImpacts=0;
+        FeatherSupportGpu.INSTANCE.commit();
         if(enabled){bank=candidate;generation=nextGeneration;}
         if(candidateBirth){lastCreationGeneration=nextGeneration;mayFeathers=true;}
         if(candidateGoldBirth){lastGoldCreationGeneration=nextGeneration;mayGold=true;}
@@ -179,6 +224,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
     }
     public void copySnapshot(ParticleReadbacks.Slot slot){
         surface.copySnapshot(slot);slot.feathers=enabled;slot.featherRequests=requestFrame();if(!enabled)return;
+        slot.featherSupportEpoch=FeatherSupportGpu.INSTANCE.epoch();
         GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,buffer());GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,slot.buffer);
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.copyBufferSubData(GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,offset(candidate),32,16);
         if(slot.featherRequests){
@@ -193,7 +239,11 @@ public final class AllayFeatherGpu implements AutoCloseable {
         if(zeroCovers(slot.generation,lastGoldCreationGeneration,gold))mayGold=false;
         if(slot.featherRequests){
             var data=slot.featherData;int n=Math.clamp(data.getInt(0),0,MAX_REQUESTS);requests.clear();
-            for(int i=0;i<n;i++){int b=16+i*16;if(data.getInt(b+12)!=1)continue;requests.add(new StormCollisionPages.Section(data.getInt(b),data.getInt(b+4),data.getInt(b+8)));}
+            for(int i=0;i<n;i++){
+                int b=16+i*16,x=data.getInt(b),y=data.getInt(b+4),z=data.getInt(b+8),kind=data.getInt(b+12);
+                if(kind==1)requests.add(new StormCollisionPages.Section(x,y,z));
+                if(kind==2)FeatherSupportGpu.INSTANCE.request(slot.featherSupportEpoch,x,y,z);
+            }
             StormCollisionRuntime.retainFeathers(requests,80);
         }
     }
@@ -210,6 +260,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
         gpu.bindMergedTbos(com.iridium126.createmanaindustry.client.particles.shaderpack.ShaderPackProgramCompiler.MERGED_SAMPLER_UNIT_BASE,gpu.particleDrawBufferId(),drawBuffer());setIntUniform(program,"cmi_FeatherWordBase",displayBuffer!=0?0:state[bank]);gpu.bindVao();
         Camera camera=Minecraft.getInstance().gameRenderer.getMainCamera();camera(program,camera);
         setIntUniform(program,"cmi_FeatherPass",1);setIntUniform(program,"cmi_LodPass",0);
+        setIntUniform(program,"cmi_FeatherSwayEnabled",FeatherSupportGpu.INSTANCE.drawable()?1:0);
         try{GL11.glDisable(GL11.GL_CULL_FACE);GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,drawBuffer());
             GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,drawOffset()+11L*4);nativeDrawn=true;
         }finally{setIntUniform(program,"cmi_FeatherPass",0);GL11.glEnable(GL11.GL_CULL_FACE);}
@@ -228,7 +279,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
         com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();com.mojang.blaze3d.systems.RenderSystem.depthMask(true);com.mojang.blaze3d.systems.RenderSystem.disableBlend();GL11.glDisable(GL11.GL_CULL_FACE);
         ParticleBuffers.INSTANCE.bindVao();GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,drawBuffer());GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,drawOffset()+11L*4);GL11.glEnable(GL11.GL_CULL_FACE);
     }
-    public void reset(){clearDisplay();StormCollisionRuntime.releaseFeathers();surface.reset();mayFeathers=mayGold=manual=manualGold=enabled=candidateBirth=candidateGoldBirth=nativeDrawn=false;spawn=goldSpawn=0;remainder=candidateRemainder=goldRemainder=candidateGoldRemainder=0;lastCreationGeneration=lastGoldCreationGeneration=generation=0;warmRadius=-1;prewarmTick=Long.MIN_VALUE;frames=0;world=null;warmX=warmY=warmZ=warmLow=Integer.MAX_VALUE;prewarmKeys.clear();requests.clear();}
-    @Override public void close(){state[0]=state[1]=0;reset();armedPrograms.clear();featherId=goldId=-1;surface.close();}
+    public void reset(){clearDisplay();StormCollisionRuntime.releaseFeathers();surface.reset();FeatherSupportGpu.INSTANCE.reset();mayFeathers=mayGold=manual=manualGold=enabled=candidateBirth=candidateGoldBirth=nativeDrawn=false;spawn=goldSpawn=0;remainder=candidateRemainder=goldRemainder=candidateGoldRemainder=0;lastCreationGeneration=lastGoldCreationGeneration=generation=0;warmRadius=-1;prewarmTick=Long.MIN_VALUE;frames=0;world=null;warmX=warmY=warmZ=warmLow=Integer.MAX_VALUE;prewarmKeys.clear();requests.clear();nativeImpacts.clear();nativeImpactIdentity=null;stagedNativeImpacts=0;}
+    @Override public void close(){state[0]=state[1]=0;reset();armedPrograms.clear();featherId=goldId=-1;surface.close();FeatherSupportGpu.INSTANCE.close();com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(nativeImpactBuffer);nativeImpactBuffer=0;nativeImpactUpload=null;}
     private static void barrier(){com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT|GL42.GL_COMMAND_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT|GL42.GL_TEXTURE_FETCH_BARRIER_BIT);}
 }

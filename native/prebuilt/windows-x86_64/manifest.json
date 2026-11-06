@@ -1,6 +1,6 @@
 {
   "abi": 12,
-  "version": "12.21.0.0",
+  "version": "12.22.0.0",
   "platform": "windows-x86_64",
   "layout": {
     "ABI": 12,
@@ -13,6 +13,7 @@
     "STORM_TICK_PROJECTION_OFFSET": 128,
     "STORM_TICK_PLAYER_COUNT_OFFSET": 144,
     "STORM_TICK_COLUMN_CAPTURE_OFFSET": 160,
+    "STORM_FEATHER_IMPACT_LIMIT": 16384,
     "STORM_PLAYER_BYTES": 16,
     "STORM_PLAYER_LIMIT": 32768,
     "STORM_POSITION_BATCH_OFFSET": 26912,
@@ -99,7 +100,7 @@
     "STORM_HELIX_REFERENCE_OFFSET": 13520,
     "STORM_HELIX_REFERENCE_BYTES": 16
   },
-  "source_sha256": "58522e2fa5f2dc079f7a68af6f3cd007f5282c99ec0aeb402fb5c920a6651efa",
-  "dll_sha256": "3c58c3c5ba5b42b028a65e2e8d7b348ea3f65cffadb28b3b9d9c7ee0d526306c",
+  "source_sha256": "f050211e1b507661757297b1d40e1e474c244f6337713d045726afd61ab95ad2",
+  "dll_sha256": "1ec6c0ce44b5daf9796dd0b685ccc49e950a8ed27484538f4813648d2c7f756b",
   "embedded_device_programs": true
 }

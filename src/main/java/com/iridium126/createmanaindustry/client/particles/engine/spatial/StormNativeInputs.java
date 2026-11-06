@@ -221,7 +221,8 @@ public final class StormNativeInputs {
             }
         }
         var captures=active?ColumnSnapshotClient.INSTANCE.reserveNativeCaptures():List.<ColumnSnapshotClient.NativeCapture>of();
-        journal.appendWorldSample(gameTime,p,pending,terrain,contact,projectedSequence,samples,positionSnapshot,geometry,captures);
+        boolean featherImpacts=active&&com.iridium126.createmanaindustry.client.particles.engine.AllayFeatherGpu.INSTANCE.needsPlayers();
+        journal.appendWorldSample(gameTime,p,pending,terrain,contact,projectedSequence,samples,positionSnapshot,geometry,captures,featherImpacts);
         if(geometry!=null)geometryRevision=geometry.revision();
         if(positionSnapshot)lastPositionSnapshot=tick;
         pending.clear();

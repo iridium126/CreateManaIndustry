@@ -13,6 +13,7 @@ import net.neoforged.neoforge.event.level.ChunkEvent;
 import com.iridium126.createmanaindustry.client.packages.world.*;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket;
 import com.iridium126.createmanaindustry.client.particles.engine.StormSurfaceCapture;
+import com.iridium126.createmanaindustry.client.particles.engine.FeatherSupportGpu;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.RenderTerrain;
 import static com.iridium126.createmanaindustry.client.allaystorm.StormCollisionPages.*;
 
@@ -164,11 +165,20 @@ public final class StormCollisionRuntime implements AutoCloseable {
     public static String status(){return current==null?"storm collision idle":current.cache.stats()+" demandMs="+current.demandNanos/1e6+" "+current.gpu.stats()+" error="+current.error;}
     public static String profilingReport(){return current==null?"":"Storm collision: "+String.format(java.util.Locale.ROOT,"demand=%.3f ms; ",current.demandNanos/1e6)
             +current.cache.profilingReport()+"\nStorm collision GPU: "+current.gpu.profilingReport()+(current.error.isEmpty()?"":"; error="+current.error);}
-    public static void blockChanged(ClientLevel level,BlockPos pos){RenderTerrain.blockChanged(level,pos);StormSurfaceCapture.blockChanged(level,pos);if(current==null||current.level!=level)return;int x=pos.getX()>>4,y=pos.getY()>>4,z=pos.getZ()>>4;for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++)current.cache.dirty(new Section(x+dx,y+dy,z+dz));}
-    public static void cubeChanged(long packed){RenderTerrain.cubeChanged(packed);var cube=com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packed);int size=com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.DIAMETER_IN_BLOCKS;StormSurfaceCapture.cubeChanged(cube.getX()*size,cube.getZ()*size,size);if(current==null)return;int n=size/16;for(int x=0;x<n;x++)for(int y=0;y<n;y++)for(int z=0;z<n;z++)current.cache.unavailable(new Section(cube.getX()*n+x,cube.getY()*n+y,cube.getZ()*n+z));}
+    public static void blockChanged(ClientLevel level,BlockPos pos){RenderTerrain.blockChanged(level,pos);StormSurfaceCapture.blockChanged(level,pos);FeatherSupportGpu.INSTANCE.blockChanged(level,pos);if(current==null||current.level!=level)return;int x=pos.getX()>>4,y=pos.getY()>>4,z=pos.getZ()>>4;for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++)current.cache.dirty(new Section(x+dx,y+dy,z+dz));}
+    public static void cubeChanged(long packed){
+        RenderTerrain.cubeChanged(packed);
+        var cube=com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packed);
+        int size=com.iridium126.createmanaindustry.dimension.cube.AllvrCoords.DIAMETER_IN_BLOCKS,n=size/16;
+        StormSurfaceCapture.cubeChanged(cube.getX()*size,cube.getZ()*size,size);
+        FeatherSupportGpu.INSTANCE.cubeChanged(Minecraft.getInstance().level,cube.getX()*n,cube.getY()*n,cube.getZ()*n,n);
+        if(current==null)return;
+        for(int x=0;x<n;x++)for(int y=0;y<n;y++)for(int z=0;z<n;z++)
+            current.cache.unavailable(new Section(cube.getX()*n+x,cube.getY()*n+y,cube.getZ()*n+z));
+    }
     @SubscribeEvent public static void loaded(ChunkEvent.Load event){changed(event);}
     @SubscribeEvent public static void unloaded(ChunkEvent.Unload event){changed(event);}
-    private static void changed(ChunkEvent event){if(event.getLevel() instanceof ClientLevel level){var p=event.getChunk().getPos();RenderTerrain.chunkChanged(level,p.x,p.z);StormSurfaceCapture.changed(level,p.x,p.z);}if(current!=null&&event.getLevel()==current.level){var pos=event.getChunk().getPos();current.cache.dirtyColumn(pos.x,pos.z);}}
+    private static void changed(ChunkEvent event){if(event.getLevel() instanceof ClientLevel level){var p=event.getChunk().getPos();RenderTerrain.chunkChanged(level,p.x,p.z);StormSurfaceCapture.changed(level,p.x,p.z);FeatherSupportGpu.INSTANCE.chunkChanged(level,p.x,p.z);}if(current!=null&&event.getLevel()==current.level){var pos=event.getChunk().getPos();current.cache.dirtyColumn(pos.x,pos.z);}}
     public static void reset(){if(current!=null){current.close();current=null;}}
     @Override public void close(){gpu.close();}
 }

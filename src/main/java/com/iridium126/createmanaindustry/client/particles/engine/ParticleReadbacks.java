@@ -21,7 +21,7 @@ final class ParticleReadbacks {
         boolean profile;
         long profileFrame;
         boolean positions,published,feathers,featherRequests,goldSurface;
-        long goldSurfaceEpoch;
+        long goldSurfaceEpoch,featherSupportEpoch;
         ByteBuffer goldData;
         final ByteBuffer featherData=BufferUtils.createByteBuffer(com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.READBACK_BYTES);
         com.iridium126.createmanaindustry.content.allaystorm.StormIdentity positionIdentity;

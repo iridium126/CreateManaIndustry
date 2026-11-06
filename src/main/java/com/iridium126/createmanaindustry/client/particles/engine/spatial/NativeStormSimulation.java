@@ -51,6 +51,10 @@ public final class NativeStormSimulation {
         if(batch.identity()==inputs.generation())
             StormFeedback.INSTANCE.acceptPositionSnapshot(storm.identity(),batch.tick(),batch.rows());
     }
+    private void acceptFeathers(NativeStormControl.FeatherFeedback batch){
+        if(batch.identity()==inputs.generation()&&storm.identity()!=null)
+            com.iridium126.createmanaindustry.client.particles.engine.AllayFeatherGpu.INSTANCE.acceptNativeImpacts(storm.identity(),batch.rows());
+    }
     private void acceptSnapshot(NativeStormControl.SnapshotFeedback batch){
         if(batch.identity()==inputs.generation())
             ColumnSnapshotClient.INSTANCE.publishCapture(batch.request(),batch.tick(),batch.seconds(),batch.values());
@@ -74,7 +78,7 @@ public final class NativeStormSimulation {
         if(control==null&&inputs.failure().isEmpty()&&inputs.journal().retained()>0){
             try{
                 control=new NativeStormControl(ParticleRtModules.prepare(),SpatialScene.CAPACITY,inputs.journal(),
-                        this::acceptRegional,this::acceptColumn,this::acceptOuter,this::acceptPositions,this::acceptSnapshot);
+                        this::acceptRegional,this::acceptColumn,this::acceptOuter,this::acceptPositions,this::acceptSnapshot,this::acceptFeathers);
             }catch(IOException|RuntimeException|LinkageError failure){
                 inputs.stop(failure.toString());
                 com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn("[CMI particles] Native Storm initialization failed",failure);

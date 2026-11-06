@@ -21,8 +21,9 @@ bool cmiGoldReserve(){
     int prior=CMI_FEATHER_WORD(5),slot=atomicAdd(CMI_FEATHER_WORD(7),1);
     return prior+slot<int(CMI_GOLD_MAX);
 }
-void cmiFeatherRequest(vec3 p){
-    if(!uFeatherEnabled||!uFeatherRequestFrame)return;ivec3 key=ivec3(floor(p/16.));uint hash=cmiFeatherCellHash(key);
+void cmiFeatherRequestKey(ivec3 key,int kind){
+    if(!uFeatherEnabled||!uFeatherRequestFrame)return;
+    uint hash=cmiFeatherCellHash(key)^(kind==2?0xa1e12f39u:0u);
     for(uint probe=0u;probe<8u;probe++){
         uint row=CMI_FEATHER_REQUEST_HASH+((hash+probe)&8191u)*4u;
         int state=atomicCompSwap(CMI_FEATHER_WORD(row),0,-1);
@@ -32,12 +33,13 @@ void cmiFeatherRequest(vec3 p){
             if(n>=4096){atomicAdd(CMI_FEATHER_WORD(23),1);atomicExchange(CMI_FEATHER_WORD(row),0);return;}
             CMI_FEATHER_WORD(row+1u)=key.x;CMI_FEATHER_WORD(row+2u)=key.y;CMI_FEATHER_WORD(row+3u)=key.z;
             uint outRow=CMI_FEATHER_REQUESTS+uint(n)*4u;
-            CMI_FEATHER_WORD(outRow)=key.x;CMI_FEATHER_WORD(outRow+1u)=key.y;CMI_FEATHER_WORD(outRow+2u)=key.z;CMI_FEATHER_WORD(outRow+3u)=1;
-            memoryBarrierBuffer();atomicExchange(CMI_FEATHER_WORD(row),1);return;
+            CMI_FEATHER_WORD(outRow)=key.x;CMI_FEATHER_WORD(outRow+1u)=key.y;CMI_FEATHER_WORD(outRow+2u)=key.z;CMI_FEATHER_WORD(outRow+3u)=kind;
+            memoryBarrierBuffer();atomicExchange(CMI_FEATHER_WORD(row),kind);return;
         }
-        if(state==1&&all(equal(ivec3(CMI_FEATHER_WORD(row+1u),CMI_FEATHER_WORD(row+2u),CMI_FEATHER_WORD(row+3u)),key)))return;
+        if(state==kind&&all(equal(ivec3(CMI_FEATHER_WORD(row+1u),CMI_FEATHER_WORD(row+2u),CMI_FEATHER_WORD(row+3u)),key)))return;
     }
 }
+void cmiFeatherRequest(vec3 p){cmiFeatherRequestKey(ivec3(floor(p/16.)),1);}
 void cmiFeatherDisturb(vec3 position,float strength){
     if(!uFeatherEnabled||strength<=0.)return;
     ivec3 key=ivec3(floor(position/2.));uint hash=cmiFeatherCellHash(key);

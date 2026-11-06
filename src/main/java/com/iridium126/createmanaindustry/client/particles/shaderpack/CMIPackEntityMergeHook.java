@@ -142,6 +142,7 @@ public final class CMIPackEntityMergeHook {
                 ShaderPackStatusReport.field("optimization",current?COMPILER.optimizationReport():"pending"),
                 ShaderPackStatusReport.field("shadow optimization",current?COMPILER.shadowOptimization():"pending"),
                 ShaderPackStatusReport.field("feather",current?COMPILER.featherOptimization():"pending"),
+                ShaderPackStatusReport.field("feather leaf sway",current?COMPILER.leafSwayStatus():"pending"),
                 ShaderPackStatusReport.field("source program",current?COMPILER.sourceProgram():"pending"),
                 ShaderPackStatusReport.field("programs",current&&COMPILER.isReady()?"body="+COMPILER.entitiesShader().getId()+"; carrier="+COMPILER.carrierShader().getId()+"; ghost="+COMPILER.ghostShader().getId():"pending"),
                 ShaderPackStatusReport.field("generation",current?renderer.shaderPackPermStatus:"pending"));

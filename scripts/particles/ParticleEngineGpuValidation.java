@@ -466,6 +466,77 @@ public final class ParticleEngineGpuValidation {
                 .putLong(at+16,1).putLong(at+24,scope);
         return at+32;
     }
+    static void nativeFeatherImpact(List<Object> cases)throws Exception{
+        SpatialNative.load(Path.of(".gradle/particle-rt/build"));
+        var createBridge=stormMethod("createStormDisplayBuffers",long.class,int.class);
+        var create=stormMethod("createStormControl",int.class,long.class,int.class);
+        var submit=stormMethod("submitStormTick",long.class,ByteBuffer.class,int.class,int.class,boolean.class);
+        var poll=stormMethod("pollStormTick",long.class,long.class);
+        var consume=stormMethod("consumeStormTick",long.class,long.class);
+        var copy=stormMethod("copyStormFeatherImpacts",long.class,long.class,ByteBuffer.class);
+        var diagnostics=stormMethod("stormControlDiagnostics",long.class);
+        var close=stormMethod("closeStormControl",long.class);
+        long bridge=(long)createBridge.invoke(null,STORM_DISPLAY_HEADER_BYTES+8L*STORM_DISPLAY_RECORD_BYTES+
+                (long)STORM_COLUMN_SLOTS*STORM_COLUMN_MEMBERS*STORM_DISPLAY_COLUMN_BYTES,RT_SLOTS);
+        long worker=(long)create.invoke(null,8,bridge,2),until=System.nanoTime()+15_000_000_000L;
+        try{
+            float contactX=0,contactZ=0;
+            for(long sequence=1;sequence<=5;sequence++){
+                int terrainRows=sequence==1?32:0;
+                int commands=sequence==4?3:sequence==5?0:1;
+                var input=bytes(STORM_TICK_HEADER_BYTES+commands*STORM_CONTROL_BYTES+
+                        terrainRows*STORM_TERRAIN_ROW_BYTES+(terrainRows==0?0:STORM_TERRAIN_PAGE_BYTES));
+                input.put(0,stormTick(sequence,sequence+100,sequence+100,1,true,false),0,STORM_TICK_HEADER_BYTES);
+                input.putInt(8,commands).putFloat(52,1.03f).putInt(88,terrainRows).putInt(92,terrainRows==0?0:1).putInt(156,sequence==3?0:1);
+                if(sequence==1){
+                    stormCommand(input,0,STORM_CONTROL_SPAWN,0,1,1,0);
+                    int base=STORM_TICK_HEADER_BYTES+STORM_CONTROL_BYTES;
+                    for(int i=0;i<terrainRows;i++)input.putInt(base+i*STORM_TERRAIN_ROW_BYTES+12,-1);
+                    for(int x=7;x<=8;x++)for(int z=-1;z<=0;z++){
+                        int h=x*0x8da6b343^z*0xcb1ab31f,index=(h^(h>>>16))&(terrainRows-1);
+                        while(input.getInt(base+index*16+12)!=-1)index=(index+1)&(terrainRows-1);
+                        input.putInt(base+index*16,x).putInt(base+index*16+8,z).putInt(base+index*16+12,0);
+                    }
+                    for(int i=0;i<8;i++)input.putInt(base+terrainRows*16+i*4,-1);
+                }else if(sequence<=3){
+                    int at=stormCommand(input,0,STORM_CONTROL_CORRECTION,0,1,0,0);
+                    input.putFloat(at,128).putFloat(at+4,-2).putFloat(at+12,input.getFloat(80))
+                            .putFloat(at+20,-12).putFloat(at+28,3);
+                }else if(sequence==4){
+                    // The forced downward correction was only for the model collision fixture.
+                    stormCommand(input,0,STORM_CONTROL_CORRECTION,0,1,0,0);
+                    long column=91;
+                    int at=stormCommand(input,1,STORM_CONTROL_COLUMN_STATE,0,1,STORM_DOME_CONTROL_CREATE|1,column);
+                    input.putFloat(at,contactX).putFloat(at+4,1).putFloat(at+8,contactZ).putFloat(at+12,7)
+                            .putFloat(at+16,input.getFloat(80)-.1f).putFloat(at+20,.05f).putFloat(at+24,1).putFloat(at+28,5);
+                    stormCommand(input,2,STORM_CONTROL_COLUMN_ASSIGN,0,1,0,column);
+                }
+                check((boolean)submit.invoke(null,worker,input,input.capacity(),-1,false),"native feather tick queued");
+                int status;
+                while((status=(int)poll.invoke(null,worker,sequence))==1){check(System.nanoTime()<until,"native feather receipt deadline");Thread.sleep(1);}
+                if(status!=2){
+                    String detail=(String)diagnostics.invoke(null,worker);
+                    consume.invoke(null,worker,sequence);
+                    throw new AssertionError("native feather receipt at "+sequence+": "+status+" "+detail);
+                }
+                var rows=bytes(64);
+                int count=(int)copy.invoke(null,worker,sequence,rows);
+                check((int)consume.invoke(null,worker,sequence)==2,"native feather tick consumed");
+                check(count==(sequence==2||sequence==4?1:0),"only enabled downward or first column bloom impact reaches feather receipt at "+sequence+" count="+count);
+                if(sequence==2){
+                    check(rows.getFloat(4)>1&&rows.getFloat(4)<1.2f&&rows.getFloat(12)>.5f,"downward native impact is at the floor");
+                    contactX=rows.getFloat(0);contactZ=rows.getFloat(8);
+                }else if(sequence==4){
+                    check(Math.abs(rows.getFloat(0)-contactX)<.35f&&Math.abs(rows.getFloat(8)-contactZ)<.35f
+                            &&Math.abs(rows.getFloat(4)-1)<.04f&&rows.getFloat(12)>0,"Starfall bloom reports its actual touchdown");
+                }
+            }
+        }finally{
+            while(!(boolean)close.invoke(null,worker)){check(System.nanoTime()<until,"native feather session retired");Thread.sleep(1);}
+            SpatialNative.closeBuffers(bridge);
+        }
+        cases.add(Map.of("case","Native Storm downward impact, first Starfall bloom and disabled feedback","passed",true));
+    }
     static void nativeHelixLaunch(List<Object> cases)throws Exception{
         SpatialNative.load(Path.of(".gradle/particle-rt/build"));
         var createBridge=stormMethod("createStormDisplayBuffers",long.class,int.class);
@@ -637,8 +708,10 @@ public final class ParticleEngineGpuValidation {
         try{
             compactPoses(cases);
             if(Arrays.asList(args).contains("--native-helix-only"))nativeHelixLaunch(cases);
-            else if(Arrays.asList(args).contains("--storm-timeline-only"))nativeStormTimeline(cases);
+            else if(Arrays.asList(args).contains("--storm-timeline-only")){nativeStormTimeline(cases);nativeFeatherImpact(cases);}
             else{localCorrection(cases);contacts(cases);interpolation(cases);displayPublication(cases);featherPixels(cases);conservativeVisibility(cases,!Arrays.asList(args).contains("--gl-only"));glQueries(cases);geometry(cases,!Arrays.asList(args).contains("--gl-only"));for(String shader:List.of("spatial/motion.comp","update.comp","wavecontact.comp","dome_contacts.comp","dome_contact_control.comp","dome_contact_apply.comp","dome_contact_audit.comp","storm_projection.comp"))GL20.glDeleteProgram(program(shader));if(!Arrays.asList(args).contains("--gl-only")){nativeQueries(cases);nativeRing(cases);nativeWorkerQueue(cases);nativeStormTimeline(cases);nativeHelixLaunch(cases);}}
+            if(!Arrays.asList(args).contains("--storm-timeline-only")&&!Arrays.asList(args).contains("--native-helix-only")
+                    &&!Arrays.asList(args).contains("--gl-only"))nativeFeatherImpact(cases);
             check(GL11.glGetError()==0,"GL state");result.put("passed",true);
         }finally{result.put("checks",checks);result.put("cases",cases);result.put("gpu",GL11.glGetString(GL11.GL_RENDERER));result.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("gpu.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
     }

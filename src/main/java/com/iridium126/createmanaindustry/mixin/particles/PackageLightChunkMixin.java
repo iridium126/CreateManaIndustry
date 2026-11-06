@@ -16,5 +16,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class PackageLightChunkMixin {
     @Shadow @Final private ClientLevel level;
     @Inject(method="onLightUpdate",at=@At("TAIL"))
-    private void cmi$lightChanged(LightLayer layer,SectionPos section,CallbackInfo ci){PackageCollisionRuntime.lightChanged(level,section);}
+    private void cmi$lightChanged(LightLayer layer,SectionPos section,CallbackInfo ci){
+        PackageCollisionRuntime.lightChanged(level,section);
+        if(layer==LightLayer.SKY)com.iridium126.createmanaindustry.client.particles.engine.FeatherSupportGpu.INSTANCE.sectionChanged(level,section.x(),section.y(),section.z());
+    }
 }
