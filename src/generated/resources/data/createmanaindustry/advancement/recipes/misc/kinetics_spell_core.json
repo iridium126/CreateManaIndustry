@@ -1,4 +1,5 @@
 {
+  "neoforge:conditions": [{"type":"neoforge:mod_loaded","modid":"trickster"}],
   "parent": "minecraft:recipes/root",
   "criteria": {
     "has_liquid_mana": {

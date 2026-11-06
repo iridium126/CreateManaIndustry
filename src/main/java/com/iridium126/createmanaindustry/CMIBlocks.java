@@ -403,12 +403,21 @@ public final class CMIBlocks {
             registerHexcastingBlocks();
         }
         if (CreateManaIndustry.TRICKSTER_ACTIVE) {
-            KINETIC_MANA_GENERATOR = REGISTRATE
+            var builder = REGISTRATE
                     .block("kinetic_mana_generator", KineticManaGeneratorBlock::new)
                     .initialProperties(() -> Blocks.IRON_BLOCK)
                     .properties(p -> p.mapColor(MapColor.COLOR_YELLOW))
-                    .blockstate(BlockStateGen.directionalBlockProvider(true))
-                    .transform(TagGen.pickaxeOnly())
+                    .blockstate(BlockStateGen.directionalBlockProvider(true));
+            // Datagen runs with Trickster installed and commits these resources,
+            // while the block itself is registered at runtime only when the mod
+            // is present. Gate the generated tag/loot table/recipe with the same
+            // condition so a data pack without Trickster parses cleanly.
+            CMIRegistrateExtensions.optionalBlockTags(builder, BlockTags.MINEABLE_WITH_PICKAXE);
+            CMIRegistrateExtensions.conditionalLoot(builder,
+                    CMIRegistrateExtensions.blockSelfDropLoot(
+                            CreateManaIndustry.modLoc("kinetic_mana_generator")),
+                    CMIRegistrateExtensions.tricksterCondition());
+            KINETIC_MANA_GENERATOR = builder
                     .item()
                     .transform(ModelGen.customItemModel())
                     .recipe((c, p) -> {
@@ -421,7 +430,8 @@ public final class CMIBlocks {
                                 .pattern("LCL")
                                 .pattern("BBB")
                                 .unlockedBy("has_liquid_mana", RegistrateRecipeProvider.has(CMIFluids.LIQUID_MANA.getBucket().get()))
-                                .save(p, CreateManaIndustry.modLoc(c.getName()));
+                                .save(p.withConditions(CMIRegistrateExtensions.tricksterCondition()),
+                                        CreateManaIndustry.modLoc(c.getName()));
                     })
                     .register();
         }

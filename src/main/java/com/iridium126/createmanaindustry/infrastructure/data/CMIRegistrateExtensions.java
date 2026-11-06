@@ -25,9 +25,11 @@ import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.entries.LootItem;
 import net.minecraft.world.level.storage.loot.predicates.AnyOfCondition;
+import net.minecraft.world.level.storage.loot.predicates.ExplosionCondition;
 import net.minecraft.world.level.storage.loot.predicates.MatchTool;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import net.neoforged.neoforge.common.conditions.ICondition;
+import net.neoforged.neoforge.common.conditions.ModLoadedCondition;
 import net.neoforged.neoforge.common.ItemAbilities;
 import net.neoforged.neoforge.common.loot.CanItemPerformAbility;
 
@@ -114,9 +116,31 @@ public final class CMIRegistrateExtensions {
         return builder -> optionalBlockTags(builder, BlockTags.LEAVES, BlockTags.MINEABLE_WITH_HOE);
     }
 
-    /** Convenience transform for the common Hexcasting condition. */
+    /** Convenience condition for content registered only while Hexcasting is installed. */
     public static ICondition hexcastingCondition() {
-        return new net.neoforged.neoforge.common.conditions.ModLoadedCondition("hexcasting");
+        return new ModLoadedCondition("hexcasting");
+    }
+
+    /** Convenience condition for content registered only while Trickster is installed. */
+    public static ICondition tricksterCondition() {
+        return new ModLoadedCondition("trickster");
+    }
+
+    /**
+     * Standard "drop itself" block loot table. The drop is resolved from the
+     * datagen registry by id, so conditional content never needs a live item
+     * reference while the builders are declared.
+     */
+    public static Function<HolderLookup.Provider, LootTable.Builder> blockSelfDropLoot(ResourceLocation dropItem) {
+        return registries -> {
+            var item = registries.lookupOrThrow(Registries.ITEM)
+                    .getOrThrow(net.minecraft.resources.ResourceKey.create(Registries.ITEM, dropItem))
+                    .value();
+            return LootTable.lootTable().withPool(LootPool.lootPool()
+                    .setRolls(ConstantValue.exactly(1.0f))
+                    .when(ExplosionCondition.survivesExplosion())
+                    .add(LootItem.lootTableItem(item)));
+        };
     }
 
     /**

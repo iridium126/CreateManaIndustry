@@ -1,4 +1,5 @@
 {
+  "neoforge:conditions": [{"type":"neoforge:mod_loaded","modid":"ars_nouveau"}],
   "type": "create:mixing",
   "ingredients": [
     { "item": "ars_nouveau:sourceberry_bush" },

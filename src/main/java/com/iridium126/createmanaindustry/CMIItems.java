@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry;
 import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.data.CMIRegistrateExtensions;
 import com.iridium126.createmanaindustry.content.items.IncompleteHexItem;
 import com.iridium126.createmanaindustry.content.items.IncompleteKnotItem;
 import com.iridium126.createmanaindustry.content.items.IncompleteMediaBatteryItem;
@@ -88,7 +89,8 @@ public final class CMIItems {
                                 .pattern("TMT")
                                 .unlockedBy("has_liquid_mana",
                                         RegistrateRecipeProvider.has(CMIFluids.LIQUID_MANA.getBucket().get()))
-                                .save(p, CreateManaIndustry.modLoc(c.getName()));
+                                .save(p.withConditions(CMIRegistrateExtensions.tricksterCondition()),
+                                        CreateManaIndustry.modLoc(c.getName()));
                     })
                     .register();
 
