@@ -43,6 +43,7 @@ public class CMIPonderPlugin implements PonderPlugin {
         add(helper, "allay_music", AllayBurnerPonderScenes::music, PROCESSING, "allay_burner");
         add(helper, "atomizer_setup", MistPonderScenes::atomizing, MIST, "kinetic_atomizer", "liquid_media_bucket", "liquid_mana_bucket");
         add(helper, "atomizer_range", MistPonderScenes::range, MIST, "kinetic_atomizer");
+        add(helper, "water_mist_irrigation", MistPonderScenes::irrigation, MIST, "kinetic_atomizer");
         add(helper, "soul_recovery", MistPonderScenes::soul, MIST, "allay_burner", "condenser", "liquid_soul_bucket");
         add(helper, "condenser_setup", MistPonderScenes::condenser, MIST, "condenser", "exposed_condenser", "weathered_condenser", "oxidized_condenser", "waxed_condenser", "waxed_exposed_condenser", "waxed_weathered_condenser", "waxed_oxidized_condenser", "coolant_bucket");
         add(helper, "mana_cogwheel", MistPonderScenes::cogwheel, MIST, "mana_cogwheel");

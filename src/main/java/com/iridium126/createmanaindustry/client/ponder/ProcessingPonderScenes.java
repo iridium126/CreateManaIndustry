@@ -24,7 +24,7 @@ public final class ProcessingPonderScenes {
         if (heated) w.burner(basin.below(), true);
         w.place(basin, AllBlocks.BASIN.get());
         w.place(basin.above(2), AllBlocks.MECHANICAL_PRESS.getDefaultState()
-                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH));
+                .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST));
         w.drive(basin.above(2), Direction.Axis.X);
     }
     static void mixer(Workshop w, BlockPos basin, boolean heated) {
@@ -38,6 +38,9 @@ public final class ProcessingPonderScenes {
                 .setValue(BlockStateProperties.HALF, Half.BOTTOM)
                 .setValue(BlockStateProperties.OPEN, open)
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH));
+    }
+    static void setLidOpen(Workshop w, BlockPos basin, boolean open) {
+        w.scene.world().modifyBlock(basin.above(), state -> state.setValue(BlockStateProperties.OPEN, open), false);
     }
 
     public static void mediaConversion(SceneBuilder builder, SceneBuildingUtil util) {
@@ -95,11 +98,11 @@ public final class ProcessingPonderScenes {
         w.text(60, basin, "Surround the Basin with Liquid Media mist. This coating does not need a heater.", "此镀层需要液态媒质雾，无须额外加热");
         w.explain(60, basin.above(), "Close the lid to begin deposition. Opening it interrupts the process.", "关闭活板门可以开始沉积，打开时会中断加工");
         w.use(basin.above(), ItemStack.EMPTY);
-        lid(w, basin, false);
+        setLidOpen(w, basin, false);
         w.idle(20);
         w.basinItems(basin, CMIItems.AMETHYST_DEPOSITED_IRON_SHEET.asStack());
         w.waitForText();
-        lid(w, basin, true);
+        setLidOpen(w, basin, true);
         w.basinItems(basin);
         w.depot(p(6, 1, 2), CMIItems.AMETHYST_DEPOSITED_IRON_SHEET.asStack());
         w.text(60, p(6, 1, 2), "The coated sheet is ready. Copper, gold and brass sheets use the same method.", "铜板、金板和黄铜板也可以使用相同方法加工");
@@ -112,8 +115,8 @@ public final class ProcessingPonderScenes {
         BlockPos source = p(3, 2, 4), target = p(6, 2, 3);
         w.burner(source.below(), true); w.place(source, AllBlocks.BASIN.get());
         w.liquid(source, CMIFluids.MOLTEN_ROSE_QUARTZ.get(), 125);
-        lid(w, source, false);
-        w.text(60, source, "Start with Molten Rose Quartz in a covered Basin above a lit Allay Burner.", "带盖工作盆中的熔融玫瑰石英需要悦灵加热");
+        lid(w, source, true);
+        w.text(60, source, "Start with Molten Rose Quartz in a Basin above a lit Allay Burner, with its Framed Glass Trapdoor open.", "工作盆中的熔融玫瑰石英需要悦灵加热，并打开上方的边框玻璃活板门");
         w.explain(70, source, "Vaporizing turns the molten liquid into mist. An Atomizer cannot do this job.", "汽化可以将熔融流体转化为雾，雾化器无法代替此步骤");
         w.liquid(source, CMIFluids.MOLTEN_ROSE_QUARTZ.get(), 0);
         Workshop.Mist mist = w.mist(source, MistPonderScenes.ROSE, 3);
@@ -121,10 +124,10 @@ public final class ProcessingPonderScenes {
         w.basinItems(target, AllItems.IRON_SHEET.asStack()); lid(w, target, true);
         w.text(70, target, "Place an Iron Sheet in a second Basin inside the mist, with heat underneath.", "在雾中放置另一个工作盆，加入铁板并在下方供热");
         w.explain(70, target, "Close its Framed Glass Trapdoor. Heat and rose quartz mist produce the coating.", "关闭边框玻璃活板门，可以利用热量和雾完成镀层");
-        w.use(target.above(), ItemStack.EMPTY); lid(w, target, false);
+        w.use(target.above(), ItemStack.EMPTY); setLidOpen(w, target, false);
         w.idle(20); w.basinItems(target, CMIItems.ROSE_QUARTZ_DEPOSITED_IRON_SHEET.asStack());
         w.waitForText();
-        lid(w, target, true); w.basinItems(target);
+        setLidOpen(w, target, true); w.basinItems(target);
         w.depot(p(6, 1, 1), CMIItems.ROSE_QUARTZ_DEPOSITED_IRON_SHEET.asStack());
         w.text(70, p(6, 1, 1), "The same process coats copper, gold and brass sheets. Keep supplying the vaporizing Basin.", "铜板、金板和黄铜板同样适用，汽化工作盆需要持续补液");
         w.waitForText();
@@ -141,9 +144,9 @@ public final class ProcessingPonderScenes {
         w.press(basin.above(2), true); w.basinItems(basin);
         w.liquid(basin, CMIFluids.MOLTEN_PRISMARINE_QUARTZ.get(), 250);
         w.text(70, basin, "One crystal gives 250 mB of Molten Prismarine Quartz.", "每个海晶石英可得到 250 mB 熔融海晶石英");
-        w.explain(80, basin.above(), "For mist, replace the press with a closed Framed Glass Trapdoor and keep Allay Heat below.", "将冲压机换成关闭的边框玻璃活板门，再提供悦灵加热，可以进行汽化");
+        w.explain(80, basin.above(), "For mist, replace the press with an open Framed Glass Trapdoor and keep Allay Heat below.", "将冲压机换成打开的边框玻璃活板门，再提供悦灵加热，可以进行汽化");
         w.remove(basin.above(2)); w.remove(basin.above(2).west()); w.remove(basin.above(2).west(2));
-        lid(w, basin, false);
+        lid(w, basin, true);
         w.explain(70, basin, "Each vaporizing operation consumes 125 mB. Molten fluids cannot be fed to an Atomizer.", "每次汽化消耗 125 mB，熔融流体无法直接输入雾化器");
         w.liquid(basin, CMIFluids.MOLTEN_PRISMARINE_QUARTZ.get(), 125);
         Workshop.Mist mist = w.mist(basin, 0x59D4CC, 3);
@@ -161,9 +164,9 @@ public final class ProcessingPonderScenes {
         w.press(basin.above(2), true); w.basinItems(basin);
         w.liquid(basin, CMIFluids.MOLTEN_ROSE_QUARTZ.get(), 250);
         w.text(70, basin, "One Rose Quartz becomes 250 mB of molten liquid.", "每个玫瑰石英可得到 250 mB 熔融流体");
-        w.explain(70, basin.above(), "Replace the press with a closed Framed Glass Trapdoor to vaporize it using Allay Heat.", "换用关闭的边框玻璃活板门和悦灵加热，可以进行汽化");
+        w.explain(70, basin.above(), "Replace the press with an open Framed Glass Trapdoor to vaporize it using Allay Heat.", "换用打开的边框玻璃活板门和悦灵加热，可以进行汽化");
         w.remove(basin.above(2)); w.remove(basin.above(2).west()); w.remove(basin.above(2).west(2));
-        lid(w, basin, false);
+        lid(w, basin, true);
         w.explain(80, basin, "Each operation vaporizes 125 mB. Use this mist for rose quartz deposition nearby.", "每次汽化消耗 125 mB，产生的雾可用于附近的沉积加工");
         w.liquid(basin, CMIFluids.MOLTEN_ROSE_QUARTZ.get(), 125);
         Workshop.Mist mist = w.mist(basin, MistPonderScenes.ROSE, 3);

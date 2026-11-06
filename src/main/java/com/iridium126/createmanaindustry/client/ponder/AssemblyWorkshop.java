@@ -55,7 +55,7 @@ final class AssemblyWorkshop {
         w.pump(spout.south(2), Direction.NORTH);
         w.pipe(spout.south(), Direction.NORTH, Direction.SOUTH);
         w.liquid(spout, liquid, 1000);
-        w.place(press, AllBlocks.MECHANICAL_PRESS.getDefaultState().setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.EAST));
+        w.place(press, AllBlocks.MECHANICAL_PRESS.getDefaultState().setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH));
         w.drive(press, Direction.Axis.Z);
     }
     void input(ItemStack stack) {

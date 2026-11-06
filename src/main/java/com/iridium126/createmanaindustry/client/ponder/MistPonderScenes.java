@@ -14,13 +14,17 @@ import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FarmBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.templates.FluidTank;
 
 public final class MistPonderScenes {
-    static final int MEDIA = 0xB695EB, MANA = 0x58DBC4, SOUL = 0x598CFF, ROSE = 0xEF779F;
+    static final int MEDIA = 0xB695EB, MANA = 0x58DBC4, SOUL = 0x598CFF, ROSE = 0xEF779F, WATER = 0x3F76E4;
     private MistPonderScenes() {}
 
     static void atomizer(Workshop w, BlockPos a, Fluid fluid) {
@@ -88,6 +92,66 @@ public final class MistPonderScenes {
         w.explain(60, a, "No rotation means no mist either. Check both power and fluid supply.", "没有旋转动力时，雾化器也无法工作");
         contents(w, a, CMIFluids.LIQUID_MEDIA.get(), 1000);
         w.speed(a, 0); w.speed(a.south(), 0); w.speed(a.south().below(), 0);
+        w.finish();
+    }
+
+    public static void irrigation(SceneBuilder builder, SceneBuildingUtil util) {
+        Workshop w = new Workshop(builder, util, "water_mist_irrigation", "Irrigating Farmland with Water Mist", "使用水雾灌溉耕地");
+        BlockPos a = p(3, 2, 4), near = p(4, 1, 4), far = p(6, 1, 4);
+        var nearSoil = util.select().fromTo(4, 1, 3, 4, 1, 4);
+        var farSoil = util.select().fromTo(6, 1, 3, 7, 1, 4);
+        var allSoil = nearSoil.copy().add(farSoil);
+        BlockState dry = Blocks.FARMLAND.defaultBlockState().setValue(FarmBlock.MOISTURE, 0);
+        BlockState wet = dry.setValue(FarmBlock.MOISTURE, 7);
+        BlockState wheat = Blocks.WHEAT.defaultBlockState().setValue(BlockStateProperties.AGE_7, 2);
+        w.build(() -> {
+            for (BlockPos pos : allSoil) w.place(pos, dry);
+            // Leave exposed soil in both groups so hydration is visible beneath the mist.
+            w.place(p(4, 2, 3), wheat);
+            w.place(p(6, 2, 3), wheat);
+            w.place(p(7, 2, 4), wheat);
+        });
+
+        w.explain(90, a, "Supply a Kinetic Atomizer with water and rotational force to produce water mist", "向动力雾化器供水并输入旋转动力，即可产生水雾");
+        atomizer(w, a, Fluids.WATER);
+        w.idle(15);
+        w.point(a.below(), PonderPalette.INPUT);
+        Workshop.Mist mist = w.mist(a, WATER, 2);
+        w.liquid(a.below().west(2), Fluids.WATER, 1800);
+
+        w.explain(90, near, "The water mist concentration at the farmland must be greater than 10%%", "耕地所在位置的水雾浓度需要大于 10%%");
+        // At the default 32 RPM (radius 2), only the near group exceeds 10%.
+        // Stage the result after a pause, rather than implying immediate hydration.
+        w.idle(20);
+        w.scene.world().setBlocks(nearSoil, wet, false);
+        w.point(near, PonderPalette.GREEN);
+        w.scene.effects().indicateSuccess(near);
+
+        w.text(80, near, "This keeps the farmland hydrated without a nearby water source", "满足条件的耕地会保持湿润，无需在旁边放置水源");
+
+        w.explain(70, far, "Mist becomes thinner farther from its source", "距离雾源越远，浓度越低");
+        w.point(far, PonderPalette.RED);
+
+        w.explain(90, a, "Increasing the rotation speed allows the mist to reach more distant farmland", "提高转速，可以让水雾覆盖更远处的耕地");
+        w.speed(a, -96); w.speed(a.south(), 96); w.speed(a.south().below(), 96);
+        w.scene.effects().rotationSpeedIndicator(a);
+        // As in the other mist scenes, the displayed radius is scaled for the workshop.
+        w.mistSize(mist, 3.5f, WATER);
+        w.liquid(a.below().west(2), Fluids.WATER, 1400);
+        w.idle(30);
+        w.scene.world().setBlocks(farSoil, wet, false);
+        w.point(far, PonderPalette.GREEN);
+        w.scene.effects().indicateSuccess(far);
+
+        w.explain(90, near, "Once the mist disperses, the farmland will gradually dry out", "水雾消散后，耕地会逐渐干燥");
+        w.speed(a, 0); w.speed(a.south(), 0); w.speed(a.south().below(), 0);
+        w.mistOff(mist);
+        // Let the existing mist fade finish, then compress normal drying into the final caption.
+        w.idle(60);
+        for (int moisture : new int[] {4, 2, 0}) {
+            w.scene.world().modifyBlocks(allSoil, state -> state.setValue(FarmBlock.MOISTURE, moisture), false);
+            w.idle(8);
+        }
         w.finish();
     }
 
@@ -180,15 +244,15 @@ public final class MistPonderScenes {
         w.scene.effects().rotationDirectionIndicator(cog);
         w.explain(60, cog, "Andesite and Brass Casings can enclose a Mana Cogwheel without changing its mist-powered operation.", "安山机壳或黄铜机壳可以用于魔力齿轮装壳");
         w.use(cog, AllBlocks.ANDESITE_CASING.asStack());
-        w.place(cog, CMIBlocks.ANDESITE_ENCASED_MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
+        w.replace(cog, CMIBlocks.ANDESITE_ENCASED_MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
         w.speed(cog, -256);
-        w.explain(60, cog, "Sneak and right-click with a wrench to remove either casing.", "潜行时手持扳手右击，可以拆下机壳");
-        w.scene.overlay().showControls(util.vector().topOf(cog), net.createmod.catnip.math.Pointing.DOWN, 45)
-                .rightClick().whileSneaking().withItem(AllItems.WRENCH.asStack());
+        w.explain(120, cog, "Sneak and right-click with a wrench to remove either casing.", "潜行时手持扳手右击，可以拆下机壳");
+        w.controls(cog, 45).rightClick().whileSneaking().withItem(AllItems.WRENCH.asStack());
         w.idle(25);
-        w.place(cog, CMIBlocks.MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
-        w.use(cog, AllBlocks.BRASS_CASING.asStack());
-        w.place(cog, CMIBlocks.BRASS_ENCASED_MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
+        w.replace(cog, CMIBlocks.MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
+        w.speed(cog, -256);
+        w.use(cog, AllBlocks.BRASS_CASING.asStack(), 40);
+        w.replace(cog, CMIBlocks.BRASS_ENCASED_MANA_COGWHEEL.getDefaultState().setValue(BlockStateProperties.AXIS, Direction.Axis.Y));
         w.speed(cog, -256);
         w.explain(70, cog, "The mist must reach the cogwheel, even when encased. Losing the mist stops its generated rotation.", "装壳后仍需要雾覆盖齿轮，失去雾便会停止产生动力");
         w.mistOff(mist); w.speed(cog, 0); w.speed(mill, 0);

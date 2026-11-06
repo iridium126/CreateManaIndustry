@@ -23,7 +23,7 @@ TEXT = re.compile(r'w\.(?:text|explain)\(\d+,\s*[^;]*?' + STRING + r',\s*' + STR
 REG = re.compile(r'add\(helper, "([a-z_]+)", (\w+)::(\w+), (\w+), ([^;]+)\);')
 TAGS = {
     'processing': ('The Magic Workshop', '魔法工作站', 'Heat, coat and process materials with Create machinery', '使用机械动力机器加热、镀层与加工材料'),
-    'mist': ('Working with Mist', '雾场', 'Make mist, collect it and use it to power machines', '产生、收集雾并驱动机器'),
+    'mist': ('Working with Mist', '体积雾场', 'Make mist, collect it and use it to power machines', '产生、收集雾并驱动机器'),
     'magic_automation': ('Magic Automation', '魔法自动化', 'Charge, assemble and connect magical items', '为魔法物品充能、组装，并接入自动化系统'),
 }
 
@@ -103,6 +103,10 @@ def editorial_contracts(catalog):
     # Ponder only: other books and optional mods retain their own style.
     obsolete = r'机械臂|磨石|显示链接(?!器)|框架玻璃活板门|运动结构|右键|火力等级'
     for scene_id, (_, title, paragraphs, _) in catalog.items():
+        # These captions have no format parameters: Java Formatter needs paired percent signs.
+        for pair in paragraphs:
+            for text in pair:
+                assert '%' not in text.replace('%%', ''), f'Unescaped caption percent: {scene_id}: {text}'
         for text in [title, *(zh for _, zh in paragraphs)]:
             assert not re.search(obsolete, text), f'Non-Create terminology: {scene_id}: {text}'
             assert not re.search(r'[。！？；]', text), f'Use concise Create captions: {scene_id}: {text}'
