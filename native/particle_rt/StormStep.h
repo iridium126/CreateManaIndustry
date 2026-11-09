@@ -18,6 +18,7 @@ struct StormTick {
     uint64_t projectedSequence, projectedIdentity;
     uint32_t playerCount, positionSnapshot, columnCaptureCount, featherImpacts;
     uint4 columnCaptures[CMI_RESOURCE_STORM_COLUMN_CAPTURE_LIMIT];
+    uint64_t terrainBaseRevision, terrainRevision;
 };
 struct StormControl {
     uint32_t op, member, span, flags;
@@ -42,7 +43,7 @@ struct StormColumnDisplay {
 struct StormTerrain {
     const int4* rows;
     const uint32_t* cells;
-    uint32_t mask, revision;
+    uint32_t mask, revision, overflow;
 };
 
 constexpr unsigned domeSlots=CMI_RESOURCE_STORM_DOME_SLOTS;
@@ -185,6 +186,7 @@ struct StormStepMember {
     float4 outerTarget, spatialSteering;
     uint32_t outerCycle, outerState;
 };
+static_assert(offsetof(StormTick,terrainBaseRevision)==CMI_RESOURCE_STORM_TERRAIN_REVISION_OFFSET);
 static_assert(sizeof(StormTick) == CMI_RESOURCE_STORM_TICK_HEADER_BYTES);
 static_assert(offsetof(StormTick,sequence)==CMI_RESOURCE_STORM_TICK_SEQUENCE_OFFSET);
 static_assert(offsetof(StormTick,targetBefore)==CMI_RESOURCE_STORM_TICK_TARGET_OFFSET);

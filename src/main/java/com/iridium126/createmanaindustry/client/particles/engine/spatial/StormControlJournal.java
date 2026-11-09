@@ -190,6 +190,7 @@ final class StormControlJournal {
                     out.putInt(capture.slot()).putInt(capture.request().id()).putInt(capture.request().token()).putInt(0);
                 }else out.putLong(0).putLong(0);
             }
+            out.putLong(terrain==null?0:terrain.baseRevision()).putLong(terrain==null?0:terrain.revision());
             for(var command:commands)command.write(out,p.identity());
             if(terrain!=null)terrain.write(out);
             for(var player:players)player.write(out);
@@ -249,6 +250,11 @@ final class StormControlJournal {
                 List.copyOf(players),positionSnapshot,geometry,List.copyOf(columnCaptures),featherImpacts);
         log.addLast(input);unsent.addLast(input);written++;lastTick=tick;
         lastIdentity=parameters.identity();lastActive=parameters.active();
+    }
+    Tick nextUnpacked(long packedThrough){
+        if(failed||unsent.isEmpty())return null;
+        for(var tick:unsent)if(tick.sequence()>packedThrough)return tick;
+        return null;
     }
     Tick sendable(){return !failed&&inFlight.size()<RT_SLOTS?unsent.peekFirst():null;}
     void sent(Tick input){

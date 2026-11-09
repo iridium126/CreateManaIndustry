@@ -38,7 +38,7 @@ bool historicalHidden(uint at,vec3 lo,vec3 hi){
 }
 bool historyValid(){
  return historyInput.header[0]==0x41313149u&&historyOutput.header[0]==0x4131314fu&&
-        historyInput.header[1]==12u&&historyOutput.header[1]==12u&&
+        historyInput.header[1]==uint(CMI_RESOURCE_ABI)&&historyOutput.header[1]==uint(CMI_RESOURCE_ABI)&&
         historyOutput.header[11]==0u&&historyOutput.header[18]==1u&&historyOutput.header[20]==1u&&
         historyInput.header[2]==historyOutput.header[2]&&historyInput.header[3]==historyOutput.header[3]&&
         historyInput.header[4]==historyOutput.header[4]&&historyInput.header[5]==historyOutput.header[5]&&
@@ -94,7 +94,7 @@ void main(){
    }packet.rows[i]=row;
    if(filterOpaque&&!shadowEnabled&&(row.identity.w&1u)!=0u)atomicAdd(bounds.cameraQueryCount,1u);
   }
-  if(i==0u){for(uint k=0u;k<32u;k++)packet.header[k]=0u;packet.header[0]=0x41313149u;packet.header[1]=12u;packet.header[2]=nonce.x;packet.header[3]=nonce.y;packet.header[4]=epoch.x;packet.header[5]=epoch.y;packet.header[6]=sourceTick.x;packet.header[7]=sourceTick.y;uvec2 target=sourceTick+uvec2(1,0);if(target.x==0u)target.y++;packet.header[8]=target.x;packet.header[9]=target.y;packet.header[10]=1024u;packet.header[12]=floatBitsToUint(timeSec);packet.header[13]=floatBitsToUint(.05);packet.header[14]=floatBitsToUint(.1);packet.header[16]=scene.x;packet.header[17]=scene.y;packet.header[18]=1u;packet.header[19]=probes;packet.header[20]=1u;packet.header[28]=terrainCount;packet.header[29]=32u+1024u*16u;}return;
+  if(i==0u){for(uint k=0u;k<32u;k++)packet.header[k]=0u;packet.header[0]=0x41313149u;packet.header[1]=uint(CMI_RESOURCE_ABI);packet.header[2]=nonce.x;packet.header[3]=nonce.y;packet.header[4]=epoch.x;packet.header[5]=epoch.y;packet.header[6]=sourceTick.x;packet.header[7]=sourceTick.y;uvec2 target=sourceTick+uvec2(1,0);if(target.x==0u)target.y++;packet.header[8]=target.x;packet.header[9]=target.y;packet.header[10]=1024u;packet.header[12]=floatBitsToUint(timeSec);packet.header[13]=floatBitsToUint(.05);packet.header[14]=floatBitsToUint(.1);packet.header[16]=scene.x;packet.header[17]=scene.y;packet.header[18]=1u;packet.header[19]=probes;packet.header[20]=1u;packet.header[28]=terrainCount;packet.header[29]=32u+1024u*16u;}return;
  }
  if(phase==3u&&i<1024u&&bounds.rows[i].lo.w!=0u){
   if(measure){atomicAdd(visible.counts.x,bounds.rows[i].lo.w);atomicAdd(visible.counts.y,1u);}

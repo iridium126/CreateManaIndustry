@@ -56,6 +56,10 @@ public final class ClientFrameCapture {
         final Set<SpatialKey> spatialTickets=new HashSet<>();
         final Map<StormKey,StormSubmission> stormTickets=new HashMap<>();
         final List<String> stormSamples=new ArrayList<>();
+        final List<String> stormDisplay=new ArrayList<>();
+        final List<String> stormInputs=new ArrayList<>();
+        long displayRepeated,displayLastSequence=-1,displayExhausted,displayHoldEvents,displaySlotsUnavailable;
+        boolean displayHeld;
         int draining,stageEntries;
         final long[] frames=new long[CAPACITY],sceneFrames=new long[CAPACITY],generations=new long[CAPACITY];
         final long[] attacksGeneration=new long[CAPACITY],terrainGeneration=new long[CAPACITY];
@@ -102,13 +106,14 @@ public final class ClientFrameCapture {
         if(w.stormSamples.size()>=100_000){invalidate("Storm timing record capacity exceeded");return;}
         var row=new StringBuilder().append(s.frame()).append(',').append(worker).append(',').append(s.identity()).append(',')
                 .append(s.tick()).append(',').append(sequence).append(',').append(s.slot()).append(',').append(s.members())
-                .append(',').append(s.terrain()).append(',').append(s.queued()).append(',').append(s.inFlight())
+                .append(',').append(gpuTimes!=null&&gpuTimes.length>12?(int)gpuTimes[12]:s.terrain()).append(',').append(s.queued()).append(',').append(s.inFlight())
                 .append(',').append(s.inputBytes()).append(',').append(applied).append(',').append(s.cpuMs());
         for(int i=0;i<7;i++)row.append(',').append(gpuTimes==null?Double.NaN:gpuTimes[i]);
         row.append(',').append(gpuTimes==null?-1:(int)gpuTimes[7]);
         row.append(',').append(gpuTimes==null?-1:(long)gpuTimes[7]*
                 com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.STORM_DISPLAY_RECORD_BYTES);
         row.append(',').append(s.inputMs()).append(',').append(s.releaseMs()).append(',').append(s.enqueueMs()).append(',').append(consumeMs);
+        for(int i=8;i<12;i++)row.append(',').append(gpuTimes==null||gpuTimes.length<=i?Double.NaN:gpuTimes[i]);
         w.stormSamples.add(row.toString());
     }
     /** ABI and statistics schema are independent. Timings are fetched only after completion. */
@@ -118,7 +123,7 @@ public final class ClientFrameCapture {
         else if(!w.spatialTickets.contains(key))return;
         if(w.spatial.size()>=100_000){invalidate("spatial record capacity exceeded");return;}
         long frame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken();
-        var row=new StringBuilder().append(frame).append(',').append(sourceTick).append(',').append(sourceTick+1).append(',').append(scene).append(',').append(nonce).append(',').append(slot).append(",12,2,").append(event).append(',').append(consumed);
+        var row=new StringBuilder().append(frame).append(',').append(sourceTick).append(',').append(sourceTick+1).append(',').append(scene).append(',').append(nonce).append(',').append(slot).append(',').append(com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.ABI).append(",2,").append(event).append(',').append(consumed);
         for(int i=0;i<5;i++)row.append(',').append(times!=null&&i<times.length?times[i]:Double.NaN);
         row.append(',').append(worker).append(',').append(kind==0?"motion":view).append(',').append(members).append(',').append(terrain);w.spatial.add(row.toString());
         if(event.equals("retired"))w.spatialTickets.remove(key);
@@ -222,10 +227,27 @@ public final class ClientFrameCapture {
         window.metadata.put("scalar_vector_uniforms_avoided",uniforms.avoided()-window.uniformsAvoidedStart);
         window.metadata.put("storm_state_copied_bytes",com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.copiedStateBytes()-window.copiedStateStart);
         window.metadata.put("rt_camera_empty_queries",window.emptyCameraQueries);
+        window.metadata.put("native_display_time_domain","native input logical ticks; age excludes server world-time corrections");
         window.metadata.put("native_display_missing_sequences",window.nativeDisplayGaps);
+        window.metadata.put("native_display_repeated_sample_frames",window.displayRepeated);
+        window.metadata.put("native_display_buffer_exhausted_frames",window.displayExhausted);
+        window.metadata.put("native_display_hold_events",window.displayHoldEvents);
+        window.metadata.put("native_display_slot_unavailable",window.displaySlotsUnavailable);
     }
     public void emptyCameraQuery(){if(collecting())window.emptyCameraQueries++;}
     void nativeDisplayGap(long count){if(collecting())window.nativeDisplayGaps+=count;}
+    public void nativeDisplaySlotUnavailable(){if(collecting())window.displaySlotsUnavailable++;}
+    public void stormInputCaptured(long tick,double ms){if(collecting()&&window.stormInputs.size()<100_000)window.stormInputs.add(frameId+","+tick+","+ms);}
+    void nativeDisplayReceived(long sequence,long tick,long completedNanos){
+        if(!collecting())return;var w=window;
+        if(w.stormDisplay.size()<CAPACITY)w.stormDisplay.add(frameId+",received,"+sequence+","+tick+",NaN,false,false,"+(completedNanos==0?Double.NaN:(System.nanoTime()-completedNanos)*1e-6));
+    }
+    void nativeDisplaySample(long sequence,double age,boolean held,boolean paused){
+        if(!collecting())return;var w=window;
+        if(!paused){if(sequence==w.displayLastSequence)w.displayRepeated++;if(held){w.displayExhausted++;if(!w.displayHeld)w.displayHoldEvents++;}}
+        w.displayLastSequence=sequence;w.displayHeld=held;
+        if(w.stormDisplay.size()<CAPACITY)w.stormDisplay.add(frameId+",sample,"+sequence+",-1,"+age+","+held+","+paused+",NaN");
+    }
     /** Called with the source frame tag, never associates delayed census with the current frame. */
     public void census(long sceneFrame,long generation,int live,int models,int body,int carrier,int ghost,int feather,int lod1,int lod2,int additive,int sprite,int alpha){
         simulationCensus(sceneFrame,generation,live,models);
@@ -367,8 +389,12 @@ public final class ClientFrameCapture {
                         java.util.stream.Stream.of("scene_frame,view,candidates,computed,bytes_written"),
                         w.poses.stream()).toList(),StandardOpenOption.CREATE_NEW);
                 Files.write(directory.resolve(name+"-storm.csv"),java.util.stream.Stream.concat(java.util.stream.Stream.of(
-                        "scene_frame,worker,identity,tick,sequence,display_slot,member_range,terrain_boxes,queued,in_flight,input_bytes,applied,cpu_submit_ms,gpu_control_ms,gpu_instance_prepare_ms,gpu_ias_ms,gpu_trace_ms,gpu_step_ms,gpu_feedback_ms,gpu_display_ms,display_records,display_record_bytes,cpu_input_ms,cpu_gl_release_poll_ms,cpu_native_enqueue_ms,cpu_feedback_consume_ms"),
+                        "scene_frame,worker,identity,tick,sequence,display_slot,member_range,terrain_boxes,queued,in_flight,input_bytes,applied,cpu_submit_ms,gpu_control_ms,gpu_instance_prepare_ms,gpu_ias_ms,gpu_trace_ms,gpu_step_ms,gpu_feedback_ms,gpu_display_ms,display_records,display_record_bytes,worker_input_pack_ms,cpu_gl_release_poll_ms,cpu_native_enqueue_ms,cpu_feedback_consume_ms,worker_terrain_index_ms,worker_terrain_geometry_and_staging_ms,gpu_input_upload_ms,terrain_upload_bytes"),
                         w.stormSamples.stream()).toList(),StandardOpenOption.CREATE_NEW);
+                Files.write(directory.resolve(name+"-storm-display.csv"),java.util.stream.Stream.concat(
+                        java.util.stream.Stream.of("frame,event,sequence,logical_tick,sample_age_ticks,buffer_exhausted,paused,completion_observed_to_ingest_ms"),w.stormDisplay.stream()).toList(),StandardOpenOption.CREATE_NEW);
+                Files.write(directory.resolve(name+"-storm-input.csv"),java.util.stream.Stream.concat(
+                        java.util.stream.Stream.of("frame,game_tick,owner_thread_capture_ms"),w.stormInputs.stream()).toList(),StandardOpenOption.CREATE_NEW);
                 try(var out=Files.newBufferedWriter(directory.resolve(name+"-camera.csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,x,y,z,yaw_degrees,pitch_degrees,vertical_fov_degrees\n");
                     for(int i=0;i<w.size;i++){out.write(w.frames[i]+","+w.sceneFrames[i]);for(var values:w.camera)out.write(","+values[i]);out.write("\n");}

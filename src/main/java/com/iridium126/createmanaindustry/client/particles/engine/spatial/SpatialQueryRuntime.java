@@ -64,7 +64,7 @@ public final class SpatialQueryRuntime implements AutoCloseable {
         String active=!nativeSelected()?"gl":owner==null?"rt-idle":!owner.failure().isEmpty()?"rt-failed":
                 owner.running()?"rt":"rt-waiting";
         var requested=ClientConfig.stormSimulationBackend;
-        return "requested="+requested.name().toLowerCase(Locale.ROOT)+" active="+active+" abi=12"
+        return "requested="+requested.name().toLowerCase(Locale.ROOT)+" active="+active+" abi=13"
                 +(selected!=requested?" switch=pending":"");
     }
     public SpatialScene scene(){return scene;}

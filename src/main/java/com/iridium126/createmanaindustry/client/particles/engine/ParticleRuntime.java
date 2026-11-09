@@ -226,8 +226,13 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
     private final ParticleReadbacks readbacks = new ParticleReadbacks();
     private final StormBatchReadbacks stormBatches=new StormBatchReadbacks();
     private final StormProjectionGpu stormProjection=new StormProjectionGpu();
-    public NativeStormDisplayClock.View nativeDisplayView(double worldTick,boolean paused){
-        return NativeStormSimulation.selected()==null?null:stormProjection.playback(worldTick,paused);
+    public void receiveNativeDisplayHistory(){
+        var owner=NativeStormSimulation.selected();
+        if(owner!=null)owner.drainDisplays(display->stormProjection.receive(gpu.identityEpoch(),display));
+    }
+    public NativeStormDisplayClock.View nativeDisplayView(float partialTick,boolean paused){
+        var owner=NativeStormSimulation.selected();
+        return owner==null?null:stormProjection.playback(owner.displayTick(partialTick),paused);
     }
     private long committedGeneration;
     private ParticleHitRay submittedHitRay;

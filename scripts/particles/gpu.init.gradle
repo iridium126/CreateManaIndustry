@@ -55,7 +55,7 @@ allprojects {
                 }
                 maxHeapSize='5g';workingDir=project.projectDir
                 doFirst{file(project.findProperty('particleOutput')?:'build/particle-engine/verify').mkdirs()}
-                if(entry in ['ParticleReplayGpu','RtTopologyReplayGpu','ParticleEngineGpuValidation']){
+                if(entry in ['ParticleReplayGpu','RtTopologyReplayGpu','ParticleEngineGpuValidation','StormIndexDisplayGpuValidation','StormPlaybackClockGpuValidation']){
                     args "--output=${file(project.findProperty('particleOutput')?:'build/particle-engine/verify').absolutePath}"
                     if(project.hasProperty('particleCapture'))args "--capture=${file(project.property('particleCapture')).absolutePath}"
                     if(project.hasProperty('particleSamples'))args "--samples=${project.property('particleSamples')}"

@@ -158,6 +158,11 @@ void main(){
         uintBitsToFloat(nativeFrame.rows[inputAt+2u]),uintBitsToFloat(nativeFrame.rows[inputAt+3u]),nativeFrame.rows[inputAt+4u]);
     uint member=record.key.x;
     if(member>=uint(mapping.rows.length()))return;
+    if(uPhase==4u){
+        if((record.key.w&uint(CMI_RESOURCE_STORM_DISPLAY_POOF))==0u)
+            publishPlayback(member,record,uPlaybackPriorStamp!=0u);
+        return;
+    }
     if((record.key.w&uint(CMI_RESOURCE_STORM_DISPLAY_POOF))!=0u){
         uint lo=floatBitsToUint(record.position.w),hi=floatBitsToUint(record.previous.w);
         if(hi>uProjectionShown.y||(hi==uProjectionShown.y&&lo>uProjectionShown.x)){

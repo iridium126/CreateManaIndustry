@@ -6,6 +6,26 @@ import static com.iridium126.createmanaindustry.client.allaystorm.StormCollision
 
 /** Resumable owner-thread capture. Changed geometry is unknown until recaptured. */
 public final class StormCollisionCache {
+    /** Per-consumer coalescing journal. Pages are immutable; workers never access the world. */
+    public record Change(Section section,Page page) {}
+    public record Changes(long baseRevision,long revision,boolean reset,List<Change> entries) {}
+    public final class Cursor {
+        private long through=-1;
+        private final Map<Section,Page> changes=new LinkedHashMap<>();
+        private Cursor(){}
+        public Changes poll(){
+            if(through==version)return null;
+            boolean reset=through<0;
+            var rows=new ArrayList<Change>();
+            if(reset)entries.forEach((k,e)->{if(e.page!=null)rows.add(new Change(k,e.page));});
+            else changes.forEach((k,p)->rows.add(new Change(k,p)));
+            var result=new Changes(through,version,reset,List.copyOf(rows));
+            through=version;changes.clear();return result;
+        }
+    }
+    private final Set<Cursor> cursors=Collections.newSetFromMap(new WeakHashMap<>());
+    public Cursor cursor(){var cursor=new Cursor();cursors.add(cursor);return cursor;}
+    private void changed(Section key,Page page){for(var cursor:cursors)if(cursor.through>=0)cursor.changes.put(key,page);}
     public interface Source {
         boolean loaded(Section key);
         /** Already immutable package data / positively known empty section, or null. */
@@ -20,10 +40,10 @@ public final class StormCollisionCache {
     public StormCollisionCache(){this(System::nanoTime);}
     public StormCollisionCache(LongSupplier clock){this.clock=clock;}
     public void demand(Set<Section> keys){
-        if(entries.keySet().removeIf(k->!keys.contains(k)))version++;pending.removeIf(k->!keys.contains(k));
+        if(entries.keySet().removeIf(k->{if(keys.contains(k))return false;changed(k,null);return true;}))version++;pending.removeIf(k->!keys.contains(k));
         for(Section key:keys)if(!entries.containsKey(key)){var e=new Entry();e.revision=++revision;entries.put(key,e);pending.add(key);version++;}
     }
-    public void dirty(Section key){var e=entries.get(key);if(e==null)return;e.dirty=true;e.cursor=0;e.bits=null;e.revision=++revision;pending.add(key);if(e.page!=null){e.page=null;version++;}}
+    public void dirty(Section key){var e=entries.get(key);if(e==null)return;e.dirty=true;e.cursor=0;e.bits=null;e.revision=++revision;pending.add(key);if(e.page!=null){e.page=null;version++;changed(key,null);}}
     public void unavailable(Section key){dirty(key);}
     public void dirtyColumn(int x,int z){for(Section key:entries.keySet())if(key.x()==x&&key.z()==z)unavailable(key);}
     public void capture(Source source,long nanos){
@@ -31,13 +51,13 @@ public final class StormCollisionCache {
         while(attempts-->0&&!pending.isEmpty()&&clock.getAsLong()-begin<nanos){
             Section key=pending.iterator().next();pending.remove(key);var e=entries.get(key);if(e==null)continue;
             if(!source.loaded(key)){pending.add(key);continue;}
-            if(e.cursor==0){var shared=source.snapshot(key,e.revision);if(shared!=null){e.page=shared;e.dirty=false;version++;reused++;continue;}e.bits=new int[WORDS];}
+            if(e.cursor==0){var shared=source.snapshot(key,e.revision);if(shared!=null){e.page=shared;e.dirty=false;version++;changed(key,shared);reused++;continue;}e.bits=new int[WORDS];}
             while(e.cursor<4096){
                 int until=Math.min(4096,e.cursor+32);
                 for(;e.cursor<until;e.cursor++)if(source.solid(key,e.cursor))e.bits[e.cursor>>>5]|=1<<(e.cursor&31);
                 if(clock.getAsLong()-begin>=nanos)break;
             }
-            if(e.cursor==4096){e.page=page(e.revision,e.bits);e.bits=null;e.cursor=0;e.dirty=false;version++;captured++;}
+            if(e.cursor==4096){e.page=page(e.revision,e.bits);e.bits=null;e.cursor=0;e.dirty=false;version++;changed(key,e.page);captured++;}
             else pending.add(key);
         }
         spent=clock.getAsLong()-begin;if(spent>nanos)overruns++;

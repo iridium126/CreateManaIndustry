@@ -1,4 +1,4 @@
-"""Audit ABI 12 submission/consumption/retirement CSVs without hiding late work."""
+"""Audit ABI 12/13 lifecycle CSVs without hiding late work or mixing worker ABIs."""
 from __future__ import annotations
 import csv
 from collections import deque
@@ -13,6 +13,7 @@ def audit(path, require_drained=False):
     peak = submitted = consumed = retired = 0
     peaks = {}
     by_kind = {}
+    worker_abis = {}
     with open(path, newline='', encoding='utf-8-sig') as stream:
         for line, row in enumerate(csv.DictReader(stream), 2):
             worker = (int(row.get('worker_epoch', 0)), row.get('query_kind', 'motion'))
@@ -21,8 +22,11 @@ def audit(path, require_drained=False):
             slot = (*worker, int(row['slot']))
             kind_counts = by_kind.setdefault(worker[1], dict(submitted=0, consumed=0, retired=0))
             event = row['event']
-            if int(row['native_abi']) != 12:
-                errors.append(f'{line}: ABI 12 lifecycle evidence required')
+            abi = int(row['native_abi'])
+            if abi not in (12, 13):
+                errors.append(f'{line}: unsupported native ABI {abi}')
+            if worker_abis.setdefault(worker, abi) != abi:
+                errors.append(f'{line}: native ABI changed within one worker')
             seen = records.setdefault(key, set())
             if event == 'submitted':
                 if seen or slot in owners:

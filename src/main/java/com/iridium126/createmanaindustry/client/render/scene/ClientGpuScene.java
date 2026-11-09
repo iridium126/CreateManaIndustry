@@ -222,10 +222,11 @@ public final class ClientGpuScene {
                     }else frameCoordinator.abort();
                 }finally{if(work.committed()||!work.hasWork())simulationClock.commit(tick);work.close();}
             }
+            particles.receiveNativeDisplayHistory();
             if(lastSimulation!=null&&lastSimulation.generation()==particles.currentGeneration()){
                 frameCoordinator.begin(renderFrameToken());
                 float alpha=simulationClock.alpha();displayTimeSec=AllayStormRuntime.INSTANCE.timeSec()-.05f+alpha*.05f;
-                var nativeView=particles.nativeDisplayView(simulationClock.completedTick()+(double)alpha,Minecraft.getInstance().isPaused());
+                var nativeView=particles.nativeDisplayView(deltaTracker.getGameTimeDeltaPartialTick(false),Minecraft.getInstance().isPaused());
                 var display=modelDisplay.prepare(ParticleBuffers.INSTANCE,ParticlePrograms.INSTANCE,lastSimulation,previousSimulation,alpha,displayTimeSec,camera,view,projectionMatrix,nativeView);
                 displayTimeSec=display.timeSec();
                 displayPublicationId=display.id();

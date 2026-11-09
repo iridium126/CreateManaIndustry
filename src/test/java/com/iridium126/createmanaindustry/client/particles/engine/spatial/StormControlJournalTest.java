@@ -102,9 +102,10 @@ class StormControlJournalTest {
         var out=ByteBuffer.allocate(tick.bytes()).order(ByteOrder.LITTLE_ENDIAN);
         assertEquals(tick.bytes(),tick.encode(out));
         assertEquals(200,out.getLong(24));
-        assertEquals(16,out.getInt(88));
+        assertEquals(0,out.getInt(88));
         assertEquals(0,out.getInt(92));
-        for(int row=0;row<16;row++)assertEquals(-1,out.getInt(STORM_TICK_HEADER_BYTES+row*STORM_TERRAIN_ROW_BYTES+12));
+        assertEquals(-1,out.getLong(STORM_TERRAIN_REVISION_OFFSET));
+        assertEquals(0,out.getLong(STORM_TERRAIN_REVISION_OFFSET+8));
     }
 
     @Test void columnRestoreKeepsTheLastMemberAndMovingTargetIdentity() {

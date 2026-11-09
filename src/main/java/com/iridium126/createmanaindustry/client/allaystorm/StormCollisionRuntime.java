@@ -26,8 +26,9 @@ public final class StormCollisionRuntime implements AutoCloseable {
     private final ClientLevel level;
     private final StormCollisionCache cache=new StormCollisionCache();
     private final StormCollisionGpu gpu=new StormCollisionGpu();
-    private long offered=-1,lastActive;
+    private long lastActive;
     private long nativeCaptureTick=Long.MIN_VALUE;
+    private StormCollisionCache.Cursor gpuCursor;
     private final Map<Section,Long> featherDemand=new HashMap<>();
     private long featherExpiry=Long.MAX_VALUE;
     private int[] bounds;
@@ -124,6 +125,7 @@ public final class StormCollisionRuntime implements AutoCloseable {
     public static Page surfacePage(Section section){return current==null?null:current.cache.fresh(section);}
     public static long spatialVersion(){return current==null?-1:current.cache.version();}
     public static Object spatialSource(){return current==null?null:current.cache;}
+    public static StormCollisionCache spatialCache(){return current==null?null:current.cache;}
     public static Map<Section,Page> spatialPages(){return current==null?Map.of():current.cache.ready();}
     public static void captureForNativeTick(){
         if(current!=null){
@@ -140,7 +142,8 @@ public final class StormCollisionRuntime implements AutoCloseable {
         }
         try{
             if(current.nativeCaptureTick!=current.level.getGameTime())current.cache.capture(current.source,1_000_000);
-            if(current.offered!=current.cache.version()){current.gpu.offer(current.cache.ready());current.offered=current.cache.version();}
+            if(current.gpuCursor==null)current.gpuCursor=current.cache.cursor();
+            var changes=current.gpuCursor.poll();if(changes!=null)current.gpu.offer(changes);
             if(surfaceBegin!=0)StormSurfaceCapture.captureRemaining(Math.max(0,1_000_000-(System.nanoTime()-surfaceBegin)));
             long before=current.gpu.uploaded();current.gpu.pump(131072,500_000);surfaceUploadBudget=(int)Math.max(0,131072-(current.gpu.uploaded()-before));current.gpu.bind(program);
         }catch(RuntimeException|LinkageError failure){

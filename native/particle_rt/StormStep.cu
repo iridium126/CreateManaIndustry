@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
 #include "StormStep.h"
 #include "Spatial.h"
+#include "StormTerrain.h"
 
 namespace {
 using uint=unsigned int;

@@ -25,7 +25,7 @@ public final class ParticleEngineGpuValidation {
     static void ui(int p,String name,int n){GL41.glProgramUniform1ui(p,GL20.glGetUniformLocation(p,name),n);}
     static void phase(int p,int phase,int n){ui(p,"phase",phase);GL20.glUseProgram(p);GL43.glDispatchCompute(Math.max(1,(n+255)/256),1,1);GL42.glMemoryBarrier(GL42.GL_ALL_BARRIER_BITS);}
     static ByteBuffer packet(int n,int terrain,long nonce,long tick,int kind){
-        var b=bytes(128+(n+terrain)*64);b.putInt(0,0x41313149).putInt(4,12).putLong(8,nonce).putLong(16,91).putLong(24,tick).putLong(32,tick+1).putInt(40,n).putFloat(48,1).putFloat(52,.05f).putFloat(56,.1f).putLong(64,91).putInt(72,1).putInt(76,2).putInt(80,kind).putInt(112,terrain).putInt(116,32+n*16);
+        var b=bytes(128+(n+terrain)*64);b.putInt(0,0x41313149).putInt(4,ABI).putLong(8,nonce).putLong(16,91).putLong(24,tick).putLong(32,tick+1).putInt(40,n).putFloat(48,1).putFloat(52,.05f).putFloat(56,.1f).putLong(64,91).putInt(72,1).putInt(76,2).putInt(80,kind).putInt(112,terrain).putInt(116,32+n*16);
         for(int i=0;i<n;i++){int at=128+i*64;b.putFloat(at,i*.8f).putFloat(at+12,.34f).putFloat(at+16,8).putFloat(at+28,kind==1?10:16).putInt(at+32,i).putInt(at+36,1234+i).putInt(at+40,9).putInt(at+44,1).putFloat(at+48,8);}
         return b;
     }
@@ -331,7 +331,7 @@ public final class ParticleEngineGpuValidation {
         }finally{GL11.glDeleteTextures(rowTexture);GL11.glDeleteTextures(metaTexture);for(int b:new int[]{rows,pool,meta,scratch,grid,counter})GL15.glDeleteBuffers(b);GL20.glDeleteProgram(p);}
     }
     static void nativeQueries(List<Object> cases)throws Exception{
-        Path modules=Path.of(".gradle/particle-rt/build");SpatialNative.load(modules);check(SpatialNative.abi()==12,"ABI 12");long bridge=0,worker=0;int n=257;long[] tickets=new long[3];
+        Path modules=Path.of(".gradle/particle-rt/build");SpatialNative.load(modules);check(SpatialNative.abi()==ABI,"current ABI");long bridge=0,worker=0;int n=257;long[] tickets=new long[3];
         try{
             bridge=SpatialNative.createBuffers(128+n*64,3);worker=SpatialNative.create(bridge,n,0,2,91,modules.toAbsolutePath().toString());
             for(int frame=0;frame<8;frame++){
@@ -510,7 +510,7 @@ public final class ParticleEngineGpuValidation {
         for(int sx=-4;sx<=4;sx++)for(int sy=0;sy<9;sy++)for(int sz=-4;sz<=4;sz++)
             pages.put(new StormCollisionPages.Section(sx,sy,sz),StormCollisionPages.AIR);
         pages.put(new StormCollisionPages.Section(x>>4,y>>4,z>>4),0);
-        int[] terrain=StormCollisionPages.table(pages);
+        int[] terrain=StormCollisionPages.table(pages).words();
         int bit=(x&15)|((z&15)<<4)|((y&15)<<8);
         long bridge=(long)createBridge.invoke(null,STORM_DISPLAY_HEADER_BYTES+2L*STORM_DISPLAY_RECORD_BYTES+
                 (long)STORM_COLUMN_SLOTS*STORM_COLUMN_MEMBERS*STORM_DISPLAY_COLUMN_BYTES,RT_SLOTS);
@@ -526,7 +526,7 @@ public final class ParticleEngineGpuValidation {
                 input.put(0,stormTick(seq,seq,100+seq,1,2,false),0,STORM_TICK_HEADER_BYTES);
                 input.putInt(8,commands).putInt(40,3).putFloat(64,0);
                 if(seq==1){
-                    input.putInt(88,terrain.length/4).putInt(92,1);
+                    input.putInt(88,terrain.length/4).putInt(92,1).putLong(STORM_TERRAIN_REVISION_OFFSET,-1).putLong(STORM_TERRAIN_REVISION_OFFSET+8,1);
                     stormCommand(input,0,STORM_CONTROL_SPAWN,0,2,0,0);
                     int at=stormCommand(input,1,STORM_CONTROL_DOME_STATE,0,1,STORM_DOME_CONTROL_CREATE|1,79);
                     input.putFloat(at+4,64).putFloat(at+16,input.getFloat(80)).putFloat(at+20,20)
@@ -576,6 +576,7 @@ public final class ParticleEngineGpuValidation {
                         terrainRows*STORM_TERRAIN_ROW_BYTES+(terrainRows==0?0:STORM_TERRAIN_PAGE_BYTES));
                 input.put(0,stormTick(sequence,sequence+100,sequence+100,1,true,false),0,STORM_TICK_HEADER_BYTES);
                 input.putInt(8,commands).putFloat(52,1.03f).putInt(88,terrainRows).putInt(92,terrainRows==0?0:1).putInt(156,sequence==3?0:1);
+                if(terrainRows!=0)input.putLong(STORM_TERRAIN_REVISION_OFFSET,-1).putLong(STORM_TERRAIN_REVISION_OFFSET+8,1);
                 if(sequence==1){
                     stormCommand(input,0,STORM_CONTROL_SPAWN,0,1,1,0);
                     int base=STORM_TICK_HEADER_BYTES+STORM_CONTROL_BYTES;
@@ -651,6 +652,7 @@ public final class ParticleEngineGpuValidation {
                 var packet=bytes(STORM_TICK_HEADER_BYTES+count*STORM_CONTROL_BYTES+terrainRows*STORM_TERRAIN_ROW_BYTES);
                 packet.put(0,stormTick(sequence,200+sequence,200+sequence,1,true,false),0,STORM_TICK_HEADER_BYTES);
                 packet.putInt(8,count).putInt(12,members).putInt(88,terrainRows);
+                if(terrainRows!=0)packet.putLong(STORM_TERRAIN_REVISION_OFFSET,-1).putLong(STORM_TERRAIN_REVISION_OFFSET+8,1);
                 if(sequence==1){
                     stormCommand(packet,0,STORM_CONTROL_SPAWN,0,members,0,0);
                     int base=STORM_TICK_HEADER_BYTES+count*STORM_CONTROL_BYTES;

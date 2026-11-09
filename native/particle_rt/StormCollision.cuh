@@ -15,12 +15,17 @@ struct StormCollision {
         if(!terrain.rows||terrain.mask==0)return -1;
         if(hasPage&&same(cached,p))return page;
         cached=p;hasPage=true;page=-1;
-        unsigned h=unsigned(p.x)*0x8da6b343u^unsigned(p.y)*0xd8163841u^unsigned(p.z)*0xcb1ab31fu;
-        unsigned row=(h^(h>>16))&terrain.mask;
+        unsigned row=stormSectionHash(p.x,p.y,p.z)&terrain.mask;
         for(unsigned i=0;i<8;i++,row=(row+1)&terrain.mask){
             auto v=terrain.rows[row];
             if(v.w==-1)break;
             if(v.x==p.x&&v.y==p.y&&v.z==p.z){page=v.w;break;}
+        }
+        if(page==-1){
+            unsigned lo=terrain.mask+1,hi=lo+terrain.overflow;
+            while(lo<hi){unsigned mid=lo+(hi-lo)/2;auto v=terrain.rows[mid];
+                int c=v.x<p.x?-1:v.x>p.x?1:v.y<p.y?-1:v.y>p.y?1:v.z<p.z?-1:v.z>p.z?1:0;
+                if(c<0)lo=mid+1;else if(c>0)hi=mid;else{page=v.w;break;}}
         }
         return page;
     }

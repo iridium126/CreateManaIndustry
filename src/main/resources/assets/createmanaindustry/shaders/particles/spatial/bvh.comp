@@ -20,7 +20,7 @@ uint total(){return ranged?max(1u,memberCount+terrainCount):capacity+terrainCapa
 bool finite3(vec3 p){return !any(isnan(p))&&!any(isinf(p));}
 bool descriptorValid(){
  uvec2 target=sourceTick+uvec2(1,0);if(target.x==0u)target.y++;
- return inputData.header[0]==0x41313149u&&inputData.header[1]==12u&&all(equal(uvec2(inputData.header[2],inputData.header[3]),nonce))
+ return inputData.header[0]==0x41313149u&&inputData.header[1]==uint(CMI_RESOURCE_ABI)&&all(equal(uvec2(inputData.header[2],inputData.header[3]),nonce))
   &&all(equal(uvec2(inputData.header[4],inputData.header[5]),epoch))&&all(equal(uvec2(inputData.header[6],inputData.header[7]),sourceTick))
   &&all(equal(uvec2(inputData.header[8],inputData.header[9]),target))&&inputData.header[10]==capacity&&inputData.header[11]==0u
   &&all(equal(uvec2(inputData.header[16],inputData.header[17]),scene))&&inputData.header[18]==1u&&inputData.header[19]==probes&&inputData.header[20]==kind

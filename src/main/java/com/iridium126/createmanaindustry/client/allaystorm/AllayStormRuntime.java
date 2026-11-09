@@ -901,6 +901,8 @@ public final class AllayStormRuntime {
     public void captureNativeTick(long tick,net.minecraft.client.player.LocalPlayer player){
         var inputs=nativeInputs;
         if(inputs==null||!inputs.due())return;
+        var capture=com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE;
+        long captureStart=capture.collecting()?System.nanoTime():0;
         try{
             tickClock(tick,0);
             if(stormActive){
@@ -918,6 +920,8 @@ public final class AllayStormRuntime {
                     stormConvRate,stormOmegaNow,timeSec,AllayStormSpec.MAX_SPEED,
                     eligible?player:null,eligible?player.getId():0,eligible?player.position().add(0,.5,0):null,
                     level==null?java.util.List.of():level.players(),stormAuthority?stormCorrectionHz:0);
+            com.iridium126.createmanaindustry.client.particles.engine.spatial.NativeStormSimulation.prepareCapturedInputs();
+            if(captureStart!=0)capture.stormInputCaptured(tick,(System.nanoTime()-captureStart)*1e-6);
         }catch(RuntimeException|LinkageError failure){
             inputs.stop(failure.toString());
             com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn("Native Storm input timeline stopped",failure);

@@ -18,7 +18,7 @@ public final class RtTopologyReplayGpu {
         void main(){
          uint i=gl_GlobalInvocationID.x;
          if(i==0u){for(uint k=0u;k<32u;k++)p.header[k]=0u;
-          p.header[0]=0x41313149u;p.header[1]=12u;p.header[2]=step+1u;p.header[4]=91u;p.header[6]=step;p.header[8]=step+1u;
+          p.header[0]=0x41313149u;p.header[1]=13u;p.header[2]=step+1u;p.header[4]=91u;p.header[6]=step;p.header[8]=step+1u;
           p.header[10]=capacity;p.header[12]=floatBitsToUint(float(step)*.05);p.header[13]=floatBitsToUint(.05);p.header[14]=floatBitsToUint(.1);
           p.header[16]=91u+scenario;p.header[18]=1u;p.header[19]=2u;p.header[28]=terrainCount;p.header[29]=32u+capacity*16u;
          }

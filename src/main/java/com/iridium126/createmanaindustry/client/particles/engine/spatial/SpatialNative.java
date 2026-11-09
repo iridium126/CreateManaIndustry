@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 import java.nio.file.Path;
 import static com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.*;
 
-/** ABI 12. Loading this class never loads CUDA; GL remains a complete backend. */
+/** ABI 13. Loading this class never loads CUDA; GL remains a complete backend. */
 public final class SpatialNative {
     private static Path loaded;
     private static String loadedVersion="unloaded";

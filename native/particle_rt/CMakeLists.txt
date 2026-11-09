@@ -13,7 +13,7 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/spatial.optixir"
  DEPENDS rt.cu Spatial.h StormStep.h ResourceLayout.h OcclusionProof.h VERBATIM)
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/storm_step.fatbin"
  COMMAND "${NVCC}" --fatbin -std=c++17 --fmad=false --generate-code=arch=compute_75,code=compute_75 --generate-code=arch=compute_89,code=sm_89 ${DEVICE_INCLUDES} "-I${STORM_MATH_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/StormStep.cu" -o "${CMAKE_CURRENT_BINARY_DIR}/storm_step.fatbin"
- DEPENDS StormStep.cu StormStep.h Spatial.h StormCollision.cuh StormNavigation.cuh StormDome.cuh StormHelix.cuh StormContact.cuh StormColumn.cuh ResourceLayout.h "${STORM_MATH_DIR}/storm_home.glsl" VERBATIM)
+ DEPENDS StormStep.cu StormStep.h Spatial.h StormTerrain.h StormCollision.cuh StormNavigation.cuh StormDome.cuh StormHelix.cuh StormContact.cuh StormColumn.cuh ResourceLayout.h "${STORM_MATH_DIR}/storm_home.glsl" VERBATIM)
 add_custom_target(particle_device ALL DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/spatial.fatbin" "${CMAKE_CURRENT_BINARY_DIR}/spatial.optixir" "${CMAKE_CURRENT_BINARY_DIR}/storm_step.fatbin")
 set(CMI_RT_FATBIN "${CMAKE_CURRENT_BINARY_DIR}/spatial.fatbin")
 set(CMI_RT_OPTIXIR "${CMAKE_CURRENT_BINARY_DIR}/spatial.optixir")

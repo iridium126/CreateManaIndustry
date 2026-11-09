@@ -10,10 +10,14 @@ import java.util.ArrayList;
 public final class NativeStormSimulation {
     public interface FrozenDisplay extends AutoCloseable {
         int buffer();
+        /** Monotonic input tick used by GPU playback history. */
         long tick();
+        /** Server-correctable world time, retained for gameplay and attack poses. */
         long gameTime();
         long sequence();
         long identity();
+        default long epoch(){return 0;}
+        default long completedNanos(){return 0;}
         @Override void close();
     }
 
@@ -47,6 +51,10 @@ public final class NativeStormSimulation {
                 hit==null?null:new StormFeedback.NativeHit(hit.target(),hit.x(),hit.y(),hit.z(),hit.time()));
     }
     public static NativeStormSimulation selected(){return selected;}
+    public static void prepareCapturedInputs(){
+        var owner=selected;
+        if(owner!=null&&owner.control!=null)owner.control.prepareInputs();
+    }
     private void acceptPositions(NativeStormControl.PositionFeedback batch){
         if(batch.identity()==inputs.generation())
             StormFeedback.INSTANCE.acceptPositionSnapshot(storm.identity(),batch.tick(),batch.rows());
@@ -88,7 +96,15 @@ public final class NativeStormSimulation {
             control.service();
         }
     }
+    public double displayTick(float partialTick){return inputs.displayTick(partialTick);}
     public FrozenDisplay display(){return retired||control==null?null:control.display(inputs.generation());}
+    public void drainDisplays(java.util.function.Consumer<FrozenDisplay> sink){
+        if(retired||control==null)return;
+        // The early service starts CUDA work before GL simulation. Poll again at
+        // the display deadline to pick up work completed during that simulation.
+        service();
+        control.drainDisplays(inputs.generation(),sink);
+    }
     public void displayCommitted(long identity,long sequence){inputs.displayCommitted(identity,sequence);}
     public String failure(){return inputs.failure().isEmpty()&&control!=null?control.failure():inputs.failure();}
     boolean running(){return control!=null&&failure().isEmpty();}

@@ -2,6 +2,7 @@
 #include "ParticleDevice.h"
 #include "StormStep.h"
 #include "StormSpatial.h"
+#include "StormTerrain.h"
 #include "Interop.h"
 #include <array>
 #include <algorithm>
@@ -13,6 +14,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <thread>
+#include <chrono>
 
 namespace {
 constexpr unsigned slots=CMI_RESOURCE_RT_SLOTS, block=256;
@@ -24,7 +26,9 @@ struct DomeUpload {
 };
 struct TickSlot {
     CUevent done{};
-    std::array<CUevent,8> marks{};
+    std::array<CUevent,10> marks{};
+    double terrainMs{},packMs{},uploadBytes{};
+    unsigned terrainCount{};
     bool timed{};
     StormStepReceipt* receipt{};
     CUdeviceptr deviceReceipt{};
@@ -61,7 +65,10 @@ class StormControlSession {
     CUfunction compactFeather{};
     CUdeviceptr members{},deviceControls{},devicePlayers{};
     CUdeviceptr terrainRows{},terrainCells{};
-    unsigned terrainMask{},terrainRevision{};
+    unsigned terrainMask{},terrainRevision{},terrainOverflow{};
+    StormTerrainCache terrainCache;
+    std::shared_ptr<const TerrainSnapshot> workerGeometry;
+    unsigned workerGeometryCount{};
     CUdeviceptr domeAttacks{},helixAttacks{},domeAssignments{},domeRoutes{},domeSearches{},domeBatch{};
     CUdeviceptr columns{},columnStates{},columnRestores{};
     CUdeviceptr featherCells{},featherResult{};
@@ -132,7 +139,7 @@ class StormControlSession {
         if(input.columnCaptureCount)return sizeof(StormDomeBatch);
         return input.positionSnapshot?offsetof(StormDomeBatch,columnCaptures):offsetof(StormDomeBatch,positions);
     }
-    static size_t maxTerrainUpload(){return rowBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS)+cellBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES);}
+    static size_t maxTerrainUpload(){return rowBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS+CMI_RESOURCE_STORM_TERRAIN_MAX_SECTIONS)+cellBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES);}
     static bool regionalCommand(StormControl op){
         return op.op>=CMI_RESOURCE_STORM_CONTROL_DOME_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW;
     }
@@ -220,7 +227,7 @@ class StormControlSession {
         if(!std::isfinite(input.seconds)||input.seconds<0.f||input.seconds>=104857.6f)reject("world clock");
         if(input.magic!=CMI_RESOURCE_STORM_TICK_MAGIC||input.abi!=CMI_RESOURCE_ABI||input.controls>CMI_RESOURCE_STORM_MAX_CONTROLS
             ||input.terrainRows>CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS||input.terrainPages>CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES
-            ||(input.terrainRows==0?input.terrainPages!=0:input.terrainRows<16||(input.terrainRows&(input.terrainRows-1))!=0)
+            ||(input.terrainRows==0&&input.terrainPages!=0)
             ||input.playerCount>CMI_RESOURCE_STORM_PLAYER_LIMIT||input.positionSnapshot>1u
             ||input.columnCaptureCount>CMI_RESOURCE_STORM_COLUMN_CAPTURE_LIMIT
             ||input.featherImpacts>1u
@@ -626,11 +633,23 @@ public:
                 s.templateUpload.reset();
             }
             if(timed)for(auto& event:s.marks)if(!event)checked(cuEventCreate(&event,CU_EVENT_DEFAULT));
-            if(input.terrainRows){
-                if(!terrainRows)allocate(terrainRows,rowBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS));
-                if(!terrainCells)allocate(terrainCells,cellBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES));
+            auto terrainStart=std::chrono::steady_clock::now();
+            bool terrainChanged=terrainCache.apply(input,commands+commandBytes(input.controls));
+            auto terrainEnd=std::chrono::steady_clock::now();
+            s.terrainMs=std::chrono::duration<double,std::milli>(terrainEnd-terrainStart).count();
+            size_t indexBytes=terrainCache.index.size()*sizeof(int4);
+            if(terrainChanged){
+                if(!terrainRows)allocate(terrainRows,rowBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS+CMI_RESOURCE_STORM_TERRAIN_MAX_SECTIONS));
+                if(!terrainCells&&!terrainCache.uploads.empty())allocate(terrainCells,cellBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES));
                 if(!s.terrainUpload)checked(cuMemAllocHost(&s.terrainUpload,maxTerrainUpload()));
-                std::memcpy(s.terrainUpload,commands+commandBytes(input.controls),rowBytes(input.terrainRows)+cellBytes(input.terrainPages));
+                std::memcpy(s.terrainUpload,terrainCache.index.data(),indexBytes);
+                std::sort(terrainCache.uploads.begin(),terrainCache.uploads.end());
+                auto source=commands+commandBytes(input.controls)+rowBytes(input.terrainRows);
+                for(size_t i=0;i<terrainCache.uploads.size();i++)
+                    std::memcpy(static_cast<unsigned char*>(s.terrainUpload)+indexBytes+cellBytes(unsigned(i)),source+cellBytes(terrainCache.uploads[i].second),cellBytes(1));
+                auto rows=terrainCache.geometryRows();
+                workerGeometryCount=unsigned(rows.size());
+                workerGeometry=copyTerrainSnapshot(1,++terrainRevision,rows.data(),int(rows.size()),rows.size()*sizeof(SpatialParticle),CMI_RESOURCE_STORM_SPATIAL_TERRAIN_LIMIT);
             }
             if(input.playerCount){
                 size_t limit=playerBytes(CMI_RESOURCE_STORM_PLAYER_LIMIT);
@@ -639,17 +658,25 @@ public:
                 auto start=commands+commandBytes(input.controls)+rowBytes(input.terrainRows)+cellBytes(input.terrainPages);
                 std::memcpy(s.playerUpload,start,playerBytes(input.playerCount));
             }
+            s.packMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-terrainEnd).count();
+            s.uploadBytes=terrainChanged?indexBytes+cellBytes(unsigned(terrainCache.uploads.size())):0;
             if(s.delay)
                 checked(cuLaunchHostFunc(stream,injectedDelay,reinterpret_cast<void*>(uintptr_t(s.delay))));
             mark(0);
-            if(input.terrainRows){
-                auto rows=rowBytes(input.terrainRows);
-                checked(cuMemcpyHtoDAsync(terrainRows,s.terrainUpload,rows,stream));
-                if(input.terrainPages)checked(cuMemcpyHtoDAsync(terrainCells,static_cast<unsigned char*>(s.terrainUpload)+rows,cellBytes(input.terrainPages),stream));
-                terrainMask=input.terrainRows-1;
-                terrainRevision++;
+            mark(8);
+            if(terrainChanged){
+                checked(cuMemcpyHtoDAsync(terrainRows,s.terrainUpload,indexBytes,stream));
+                for(unsigned first=0;first<terrainCache.uploads.size();){
+                    unsigned end=first+1;
+                    while(end<terrainCache.uploads.size()&&terrainCache.uploads[end].first==terrainCache.uploads[first].first+end-first)end++;
+                    checked(cuMemcpyHtoDAsync(terrainCells+cellBytes(terrainCache.uploads[first].first),
+                        static_cast<unsigned char*>(s.terrainUpload)+indexBytes+cellBytes(first),cellBytes(end-first),stream));
+                    first=end;
+                }
+                terrainMask=terrainCache.primary-1;terrainOverflow=terrainCache.overflow;
             }
             if(input.playerCount)checked(cuMemcpyHtoDAsync(devicePlayers,s.playerUpload,playerBytes(input.playerCount),stream));
+            mark(9);
             stage="Storm controls";
             applyControls(s,input,commands);
             if(input.positionSnapshot||input.columnCaptureCount)ensureBatch();
@@ -666,12 +693,13 @@ public:
                 checked(cuLaunchKernel(domePrepare,domeSlots,1,1,128,1,1,0,stream,args,nullptr));
             }
             mark(1);
+            s.terrainCount=workerGeometryCount;
             if(active&&input.population){
                 stage="Storm spatial query";
                 checked(cuMemsetD32Async(domeSearches,0,2,stream));
-                StormTerrain terrain{reinterpret_cast<const int4*>(terrainRows),reinterpret_cast<const uint32_t*>(terrainCells),terrainMask,terrainRevision};
+                StormTerrain terrain{reinterpret_cast<const int4*>(terrainRows),reinterpret_cast<const uint32_t*>(terrainCells),terrainMask,terrainRevision,terrainOverflow};
                 auto hints=queryStormSpatial(*spatial,unsigned((input.sequence-1)%slots),prepareSpatial,members,input,
-                    s.geometry.get(),timed?s.marks.data()+2:nullptr);
+                    s.geometry?s.geometry.get():workerGeometry.get(),timed?s.marks.data()+2:nullptr);
                 stage="Storm member advance";
                 void* args[]={&members,&input,&terrain,&view,&devicePlayers,&hints};launch(advance,input.population,args);
                 mark(5);
@@ -815,17 +843,21 @@ public:
         }
         return count;
     }
-    std::array<double,8> timing(uint64_t sequence){
+    std::array<double,13> timing(uint64_t sequence){
         if(poll(sequence)!=complete)throw std::runtime_error("Storm timing requires a completed receipt");
         auto& s=ring[consumed%slots];
         if(!s.timed)throw std::runtime_error("Storm tick timing was not requested");
-        std::array<double,8> values{};
+        std::array<double,13> values{};
         for(unsigned i=0;i<7;i++){
             float ms;
             checked(cuEventElapsedTime(&ms,s.marks[i],s.marks[i+1]));
             values[i]=ms;
         }
         values[7]=s.receipt->displayRecords;
+        values[8]=s.terrainMs;values[9]=s.packMs;
+        float uploadMs;checked(cuEventElapsedTime(&uploadMs,s.marks[8],s.marks[9]));
+        values[10]=uploadMs;values[11]=s.uploadBytes;
+        values[12]=s.terrainCount;
         return values;
     }
     const std::string& diagnostics() const { return error; }

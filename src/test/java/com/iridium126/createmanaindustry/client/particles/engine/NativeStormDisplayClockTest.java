@@ -4,6 +4,32 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 final class NativeStormDisplayClockTest {
+    @Test void actualSampleTimestampsDefineTheInterpolationIntervals(){
+        var clock=new NativeStormDisplayClock();
+        clock.commit(1,100,false,clock.transition(1,100,false));
+        clock.commit(2,102,true,clock.transition(2,102,true));
+        clock.commit(3,103,true,clock.transition(3,103,true));
+        assertEquals(new NativeStormDisplayClock.Weights(.5f,.5f,0,0),clock.sample(103,1,false));
+        assertEquals(new NativeStormDisplayClock.Weights(0,.5f,.5f,0),clock.sample(104.5,2,false));
+    }
+    @Test void frameRateAndVariableCompletionPhaseDoNotLoseIntermediateSamples(){
+        for(int fps:new int[]{30,60,144,240}){
+            var clock=new NativeStormDisplayClock();int accepted=99;
+            for(int frame=0;frame<fps*8;frame++){
+                double world=100+20.0*frame/fps;
+                while(accepted+1+.15+.55*(1+Math.sin((accepted+1)*.37))*.5<=world){
+                    accepted++;
+                    clock.commit(accepted,accepted,accepted>100,clock.transition(accepted,accepted,accepted>100));
+                }
+                if(accepted<100)continue;
+                var w=clock.sample(world,1+1_000_000_000L*frame/fps,false);
+                if(world<104)continue;
+                assertFalse(clock.held(),"healthy delayed producer at "+fps+" FPS");
+                double position=(accepted-2.0)*w.oldest()+(accepted-1.0)*w.previous()+(double)accepted*w.current();
+                assertEquals(world-2,position,2e-5,"all completion samples retained at "+fps+" FPS");
+            }
+        }
+    }
     @Test void consecutiveSamplesAndRepeatedPublicationsPlayAtTwoTicksOfDelay(){
         var clock=new NativeStormDisplayClock();
         for(int tick=10;tick<=12;tick++)
@@ -30,7 +56,7 @@ final class NativeStormDisplayClockTest {
         assertEquals(0,clock.sample(17,600_000_001,false).anchor());
     }
 
-    @Test void backwardWorldCorrectionDoesNotRewindPublishedPositions(){
+    @Test void backwardLogicalDiscontinuityUsesTheLastDrawAsRecoveryAnchor(){
         var clock=new NativeStormDisplayClock();
         clock.commit(10,100,false,clock.transition(10,100,false));
         var shown=clock.sample(101.25,1,false);

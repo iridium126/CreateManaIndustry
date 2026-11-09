@@ -2,7 +2,7 @@
 #include "Spatial.h"
 __device__ bool descriptorValid(SpatialParams p){
  auto h=p.input;
- return h[0]==0x41313149u&&h[1]==12u&&h[2]==unsigned(p.nonce)&&h[3]==unsigned(p.nonce>>32)&&h[4]==unsigned(p.epoch)&&h[5]==unsigned(p.epoch>>32)
+ return h[0]==0x41313149u&&h[1]==CMI_RESOURCE_ABI&&h[2]==unsigned(p.nonce)&&h[3]==unsigned(p.nonce>>32)&&h[4]==unsigned(p.epoch)&&h[5]==unsigned(p.epoch>>32)
   &&h[6]==unsigned(p.generation)&&h[7]==unsigned(p.generation>>32)&&
   (static_cast<unsigned long long>(h[8])|(static_cast<unsigned long long>(h[9])<<32))==p.generation+1
   &&h[10]==p.capacity&&h[11]==0u&&h[16]==unsigned(p.scene)&&h[17]==unsigned(p.scene>>32)&&h[18]==1u&&h[19]==p.probes&&h[20]==p.kind

@@ -4,15 +4,21 @@ uniform bool uStormCollisionOn;
 layout(binding=1) uniform usampler3D uStormCollisionAtlas;
 layout(binding=2) uniform isamplerBuffer uStormCollisionTable;
 uniform uint uStormCollisionMask;
+uniform uint uStormCollisionOverflow;
 uniform uint uStormCollisionRevision;
 bool cmiStormVoxel=false,cmiStormMissing=false,cmiStormEmbedded=false;
 ivec3 cmiStormCached=ivec3(2147483647);int cmiStormCachedPage=-1;
-uint cmiStormSectionHash(ivec3 key){uint h=uint(key.x)*0x8da6b343u^uint(key.y)*0xd8163841u^uint(key.z)*0xcb1ab31fu;return h^(h>>16u);}
+uint cmiStormMix(uint v){v=(v^(v>>16u))*0x7feb352du;v=(v^(v>>15u))*0x846ca68bu;return v^(v>>16u);}
+uint cmiStormSectionHash(ivec3 key){uint y=cmiStormMix(uint(key.y)+0x85ebca6bu),z=cmiStormMix(uint(key.z)+0xc2b2ae35u);return cmiStormMix(cmiStormMix(uint(key.x)+0x9e3779b9u)^((y<<11u)|(y>>21u))^((z<<22u)|(z>>10u)));}
 int cmiStormLookupPage(ivec3 key){
  int page=-1;
  if(uStormCollisionOn){uint row=cmiStormSectionHash(key)&uStormCollisionMask;
   // A uniform bound avoids exponential driver unrolling in nested body probes.
-  uint probes=min(8u,uStormCollisionMask+1u);for(uint i=0u;i<probes;i++,row=(row+1u)&uStormCollisionMask){ivec4 entry=texelFetch(uStormCollisionTable,int(row));if(entry.w==-1)break;if(all(equal(entry.xyz,key))){page=entry.w;break;}}
+  uint probes=min(8u,uStormCollisionMask+1u);for(uint i=0u;i<probes;i++,row=(row+1u)&uStormCollisionMask){ivec4 entry=texelFetch(uStormCollisionTable,int(row));if(entry.w==-1)break;if(all(equal(entry.xyz,key)))return entry.w;}
+  uint lo=uStormCollisionMask+1u,hi=lo+uStormCollisionOverflow;
+  while(lo<hi){uint mid=lo+(hi-lo)/2u;ivec4 entry=texelFetch(uStormCollisionTable,int(mid));
+   int c=entry.x<key.x?-1:entry.x>key.x?1:entry.y<key.y?-1:entry.y>key.y?1:entry.z<key.z?-1:entry.z>key.z?1:0;
+   if(c<0)lo=mid+1u;else if(c>0)hi=mid;else return entry.w;}
  }
  return page;
 }

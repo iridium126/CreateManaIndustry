@@ -13,8 +13,11 @@ import static com.iridium126.createmanaindustry.client.allaystorm.StormCollision
 /** Independent bit atlas, versioned replacement pages and four nonblocking table banks. */
 public final class StormCollisionGpu implements AutoCloseable {
     private record Resident(Page page,int slot) {}
-    private static final class Bank {int buffer,texture,mask,progress,rows;long fence,serial;ByteBuffer staging;final BitSet references=new BitSet();java.util.List<Section> surfaceChanges=java.util.List.of();}
+    private static final class Bank {int buffer,texture,mask,overflow,progress,rows,storageBytes;long fence,serial;ByteBuffer staging;java.util.concurrent.CompletableFuture<Index> index;final BitSet references=new BitSet();java.util.List<Section> surfaceChanges=java.util.List.of();}
     private final Bank[] banks={new Bank(),new Bank(),new Bank(),new Bank()};
+    private final java.util.concurrent.ExecutorService indexWorker=java.util.concurrent.Executors.newSingleThreadExecutor(task->{
+        var thread=new Thread(task,"CMI Storm collision index");thread.setDaemon(true);return thread;
+    });
     private final Map<Section,Resident> residents=new HashMap<>();
     private final LinkedHashMap<Section,Page> pending=new LinkedHashMap<>();
     private final BitSet occupied=new BitSet();
@@ -53,6 +56,15 @@ public final class StormCollisionGpu implements AutoCloseable {
             else pending.put(item.getKey(),page);
         }
     }
+    public void offer(StormCollisionCache.Changes delta){
+        if(delta.reset()){for(var key:residents.keySet())changed(key);residents.clear();pending.clear();}
+        for(var entry:delta.entries()){
+            var key=entry.section();var page=entry.page();
+            if(page==null||page.kind()==UNKNOWN){residents.remove(key);pending.remove(key);changed(key);}
+            else if(page.kind()<0){residents.put(key,new Resident(page,page.kind()));pending.remove(key);changed(key);}
+            else pending.put(key,page);
+        }
+    }
     private boolean complete(Bank bank){
         if(bank.fence==0)return true;
         int status=GL32.glClientWaitSync(bank.fence,0,0);
@@ -71,23 +83,37 @@ public final class StormCollisionGpu implements AutoCloseable {
             var bank=banks[i];var rows=new HashMap<Section,Integer>();bank.references.clear();
             residents.forEach((key,resident)->{rows.put(key,resident.slot);if(resident.slot>=0)bank.references.set(resident.slot);});
             bank.surfaceChanges=java.util.List.copyOf(surfaceChanges.keySet());
-            bank.rows=rows.size();int[] table=table(rows);bank.staging=MemoryUtil.memAlloc(table.length*4).order(ByteOrder.nativeOrder());bank.staging.asIntBuffer().put(table);
-            bank.mask=table.length/4-1;bank.serial=serial;bank.progress=0;
+            bank.rows=rows.size();bank.serial=serial;bank.progress=0;
+            bank.index=java.util.concurrent.CompletableFuture.supplyAsync(()->table(rows),indexWorker);
+            building=i;return;
+        }
+    }
+    private boolean prepareTable(Bank bank){
+        if(bank.index!=null){
+            if(!bank.index.isDone())return false;
+            var index=bank.index.join();bank.index=null;
+            bank.mask=index.primaryRows()-1;bank.overflow=index.overflow();
+            int bytes=index.words().length*4;
+            int capacity=Math.min((MAX_ROWS+MAX_SECTIONS)*16,Integer.highestOneBit(bytes-1)<<1);
+            if(bank.staging==null)bank.staging=MemoryUtil.memAlloc(capacity).order(ByteOrder.nativeOrder());
+            else if(bank.staging.capacity()<bytes)bank.staging=MemoryUtil.memRealloc(bank.staging,capacity).order(ByteOrder.nativeOrder());
+            bank.staging.clear().limit(bytes);bank.staging.asIntBuffer().put(index.words());
             try{
-                GpuBindings.bind(GL31.GL_TEXTURE_BUFFER,bank.buffer);GpuTransfers.allocate(GL31.GL_TEXTURE_BUFFER,bank.staging.capacity(),GL15.GL_STREAM_DRAW);
+                GpuBindings.bind(GL31.GL_TEXTURE_BUFFER,bank.buffer);
+                if(bank.storageBytes<bytes){GpuTransfers.allocate(GL31.GL_TEXTURE_BUFFER,capacity,GL15.GL_STREAM_DRAW);bank.storageBytes=capacity;}
                 GL13.glActiveTexture(GL13.GL_TEXTURE2);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,bank.texture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_RGBA32I,bank.buffer);
                 if(GL11.glGetError()!=GL11.GL_NO_ERROR)throw new IllegalStateException("Storm collision page-table allocation failed");
             }catch(RuntimeException|LinkageError failure){MemoryUtil.memFree(bank.staging);bank.staging=null;throw failure;}
-            building=i;return;
         }
+        return true;
     }
     public void pump(int byteBudget,long nanos){
         long began=System.nanoTime();ensure();if(settled()){lastUpload=0;return;}
         reclaim();startTable();int left=byteBudget;
-        if(building>=0){
-            var bank=banks[building];int n=Math.min(left/2,bank.staging.capacity()-bank.progress);n-=n%16;
+        if(building>=0&&prepareTable(banks[building])){
+            var bank=banks[building];int n=Math.min(left/2,bank.staging.limit()-bank.progress);n-=n%16;
             if(n>0){var part=bank.staging.duplicate();part.position(bank.progress).limit(bank.progress+n);GpuBindings.bind(GL31.GL_TEXTURE_BUFFER,bank.buffer);GpuTransfers.upload(GL31.GL_TEXTURE_BUFFER,bank.progress,part);bank.progress+=n;left-=n;uploaded+=n;}
-            if(bank.progress==bank.staging.capacity()){MemoryUtil.memFree(bank.staging);bank.staging=null;published=bank.serial;surfacePublished(bank);current=building;building=-1;}
+            if(bank.progress==bank.staging.limit()){published=bank.serial;surfacePublished(bank);current=building;building=-1;}
         }
         while(left>=BYTES&&!pending.isEmpty()&&System.nanoTime()-began<nanos){
             var iterator=pending.entrySet().iterator();var item=iterator.next();int slot=occupied.nextClearBit(0);
@@ -118,20 +144,22 @@ public final class StormCollisionGpu implements AutoCloseable {
         GpuUniforms.sampler(program,"uStormCollisionAtlas",com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_STORM_ATLAS);
         GpuUniforms.sampler(program,"uStormCollisionTable",com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_STORM_TABLE);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uStormCollisionMask"),banks[current].mask);
+        GpuUniforms.uniform1ui(program,GpuUniforms.loc(program,"uStormCollisionOverflow"),banks[current].overflow);
         GL13.glActiveTexture(GL13.GL_TEXTURE0);
     }
     public void submitted(){if(current<0)return;var bank=banks[current];if(bank.fence!=0)GL32.glDeleteSync(bank.fence);bank.fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);}
     public long revision(){return current<0?-1:banks[current].serial;}
-    public int tableSize(){return current<0?0:banks[current].mask+1;}
+    public int tableSize(){return current<0?0:banks[current].mask+1+banks[current].overflow;}
     public int ready(){return current<0?0:banks[current].rows;}
     public boolean settled(){return pending.isEmpty()&&building<0&&published==serial;}
     public long uploaded(){return uploaded;}
-    public long bytes(){long bytes=(long)capacity*BYTES;for(var bank:banks)bytes+=(long)(bank.mask+1)*16;return atlas==0?0:bytes;}
+    public long bytes(){long bytes=(long)capacity*BYTES;for(var bank:banks)bytes+=bank.storageBytes;return atlas==0?0:bytes;}
     public String stats(){return "gpuReady="+ready()+" pages="+occupied.cardinality()+" bytes="+bytes()+" uploadBytes="+uploaded+" uploadNs="+lastUpload+" overruns="+overruns;}
     public String profilingReport(){return "ready="+ready()+"; pages="+occupied.cardinality()+"; memory="+com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(bytes())
             +"; uploaded total="+com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat.bytes(uploaded)
             +String.format(java.util.Locale.ROOT,"; upload latest=%.3f ms",lastUpload/1e6)+(overruns==0?"":"; overruns="+overruns);}
     @Override public void close(){
+        indexWorker.shutdown();
         for(var bank:banks){if(bank.fence!=0)GL32.glDeleteSync(bank.fence);if(bank.staging!=null)MemoryUtil.memFree(bank.staging);if(bank.buffer!=0)com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames.delete(bank.buffer);if(bank.texture!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(bank.texture);}
         if(atlas!=0)com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(atlas);MemoryUtil.memFree(pageUpload);
     }

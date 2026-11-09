@@ -6,14 +6,14 @@ from spatial_audit import audit
 
 
 class LifecycleEvidenceTest(unittest.TestCase):
-    def check_rows(self, events, drained=True):
+    def check_rows(self, events, drained=True, abi=12):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'spatial.csv'
             with path.open('w', newline='') as stream:
                 writer = csv.writer(stream)
                 writer.writerow(['scene_epoch', 'nonce', 'slot', 'native_abi', 'event'])
                 for nonce, slot, event in events:
-                    writer.writerow([1, nonce, slot, 12, event])
+                    writer.writerow([1, nonce, slot, abi, event])
             return audit(path, drained)
 
     def test_errors_and_destroyed_identities_consume_once(self):
@@ -23,6 +23,8 @@ class LifecycleEvidenceTest(unittest.TestCase):
         result = self.check_rows(events)
         self.assertTrue(result['passed'])
         self.assertEqual((result['submitted'], result['consumed'], result['retired']), (2, 2, 2))
+        self.assertTrue(self.check_rows(events, abi=13)['passed'])
+        self.assertFalse(self.check_rows(events, abi=11)['passed'])
 
     def test_reuse_before_gpu_retirement_is_rejected(self):
         result = self.check_rows([(1, 0, 'submitted'), (1, 0, 'consumed'), (2, 0, 'submitted')])

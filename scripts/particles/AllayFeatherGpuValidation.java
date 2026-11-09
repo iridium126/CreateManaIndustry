@@ -44,7 +44,7 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
                 int[] bits=new int[128];if(solid)for(int a=0;a<256;a++)bits[a>>>5]|=1<<(a&31);
                 pages.put(new StormCollisionPages.Section(x,0,z),StormCollisionPages.page(solid?2:3,bits));
             }
-            terrain.offer(pages);for(int i=0;!terrain.settled()&&i<32;i++)terrain.pump(1<<20,1_000_000_000);check(terrain.settled(),"terrain publication completed");
+            publish(this);
         }
         void range(){GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER,20,grid,prefix*4L,BYTES);}
         void clear(){
@@ -279,7 +279,11 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
         for(int i=0;i<count;i++){int palette=(data.getInt(i*64+56)>>>16)&3;check(palette<3,"valid stable palette");colors[palette]++;}
         for(int palette=0;palette<3;palette++)near(colors[palette]/(double)count,new double[]{.60,.32,.08}[palette],.012,"birth palette proportion");
     }}
-    static void publish(FeatherFixture q){q.terrain.offer(q.pages);for(int i=0;!q.terrain.settled()&&i<64;i++)q.terrain.pump(1048576,1000000000);check(q.terrain.settled(),"surface fixture publication");}
+    static void publish(FeatherFixture q){
+        q.terrain.offer(q.pages);long until=System.nanoTime()+10_000_000_000L;
+        while(!q.terrain.settled()&&System.nanoTime()<until){q.terrain.pump(1048576,1000000000);GL11.glFlush();java.util.concurrent.locks.LockSupport.parkNanos(100_000);}
+        check(q.terrain.settled(),"surface fixture asynchronous publication");
+    }
     static int height(StormSurfaceGpu surface,net.minecraft.world.phys.Vec3 center,int x,int z){
         int ox=((int)Math.floor(center.x)>>4)*16-128,oz=((int)Math.floor(center.z)>>4)*16-128;
         return StormSurfaceCache.height(read(surface.buffer(),StormSurfaceGpu.BYTES).getInt(StormSurfaceCache.cell(x,z)*4));

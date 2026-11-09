@@ -21,7 +21,7 @@ import static com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.
 /** Accepted client events, held independently of the render thread's native work slots. */
 public final class StormNativeInputs {
     private final StormControlJournal journal=new StormControlJournal();
-    private final SpatialTerrain spatialTerrain=new SpatialTerrain(SpatialTerrain.COLLISION);
+    private com.iridium126.createmanaindustry.client.allaystorm.StormCollisionCache.Cursor terrainCursor;
     private final ArrayList<StormControlJournal.Command> pending=new ArrayList<>();
     public record RecoveryDamage(long sequence,int member,float damage,float kbX,float kbZ,float light,boolean died) {}
     private final java.util.ArrayDeque<RecoveryDamage> recoveryDamage=new java.util.ArrayDeque<>();
@@ -31,13 +31,14 @@ public final class StormNativeInputs {
     private int outerCount;
     private long generation=1, terrainVersion=Long.MIN_VALUE, projectedSequence;
     private long lastPositionSnapshot=Long.MIN_VALUE;
-    private long geometryRevision=Long.MIN_VALUE;
     private Object terrainSource, previousTarget;
     private Vec3 previousAim;
     private boolean active, needsDome;
     private String failure="";
 
     StormControlJournal journal(){return journal;}
+    /** Client tick phase in the native input timeline, independent of server world-time corrections and GPU receipts. */
+    public double displayTick(float partialTick){return journal.nextLogicalTick()-1+(double)Math.clamp(partialTick,0,1);}
     long generation(){return generation;}
     String failure(){return failure;}
     void displayCommitted(long identity,long sequence){
@@ -209,31 +210,23 @@ public final class StormNativeInputs {
         }
         boolean positionSnapshot=population>0&&!samples.isEmpty()&&correctionHz>0
                 &&(lastPositionSnapshot==Long.MIN_VALUE||tick-lastPositionSnapshot>=20.0/correctionHz);
-        StormControlJournal.Geometry geometry=null;
-        if(active&&journal.inFlight()<RT_SLOTS&&journal.queued()<RT_SLOTS){
-            spatialTerrain.refresh();
-            long revision=spatialTerrain.revision();
-            if(revision!=geometryRevision){
-                var rows=spatialTerrain.nativeRows();
-                byte[] bytes=new byte[rows.remaining()];
-                rows.get(bytes);
-                geometry=new StormControlJournal.Geometry(revision,spatialTerrain.count(),bytes);
-            }
-        }
+        StormControlJournal.Geometry geometry=null; // Built from the same page delta on the native worker.
         var captures=active?ColumnSnapshotClient.INSTANCE.reserveNativeCaptures():List.<ColumnSnapshotClient.NativeCapture>of();
         boolean featherImpacts=active&&com.iridium126.createmanaindustry.client.particles.engine.AllayFeatherGpu.INSTANCE.needsPlayers();
         journal.appendWorldSample(gameTime,p,pending,terrain,contact,projectedSequence,samples,positionSnapshot,geometry,captures,featherImpacts);
-        if(geometry!=null)geometryRevision=geometry.revision();
         if(positionSnapshot)lastPositionSnapshot=tick;
         pending.clear();
         previousTarget=aim==null?null:target;previousAim=aim;
     }
     private StormControlTerrain terrainRevision(){
-        var source=StormCollisionRuntime.spatialSource();
-        long version=StormCollisionRuntime.spatialVersion();
-        if(terrainSource==source&&terrainVersion==version)return null;
-        var packed=StormControlTerrain.capture(StormCollisionRuntime.spatialPages());
-        terrainSource=source;terrainVersion=version;
-        return packed;
+        var cache=StormCollisionRuntime.spatialCache();
+        if(terrainSource==cache&&cache==null&&terrainVersion==0)return null;
+        if(terrainSource!=cache||terrainCursor==null){
+            terrainSource=cache;
+            terrainCursor=cache==null?null:cache.cursor();
+            if(cache==null){terrainVersion=0;return StormControlTerrain.capture(java.util.Map.of());}
+        }
+        var changes=terrainCursor.poll();
+        return changes==null?null:StormControlTerrain.capture(changes);
     }
 }
