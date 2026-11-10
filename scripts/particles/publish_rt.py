@@ -6,14 +6,14 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "native/particle_rt"
-DESTINATION = ROOT / "native/prebuilt/windows-x86_64"
+SOURCE = ROOT / "src/main/native/particle_rt"
+DESTINATION = ROOT / "src/main/native/prebuilt/windows-x86_64"
 
 
 def source_digest():
     digest = hashlib.sha256()
     sources = [p for p in SOURCE.rglob("*") if p.is_file()] + [
-        ROOT / "gpu/particle-resources.json",
+        ROOT / "src/main/gpu/particle-resources.json",
         ROOT / "src/main/resources/assets/createmanaindustry/shaders/particles/chunks/storm_home.glsl",
     ]
     for path in sorted(sources, key=lambda p: p.relative_to(ROOT).as_posix()):
@@ -31,7 +31,7 @@ def main():
         raise SystemExit("Build the native module with scripts/particles/build_rt.ps1 first")
     DESTINATION.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(binary, DESTINATION / binary.name)
-    contract = json.loads((ROOT / "gpu/particle-resources.json").read_text(encoding="utf-8"))["constants"]
+    contract = json.loads((ROOT / "src/main/gpu/particle-resources.json").read_text(encoding="utf-8"))["constants"]
     (DESTINATION / "manifest.json").write_text(json.dumps({
         "abi": contract["ABI"], "version": version, "platform": "windows-x86_64",
         "layout": {key: value for key, value in contract.items()

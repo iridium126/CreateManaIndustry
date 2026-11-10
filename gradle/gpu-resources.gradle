@@ -1,5 +1,5 @@
 // One declarative contract feeds standalone GLSL, Java and the precompiled native release.
-def gpuDescription = file('gpu/particle-resources.json')
+def gpuDescription = file('src/main/gpu/particle-resources.json')
 def gpuJava = layout.buildDirectory.dir('generated/sources/gpuResources/java')
 def gpuResources = layout.buildDirectory.dir('generated/resources/gpuResources')
 def generateGpuResources = tasks.register('generateGpuResources') {
@@ -8,8 +8,8 @@ def generateGpuResources = tasks.register('generateGpuResources') {
     doLast {
         def contract = new groovy.json.JsonSlurper().parse(gpuDescription)
         def constants = contract.constants
-        def javaText = new StringBuilder('package com.iridium126.createmanaindustry.client.gpu;\n\n/** Generated from gpu/particle-resources.json. */\npublic final class GpuResourceConstants {\n private GpuResourceConstants() {}\n')
-        def glslText = new StringBuilder('// Generated from gpu/particle-resources.json.\n')
+        def javaText = new StringBuilder('package com.iridium126.createmanaindustry.client.gpu;\n\n/** Generated from src/main/gpu/particle-resources.json. */\npublic final class GpuResourceConstants {\n private GpuResourceConstants() {}\n')
+        def glslText = new StringBuilder('// Generated from src/main/gpu/particle-resources.json.\n')
         constants.each { key, value ->
             javaText.append(" public static final int ${key}=${value};\n")
             glslText.append("#define CMI_RESOURCE_${key} ${value}\n")

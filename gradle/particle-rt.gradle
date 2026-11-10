@@ -1,10 +1,10 @@
 // SDK-free normal builds embed a source-matched, developer-built native release.
-def nativeSources = fileTree('native/particle_rt')
-def nativeRelease = file('native/prebuilt/windows-x86_64')
+def nativeSources = fileTree('src/main/native/particle_rt')
+def nativeRelease = file('src/main/native/prebuilt/windows-x86_64')
 def nativeResources = layout.buildDirectory.dir('generated/particleRtResources')
 def nativeRoot = layout.projectDirectory.asFile
-def nativeVersion = file('native/particle_rt/Version.h')
-def resourceContract = file('gpu/particle-resources.json')
+def nativeVersion = file('src/main/native/particle_rt/Version.h')
+def resourceContract = file('src/main/gpu/particle-resources.json')
 def sharedStormMath = file('src/main/resources/assets/createmanaindustry/shaders/particles/chunks/storm_home.glsl')
 def prepareParticleRtResources = tasks.register('prepareParticleRtResources') {
     inputs.files(nativeSources)
@@ -16,8 +16,8 @@ def prepareParticleRtResources = tasks.register('prepareParticleRtResources') {
         def metadata = new groovy.json.JsonSlurper().parse(new File(nativeRelease, 'manifest.json'))
         def digest = java.security.MessageDigest.getInstance('SHA-256')
         def contract = new groovy.json.JsonSlurper().parse(resourceContract)
-        def header = '#pragma once\n// Generated from gpu/particle-resources.json.\n' + contract.constants.collect { key, value -> "#define CMI_RESOURCE_${key} ${value}\n" }.join('')
-        if (new File(nativeRoot, 'native/particle_rt/ResourceLayout.h').getText('UTF-8').replace(String.valueOf((char)13), '') != header)
+        def header = '#pragma once\n// Generated from src/main/gpu/particle-resources.json.\n' + contract.constants.collect { key, value -> "#define CMI_RESOURCE_${key} ${value}\n" }.join('')
+        if (new File(nativeRoot, 'src/main/native/particle_rt/ResourceLayout.h').getText('UTF-8').replace(String.valueOf((char)13), '') != header)
             throw new GradleException('Native resource layout is stale; regenerate and rebuild the native release.')
         (nativeSources.files.findAll { it.isFile() } + [resourceContract, sharedStormMath]).sort { nativeRoot.toPath().relativize(it.toPath()).toString().replace(java.io.File.separatorChar, '/' as char) }.each { input ->
             digest.update(nativeRoot.toPath().relativize(input.toPath()).toString().replace(java.io.File.separatorChar, '/' as char).getBytes('UTF-8'))

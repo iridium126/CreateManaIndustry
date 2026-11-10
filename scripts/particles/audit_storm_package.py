@@ -34,7 +34,7 @@ def main():
             classes.append(base/"com/iridium126/createmanaindustry/CreateManaIndustry.class")
             for path in classes:
                 verify(path, path.relative_to(base).as_posix())
-            release = Path("native/prebuilt/windows-x86_64")
+            release = Path("src/main/native/prebuilt/windows-x86_64")
             metadata = json.loads((release / "manifest.json").read_text(encoding="utf-8"))
             module = "native/particle-rt/windows-x86_64/"
             verify(release / "CmiParticleRt.dll", module + "CmiParticleRt.dll")

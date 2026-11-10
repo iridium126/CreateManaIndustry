@@ -7,7 +7,7 @@ def identityDirectory = layout.buildDirectory.dir('generated/performanceIdentity
 def identityRoot = layout.projectDirectory.asFile
 def performanceInputs = files(fileTree('src/main'), fileTree('src/bootstrap'), fileTree('src/generated'),
         fileTree('gradle') { exclude('**/.gradle/**') }, 'build.gradle', 'settings.gradle', 'gradle.properties',
-        'gpu/particle-resources.json', 'native/prebuilt/windows-x86_64/manifest.json')
+        'src/main/gpu/particle-resources.json', 'src/main/native/prebuilt/windows-x86_64/manifest.json')
 def performanceIdentity = tasks.register('generatePerformanceIdentity') {
     inputs.files(performanceInputs)
     outputs.dir(identityDirectory)

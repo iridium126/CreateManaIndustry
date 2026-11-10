@@ -14,7 +14,7 @@ Enter-VsDevShell -VsInstallPath $VsRoot -SkipAutomaticLocation -DevCmdArguments 
 $Cmake=Join-Path $VsRoot 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'
 $Ninja=Join-Path $VsRoot 'Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe'
 $Build=Join-Path $TaskRoot '.gradle/particle-rt/build'
-& $Cmake -S (Join-Path $TaskRoot 'native/particle_rt') -B $Build -G Ninja "-DCMAKE_MAKE_PROGRAM=$Ninja" '-DCMAKE_BUILD_TYPE=Release' "-DCUDA_ROOT=$($Dependencies.cuda_cudart.root)" "-DCRT_ROOT=$($Dependencies.cuda_nvcc.root)" "-DOPTIX_ROOT=$($Dependencies.optix.root)" "-DCCCL_ROOT=$($Dependencies.cuda_cccl.root)"
+& $Cmake -S (Join-Path $TaskRoot 'src/main/native/particle_rt') -B $Build -G Ninja "-DCMAKE_MAKE_PROGRAM=$Ninja" '-DCMAKE_BUILD_TYPE=Release' "-DCUDA_ROOT=$($Dependencies.cuda_cudart.root)" "-DCRT_ROOT=$($Dependencies.cuda_nvcc.root)" "-DOPTIX_ROOT=$($Dependencies.optix.root)" "-DCCCL_ROOT=$($Dependencies.cuda_cccl.root)"
 if($LASTEXITCODE -ne 0){throw 'Particle RT configure failed'}
 & $Cmake --build $Build --parallel $Jobs
 if($LASTEXITCODE -ne 0){throw 'Particle RT build failed'}

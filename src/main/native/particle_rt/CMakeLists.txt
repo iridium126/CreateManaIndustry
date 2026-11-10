@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(JNI REQUIRED)
 set(NVCC "${CRT_ROOT}/bin/nvcc.exe")
 set(DEVICE_INCLUDES "-I${CUDA_ROOT}/include" "-I${CRT_ROOT}/include" "-I${OPTIX_ROOT}/include" "-I${CCCL_ROOT}/include" "-I${CMAKE_CURRENT_SOURCE_DIR}")
-set(STORM_MATH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../src/main/resources/assets/createmanaindustry/shaders/particles/chunks")
+set(STORM_MATH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/assets/createmanaindustry/shaders/particles/chunks")
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/spatial.fatbin"
  COMMAND "${NVCC}" --fatbin -std=c++17 --generate-code=arch=compute_75,code=compute_75 --generate-code=arch=compute_89,code=sm_89 ${DEVICE_INCLUDES} "${CMAKE_CURRENT_SOURCE_DIR}/grid.cu" -o "${CMAKE_CURRENT_BINARY_DIR}/spatial.fatbin"
  DEPENDS grid.cu Spatial.h ResourceLayout.h VERBATIM)

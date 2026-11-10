@@ -1,5 +1,5 @@
 #pragma once
-// Generated from gpu/particle-resources.json.
+// Generated from src/main/gpu/particle-resources.json.
 #define CMI_RESOURCE_ABI 13
 #define CMI_RESOURCE_RT_SLOTS 3
 #define CMI_RESOURCE_PARTICLE_BYTES 64
