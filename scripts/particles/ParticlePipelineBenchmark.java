@@ -133,11 +133,11 @@ public final class ParticlePipelineBenchmark {
         }
     }
     public static void main(String[] args)throws Throwable {
-        check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(128,128,"CMI GPU pipeline benchmark",0,0);check(window!=0,"context");
+        long window=GpuValidationSupport.open(128,128,"CMI GPU pipeline benchmark",false);check(window!=0,"context");
         var rows=new ArrayList<String>();rows.add("scene,count,trial,gpu_p50_ms,gpu_p95_ms,gpu_p99_ms,cpu_p50_ms,cpu_p95_ms,cpu_p99_ms,allocation_bytes_per_frame");
         var raw=new ArrayList<String>();raw.add("scene,count,trial,sample,gpu_ms,cpu_ms");
         var bean=(com.sun.management.ThreadMXBean)java.lang.management.ManagementFactory.getThreadMXBean();
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
+        try{System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
             String baseline=System.getProperty("cmi.pipeline.baseline");
             if(baseline!=null)compare(baseline,rows,raw,bean);
             else for(int n:new int[]{0,16384})for(boolean mixed:new boolean[]{false,true}){
@@ -155,6 +155,6 @@ public final class ParticlePipelineBenchmark {
                 }
             }
             Path output=Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/current"));Files.createDirectories(output);Files.write(output.resolve("particle-pipeline.csv"),rows);Files.write(output.resolve("particle-pipeline-samples.csv"),raw);
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }

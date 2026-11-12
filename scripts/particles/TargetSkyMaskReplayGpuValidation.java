@@ -67,7 +67,7 @@ public final class TargetSkyMaskReplayGpuValidation {
         if(!GLFW.glfwInit())throw new AssertionError("GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_COMPAT_PROFILE);
         long window=GLFW.glfwCreateWindow(64,64,"Target mask qualification",0,0);check(window!=0,"GL context");
         try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();com.mojang.blaze3d.systems.RenderSystem.initRenderThread();qualify();}
-        finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        finally{GpuValidationSupport.close(window);}
     }
     static void qualify()throws Exception{
         Path out=Path.of(System.getProperty("cmi.benchmark.output"));Files.createDirectories(out);

@@ -189,10 +189,9 @@ public class PackageLightGpuValidation {
         }finally{GL15.glDeleteQueries(query);}
     }
     public static void main(String[] args) throws Exception {
-        var callback=GLFWErrorCallback.createPrint(System.err);callback.set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(64,64,"Package light validation",0,0);check(window!=0,"context");
+        var callback=long window=GpuValidationSupport.open("Package light validation");check(window!=0,"context");
         try {
-            GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
+            System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
             String source=ParticleShaderSource.loadParticle("packages/light_sample.comp",path->{try(var stream=PackagePoolGpu.class.getClassLoader().getResourceAsStream("assets/createmanaindustry/"+path)){if(stream==null)throw new IllegalArgumentException(path);return new String(stream.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}catch(java.io.IOException e){throw new java.io.UncheckedIOException(e);}});
             if(Arrays.asList(args).contains("--feedback-global"))source="#define CMI_LIGHT_GLOBAL_REQUESTS\n"+source;
             int shader=GL20.glCreateShader(GL43.GL_COMPUTE_SHADER);try{GL20.glShaderSource(shader,"#version 450 core\n"+source);GL20.glCompileShader(shader);check(GL20.glGetShaderi(shader,GL20.GL_COMPILE_STATUS)!=0,GL20.glGetShaderInfoLog(shader));program=GL20.glCreateProgram();GL20.glAttachShader(program,shader);GL20.glLinkProgram(program);check(GL20.glGetProgrami(program,GL20.GL_LINK_STATUS)!=0,GL20.glGetProgramInfoLog(program));}finally{GL20.glDeleteShader(shader);}
@@ -200,6 +199,6 @@ public class PackageLightGpuValidation {
             rows.add("count,run,gpu_p50_ms,gpu_p95_ms,submit_p50_ms,submit_p95_ms");raw.add("count,run,sample,gpu_ms,submit_ms");boolean benchmark=Arrays.asList(args).contains("--benchmark");validate(benchmark);feedback(Arrays.asList(args).contains("--feedback-benchmark"));
             if(benchmark){Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-light-sampling.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-light-sampling-samples.csv"),raw);}
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"GL error");System.out.println("Package light GPU: "+checks+" assertions passed");
-        }finally{if(program!=0)GL20.glDeleteProgram(program);GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();callback.free();}
+        }finally{if(program!=0)GL20.glDeleteProgram(program);GpuValidationSupport.close(window);}
     }
 }

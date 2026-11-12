@@ -1,68 +1,35 @@
 # Create Mana Industry 开发文档
 
-本目录只记录实现契约、当前状态、入口文件和验证方式。详细历史讨论、重复的评审过程和已否决方案不再作为开发依据。
+只记录实现契约、当前状态、入口文件与验证方式。行为以当前源码、资源和测试为准；历史讨论、评审过程、逐版本测量和已否决方案不作为开发依据，需要时从 Git 历史提取。
 
-## 阅读顺序
+状态：✅ 已实现；🟡 仍需游戏内验证；🚧 进行中；📐 设计/待实施。
 
-1. 先看本文档和对应主题文档的“状态”部分。
-2. 行为以当前源码、资源和测试为准；文档只解释代码不易表达的协议和边界。
-3. 标记含义：✅ 已实现；🟡 已实现但仍需游戏内验证；📐 设计/待实施；⚠ 已知缺口。
+## 入口
 
-## 文档索引
+| 文档 | 内容 |
+| --- | --- |
+| [构建与 Gradle 职责](building.md) | 依赖、缓存、重映射、打包 |
+| [测试与验证入口](testing.md) | 单元、GameTest、GPU 与 benchmark 命令 |
+| [性能结论与复现](benchmarks/README.md) | 测量规则；原始 CSV/日志只写入忽略的 `build/benchmarks/` |
+| [隔离客户端验收清单](gpu-runtime-client-acceptance.md) | 由用户执行的全功能检查 🚧 |
 
-GPU 粒子当前采用固定 20 Hz 调度与独立显示发布，GL/RT 候选和玩法边界见 [当前引擎](particle-engine-dev.md)。
+## 主题索引
 
-统一工具、固定场景和噪声门槛见 [性能验证](particle-engine-performance.md)，候选包及冻结基线回退见 [安装说明](particle-engine-install.md)。旧实验报告已进入带校验清单的源码与结果归档；新候选待客户端验收。
-
-| 文档 | 内容 | 状态 |
-| --- | --- | --- |
-| [building.md](building.md) | Gradle职责、依赖范围、缓存、重映射、打包与验证 | ✅ |
-| [gpu-runtime-architecture-plan.md](gpu-runtime-architecture-plan.md) | GPU 引擎全部现有功能的架构、优化方向、分批实施状态及验收边界 | 🚧 |
-| [gpu-runtime-client-acceptance.md](gpu-runtime-client-acceptance.md) | 用户执行的隔离客户端启动、全功能检查清单与性能反馈格式 | 🚧 |
-| [hexcasting-trickster-interop-review-2026-10-16.md](hexcasting-trickster-interop-review-2026-10-16.md) | 全部整改条目、自动回归、真实专服重启与性能对照；客户端待用户验收 | 🟡 |
-| [hexcasting-trickster-interop-dev.md](hexcasting-trickster-interop-dev.md) | 来源、根预算、编解码及 adapter 契约，真实客户端验收清单 | 🟡 |
-| [particle-engine-dev.md](particle-engine-dev.md) | GPU 粒子池、发射器、排序、碰撞、Hexcasting 与 shaderpack | 🟡 |
-| [particle-shadow-quality.md](particle-shadow-quality.md) | 七档 MODEL 阴影、风暴整体剔除、深度回退、八包验证及性能候选决策 | 🟡 |
-| [gpu-hex-shared-takeover-2026-10-10.md](gpu-hex-shared-takeover-2026-10-10.md) | Hex 世界/阴影/玩家预览/施法 UI 独立 GPU 后端、预算、基准与用户验收 | 🟡 |
-| [gpu-package-model-pool-decision-2026-10-10.md](gpu-package-model-pool-decision-2026-10-10.md) | 包裹/MODEL 分池历史决策与测量范围 | 🟡 |
-| [gpu-hex-cleanup-model-efficiency-2026-10-10.md](gpu-hex-cleanup-model-efficiency-2026-10-10.md) | 旧 Hex 清理、保留实体行为的 MODEL/Storm GPU 优化路线与物理优先项 | 🟡 |
-| [gpu-model-rendering.md](gpu-model-rendering.md) | 当前帧/晚阶段绘制、独立阴影、同代活动索引与精确交互 | 🟡 |
-| [gpu-packages.md](gpu-packages.md) | GPU 包裹当前实现总览与运行边界 | 🟡 |
-| [gpu-package-protocol-15.md](gpu-package-protocol-15.md) | 权威环境区域合包、生命周期及未完成的 journal 边界 | 🚧 |
-| [gpu-light-package-records.md](gpu-light-package-records.md) | 自由包裹记录、物理历史、环境与库存事务 | 🟡 |
-| [gpu-package-observers.md](gpu-package-observers.md) | GPU 包裹观察者协议和姿态流 | 🟡 |
-| [gpu-chain-authority.md](gpu-chain-authority.md) / [gpu-package-chain-frames.md](gpu-package-chain-frames.md) | 锁链权威、事务及父姿态坐标边界 | 🟡 |
-| [gpu-package-collision.md](gpu-package-collision.md) | 碰撞、精确历史、采集/上传调度和冻结诊断 | 🟡 |
-| [gpu-package-performance.md](gpu-package-performance.md) | 线程、计时边界、当前优化和性能诊断 | 🟡 |
-| [gpu-package-repair-validation.md](gpu-package-repair-validation.md) | 回归场景矩阵与当前验证入口 | 🟡 |
-| [gpu-block-emitters.md](gpu-block-emitters.md) | GPU 方块粒子发射器 | 🟡 |
-| [particle-engine-performance.md](particle-engine-performance.md) | GPU 粒子性能数据和验收限制 | 🟡 |
-| [allay-dimension-dev.md](allay-dimension-dev.md) | ALLVR 维度总览、坐标、加载、客户端渲染入口 | 🟡 |
-| [allay-dimension-worldgen.md](allay-dimension-worldgen.md) | ALLVR 世界生成和 Y 分带 | ✅ |
-| [allay-dimension-persistence-plan.md](allay-dimension-persistence-plan.md) | Cube 持久化格式、IO 和恢复约束 | 🟡 |
-| [allay-dimension-sodium-rendering-parity-plan.md](allay-dimension-sodium-rendering-parity-plan.md) | Sodium 原生 section 适配路线 | 📐 |
-| [allay-dimension-voxy-lod-integration-plan.md](allay-dimension-voxy-lod-integration-plan.md) | Voxy 远景接入路线 | 📐 |
-| [allay-dimension-implementation-review-fix-plan.md](allay-dimension-implementation-review-fix-plan.md) | 未关闭的实现评审问题 | ⚠ |
-| [allay-storm-sync.md](allay-storm-sync.md) | Allay Storm 服务端权威与客户端 GPU 同步 | 🟡 |
-| [allay-storm-ai.md](allay-storm-ai.md) | Allay Storm 当前攻击、参数与配置 | 🟡 |
-| [allay-storm-validation.md](allay-storm-validation.md) | 资源重建、单元／GPU／服务端验证和用户验收 | 🟡 |
-| [allay-storm-rift.md](allay-storm-rift.md) | 已验收的Julia天空／云、独立订阅、整组传送与恢复边界 | 🟡 |
-| [allay-storm-visual-development-order.md](allay-storm-visual-development-order.md) | 后续低密度星流、真实尾迹／事件、三招美术与扩量路线 | 📐 |
-| [allay-storm-lod.md](allay-storm-lod.md) | 已验收的成员LOD、世界尺寸方形、最小视觉同步、显存与远裁剪 | ✅ |
-| [shaderpack-integration.md](shaderpack-integration.md) | 通用光影会话、原子彩光候选、八包矩阵与顺序1～2探针 | 🟡 |
-| [allay-particle-vanilla-alignment.md](allay-particle-vanilla-alignment.md) | 原版粒子视觉对齐范围和验收项 | 🟡 |
-| [g-self-design.md](g-self-design.md) | G-self/Iris shaderpack 的 MODEL 粒子接入 | 🟡 |
-| [trickster-stock-ticker-fix.md](trickster-stock-ticker-fix.md) | 晶结组件相等性与实际仓库出库回归 | ✅ |
-| [testing.md](testing.md) | 单元、GameTest、GPU 和 benchmark 运行入口 | 🟡 |
-
-`benchmarks/` 只保留影响实现选择的 Markdown 结论。原始数据、截图、测试报告和完整日志统一输出到忽略的 `build/benchmarks/`；运行器、元数据及复现规则见 [性能结果规则](benchmarks/README.md)。日期报告表示当时的测量，当前验证以实际运行结果为准。
-
-RT 单次计算重构的 [实现状态与剩余工作](rt-single-step-status.md) 和 [本次诊断与离屏证据](benchmarks/rt-single-step-2026-11-04.md) 单独记录；基础修复候选尚未完成原生运动所有权及在线 RT 渲染接入。
+| 主题 | 文档 |
+| --- | --- |
+| GPU 粒子引擎 | [当前引擎](particle-engine-dev.md) 🟡、[安装与回退](particle-engine-install.md)、[性能](particle-engine-performance.md) 🟡、[阴影质量](particle-shadow-quality.md) 🟡、[阴影补全](particle-shadow-completion.md) 🟡、[光影包](shaderpack-integration.md) 🟡、[G-self](g-self-design.md) 🟡 |
+| 粒子视觉 | [悦灵对齐](allay-particle-vanilla-alignment.md)、[樱花对齐](cherry-particle-vanilla-alignment.md)、[羽毛](allay-feather-particles.md)、[金粒子](allay-gold-particles.md) |
+| GPU 运行时 | [架构与分批状态](gpu-runtime-architecture-plan.md) 🚧、[当前性能报告](benchmarks/gpu-runtime-architecture.md)、[第四批状态](gpu-runtime-stage4.md)、[RT 单步状态](rt-single-step-status.md) 🚧、[Hex 图案接管](hex-pattern-gpu.md) 🟡 |
+| GPU 包裹 | [总览](gpu-packages.md)、[协议 15](gpu-package-protocol-15.md) 🚧、[轻量记录](gpu-light-package-records.md)、[观察者](gpu-package-observers.md)、[锁链权威](gpu-chain-authority.md)、[父姿态帧](gpu-package-chain-frames.md)、[碰撞与历史](gpu-package-collision.md)、[性能诊断](gpu-package-performance.md)、[环境存储](gpu-package-environment-14.md)、[方块发射器](gpu-block-emitters.md)、[MODEL 绘制](gpu-model-rendering.md) |
+| ALLVR 维度 | [总览](allay-dimension-dev.md) 🟡、[世界生成](allay-dimension-worldgen.md) ✅、[持久化](allay-dimension-persistence-plan.md) 🟡、[Sodium 适配](allay-dimension-sodium-rendering-parity-plan.md) 📐、[Voxy LOD](allay-dimension-voxy-lod-integration-plan.md) 📐、[验证](allay-dimension-validation.md) |
+| 悦灵风暴 | [服务端同步](allay-storm-sync.md)、[AI 与参数](allay-storm-ai.md)、[验证入口](allay-storm-validation.md)、[裂口](allay-storm-rift.md)、[LOD](allay-storm-lod.md) ✅、[后续美术](allay-storm-visual-development-order.md) 📐、[庇护所](allay-sanctuary.md) |
+| 集成与玩法 | [Hexcasting/Trickster 契约](hexcasting-trickster-interop-dev.md) 🟡、[Markov Junior](markov-junior.md)、[世界树设计](world-tree-design.md)、[世界树实现](world-tree-implementation.md)、[Ponder](ponder-workshop.md)、[燃料罐](fuel-tank.md) |
 
 ## 维护规则
 
-- 一个事实只保留一个主文档；其他文档只链接过去。
-- “已实现”和“计划”必须分开写，计划不能描述成现状。
-- 改动文档时至少更新：状态、代码入口、配置/命令、验证结果。
-- 配置键以 `ClientConfig`/`ServerConfig` 和生成的 TOML 为准；`hexcasting.hexParticleRedirect` 控制粒子接管，`hexcasting.hexPatternRedirect` 控制图案渲染，两者是独立设置。
-- 历史结论只在能解释现有约束时保留一句，不保留逐条问答和重复时间线。
+- 一个事实只保留一个主文档；其它文档只链接过去。
+- 「已实现」与「计划」分开写，计划不能描述成现状。
+- 改动文档时至少更新状态、代码入口、配置/命令与验证结果。
+- 配置键以 `ClientConfig`/`ServerConfig` 及生成的 TOML 为准；`hexcasting.hexParticleRedirect` 与 `hexcasting.hexPatternRedirect` 是独立设置。
+- 历史结论只在能解释现有约束时保留一句，不保留逐条问答与时间线。
+- 测量数据重新采集后更新对应主文档，不新增日期日志文档。

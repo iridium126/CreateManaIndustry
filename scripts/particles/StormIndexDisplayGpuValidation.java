@@ -352,7 +352,7 @@ public class StormIndexDisplayGpuValidation extends StormCollisionGpuValidation 
         long window=GLFW.glfwCreateWindow(32,32,"bounded Storm index and display",0,0);GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
         var report=new LinkedHashMap<String,Object>();report.put("passed",false);
         try{var pages=collisionFixture();glIndex(pages);displayHistory();nativeIndex(pages);nativeRevisionAndPageLimit();productionControlQueue();int seconds=Integer.parseInt(ParticleFixtureOptions.parse(args).getOrDefault("seconds","0"));if(seconds>0)soak(seconds,out);check(GL11.glGetError()==0,"GL state");report.put("passed",true);}
-        finally{report.put("checks",checks);report.put("gpu",GL11.glGetString(GL11.GL_RENDERER));report.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("index-display.json"),new GsonBuilder().setPrettyPrinting().create().toJson(report));GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        finally{report.put("checks",checks);report.put("gpu",GL11.glGetString(GL11.GL_RENDERER));report.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("index-display.json"),new GsonBuilder().setPrettyPrinting().create().toJson(report));GpuValidationSupport.close(window);}
         System.out.println("Storm index/display GPU: "+checks+" checks passed");
     }
 }

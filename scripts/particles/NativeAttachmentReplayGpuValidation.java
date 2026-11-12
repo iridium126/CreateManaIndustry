@@ -7,10 +7,9 @@ import org.lwjgl.opengl.*;
 public class NativeAttachmentReplayGpuValidation {
     static void check(boolean value,String message){if(!value)throw new AssertionError(message);}
     public static void main(String[] args)throws Exception{
-        check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(32,32,"Attachment replay contract",0,0);check(window!=0,"context");
+        long window=GpuValidationSupport.open(32,32,"Attachment replay contract",false);check(window!=0,"context");
         try{
-            GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
+            
             Path root=Path.of(System.getProperty("cmi.benchmark.output"));Files.createDirectories(root);
             Path snapshots=root.resolve("synthetic-snapshots");Files.createDirectories(snapshots);ModelMergeGpuValidation.output=root;
             var data=new TreeMap<String,Object>();data.put("synthetic_test_snapshot",true);data.put("pack","fixture.zip");data.put("source_sha256","0123456789abcdef");
@@ -34,6 +33,6 @@ public class NativeAttachmentReplayGpuValidation {
                 }
             }finally{GL20.glDeleteShader(shader);GL20.glDeleteProgram(program);}
             check(GL11.glGetError()==0,"GL state");System.out.println("Native attachment replay GPU: option/macro replay, mismatch rejection, RGBA8/RGBA16F and D24S8 passed");
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }

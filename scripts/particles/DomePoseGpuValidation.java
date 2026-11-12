@@ -181,7 +181,7 @@ public final class DomePoseGpuValidation extends DomeGpuValidation {
         for(int reason=0;reason<7;reason++){var a=releasePhysics(reason,false);var b=releasePhysics(reason,true);int[] slots=new int[64];for(int i=0;i<64;i++)slots[Math.round(b.getFloat(i*64+12))-1]=i;for(int i=0;i<64;i++){int member=Math.round(a.getFloat(i*64+12))-1;for(int k=0;k<7;k++)check(Math.abs(a.getFloat(i*64+k*4)-b.getFloat(slots[member]*64+k*4))<.00001,"Pose cache changed physical return");}}
     }
     public static void main(String[] args)throws Exception{
-        GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Dome pose publication",0,0);
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();publication(false);publication(true);foreignBindings();transitionClock();orientation();localReturnPose();renderedReturnHeading();returnPhysics();check(GL11.glGetError()==0,"Dome pose GL error");System.out.println("Dome pose GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        long window=GpuValidationSupport.open("Dome pose publication");
+        try{publication(false);publication(true);foreignBindings();transitionClock();orientation();localReturnPose();renderedReturnHeading();returnPhysics();check(GL11.glGetError()==0,"Dome pose GL error");System.out.println("Dome pose GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(window);}
     }
 }

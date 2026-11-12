@@ -92,8 +92,8 @@ public class ShadowQualityGpuValidation extends ModelShadowGpuValidation {
         }finally{GL15.glDeleteBuffers(foreign);}
     }
     public static void main(String[] args)throws Exception{
-        GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Shadow quality probe",0,0);Files.createDirectories(OUT);
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));qualityGroups();grouping();hierarchy();stateBoundaries();check(GL11.glGetError()==0,"final GL error");System.out.println("Shadow quality: "+checks+" assertions passed; native/full-draw depth qualification not claimed");}
-        finally{Files.write(OUT.resolve("samples.csv"),samples);Files.write(OUT.resolve("compile.csv"),compilation);GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        long window=GpuValidationSupport.open("Shadow quality probe");Files.createDirectories(OUT);
+        try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));qualityGroups();grouping();hierarchy();stateBoundaries();check(GL11.glGetError()==0,"final GL error");System.out.println("Shadow quality: "+checks+" assertions passed; native/full-draw depth qualification not claimed");}
+        finally{Files.write(OUT.resolve("samples.csv"),samples);Files.write(OUT.resolve("compile.csv"),compilation);GpuValidationSupport.close(window);}
     }
 }

@@ -304,9 +304,8 @@ public class ModelShadowGpuValidation {
         Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-index-probe.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-index-probe-samples.csv"),raw);
     }
     public static void main(String[] args)throws Exception {
-        var callback=GLFWErrorCallback.createPrint(System.err);callback.set();check(GLFW.glfwInit(),"GLFW init");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(64,64,"Model shadow validation",0,0);check(window!=0,"GL context");
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));validation();sizeBoundaries();qualityGroups();stateBoundary();if(Arrays.asList(args).contains("--iris-transform"))mergedVertices();if(Arrays.asList(args).contains("--benchmark"))benchmark();if(Arrays.asList(args).contains("--index-probe"))indexProbe();check(GL11.glGetError()==GL11.GL_NO_ERROR,"shadow GL error");System.out.println("MODEL shadow GPU: "+checks+" assertions passed");}
-        finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();callback.free();}
+        var callback=long window=GpuValidationSupport.open("Model shadow validation");check(window!=0,"GL context");
+        try{System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));validation();sizeBoundaries();qualityGroups();stateBoundary();if(Arrays.asList(args).contains("--iris-transform"))mergedVertices();if(Arrays.asList(args).contains("--benchmark"))benchmark();if(Arrays.asList(args).contains("--index-probe"))indexProbe();check(GL11.glGetError()==GL11.GL_NO_ERROR,"shadow GL error");System.out.println("MODEL shadow GPU: "+checks+" assertions passed");}
+        finally{GpuValidationSupport.close(window);}
     }
 }

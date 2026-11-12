@@ -31,10 +31,9 @@ public class ModelNativeColorGpuValidation {
         GL15.glBindBuffer(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,output);int[] result=new int[vertices*11];GL15.glGetBufferSubData(GL30.GL_TRANSFORM_FEEDBACK_BUFFER,0,result);return result;
     }
     public static void main(String[] args)throws Exception{
-        if(!GLFW.glfwInit())throw new AssertionError("GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);
-        long window=GLFW.glfwCreateWindow(64,64,"Native MODEL color",0,0);if(window==0)throw new AssertionError("GL context");
+        long window=GpuValidationSupport.open("Native MODEL color");if(window==0)throw new AssertionError("GL context");
         try{
-            GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
+            com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
             var field=AllayModelGeometry.class.getDeclaredField("VERTICES");field.setAccessible(true);float[] mesh=(float[])field.get(null);int vertices=mesh.length/AllayModelGeometry.VERTEX_FLOATS;
             int vao=GL30.glGenVertexArrays();GL30.glBindVertexArray(vao);int[] buffers=new int[5];GL15.glGenBuffers(buffers);int a=program(true),b=program(false);long words=0;
             try{
@@ -55,6 +54,6 @@ public class ModelNativeColorGpuValidation {
                 GL11.glDisable(GL30.GL_RASTERIZER_DISCARD);if(GL11.glGetError()!=0)throw new AssertionError("Native GL state");
                 System.out.println("Native MODEL keyframes: "+words+" exact transform-feedback words passed");
             }finally{GL20.glDeleteProgram(a);GL20.glDeleteProgram(b);GL15.glDeleteBuffers(buffers);GL30.glDeleteVertexArrays(vao);}
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }

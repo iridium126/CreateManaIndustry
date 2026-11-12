@@ -128,7 +128,7 @@ public final class ParticleProgramLifecycleGpuValidation {
                 System.out.println(GL11.glGetString(GL11.GL_RENDERER) + " / " + GL11.glGetString(GL11.GL_VERSION));
                 lifecycle();
                 System.out.println("Particle program lifecycle GPU: " + checks + " assertions passed");
-            } finally { GLFW.glfwDestroyWindow(window); GLFW.glfwTerminate(); }
+            } finally { GpuValidationSupport.close(window); }
         }
     }
 }

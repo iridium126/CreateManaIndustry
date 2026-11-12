@@ -98,7 +98,7 @@ public final class RtTopologyReplayGpu {
             }catch(Throwable failure){report.put("passed",false);report.put("cleanup_error_"+b,failure.toString());cleanupFailed=true;}
             report.put("elapsed_seconds",(System.nanoTime()-start)/1e9);report.put("steps",steps);report.put("submitted",submitted);report.put("consumed",consumed);report.put("retired",retired);report.put("owned_bytes_after_close",SpatialNative.ownedBytes());
             Files.writeString(out.resolve("topology.json"),new GsonBuilder().setPrettyPrinting().create().toJson(report));
-            if(program!=0)GL20.glDeleteProgram(program);GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();
+            if(program!=0)GL20.glDeleteProgram(program);GpuValidationSupport.close(window);
             if(cleanupFailed&&!report.containsKey("failure"))throw new IllegalStateException("replay cleanup failed; see topology.json");
         }
     }

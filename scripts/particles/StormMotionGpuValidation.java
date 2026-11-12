@@ -157,7 +157,7 @@ public class StormMotionGpuValidation extends StarfallColumnGpuValidation {
   Files.write(Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/current"),"motion-kernel-profile.csv"),summary);summary.forEach(System.out::println);
  }
  public static void main(String[] args)throws Exception {
-  GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Storm motion validation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();if(Arrays.asList(args).contains("--profile"))profile();else{danceBoundary();starfallEntry();unsettledEntry();domeInterception();domeFastNeighbor();helixRotation();}check(GL11.glGetError()==0,"Motion GL state");System.out.println("Storm motion GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  long window=GpuValidationSupport.open("Storm motion validation");
+  try{if(Arrays.asList(args).contains("--profile"))profile();else{danceBoundary();starfallEntry();unsettledEntry();domeInterception();domeFastNeighbor();helixRotation();}check(GL11.glGetError()==0,"Motion GL state");System.out.println("Storm motion GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(window);}
  }
 }

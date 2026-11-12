@@ -523,6 +523,6 @@ public final class ModelMaterialGpuValidation {
             packs++;System.out.println(sample.getFileName()+": native and MODEL entity stages linked");
         }}check(packs>=8,"all eight samples");System.out.println("MODEL material GPU: "+checks+" checks passed");
     }
-    public static void main(String[] args)throws Exception{check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(32,32,"MODEL material validation",0,0);check(window!=0,"context");try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();run();}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}}
+    public static void main(String[] args)throws Exception{long window=GpuValidationSupport.open(32,32,"MODEL material validation",false);check(window!=0,"context");try{run();}finally{GpuValidationSupport.close(window);}}
 }
 

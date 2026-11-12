@@ -1,6 +1,6 @@
 # GPU 运行时重构：当前验证与性能边界
 
-更新：2026-10-17。第四批结构和自动正确性回归通过，真实客户端及整帧性能仍待用户验收。调用归属、预算、故障边界和测试入口见[第四批报告](../gpu-runtime-stage4.md)。固定 RTX 4070 Laptop GPU／NVIDIA 581.15／OpenGL 4.5；Minecraft 1.21.1／NeoForge 21.1.236／Create 6.0.10。
+第四批结构和自动正确性回归通过，真实客户端及整帧性能仍待用户验收。调用归属、预算、故障边界和测试入口见[第四批报告](../gpu-runtime-stage4.md)。固定 RTX 4070 Laptop GPU／NVIDIA 581.15／OpenGL 4.5；Minecraft 1.21.1／NeoForge 21.1.236／Create 6.0.10。
 
 ## 第四批独立基线
 

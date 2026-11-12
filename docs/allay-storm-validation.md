@@ -1,6 +1,6 @@
 # 悦灵风暴验证入口
 
-日期：2026-10-29。阶段7与LOD2固定世界尺寸版已由用户确认客户端实机验收通过。此页只维护现行检查选择和命令；历史性能结论保留在`benchmarks/`，原始结果写入忽略的`build/`。
+阶段7与LOD2固定世界尺寸版已由用户确认客户端实机验收通过。此页只维护现行检查选择和命令；原始结果写入忽略的 `build/benchmarks/`，历史测量不进入 Git。
 
 ## 构建与行为检查
 
@@ -45,11 +45,11 @@ python scripts/benchmarks/run.py benchmarkStormLodGpu --offline
 python scripts/benchmarks/run.py validateJuliaProjectionGpu validateRiftSkyGpu validateRiftReplayGpu validateVanillaRiftHighLevel --offline
 ```
 
-LOD默认仅执行成员身份、种子／位置、死亡／覆盖位图、视锥／档位、当前MODEL／OPAQUE硬切、MRT／深度和GPU顶点投影回归，输出`storm-lod-projection.csv`。基准才输出compute／resident-keygen／render CSV及composite计时；已验收固定像素版本的源码对照、HEAD依赖和截图发布代码已移除。历史选择及测量范围见[LOD尺寸报告](benchmarks/storm-lod-perspective-2026-10-28.md)。
+LOD默认仅执行成员身份、种子／位置、死亡／覆盖位图、视锥／档位、当前MODEL／OPAQUE硬切、MRT／深度和GPU顶点投影回归，输出`storm-lod-projection.csv`。基准才输出compute／resident-keygen／render CSV及composite计时；已验收固定像素版本的源码对照、HEAD依赖和截图发布代码已移除。
 
 `validateStarfallGpu`还覆盖共享旧路径、圆环及未参战主体不漂向原点，与独立星柱工具不重复。Dome运动／反馈变化追加30／60／144／240Hz、不规则步长、延迟和时钟环绕任务；地形矩阵使用生产START及实际完成反馈，不能用预计时间冒充真实就绪。导航可用`-PnavigationQuick`定位；定位模式不替代完整矩阵。
 
-Dome地形参数保留`-PdomeTerrainPlans=<生产START矩阵>`、`-PdomeFps`、`-PdomeJitter`、`-PdomeReturningTraffic`及过滤项；诊断故障注入必须标明。GPU证据回放、边界退出及迟到完成说明见[Dome地形报告](benchmarks/dome-terrain-2026-10-23.md)。
+Dome地形参数保留`-PdomeTerrainPlans=<生产START矩阵>`、`-PdomeFps`、`-PdomeJitter`、`-PdomeReturningTraffic`及过滤项；诊断故障注入必须标明。
 
 ## 服务端与离线资源
 
@@ -74,7 +74,7 @@ Julia离线工具只渲染当前c=-0.5，写`build/julia-offline/parameters.json
 
 同机、固定输入与分辨率、预热后三轮，分别记录生成／计算／绘制／合成、CPU提交、显存、上传／读回及整帧。冷编译、缓存命中、首次非零执行和稳态分开；不清除用户驱动缓存。当前任务及规则见[性能结果规范](benchmarks/README.md)。
 
-保留的决策报告：[LOD尺寸](benchmarks/storm-lod-perspective-2026-10-28.md)、[动画存储](benchmarks/allay-animation-2026-10-25.md)、[共享导航](benchmarks/allay-storm-navigation-2026-10-23.md)、[冷编译与脱嵌](benchmarks/allay-storm-cold-escape-2026-10-24.md)、[集结](benchmarks/dome-gather-2026-10-23.md)、[地形](benchmarks/dome-terrain-2026-10-23.md)。报告描述当时条件，当前结果以本次日志为准。
+历史测量报告不进入 Git；当前结果以本次运行日志为准。
 
 发行包来自`build/libs/`，`audit_storm_package.py`检查生产类、着色器、协议及模板，排除证书、离线控制点、测试类和GameTest夹具。两端升级并重启，F3+T不更新Java类。后续渲染改动回归距离边界、暂停、死亡、STOP重召唤、切维度、资源重载／缩放及无包／八包；运输组合与authority交接保留独立实机范围。
 

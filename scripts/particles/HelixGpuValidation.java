@@ -85,8 +85,8 @@ public class HelixGpuValidation extends DomeGpuValidation {
   renderDome(centered,count);Files.move(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/dome-geometry-framebuffer.png"),Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/helix-geometry-framebuffer.png"),StandardCopyOption.REPLACE_EXISTING);
  }
  public static void main(String[] args)throws Exception{
-  GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(512,384,"Helix GPU validation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));if(Arrays.asList(args).contains("--formation-only")){helixFormations();return;}armIdentity();actualHelixExit();blockedHelixExit();meshClearance();playerGrid();completionReadback();helixFormations();sweep();helixSimulationBanks();helixCarriers();if(Arrays.asList(args).contains("--benchmark"))benchmarkHelix();check(GL11.glGetError()==0,"helix final GL state");System.out.println("Helix GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  long window=GpuValidationSupport.open(512,384,"Helix GPU validation",false);
+  try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));if(Arrays.asList(args).contains("--formation-only")){helixFormations();return;}armIdentity();actualHelixExit();blockedHelixExit();meshClearance();playerGrid();completionReadback();helixFormations();sweep();helixSimulationBanks();helixCarriers();if(Arrays.asList(args).contains("--benchmark"))benchmarkHelix();check(GL11.glGetError()==0,"helix final GL state");System.out.println("Helix GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(window);}
  }
  static class BlockingProbe implements AutoCloseable {
   final int update=compile("update.comp"),contact=compile("wavecontact.comp");

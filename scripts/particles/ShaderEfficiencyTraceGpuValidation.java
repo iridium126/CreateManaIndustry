@@ -52,12 +52,10 @@ public final class ShaderEfficiencyTraceGpuValidation extends ShaderEfficiencyUp
     public static void main(String[] args)throws Exception{
         var out=Path.of(System.getProperty("cmi.benchmark.output"));Files.createDirectories(out);
         var report=out.resolve("first-divergence.txt");if(Files.exists(report))throw new IllegalStateException("Existing evidence");
-        if(!GLFW.glfwInit())throw new AssertionError("GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);
-        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(32,32,"Phase trace",0,0);if(window==0)throw new AssertionError("GL context");
+        long window=GpuValidationSupport.open(32,32,"Phase trace",false);if(window==0)throw new AssertionError("GL context");
         var lines=new ArrayList<String>();lines.add("Trace-only blocking phase readbacks; no performance claim.");
         try{
-            GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
+            
             try(var p=Programs.load(System.getProperty("cmi.efficiency.baseline"))){
                 for(int count:new int[]{1000,65536})for(int mode:new int[]{1,2})try(var frame=new Frame(count,mode,"dome_gather",p,p)){
                     var reference=new LinkedHashMap<String,Phase>();
@@ -71,7 +69,7 @@ public final class ShaderEfficiencyTraceGpuValidation extends ShaderEfficiencyUp
                 }
             }
             if(GL11.glGetError()!=0)throw new AssertionError("GL error");
-        }finally{Files.write(report,lines);GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{Files.write(report,lines);GpuValidationSupport.close(window);}
         lines.forEach(System.out::println);
     }
 }

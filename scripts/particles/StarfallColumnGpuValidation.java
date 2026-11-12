@@ -225,8 +225,8 @@ public class StarfallColumnGpuValidation extends StarfallGpuValidation {
 
 
  public static void main(String[] args)throws Exception{
-  GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(128,128,"Column GPU validation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));reference();production();check(GL11.glGetError()==0,"final column GL state");System.out.println("Starfall column GPU: "+checks+" assertions passed");}
-  finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  long window=GpuValidationSupport.open(128,128,"Column GPU validation",false);
+  try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));reference();production();check(GL11.glGetError()==0,"final column GL state");System.out.println("Starfall column GPU: "+checks+" assertions passed");}
+  finally{GpuValidationSupport.close(window);}
  }
 }

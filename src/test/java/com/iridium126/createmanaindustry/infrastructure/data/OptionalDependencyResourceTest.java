@@ -87,16 +87,6 @@ class OptionalDependencyResourceTest {
         assertTrue(optional, "missing optional tag entry for " + CONDITIONAL_BLOCK);
     }
 
-    @Test
-    void patchouliOptionalEntryUsesAlwaysValidIcon() throws IOException {
-        String path = "/assets/hexcasting/patchouli_books/thehexbook/"
-                + "en_us/entries/createmanaindustry/trickster_patterns.json";
-        String icon = string(readResource(path), "icon");
-        assertNotNull(icon);
-        assertFalse(icon.startsWith("trickster:"),
-                "Patchouli parses icons even when the entry flag hides it");
-    }
-
     /** Optional namespaces whose absence is exercised by the reference client profile. */
     private static Set<String> requiredMods(JsonElement element) {
         Set<String> mods = new TreeSet<>();

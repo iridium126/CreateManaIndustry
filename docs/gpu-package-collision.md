@@ -67,4 +67,4 @@ python scripts/benchmarks/run.py validatePackageGpu -PpackageMovingAdvance --off
 python scripts/benchmarks/run.py validatePackageGpu -PpackageZeroBoundary --offline
 ```
 
-完整测试矩阵见 [验证入口](gpu-package-repair-validation.md)，性能范围见 [性能与诊断](gpu-package-performance.md)。历史逐次修复日志由 Git 历史保留。
+完整测试矩阵见 [验证入口](testing.md)，性能范围见 [性能与诊断](gpu-package-performance.md)。历史逐次修复日志由 Git 历史保留。

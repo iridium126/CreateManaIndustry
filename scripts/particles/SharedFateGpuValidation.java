@@ -521,16 +521,14 @@ public class SharedFateGpuValidation {
         }
     }
     public static void main(String[] args) throws Exception {
-        GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW initialization");
-        GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(64,64,"Shared Fate shader validation",0,0);
-        try{check(window!=0,"hidden GPU context");GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
+        long window=GpuValidationSupport.open("Shared Fate shader validation");
+        try{check(window!=0,"hidden GPU context");
             System.out.println(GL11.glGetString(GL11.GL_RENDERER));
             if(java.util.Arrays.asList(args).contains("--benchmark-only"))benchmarkComparison();
             else {lateHeaders();math();samplingMath();frames();geometry();geometryPublication();drawHandoff();partitionKernels();partitionDrawHandoff();}
             check(GL11.glGetError()==0,"no GL error");
             System.out.println("Shared Fate GPU: "+checks+" assertions passed");
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }
 

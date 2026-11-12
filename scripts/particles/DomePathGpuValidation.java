@@ -152,8 +152,8 @@ public final class DomePathGpuValidation extends DomeGpuValidation {
   Path directory=Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/current"));Files.createDirectories(directory);Files.write(directory.resolve("dome-path-performance.csv"),rows);
  }
  public static void main(String[] arguments)throws Exception{
-  GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Dome navigation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));int program=compile("dome_path.comp");try{search(program,false,false,1);search(program,true,false,300);search(program,false,true,1);detour(program);completedOwnership(program);invalidation(program);auditWindows();performance(program);check(GL11.glGetError()==0,"Navigation GL error");System.out.println("Dome navigation GPU: "+checks+" assertions passed");}finally{GL20.glUseProgram(0);deleteProgram(program);}}
-  finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  long window=GpuValidationSupport.open("Dome navigation");
+  try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));int program=compile("dome_path.comp");try{search(program,false,false,1);search(program,true,false,300);search(program,false,true,1);detour(program);completedOwnership(program);invalidation(program);auditWindows();performance(program);check(GL11.glGetError()==0,"Navigation GL error");System.out.println("Dome navigation GPU: "+checks+" assertions passed");}finally{GL20.glUseProgram(0);deleteProgram(program);}}
+  finally{GpuValidationSupport.close(window);}
  }
 }

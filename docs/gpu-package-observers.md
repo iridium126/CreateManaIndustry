@@ -31,4 +31,4 @@
 
 GPU 回归包含工作组边界、131072 成员、完整/紧凑路径对照、乱序/旧身份/时钟、原子失败、上传及反馈积压、退休和安全复用。CPU benchmark 测量 journal、实际编码及参考器，GPU benchmark 测量上传/合并/呈现；两者不代表完整网络或游戏帧成本。
 
-[当前实现总览](gpu-packages.md)、[测试与原始证据](gpu-package-repair-validation.md)、[轻量记录契约](gpu-light-package-records.md)。旧[原生消费报告](benchmarks/package-native-observer-gpu-2026-10-01.md)与[权威下行报告](benchmarks/package-native-downlink-2026-10-01.md)只作为历史测量保留，对应运行代码已删除。多人订阅迁移、实际延迟、视觉和完整流量仍需游戏验证。
+[当前实现总览](gpu-packages.md)、[测试与原始证据](testing.md)、[轻量记录契约](gpu-light-package-records.md)。多人订阅迁移、实际延迟、视觉和完整流量仍需游戏验证。

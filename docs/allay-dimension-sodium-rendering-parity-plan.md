@@ -57,7 +57,7 @@
 - opaque、cutout、translucent、shadow、破坏覆盖要有真实 pass 归属，不能只取消 vanilla draw。
 - section/remove 与 GPU handle 释放要有明确 owner；换维度、资源重载、关闭时必须等待后台结果失效。
 
-详细未关闭问题统一见 [实现评审清单](allay-dimension-implementation-review-fix-plan.md)。
+未关闭问题以当前源码与 [维度总览](allay-dimension-dev.md) 为准。
 
 ## 6. 验收矩阵
 

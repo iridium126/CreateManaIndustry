@@ -33,8 +33,8 @@ public class ShadowCollectGpuValidation extends ShadowQualityGpuValidation {
         }
     }
     public static void main(String[] args)throws Exception{
-        GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Shadow reservation probe",0,0);Files.createDirectories(OUT);
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));run();check(GL11.glGetError()==0,"final GL error");System.out.println("Shadow reservation: "+checks+" assertions passed");}
-        finally{Files.write(OUT.resolve("samples.csv"),samples);GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        long window=GpuValidationSupport.open("Shadow reservation probe");Files.createDirectories(OUT);
+        try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));run();check(GL11.glGetError()==0,"final GL error");System.out.println("Shadow reservation: "+checks+" assertions passed");}
+        finally{Files.write(OUT.resolve("samples.csv"),samples);GpuValidationSupport.close(window);}
     }
 }

@@ -53,7 +53,7 @@ public class StormPlaybackClockGpuValidation extends StormIndexDisplayGpuValidat
         long window=GLFW.glfwCreateWindow(32,32,"Storm playback clock",0,0);GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
         var report=new LinkedHashMap<String,Object>();report.put("passed",false);
         try{for(int fps:new int[]{30,60,144,240})correctedClock(fps);check(GL11.glGetError()==0,"GL state");report.put("passed",true);}
-        finally{report.put("checks",checks);report.put("gpu",GL11.glGetString(GL11.GL_RENDERER));report.put("scope","production GPU history and logical playback; periodic duplicate/backward/forward world timestamps; 30/60/144/240 FPS; variable completion phase");Files.writeString(out.resolve("playback-clock.json"),new GsonBuilder().setPrettyPrinting().create().toJson(report));GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        finally{report.put("checks",checks);report.put("gpu",GL11.glGetString(GL11.GL_RENDERER));report.put("scope","production GPU history and logical playback; periodic duplicate/backward/forward world timestamps; 30/60/144/240 FPS; variable completion phase");Files.writeString(out.resolve("playback-clock.json"),new GsonBuilder().setPrettyPrinting().create().toJson(report));GpuValidationSupport.close(window);}
         System.out.println("Storm playback clock GPU: "+checks+" checks passed");
     }
 }

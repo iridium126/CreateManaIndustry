@@ -89,9 +89,9 @@ public class NativeShadowDepthGpuValidation extends ModelPopulationGpuValidation
         }finally{Files.write(out.resolve("native-depth-collect.csv"),rows);}
     }
     public static void main(String[] args)throws Exception{
-        GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Native shadow depth",0,0);
+        long window=GpuValidationSupport.open("Native shadow depth");
         Path out=Path.of("build/shadow-completion/depth-"+Integer.getInteger("cmi.shadow.round",0));Files.createDirectories(out);
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();properties();history();collect(out);check(GL11.glGetError()==0,"final GL error");Files.writeString(out.resolve("checks.txt"),"checks="+checks+"\nProduction hierarchy, history reliability and collect only; pack raster/side effects and full-chain qualification remain required.\n");System.out.println("Native shadow depth GPU: "+checks+" checks");}
-        finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        try{properties();history();collect(out);check(GL11.glGetError()==0,"final GL error");Files.writeString(out.resolve("checks.txt"),"checks="+checks+"\nProduction hierarchy, history reliability and collect only; pack raster/side effects and full-chain qualification remain required.\n");System.out.println("Native shadow depth GPU: "+checks+" checks");}
+        finally{GpuValidationSupport.close(window);}
     }
 }

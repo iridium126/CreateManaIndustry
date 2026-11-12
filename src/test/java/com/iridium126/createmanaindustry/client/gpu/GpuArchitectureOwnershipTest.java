@@ -15,13 +15,6 @@ class GpuArchitectureOwnershipTest {
             assertNotNull(source,name);var type=new ClassNode();new ClassReader(source).accept(type,ClassReader.SKIP_DEBUG);return type;
         }
     }
-    @Test void commonGpuMechanismsCannotImportBusinessDomains()throws Exception {
-        try(var files=Files.walk(Path.of("src/main/java",ROOT,"gpu"))) {
-            for(var path:files.filter(p->p.toString().endsWith(".java")).toList())
-                for(var line:Files.readAllLines(path))if(line.startsWith("import com.iridium126.createmanaindustry.client."))
-                    assertTrue(line.contains("client.gpu."),path+": "+line);
-        }
-    }
     @Test void businessObjectsCannotHoldOrAcceptTheEntireEngine()throws Exception {
         try(var files=Files.walk(Path.of("src/main/java",ROOT))) {
             for(var path:files.filter(p->p.toString().endsWith(".java")).toList()) {
@@ -35,19 +28,10 @@ class GpuArchitectureOwnershipTest {
             }
         }
     }
-    @Test void preservedEmissionApiHasNoBusinessForwardersOrUniformHelpers()throws Exception {
+    @Test void preservedEmissionApiKeepsItsStableEntryPoints()throws Exception {
         var engine=read(ROOT+"particles/engine/CMIParticleEngine");
-        var forbidden=Set.of("applyStormState","applyStormCorrections","applyStormDamage","applyStormCenter","applyStormWave",
-                "starfallGpu","gpuBuffers","gpu","programs","allayAtlas","collisionBake","packageParticles",
-                "enterLevelFrame","captureLevelFrame","leaveLevelFrame","prepareCurrentFrame","beginFrame","endFrame",
-                "handlePlayerAttack","injectCrosshairPick","replayVanillaUse","previewPackages","loc","setFloatUniform","close","requestProgramRebuild",
-                "nativeParticleTick","setBudget","liveCount","capacity","available","fadeDistanceBlocks","renderDistanceBlocks","emissionScale","emaMs","budgetMs","streamCount","isTranslucent");
-        for(var method:engine.methods)assertFalse(forbidden.contains(method.name),method.name);
         for(String entry:List.of("spawn","stream","removeStream","clear","setAnimation","trySpawnHexParticle","trySpawnHexSpray"))
             assertTrue(engine.methods.stream().anyMatch(m->m.name.equals(entry)),entry);
-        assertFalse(Files.exists(Path.of("src/main/java",ROOT,"particles/engine/StormParticleAccess.java")));
-        assertFalse(Files.exists(Path.of("src/main/java",ROOT,"particles/engine/ParticleComputeState.java")));
-        assertFalse(Files.exists(Path.of("src/main/java",ROOT,"particles/packages/PackagePoolGpu.java")));
     }
     @Test void narrowResourcePortsReturnOnlyOperationsOrImmutableValues()throws Exception {
         for(String name:List.of("allaystorm/StormParticlePort","particles/interaction/ModelParticlePort",

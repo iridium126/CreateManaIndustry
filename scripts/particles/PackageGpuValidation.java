@@ -7711,13 +7711,10 @@ public class PackageGpuValidation {
 
     public static void main(String[] args)throws Exception {
         irisNativeTransform=Arrays.asList(args).contains("--iris-transform");
-        GLFWErrorCallback callback=GLFWErrorCallback.createPrint(System.err);callback.set();
-        check(GLFW.glfwInit(),"GLFW init");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);
-        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(64,64,"Package GPU validation",0,0);check(window!=0,"GL context");
+        GLFWErrorCallback callback=long window=GpuValidationSupport.open("Package GPU validation");check(window!=0,"GL context");
         org.lwjgl.system.Callback debug=null;
         try {
-            GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
+            
             if(Arrays.asList(args).contains("--prediction-pipeline-only")) {
                 predictionKernelBenchmark();pipelineBenchmark(true,true);
                 check(GL11.glGetError()==GL11.GL_NO_ERROR,"prediction benchmark GL error");
@@ -7790,6 +7787,6 @@ public class PackageGpuValidation {
             if(Arrays.asList(args).contains("--stack-benchmark"))stackBenchmark();
             if(Arrays.asList(args).contains("--stack-stress"))stackStress();
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"GL error");System.out.println("Package GPU: "+checks+" assertions passed");
-        }finally {if(debug!=null)debug.free();GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();callback.free();}
+        }finally {if(debug!=null)debug.free();GpuValidationSupport.close(window);}
     }
 }

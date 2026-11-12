@@ -134,6 +134,6 @@ public final class RiftSkyGpuValidation {
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
         long window=GLFW.glfwCreateWindow(SIZE,SIZE,"CMI rift sky validation",0,0);check(window!=0,"OpenGL context");
         try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();com.mojang.blaze3d.systems.RenderSystem.initRenderThread();System.out.println(GL11.glGetString(GL11.GL_RENDERER));run();stateAndCloudField();System.out.println("Rift sky GPU: "+checks+" assertions passed");}
-        finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        finally{GpuValidationSupport.close(window);}
     }
 }

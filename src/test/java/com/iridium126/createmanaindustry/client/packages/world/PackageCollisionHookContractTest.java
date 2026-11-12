@@ -141,4 +141,53 @@ class PackageCollisionHookContractTest {
             for(Object entry:entries)if(entry instanceof AnnotationNode at&&annotationValueContains(at,"value",expected))return true;
         return false;
     }
+    private static long calls(ClassNode node,String method,String owner,String name,String descriptor){
+        return node.methods.stream().filter(m->m.name.equals(method))
+                .flatMap(m->{var found=new ArrayList<MethodInsnNode>();for(var i:m.instructions)if(i instanceof MethodInsnNode call)found.add(call);return found.stream();})
+                .filter(c->c.owner.equals(owner)&&c.name.equals(name)&&c.desc.equals(descriptor)).count();
+    }
+    @Test void fanHooksMatchCreateAndKeepNativeProcessingCallbacks()throws Exception{
+        var fan=type("com/simibubi/create/content/kinetics/fan/AirCurrent");
+        assertEquals(1,calls(fan,"tick","com/simibubi/create/content/kinetics/fan/AirCurrent","tickAffectedEntities","(Lnet/minecraft/world/level/Level;)V"));
+        assertEquals(1,calls(fan,"tickAffectedEntities","net/minecraft/world/entity/Entity","setDeltaMovement","(Lnet/minecraft/world/phys/Vec3;)V"));
+        assertEquals(1,calls(fan,"tickAffectedEntities","com/simibubi/create/content/kinetics/fan/processing/FanProcessingType","affectEntity","(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/level/Level;)V"));
+        assertTrue(fan.fields.stream().anyMatch(f->f.name.equals("caughtEntities")&&f.desc.equals("Ljava/util/List;")));
+    }
+    @Test void standardPairCallsCanReplaceOnlyPackageVelocity()throws Exception{
+        var entity=type("net/minecraft/world/entity/Entity");entity.methods.removeIf(m->!m.desc.equals("(Lnet/minecraft/world/entity/Entity;)V"));
+        assertEquals(2,calls(entity,"push","net/minecraft/world/entity/Entity","push","(DDD)V"));
+        var box=type("com/simibubi/create/content/logistics/box/PackageEntity");assertTrue(box.methods.stream().anyMatch(m->m.name.equals("push")&&m.desc.equals("(Lnet/minecraft/world/entity/Entity;)V")));
+    }
+    @Test void inputInvokersAndNativePickingPredicateTargetMatchResolvedMinecraft() throws Exception {
+        var mc=type("net/minecraft/client/Minecraft");
+        assertTrue(mc.fields.stream().anyMatch(f->f.name.equals("missTime")&&f.desc.equals("I")));
+        for(String method:List.of("startUseItem()V","startAttack()Z","continueAttack(Z)V"))
+            assertTrue(mc.methods.stream().anyMatch(m->(m.name+m.desc).equals(method)),method);
+        var renderer=type("net/minecraft/client/renderer/GameRenderer");
+        var pick=renderer.methods.stream().filter(m->m.name.equals("pick")&&m.desc.equals("(Lnet/minecraft/world/entity/Entity;DDF)Lnet/minecraft/world/phys/HitResult;")).findFirst().orElseThrow();
+        int hits=0;for(var insn:pick.instructions)if(insn instanceof MethodInsnNode call&&call.owner.equals("net/minecraft/world/entity/projectile/ProjectileUtil")
+                &&call.name.equals("getEntityHitResult")&&call.desc.equals("(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/world/phys/AABB;Ljava/util/function/Predicate;D)Lnet/minecraft/world/phys/EntityHitResult;"))hits++;
+        assertEquals(1,hits);
+    }
+    @Test void newHooksAreClientOnlyAndNativeGameModeStillUsesServerEntityPackets() throws Exception {
+        try(var resource=getClass().getClassLoader().getResourceAsStream("createmanaindustry.mixins.json")) {
+            assertNotNull(resource);var json=JsonParser.parseReader(new InputStreamReader(resource)).getAsJsonObject();
+            var clients=new HashSet<String>();var shared=new HashSet<String>();
+            json.getAsJsonArray("client").forEach(v->clients.add(v.getAsString()));json.getAsJsonArray("mixins").forEach(v->shared.add(v.getAsString()));
+            for(String hook:List.of("packages.PackageFreeGpuInputMixin")){assertTrue(clients.contains(hook));assertFalse(shared.contains(hook));}
+            assertTrue(clients.contains("vanilla.GameRendererPickMixin"));assertFalse(shared.contains("vanilla.GameRendererPickMixin"));
+        }
+        var interaction=type("com/iridium126/createmanaindustry/client/packages/authority/PackageFreeInteractionClient");
+        assertTrue(interaction.methods.stream().flatMap(m->java.util.stream.StreamSupport.stream(m.instructions.spliterator(),false))
+                .filter(MethodInsnNode.class::isInstance).map(MethodInsnNode.class::cast)
+                .anyMatch(call->call.owner.endsWith("/ServerboundLightPackageInteraction")&&call.name.equals("<init>")));
+        for(var m:interaction.methods)for(var instruction:m.instructions)if(instruction instanceof MethodInsnNode call)
+            assertFalse(call.owner.equals("com/simibubi/create/content/logistics/box/PackageEntity"),"Record interactions must not replay on a native package entity");
+        var mode=type("net/minecraft/client/multiplayer/MultiPlayerGameMode");
+        for(String name:List.of("interact","interactAt","attack")) {
+            var method=mode.methods.stream().filter(m->m.name.equals(name)).findFirst().orElseThrow();boolean sends=false;
+            for(var insn:method.instructions)if(insn instanceof MethodInsnNode call&&call.owner.equals("net/minecraft/network/protocol/game/ServerboundInteractPacket")&&call.name.startsWith("create"))sends=true;
+            assertTrue(sends,name);
+        }
+    }
 }

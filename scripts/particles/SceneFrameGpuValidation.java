@@ -99,12 +99,11 @@ public final class SceneFrameGpuValidation {
         cached[0]=117;GpuBufferRetirement.retiring(117);check(cached[0]==117,"Closed owner remained registered");
     }
     public static void main(String[] args)throws Exception {
-        check(GLFW.glfwInit(),"GLFW initialization");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(32,32,"CMI scene validation",0,0);check(window!=0,"OpenGL context");
-        try {GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));int program=program();
+        long window=GpuValidationSupport.open(32,32,"CMI scene validation",false);check(window!=0,"OpenGL context");
+        try {System.out.println(GL11.glGetString(GL11.GL_RENDERER));int program=program();
             try {boundaries(program);failedCandidate(program);reloadFailure(program);activeOwnerRetirement();GL20.glUseProgram(0);check(GL11.glGetError()==0,"GL error");}
             finally {GpuPrograms.delete(program);}
             System.out.println("Scene frame GPU: "+checks+" assertions passed");
-        }finally {GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally {GpuValidationSupport.close(window);}
     }
 }

@@ -110,8 +110,8 @@ public class ModelAnimationStorageBenchmark extends ModelAnimationStorageGpuVali
   }finally{gpu.free();}
  }
  public static void main(String[] args)throws Exception{
-  GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long w=GLFW.glfwCreateWindow(64,64,"MODEL animation benchmark",0,0);
-  try{GLFW.glfwMakeContextCurrent(w);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));update=compile("update.comp");emit=compile("emit.comp");animate=compile("allay_animate.comp");grid=compile("gridbuild.comp");modelPrepare=compile("model_prepare.comp");run();memoryInventory();}
-  finally{for(int p:new int[]{update,emit,animate,grid,modelPrepare,oldUpdate,oldReset,oldPrepare,oldKeys,oldGrid})if(p!=0)deleteProgram(p);GLFW.glfwDestroyWindow(w);GLFW.glfwTerminate();}
+  long w=GpuValidationSupport.open("MODEL animation benchmark");
+  try{System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));update=compile("update.comp");emit=compile("emit.comp");animate=compile("allay_animate.comp");grid=compile("gridbuild.comp");modelPrepare=compile("model_prepare.comp");run();memoryInventory();}
+  finally{for(int p:new int[]{update,emit,animate,grid,modelPrepare,oldUpdate,oldReset,oldPrepare,oldKeys,oldGrid})if(p!=0)deleteProgram(p);GpuValidationSupport.close(w);}
  }
 }

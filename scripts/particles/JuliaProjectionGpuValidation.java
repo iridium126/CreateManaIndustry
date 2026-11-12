@@ -117,6 +117,6 @@ public final class JuliaProjectionGpuValidation {
     }
     public static void main(String[] args)throws Exception {
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,3);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,3);long window=GLFW.glfwCreateWindow(SIZE,SIZE,"Julia projection validation",0,0);check(window!=0,"context");
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();run();System.out.println("Julia projection: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();run();System.out.println("Julia projection: "+checks+" assertions passed");}finally{GpuValidationSupport.close(window);}
     }
 }

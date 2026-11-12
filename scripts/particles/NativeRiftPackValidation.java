@@ -208,6 +208,6 @@ public final class NativeRiftPackValidation {
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_COMPAT_PROFILE);
         long window=GLFW.glfwCreateWindow(32,32,"Native rift pack validation",0,0);check(window!=0,"OpenGL context");
         try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));run();}
-        finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        finally{GpuValidationSupport.close(window);}
     }
 }

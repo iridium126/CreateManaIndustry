@@ -118,6 +118,6 @@ public final class RiftReplayGpuValidation {
     public static void main(String[] args)throws Exception{
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_COMPAT_PROFILE);
         long w=GLFW.glfwCreateWindow(SIZE,SIZE,"Rift replay GPU validation",0,0);check(w!=0,"GL context");
-        try{GLFW.glfwMakeContextCurrent(w);GL.createCapabilities();com.mojang.blaze3d.systems.RenderSystem.initRenderThread();IrisRenderSystem.initRenderer();sundial();textures();frames();attachments();check(GL11.glGetError()==0,"no GL errors");System.out.println("Rift replay GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(w);GLFW.glfwTerminate();}
+        try{GLFW.glfwMakeContextCurrent(w);GL.createCapabilities();com.mojang.blaze3d.systems.RenderSystem.initRenderThread();IrisRenderSystem.initRenderer();sundial();textures();frames();attachments();check(GL11.glGetError()==0,"no GL errors");System.out.println("Rift replay GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(w);}
     }
 }

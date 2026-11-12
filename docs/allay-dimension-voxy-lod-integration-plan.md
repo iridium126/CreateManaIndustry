@@ -53,4 +53,4 @@ Voxy 的 Y 坐标空间有限，因此采用以玩家附近高度为中心的 sl
 
 新世界中沿 Y 轴跨越多个 slab，快速水平移动并反复进出近景范围；修改方块后观察 L0–L3 是否更新；重载资源、换维度、退出重进并启用/禁用 Sodium。重点记录：空洞、双绘、旧 epoch 回写、忘记泄漏、Voxy 报错后是否仍能近景游玩。
 
-实现评审中的 Voxy 问题见 [F20–F31](allay-dimension-implementation-review-fix-plan.md)。
+Voxy 相关的未关闭问题以当前源码为准。

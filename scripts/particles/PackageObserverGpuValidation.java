@@ -477,14 +477,12 @@ public final class PackageObserverGpuValidation {
         Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-observer-gpu.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/package-observer-gpu-samples.csv"),samples);
     }
     public static void main(String[] args) throws Exception {
-        var callback=GLFWErrorCallback.createPrint(System.err);callback.set();check(GLFW.glfwInit(),"GLFW");
-        GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(64,64,"Package observer GPU validation",0,0);check(window!=0,"context");
+        var callback=long window=GpuValidationSupport.open("Package observer GPU validation");check(window!=0,"context");
         try {
-            GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
+            System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
             boundaries();mergeAndCorrection();atomicFailures();sequenceAndRebuild();namespaceRetirement();referenceMerges();delayedUploads();mixedImport();asynchronousFeedback();compactParity();controller();recycledObservers();
             if(Arrays.asList(args).contains("--benchmark"))benchmark();
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"observer GL error");System.out.println("Package observer GPU: "+checks+" assertions passed");
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();callback.free();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }

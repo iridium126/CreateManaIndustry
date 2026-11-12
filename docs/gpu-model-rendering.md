@@ -1,6 +1,6 @@
 # MODEL 提交、阴影与交互
 
-状态：已实现；真实光影包、快速转向、重载及攻击反馈仍需游戏内验收。本文保留当前契约，历史测量见 [阴影成本](benchmarks/model-current-frame-shadow-2026-10-09/summary.md) 和 [活动索引成本](benchmarks/model-population-hit-fix-2026-10-10/summary.md)。
+状态：已实现；真实光影包、快速转向、重载及攻击反馈仍需游戏内验收。本文只保留当前契约。
 
 ## 帧生命周期与状态
 

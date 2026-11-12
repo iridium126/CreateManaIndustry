@@ -1,6 +1,6 @@
 # Allay Dimension 修复与验收记录
 
-日期：2026-10-24。范围：R1–R8，以及随机 tick、独立计划 tick、光照边界和 Region 提交回滚。保留中央原版区块带、32³ Cube、Sodium 近景及可选 Voxy 远景。
+范围：R1–R8，以及随机 tick、独立计划 tick、光照边界和 Region 提交回滚。保留中央原版区块带、32³ Cube、Sodium 近景及可选 Voxy 远景。
 
 ## 当前契约
 

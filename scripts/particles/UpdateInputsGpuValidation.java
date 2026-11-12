@@ -67,10 +67,10 @@ public class UpdateInputsGpuValidation extends UpdateStorageGpuValidation {
         }}finally{for(int p:programs)deleteProgram(p);GL11.glDeleteTextures(view);GL15.glDeleteBuffers(members);GL15.glDeleteBuffers(counter);}
     }
     public static void main(String[] args)throws Exception{
-        GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"CPU-direct update inputs",0,0);
+        long window=GpuValidationSupport.open("CPU-direct update inputs");
         int round=Integer.getInteger("cmi.shadow.round",0);Path out=Path.of("build/shadow-completion/inputs-"+round);Files.createDirectories(out);
         var rows=new ArrayList<String>(List.of("count,mode,variant,comparison,pair,a_gpu_ms,b_gpu_ms,a_cpu_ms,b_cpu_ms"));int[] programs=new int[5];
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();Files.writeString(out.resolve("device.txt"),GL11.glGetString(GL11.GL_RENDERER)+"\n"+GL11.glGetString(GL11.GL_VERSION)+"\n");
+        try{Files.writeString(out.resolve("device.txt"),GL11.glGetString(GL11.GL_RENDERER)+"\n"+GL11.glGetString(GL11.GL_VERSION)+"\n");
             String original=source("update.comp");programs[0]=compileText("original CPU upload",original);Files.writeString(out.resolve("original-interface.txt"),UpdateResourceInterface.verify(programs[0],16).toString());
             for(int v=0;v<4;v++){var layout=new UpdateStorageLayout((v&1)!=0,(v&2)!=0);String text=layout.source(original);Files.writeString(out.resolve(VARIANTS[v]+".comp"),text);programs[v+1]=compileText(VARIANTS[v],text);Files.writeString(out.resolve(VARIANTS[v]+"-interface.txt"),UpdateResourceInterface.verify(programs[v+1],layout.activeBlocks()).toString());}
             allocatorContract();
@@ -88,6 +88,6 @@ public class UpdateInputsGpuValidation extends UpdateStorageGpuValidation {
                 }System.out.println("CPU-direct input candidates exact count="+count+" mode="+mode);
             }
             check(GL11.glGetError()==0,"final GL error");System.out.println("CPU-direct candidates: "+checks+" checks; update domains measured, production layout unchanged");
-        }finally{Files.write(out.resolve("samples.csv"),rows);for(int p:programs)if(p!=0)deleteProgram(p);GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{Files.write(out.resolve("samples.csv"),rows);for(int p:programs)if(p!=0)deleteProgram(p);GpuValidationSupport.close(window);}
     }
 }

@@ -47,9 +47,9 @@ public class UpdateDomainGpuValidation extends ModelPopulationGpuValidation {
         public void close(){q.close();for(int p:new int[]{gridProgram})deleteProgram(p);for(int b:new int[]{grid,output,damage,correction,map})GL15.glDeleteBuffers(b);}
     }
     public static void main(String[] args)throws Exception{
-        GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Domain kernel screen",0,0);
+        long window=GpuValidationSupport.open("Domain kernel screen");
         Path out=Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/update-domain"));Files.createDirectories(out);
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));var rows=new ArrayList<String>();rows.add("count,mode,round,sample,baseline_ms,candidate_ms");
+        try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));var rows=new ArrayList<String>();rows.add("count,mode,round,sample,baseline_ms,candidate_ms");
             for(int round=0;round<3;round++){
                 boolean aa=Boolean.getBoolean("cmi.update.domain.aa");int unified=program(0,round);int[] programs={unified,aa?unified:program(1,round),aa?unified:program(2,round)};
                 try(var first=new DomainFixture(1000,2,programs)){
@@ -68,6 +68,6 @@ public class UpdateDomainGpuValidation extends ModelPopulationGpuValidation {
             }
             Files.write(out.resolve("domain-compile.csv"),compileRows);Files.write(out.resolve("domain-first.csv"),firstRows);
             check(GL11.glGetError()==0,"Final GL state");System.out.println("Domain GPU screen: "+checks+" checks passed");
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }

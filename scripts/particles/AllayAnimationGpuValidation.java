@@ -143,7 +143,7 @@ public class AllayAnimationGpuValidation extends DomeGpuValidation {
         }finally{GL15.glDeleteBuffers(header);GL15.glDeleteBuffers(players);deleteProgram(p);}
     }
     public static void main(String[] args)throws Exception{
-        GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Vanilla Allay pose oracle",0,0);
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));vanillaMatrices();playerSnapshot();sidecar();cadenceAndLook();check(GL11.glGetError()==0,"Allay animation GL error");System.out.println("Allay animation GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        long window=GpuValidationSupport.open("Vanilla Allay pose oracle");
+        try{System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));vanillaMatrices();playerSnapshot();sidecar();cadenceAndLook();check(GL11.glGetError()==0,"Allay animation GL error");System.out.println("Allay animation GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(window);}
     }
 }

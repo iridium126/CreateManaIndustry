@@ -54,6 +54,6 @@ public final class ParticleReplayGpu extends ModelPopulationGpuValidation {
             result.put("distribution",Map.of("warmup",8,"samples",samples,"gpu_p50_ms",percentile(gpu,.5),"gpu_p95_ms",percentile(gpu,.95),"gpu_p99_ms",percentile(gpu,.99),"gpu_samples_ms",gpu,"cpu_submit_samples_ms",cpu));
             result.put("program_loading",replay.programLoading);result.put("actual_context_flags",GL11.glGetInteger(GL30.GL_CONTEXT_FLAGS));result.put("context_origin",replay.manifest.has("gl_context_flags")?"captured":"legacy core+forward recovered by binary compatibility probe");result.put("buffers",replay.hashes());
             Files.writeString(out.resolve("replay.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result)+"\n");
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }

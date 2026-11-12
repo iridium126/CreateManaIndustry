@@ -126,12 +126,11 @@ public final class WorldEffectsGpuValidation {
         var pixels=BufferUtils.createFloatBuffer(size*size*4);GL11.glReadPixels(0,0,size,size,GL11.GL_RGBA,GL11.GL_FLOAT,pixels);float[] result=new float[pixels.limit()];pixels.get(result);return result;
     }
     public static void main(String[] args)throws Exception{
-        check(GLFW.glfwInit(),"GLFW initialization");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(64,64,"CMI world effects validation",0,0);check(window!=0,"OpenGL context");
+        long window=GpuValidationSupport.open("CMI world effects validation");check(window!=0,"OpenGL context");
         try{
-            GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();RenderSystem.initRenderThread();System.out.println(GL11.glGetString(GL11.GL_RENDERER));
+            RenderSystem.initRenderThread();System.out.println(GL11.glGetString(GL11.GL_RENDERER));
             for(String name:new String[]{"mist_volumetric_iris","fuel_rod_glow_iris","storm_visual_probe"}){int p=program(name);try{check(p!=0,"production fragment "+name);try(var copy=new SceneColorCopy()){if(name.equals("storm_visual_probe")){probe(p,32,copy);probe(p,64,copy);}if(name.equals("mist_volumetric_iris"))mistLighting(p,copy);}}finally{GL20.glDeleteProgram(p);}}
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"GL errors");System.out.println("World effects GPU: "+checks+" assertions passed");
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }

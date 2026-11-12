@@ -74,6 +74,6 @@ public class ShadowDrawGpuValidation {
                     }finally{GL20.glDeleteProgram(a);GL20.glDeleteProgram(b);}System.out.println(pack+" shadow candidate tested");packs++;
                 }
             }ModelMergeGpuValidation.check(packs>=8,"eight shadow packs");ModelMergeGpuValidation.check(GL11.glGetError()==0,"shadow candidate GL error");System.out.println("Shadow draw: "+ModelMergeGpuValidation.checks+" checks passed");
-        }finally{Files.write(out.resolve("shadow-draw-samples.csv"),rows);Files.write(out.resolve("shadow-draw-contracts.csv"),contracts);GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{Files.write(out.resolve("shadow-draw-samples.csv"),rows);Files.write(out.resolve("shadow-draw-contracts.csv"),contracts);GpuValidationSupport.close(window);}
     }
 }

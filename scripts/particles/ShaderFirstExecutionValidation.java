@@ -54,13 +54,13 @@ public class ShaderFirstExecutionValidation extends StarfallGpuValidation {
   public void close(){for(int t:textures)GL11.glDeleteTextures(t);for(int b:new int[]{zero,pool,header,geometry})GL15.glDeleteBuffers(b);GL30.glDeleteVertexArrays(vao);}
  }
  public static void main(String[] args)throws Exception{
-  GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"First shader execution",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();ARBParallelShaderCompile.glMaxShaderCompilerThreadsARB(2);var specs=specifications();var rows=new ArrayList<String>();rows.add("round,program,source_key,relink_wall_ms,first_workgroup_or_draw_wall_ms");Path input=Path.of(System.getProperty("cmi.compiler.csv"));Path output=Path.of(System.getProperty("cmi.benchmark.output"));Files.createDirectories(output);
+  long window=GpuValidationSupport.open("First shader execution");
+  try{ARBParallelShaderCompile.glMaxShaderCompilerThreadsARB(2);var specs=specifications();var rows=new ArrayList<String>();rows.add("round,program,source_key,relink_wall_ms,first_workgroup_or_draw_wall_ms");Path input=Path.of(System.getProperty("cmi.compiler.csv"));Path output=Path.of(System.getProperty("cmi.benchmark.output"));Files.createDirectories(output);
    try(var invocation=new Invocation()){
     for(String row:Files.readAllLines(input).subList(1,Files.readAllLines(input).size())){String[] columns=row.split(",",-1);if(!columns[1].equals("true"))continue;String name=columns[2],fragment=specs.get(name),key=columns[7];long begin=System.nanoTime();int program=program(name,fragment,key);double relink=(System.nanoTime()-begin)/1e6;
      try{invocation.bind(program,fragment!=null);begin=System.nanoTime();GL20.glUseProgram(program);if(fragment==null)GL43.glDispatchCompute(1,1,1);else GL31.glDrawArraysInstanced(GL11.GL_TRIANGLES,0,name.equals("model.vsh")?3:6,1);GL42.glMemoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT);GL11.glFinish();double execute=(System.nanoTime()-begin)/1e6;check(GL11.glGetError()==0,"First invocation "+name);rows.add(columns[0]+","+name+","+key+","+relink+","+execute);Files.write(output.resolve("shader-first-execution.csv"),rows);System.out.println("FIRST "+name+" relinkMs="+relink+" executeMs="+execute);}finally{GL20.glUseProgram(0);GL20.glDeleteProgram(program);}
     }
    }
-  }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  }finally{GpuValidationSupport.close(window);}
  }
 }

@@ -60,7 +60,7 @@ body、pool、delta、journal 和观察槽位均可回收，内部跟踪精确�
 
 ## 验证与边界
 
-当前验证、原始证据索引和真实游戏待验项目见 [GPU 包裹测试与证据](gpu-package-repair-validation.md)。空间索引五轮质量合格比较选择 `linked`；生产只保留这一实现。两种落选实现仅存于独立 benchmark 参考目录，不参与 mod 构建。[索引原始数据及比较报告](benchmarks/package-index-2026-10-02/comparison.md)。
+当前验证、原始证据索引和真实游戏待验项目见 [GPU 包裹测试与证据](testing.md)。空间索引五轮质量合格比较选择 `linked`；生产只保留这一实现。两种落选实现仅存于独立 benchmark 参考目录，不参与 mod 构建。
 
 独立 OpenGL 回归、单元测试和权威微基准不代替真实游戏的 Mixin 启动、机器库存、多人网络、跨维度和完整 tick/帧性能验收。
 

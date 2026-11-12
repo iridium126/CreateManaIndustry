@@ -563,11 +563,10 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
     }
     public static void main(String[] args)throws Exception{
         try(var errors=GLFWErrorCallback.createPrint(System.err)){
-            runBenchmark=Arrays.asList(args).contains("--benchmark");errors.set();check(GLFW.glfwInit(),"GLFW init");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_CORE_PROFILE);
-            long window=GLFW.glfwCreateWindow(64,64,"Allay feather validation",0,0);check(window!=0,"GL context");
-            try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();GL30.glBindVertexArray(GL30.glGenVertexArrays());System.out.println(GL11.glGetString(GL11.GL_RENDERER));
+            runBenchmark=Arrays.asList(args).contains("--benchmark");errors.set();long window=GpuValidationSupport.open(64,64,"Allay feather validation",true);check(window!=0,"GL context");
+            try{GL30.glBindVertexArray(GL30.glGenVertexArrays());System.out.println(GL11.glGetString(GL11.GL_RENDERER));
                 com.mojang.blaze3d.systems.RenderSystem.initRenderThread();productionOwnership();try(var stress=new FeatherFixture(65536)){stress.modelImpact();}manualLifecycle();if(!Arrays.asList(args).contains("--manual-only")){appearance();behavior();starfallBloomDisturbance();groundSupportAndNativeImpact();paletteDistribution();surfaceAndGold();hybridSurface();surfaceSnapshots();manualGold();radialDensity();goldDrawing();vertex();spriteVertices();}if(runBenchmark){benchmark();benchmarkGoldEmission();benchmarkHybridSurface();}check(GL11.glGetError()==0,"GL errors");System.out.println("Allay feather GPU: "+checks+" assertions passed");
-            }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+            }finally{GpuValidationSupport.close(window);}
         }
     }
 }

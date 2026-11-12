@@ -188,7 +188,7 @@ public class StarfallGpuValidation extends ModelPopulationGpuValidation {
   Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-benchmark.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/starfall-benchmark-samples.csv"),raw);
  }
 
- public static void main(String[] args)throws Exception{GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(128,128,"Starfall GPU validation",0,0);
-  try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));outerFlight();bodyHomeDuringWave();contacts();formations();if(Arrays.asList(args).contains("--benchmark"))benchmarkStarfall();if(Arrays.asList(args).contains("--outer-benchmark"))benchmarkOuter();check(GL11.glGetError()==0,"final GL state");System.out.println("Starfall GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+ public static void main(String[] args)throws Exception{long window=GpuValidationSupport.open(128,128,"Starfall GPU validation",false);
+  try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));outerFlight();bodyHomeDuringWave();contacts();formations();if(Arrays.asList(args).contains("--benchmark"))benchmarkStarfall();if(Arrays.asList(args).contains("--outer-benchmark"))benchmarkOuter();check(GL11.glGetError()==0,"final GL state");System.out.println("Starfall GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(window);}
  }
 }

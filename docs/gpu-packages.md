@@ -1,6 +1,6 @@
 # Create GPU 包裹：当前实现
 
-更新：2026-10-09。服务端接管启用时，自由包裹从创建起保存为轻量记录，只由 GPU 模拟；没有就绪 GPU 时保留最后确认状态并暂停。客户端 GPU 关闭、资源重建、历史缺失或区块卸载不恢复自由实体。唯独服务端 `gpuPackages.authorityEnabled=false` 将已加载的轻量自由包裹还原为原生实体，其余记录随区块自然加载恢复；支持在线双向切换。锁链包裹恢复原生容器和确认进度。
+服务端接管启用时，自由包裹从创建起保存为轻量记录，只由 GPU 模拟；没有就绪 GPU 时保留最后确认状态并暂停。客户端 GPU 关闭、资源重建、历史缺失或区块卸载不恢复自由实体。唯独服务端 `gpuPackages.authorityEnabled=false` 将已加载的轻量自由包裹还原为原生实体，其余记录随区块自然加载恢复；支持在线双向切换。锁链包裹恢复原生容器和确认进度。
 
 ## 客户端碰撞容量
 
@@ -15,22 +15,22 @@
 - 溜槽、传送带、漏斗等输出先按包裹尺寸移出源机器，再进入统一轻量记录入口。过滤、部分接收和完整消费均由服务端处理；部分接收写回剩余物品，成功消费后才退役 GPU 槽位。传送带库存同步不会反复撤销不变的碰撞几何。
 - 自由包裹区域迁移只关闭旧区域通道；其他区域共享的模拟历史与 GPU 资源继续工作。锁链在 CPU/GPU 切换时按确认进度和事务序号保持物流一致。
 - Iris 主相机锁链包裹按所属传动轮的原生渲染器距离与离屏规则准许，兼容 Sodium 独立的全局方块实体集合；Sable 使用父结构渲染帧中的局部相机检查距离。阴影独立使用 Iris 准许的传动轮列表。见[可见性与日志修复](gpu-packages.md)。
-- 自由物理碰撞临时表按当前槽位范围分配，保留哈希桶余量及缩容滞回，减少低占用时的清空开销与显存。见[物理性能基准](benchmarks/package-sparse-physics-optimization-2026-10-08.md)。
-- shaderpack 绘制准备复用 GPU 可见性判定并缓存不变的传动轮掩码；状态边界只保存包裹绘制实际修改的 GL 状态。见[绘制性能优化基准](benchmarks/package-render-optimization-2026-10-04.md)。
+- 自由物理碰撞临时表按当前槽位范围分配，保留哈希桶余量及缩容滞回，减少低占用时的清空开销与显存。
+- shaderpack 绘制准备复用 GPU 可见性判定并缓存不变的传动轮掩码；状态边界只保存包裹绘制实际修改的 GL 状态。
 - 传动轮移除或变形会立即撤销该轮的客户端绘制准入，由服务端按轨道退役其租约并回传确认姿态；不会因此暂停共享 GPU 会话中的自由包裹或其他传动轮。
 - 自由与锁链使用独立时钟和渲染插值；自由场景等待几何或力输入时，锁链继续推进。
 - 自由包裹由 `PackageLightObserverClient` 呈现，协议为 `gpu-packages-15` / `gpu-package-observers-5`。暂停时显示最后确认姿态；普通与 Iris 渲染使用一致的面亮度规则。
 
-- 自由包裹已接入 CPU 分项诊断、共享几何预算、按 domain/bank 发布和版本预取；物理使用稳定活动索引、整场景睡眠与 moving 候选，环境计时继续推进。见[逐项优化与基准](benchmarks/package-priority-optimization-2026-10-09.md)。
+- 自由包裹已接入 CPU 分项诊断、共享几何预算、按 domain/bank 发布和版本预取；物理使用稳定活动索引、整场景睡眠与 moving 候选，环境计时继续推进。
 
 ## 主题文档与验证
 
 - [轻量记录、环境状态与库存事务](gpu-light-package-records.md)
 - [观察者姿态流](gpu-package-observers.md)
 - [锁链权威与坐标边界](gpu-chain-authority.md)、[锁链父姿态](gpu-package-chain-frames.md)
-- [代码清理后的边界与验证](gpu-package-repair-validation.md)
+- [代码清理后的边界与验证](testing.md)
 - [200 tick/s 实机日志诊断](gpu-package-collision.md)
-- [空间索引比较报告](benchmarks/package-index-2026-10-02/comparison.md)；生产只保留 `linked`，本地冻结输入见 [基线目录说明](../scripts/particles/baselines.md)。
+- 生产只保留 `linked`，本地冻结输入见 [基线目录说明](../scripts/particles/baselines.md)。
 
 真实游戏中的多人库存守恒、不同驱动的画面，以及高数量包裹完整服务器 tick 和客户端帧耗时仍需实机测量；GPU 组件回归不能替代这些验收。
 

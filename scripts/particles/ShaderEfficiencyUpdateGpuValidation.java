@@ -186,12 +186,11 @@ public class ShaderEfficiencyUpdateGpuValidation extends HelixGpuValidation {
     public static void main(String[] args)throws Exception {
         Path out=Path.of(System.getProperty("cmi.benchmark.output"));Files.createDirectories(out);
         check(!Files.exists(out.resolve("samples.csv")),"Refusing to overwrite an earlier run: "+out);
-        check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(64,64,"CMI exact update candidates",0,0);check(window!=0,"OpenGL context");
+        long window=GpuValidationSupport.open("CMI exact update candidates");check(window!=0,"OpenGL context");
         var failures=new ArrayList<String>();
         var rows=new ArrayList<String>();rows.add("count,mode,scene,chain,sample,baseline_ms,candidate_ms,baseline_cpu_ms,candidate_cpu_ms");
         try{
-            GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
+            
             Files.writeString(out.resolve("gpu.txt"),GL11.glGetString(GL11.GL_RENDERER)+"\n"+GL11.glGetString(GL11.GL_VERSION)+"\n");
             long start=System.nanoTime();
             try(var baseline=Programs.load(System.getProperty("cmi.efficiency.baseline"));var candidate=Programs.load(System.getProperty("cmi.efficiency.candidate"))){
@@ -221,7 +220,7 @@ public class ShaderEfficiencyUpdateGpuValidation extends HelixGpuValidation {
             if(failures.isEmpty())Files.writeString(out.resolve(Boolean.getBoolean("cmi.efficiency.rules")?"rule-smoke-complete.txt":"complete.txt"),"checks="+checks+"\n");
         }finally{
             Files.write(out.resolve("samples.csv"),rows);Files.write(out.resolve("validation-failures.txt"),failures);
-            GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();
+            GpuValidationSupport.close(window);
         }
         if(!failures.isEmpty())throw new AssertionError("Strict equivalence failed; evidence retained: "+failures.size());
     }

@@ -828,6 +828,6 @@ public final class ParticleEngineGpuValidation {
             if(!Arrays.asList(args).contains("--storm-timeline-only")&&!Arrays.asList(args).contains("--native-helix-only")
                     &&!Arrays.asList(args).contains("--gl-only")){nativeDomePartialTerrain(cases);nativeFeatherImpact(cases);}
             check(GL11.glGetError()==0,"GL state");result.put("passed",true);
-        }finally{result.put("checks",checks);result.put("cases",cases);result.put("gpu",GL11.glGetString(GL11.GL_RENDERER));result.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("gpu.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{result.put("checks",checks);result.put("cases",cases);result.put("gpu",GL11.glGetString(GL11.GL_RENDERER));result.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("gpu.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));GpuValidationSupport.close(window);}
     }
 }

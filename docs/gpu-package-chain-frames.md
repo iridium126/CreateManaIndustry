@@ -40,6 +40,6 @@ track index 与 GPU origin/frame row 共用追加式命名空间。四个 source
 
 真实 GPU 覆盖零负载、1/63/64/65 及 131072 全容量有效 framed 包裹、混合 free/static chain/framed、唯一身份/槽位、输出哨兵、世界前后/target、原生局部恢复值、独立 logical/render pose、旋转盒假命中、缩放剔除、短表/缺失/非有限/奇异矩阵、失败 generation，以及四个 fence 全未完成时第五次提交被跳过且前四个输出仍保持独立。顶点与独立 CPU Create 姿态及逆转置/切线参考比较，绝对浮点容差为 `3e-5`；离散身份、计数、分组和哨兵精确比较。Sable bridge 使用实际 `compileOnly` 类型，不使用反射；独立 JVM 确认缺少 Sable 时 bridge 不会加载。Iris 使用实际 transformer 和真实 OpenGL transform feedback；不运行游戏内 Mixin、动态父结构拾取/交接、物品库存或多人网络循环。
 
-2026-10-01 在 RTX 4070 Laptop / OpenGL 4.5 / NVIDIA 581.15 上，完整 `test build` 通过；本次 package GPU 全量为 24,589,175 项断言，链帧专项为 4,080,346 项，light atlas 为 886,165 项，Iris transform feedback 为 20,294 项，且无 Sable/companion 的独立 JVM 检查通过。世界碰撞和堆叠 131072 kernel 测量记录于[GPU 基准报告](benchmarks/package-world-stack-2026-10-01.md)。这些是组件计时，不是之前/之后对比，也不包含完整粒子池导入、模型绘制、Minecraft 主线程及服务端 tick；不能作为整帧 p95、实际视觉或玩法验收结果。
+组件计时不包含完整粒子池导入、模型绘制、Minecraft 主线程及服务端 tick；不能作为整帧 p95、实际视觉或玩法验收结果。当前结果以本次日志为准。
 
 下一步完成游戏内移动 Sable 父结构下的链上视觉、拾取、释放/回退和资源重载验证，并补齐光照覆盖、观察客户端世界接线及 131072 活动链包裹整帧测量。网络沿用当前同步方案；进一步带宽优化及带宽倍率验收已从本次目标中排除。

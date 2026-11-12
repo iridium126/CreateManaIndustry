@@ -48,6 +48,6 @@ public final class DomeGatherGpuValidation extends DomeGpuValidation {
   Path directory=Path.of(System.getProperty("cmi.benchmark.output","build/benchmarks/current"));Files.createDirectories(directory);Files.write(directory.resolve("dome-gather-returning-"+(baseline?"before":"after")+".csv"),rows);for(int program:new int[]{gridProgram,body}){com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.clearUniformProgram(program);deleteProgram(program);}
  }
  public static void main(String[] arguments)throws Exception{
-  GLFWErrorCallback.createPrint(System.err).set();check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);long window=GLFW.glfwCreateWindow(64,64,"Dome gather readiness",0,0);try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();if(!Boolean.getBoolean("cmi.dome.gatherBaseline")){thresholdAgreement();stormEnvelope();}returningTraffic();check(GL11.glGetError()==0,"Dome gather GL error");System.out.println("Dome gather GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  long window=GpuValidationSupport.open("Dome gather readiness");try{if(!Boolean.getBoolean("cmi.dome.gatherBaseline")){thresholdAgreement();stormEnvelope();}returningTraffic();check(GL11.glGetError()==0,"Dome gather GL error");System.out.println("Dome gather GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(window);}
  }
 }

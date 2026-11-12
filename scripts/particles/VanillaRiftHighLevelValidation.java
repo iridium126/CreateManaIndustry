@@ -81,8 +81,7 @@ public final class VanillaRiftHighLevelValidation {
         check(GL11.glGetError()==GL11.GL_NO_ERROR,"no GL errors");
     }
     public static void main(String[] args)throws Exception{
-        check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        long window=GLFW.glfwCreateWindow(64,64,"Vanilla Rift high-level validation",0,0);check(window!=0,"context");
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();RenderSystem.initRenderThread();Tesselator.init();run();System.out.println("Vanilla rift high-level GPU: "+checks+" checks passed");}finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        long window=GpuValidationSupport.open("Vanilla Rift high-level validation");check(window!=0,"context");
+        try{RenderSystem.initRenderThread();Tesselator.init();run();System.out.println("Vanilla rift high-level GPU: "+checks+" checks passed");}finally{GpuValidationSupport.close(window);}
     }
 }

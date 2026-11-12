@@ -1,6 +1,6 @@
 # 悦灵风暴后续美术路线
 
-日期：2026-10-29。阶段7、悦灵／剑材质与LOD2固定世界尺寸版本已由用户确认实机验收通过。当前实现分别见[行为与配置](allay-storm-ai.md)、[同步](allay-storm-sync.md)、[裂口／天空／传送](allay-storm-rift.md)、[LOD](allay-storm-lod.md)；下文均为后续提案，不将数量或预算写成已支持能力。
+阶段7、悦灵／剑材质与LOD2固定世界尺寸版本已由用户确认实机验收通过。当前实现分别见[行为与配置](allay-storm-ai.md)、[同步](allay-storm-sync.md)、[裂口／天空／传送](allay-storm-rift.md)、[LOD](allay-storm-lod.md)；下文均为后续提案，不将数量或预算写成已支持能力。
 
 ## 冻结状态
 

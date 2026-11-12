@@ -4,12 +4,10 @@ import org.lwjgl.opengl.*;
 import java.util.*;
 public class ModelDrawTelemetryGpuValidation {
     public static void main(String[] args){
-        if(!GLFW.glfwInit())throw new AssertionError("GLFW");
-        GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);
-        long window=GLFW.glfwCreateWindow(64,64,"Tagged GPU queries",0,0);
+        long window=GpuValidationSupport.open("Tagged GPU queries");
         if(window==0)throw new AssertionError("GL context");
         try{
-            GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();var seen=new ArrayList<String>();
+            var seen=new ArrayList<String>();
             try(var ring=new GpuTimestampRing(2,null,(frame,generation,ms)->{if(ms<0)throw new AssertionError("negative time");seen.add(frame+":"+generation);})){
                 for(long frame=10;frame<12;frame++){if(!ring.begin(false,frame,frame+100))throw new AssertionError("missing slot");ring.end(true,false);}
                 if(ring.begin(false,99,99))throw new AssertionError("Overwrote pending query");
@@ -46,6 +44,6 @@ public class ModelDrawTelemetryGpuValidation {
             }
             if(GL11.glGetError()!=0)throw new AssertionError("GL error");
             System.out.println("MODEL draw telemetry GPU: tags, saturation, abort and slot reuse passed");
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }

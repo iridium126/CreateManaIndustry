@@ -96,10 +96,9 @@ public class RiftVisibilityGpuValidation {
   GL11.glDisable(GL32.GL_SAMPLE_MASK);GL32.glSampleMaski(0,-1);GL11.glDisable(GL13.GL_SAMPLE_COVERAGE);GL13.glSampleCoverage(1,false);field("rectangle",new float[]{-1,-1,1,1,.4f});
  }
  public static void main(String[] args)throws Exception{
-  check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-  long window=GLFW.glfwCreateWindow(64,64,"Rift conditional regression",0,0);check(window!=0,"window");
+  long window=GpuValidationSupport.open("Rift conditional regression");check(window!=0,"window");
   try{
-   GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
+   com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
    int vao=GL30.glGenVertexArrays();GL30.glBindVertexArray(vao);
    int color=texture(GL30.GL_RGBA32F,32,32,GL11.GL_RGBA,null),depth=texture(GL30.GL_DEPTH_COMPONENT32F,32,32,GL11.GL_DEPTH_COMPONENT,null),copy=texture(GL30.GL_RGBA32F,32,32,GL11.GL_RGBA,null),fbo=GL30.glGenFramebuffers();
    GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,fbo);GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,color,0);GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,depth,0);GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0);GL11.glViewport(0,0,32,32);
@@ -124,6 +123,6 @@ public class RiftVisibilityGpuValidation {
    conditionalWork(vao,fbo,packed,depth24);fallbacks(packed,depth24);mrtIsolation(depth24);boundedProxy();clippedMasks(vao,fbo);
    check(GL11.glGetError()==0,"GL errors");RiftVisibility.close();RiftTargetTransfer.close();
    Path out=Path.of(System.getProperty("cmi.benchmark.output"));Files.createDirectories(out);Files.writeString(out.resolve("rift-visibility.txt"),"checks="+checks+"\nSynthetic correctness only; no client FPS claim.\n");System.out.println("Rift visibility GPU: "+checks+" checks passed");
-  }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+  }finally{GpuValidationSupport.close(window);}
  }
 }

@@ -9,8 +9,8 @@ public class SimulationReadbackGpuValidation {
     static ByteBuffer bytes(int n){return BufferUtils.createByteBuffer(n);}
     static void check(boolean value,String reason){if(!value)throw new AssertionError(reason);}
     public static void main(String[] args)throws Exception{
-        check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);long window=GLFW.glfwCreateWindow(64,64,"Simulation snapshot",0,0);
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();ParticleBuffers pool=new ParticleBuffers();ParticleReadbacks readbacks=new ParticleReadbacks();
+        long window=GpuValidationSupport.open("Simulation snapshot");
+        try{ParticleBuffers pool=new ParticleBuffers();ParticleReadbacks readbacks=new ParticleReadbacks();
             var enabled=ParticleDiagnostics.class.getDeclaredField("enabled");enabled.setAccessible(true);boolean before=enabled.getBoolean(ParticleDiagnostics.INSTANCE);
             try{
                 check(pool.init(1024,4),"Pool allocation");pool.commitPopulation(40);
@@ -24,6 +24,6 @@ public class SimulationReadbackGpuValidation {
                 enabled.setBoolean(ParticleDiagnostics.INSTANCE,false);slot=readbacks.freeSlot();pool.copySnapshot(1,0,78,slot);check(!slot.profile,"Disabled capture flag");
                 check(GL11.glGetError()==0,"GL state");System.out.println("Simulation readback GPU: input/output counters, population generation, fence and disabled capture passed");
             }finally{enabled.setBoolean(ParticleDiagnostics.INSTANCE,before);readbacks.close();pool.free();}
-        }finally{GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();}
+        }finally{GpuValidationSupport.close(window);}
     }
 }

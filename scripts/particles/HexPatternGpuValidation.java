@@ -728,15 +728,9 @@ public class HexPatternGpuValidation {
                         "chunks/examples/rising_spark_spawn.glsl","chunks/examples/rising_spark_update.glsl",Set.of()));
         var exampleSpec=com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder().type(example).build();
         check(exampleSpec.packed().length==80 && exampleSpec.packed()[0]==1000,"type registration/ABI");
-        GLFWErrorCallback.createPrint(System.err).set();
-        check(GLFW.glfwInit(),"GLFW initialization failed");
-        GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);
-        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);
-        GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);
-        GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_CORE_PROFILE);
-        long window=GLFW.glfwCreateWindow(64,64,"Hex GPU validation",0,0);
+        long window=GpuValidationSupport.open(64,64,"Hex GPU validation",true);
         check(window!=0,"OpenGL 4.5 context unavailable");
-        GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
+        
         System.out.println("Driver: "+GL11.glGetString(GL11.GL_RENDERER));
         System.out.println("OpenGL: "+GL11.glGetString(GL11.GL_VERSION));
         Class<?> programs=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms");
@@ -764,6 +758,6 @@ public class HexPatternGpuValidation {
         sorting(Arrays.asList(args).contains("--benchmark"));
         if(Arrays.asList(args).contains("--benchmark"))submissionBenchmark();
         System.out.println("PASS: "+checks+" assertions");
-        GLFW.glfwDestroyWindow(window);GLFW.glfwTerminate();
+        GpuValidationSupport.close(window);
     }
 }

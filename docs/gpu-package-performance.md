@@ -34,6 +34,6 @@ python scripts/benchmarks/run.py validatePackageGpu -PpackageCullBenchmark --off
 python scripts/benchmarks/run.py benchmarkPackagePause --offline
 ```
 
-历史结论包括 [稀疏物理](benchmarks/package-sparse-physics-optimization-2026-10-08.md)、[发布与活动集](benchmarks/package-priority-optimization-2026-10-09.md)、[绘制](benchmarks/package-render-optimization-2026-10-04.md) 和 [空间索引选择](benchmarks/package-index-2026-10-02/comparison.md)。生产保留 `linked`；三模式比较源码保留在独立 index-reference 工具中，不进入 mod JAR。
+生产保留 `linked`；三模式比较源码保留在独立 index-reference 工具中，不进入 mod JAR。
 
 原始数据和完整日志只放在 `build/benchmarks/`。结果管理、版本元数据和质量门槛见 [性能结果规则](benchmarks/README.md)。
