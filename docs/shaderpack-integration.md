@@ -8,7 +8,7 @@
 
 `ActivePackOptions`读取Iris已解析的有效选项与默认值，不把未保存的选项直接当作关闭。MODEL、包裹、Hex原生编译器同时检查会话代次，保留已有program解析、fragment、混合指令、geometry／tessellation路径。
 
-`PackCapabilities`按源码契约确认能力，`WorldEffectPass`分离条件、更新和绘制，`IrisWorldEffects`统一调度雾、燃料棒辉光与探针。同一主帧每项至多更新、绘制一次；阴影和Veil辅助视角不推进它们。
+`PackCapabilities`按源码契约确认能力，`WorldEffectPass`分离条件、更新和绘制，`IrisWorldEffects`统一调度雾与探针。同一主帧每项至多更新、绘制一次；阴影和Veil辅助视角不推进它们。
 
 ## 合成与失败恢复
 
@@ -19,7 +19,7 @@
 | 原生HDR | 校验场景格式、曝光公式及LUT覆盖后，只转换新增发光 |
 | 原生curve/raw | 整组合成补丁成立，且额外附件未占用时使用独立层 |
 | 基础显示 | 原生契约不明、iris-veil-compat缺席或强制baseline时，在AFTER_LEVEL后、可选手持物前使用主画面与深度 |
-| 无光影 | 雾／辉光保留原Veil post路径；探针使用公共世界末尾路径 |
+| 无光影 | 雾保留原Veil post路径；探针使用公共世界末尾路径 |
 
 场景颜色通过CMI拥有的 `SceneColorCopy` 复制，再由shader采样副本与有效深度，避免采样正在写入的颜色附件。绘制保存／恢复framebuffer、program、VAO、viewport、混合／深度／裁剪、颜色／深度写入、纹理和sampler状态；各附件独立的混合开关、函数、方程与颜色写入掩码也逐项恢复。使用自有sampler，不修改包拥有的深度纹理比较状态。相机参数取自主视角已捕获矩阵并通过专用uniform上传；局部绑定program，避免Veil通用bind／unbind清除外部shader block与sampler。
 
@@ -55,7 +55,7 @@
 
 开启时捕获固定锚点：优先取当前已提交风暴中心XZ，否则取玩家XZ；高度为建筑上限+64与相机高度+64中的较大值。青色细环半径24格，绿色指示+Z、红色指示+X。移动相机应产生视差，实心地形应遮挡环，暂停保持脉冲相位。
 
-`mode baseline`将同一调度器的雾／辉光／探针一起切至基础路径进行比较；`auto`恢复能力选择。它不修改包选项或MODEL原生路径。换维度关闭探针，F3+T重建合成资源。
+`mode baseline`将同一调度器的雾／探针一起切至基础路径进行比较；`auto`恢复能力选择。它不修改包选项或MODEL原生路径。换维度关闭探针，F3+T重建合成资源。
 
 `status`报告会话／源码摘要、能力路径、彩光候选、每项效果路径与原因、CPU更新时间及最近完成的逐项GPU复制+绘制时间，并显示MODEL、包裹和Hex状态。原生失败后基础路径成功仍保留失败原因，编译失败恢复原包也明确报告；路径变化写入日志，无源效果标为inactive。GPU数值不是整帧耗时或全部效果之和。
 
@@ -72,7 +72,7 @@
 | Solas V3.8 | SCENE | colortex0 | gbuffersLighting编码与composite解码对应的2.2次幂编码 |
 | Sundial Lite v1.2.0 | HDR | colortex3 | 线性HDR；沿用0.2与EXPOSURE_VALUE、RGB16 LUT覆盖下的曝光补偿 |
 
-Bliss继续使用TRANSLUCENT，iterationT继续使用RAW，两条已验收路径的合成公式保留。雾、辉光和探针共用原生场景编码参数；baseline与原生线性／透明／raw路径取gamma=1。只在雾实际覆盖处在线性光中叠加，保持原场景alpha。未知包仍可安全降级，不能仅凭名称强制写某个buffer。
+Bliss继续使用TRANSLUCENT，iterationT继续使用RAW，两条已验收路径的合成公式保留。雾和探针共用原生场景编码参数；baseline与原生线性／透明／raw路径取gamma=1。只在雾实际覆盖处在线性光中叠加，保持原场景alpha。未知包仍可安全降级，不能仅凭名称强制写某个buffer。
 
 `NativeSceneContract`通过完整路径和读写／编码结构识别，不匹配包名或精确版本。首次观察pipeline时，`ShaderPackSession`还检查当前维度ProgramSet中的有效composite、sampler2D和目标声明；结果按pipeline／尺寸代次缓存，不逐帧扫描源码。`native-program`与效果reason显示生效program、附件和gamma，条件程序缺席或源码契约改变时报告具体降级原因。
 
@@ -128,7 +128,7 @@ Photon同名colortex0另有3D噪声绑定，必须区分sampler2D场景与sample
 
 1. 使用新构建重启，检查无Iris、Iris无包及八款样本。每款记录默认选项、适用增强选项的开关和status结果。
 2. 开探针仰望细环，移动、转头、暂停；比较auto／baseline，检查视差、方向、遮挡、双绘制和HUD污染。
-3. 对照雾、燃料棒辉光、火把／蜡烛与燃料罐，确认材质复用未改变原版光色；检查MODEL、手持物、阴影。
+3. 对照雾、火把／蜡烛，确认材质复用未改变原版光色；检查MODEL、手持物、阴影。
 4. 切包、同名替换重载、F3+T、分辨率变化与换维度。不可用项必须有原因，不能仅因“检测到包名”报告兼容。
 
 八包体积雾原生路径本轮已由用户确认通过。完整曝光选项和彩光仍单独验收；新增共享简易天空、裂口、高空订阅与整组传送已进入本轮实现，其客户端矩阵见独立实施状态文档。

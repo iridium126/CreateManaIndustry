@@ -23,7 +23,7 @@
 | GPU 包裹 | [总览](gpu-packages.md)、[协议 15](gpu-package-protocol-15.md) 🚧、[轻量记录](gpu-light-package-records.md)、[观察者](gpu-package-observers.md)、[锁链权威](gpu-chain-authority.md)、[父姿态帧](gpu-package-chain-frames.md)、[碰撞与历史](gpu-package-collision.md)、[性能诊断](gpu-package-performance.md)、[环境存储](gpu-package-environment-14.md)、[方块发射器](gpu-block-emitters.md)、[MODEL 绘制](gpu-model-rendering.md) |
 | ALLVR 维度 | [总览](allay-dimension-dev.md) 🟡、[世界生成](allay-dimension-worldgen.md) ✅、[持久化](allay-dimension-persistence-plan.md) 🟡、[Sodium 适配](allay-dimension-sodium-rendering-parity-plan.md) 📐、[Voxy LOD](allay-dimension-voxy-lod-integration-plan.md) 📐、[验证](allay-dimension-validation.md) |
 | 悦灵风暴 | [服务端同步](allay-storm-sync.md)、[AI 与参数](allay-storm-ai.md)、[验证入口](allay-storm-validation.md)、[裂口](allay-storm-rift.md)、[LOD](allay-storm-lod.md) ✅、[后续美术](allay-storm-visual-development-order.md) 📐、[庇护所](allay-sanctuary.md) |
-| 集成与玩法 | [Hexcasting/Trickster 契约](hexcasting-trickster-interop-dev.md) 🟡、[Markov Junior](markov-junior.md)、[世界树设计](world-tree-design.md)、[世界树实现](world-tree-implementation.md)、[Ponder](ponder-workshop.md)、[燃料罐](fuel-tank.md) |
+| 集成与玩法 | [Hexcasting/Trickster 契约](hexcasting-trickster-interop-dev.md) 🟡、[Markov Junior](markov-junior.md)、[世界树设计](world-tree-design.md)、[世界树实现](world-tree-implementation.md)、[Ponder](ponder-workshop.md) |
 
 ## 维护规则
 

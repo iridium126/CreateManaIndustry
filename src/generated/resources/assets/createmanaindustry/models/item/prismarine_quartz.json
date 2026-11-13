@@ -1,6 +1,0 @@
-{
-  "parent": "minecraft:item/generated",
-  "textures": {
-    "layer0": "createmanaindustry:item/prismarine_quartz"
-  }
-}

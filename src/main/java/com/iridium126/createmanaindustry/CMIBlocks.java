@@ -2,7 +2,6 @@ package com.iridium126.createmanaindustry;
 
 import static com.iridium126.createmanaindustry.CreateManaIndustry.REGISTRATE;
 import static com.simibubi.create.api.behaviour.movement.MovementBehaviour.movementBehaviour;
-import static com.simibubi.create.api.contraption.storage.fluid.MountedFluidStorageType.mountedFluidStorage;
 
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlockItem;
@@ -12,9 +11,6 @@ import com.iridium126.createmanaindustry.content.decoration.GlowingVineBlock;
 import com.iridium126.createmanaindustry.infrastructure.data.CMIRegistrateExtensions;
 import com.iridium126.createmanaindustry.content.fluids.condenser.CondenserBlock;
 import com.iridium126.createmanaindustry.content.fluids.condenser.WeatheringCondenserBlock;
-import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankBlock;
-import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankModel;
-import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankMovementBehavior;
 import com.iridium126.createmanaindustry.content.kinetics.depositionlid.DepositionLidBlock;
 import com.iridium126.createmanaindustry.content.kinetics.depositionlid.DepositionLidCTBehaviour;
 import com.iridium126.createmanaindustry.content.kinetics.kineticatomizer.KineticAtomizerBlock;
@@ -33,12 +29,10 @@ import com.simibubi.create.foundation.data.SharedProperties;
 import com.simibubi.create.foundation.data.TagGen;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.tterrag.registrate.providers.RegistrateRecipeProvider;
-import com.tterrag.registrate.util.DataIngredient;
 import com.tterrag.registrate.util.entry.BlockEntry;
 import com.tterrag.registrate.util.entry.ItemEntry;
 import com.tterrag.registrate.util.nullness.NonNullBiConsumer;
 
-import net.neoforged.neoforge.client.model.generators.ConfiguredModel;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.ItemTags;
@@ -46,7 +40,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RotatedPillarBlock;
-import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.WeatheringCopper;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.data.recipes.RecipeCategory;
@@ -157,63 +150,6 @@ public final class CMIBlocks {
 
     public static final BlockEntry<CondenserBlock> WAXED_OXIDIZED_CONDENSER =
             waxedCondenser("waxed_oxidized_condenser");
-
-    /**
-     * Molten Salt Fuel Tank — a multi-block fluid storage that connects in any
-     * shape (no Create box constraint) and a copycat block (per-cell shell
-     * material, {@code CopycatBlock} mirror). The four hand-written window
-     * variants ({@code top_open} x {@code side_open}) support per-face wrench
-     * toggling; datagen emits the variant blockstate referencing them.
-     */
-    public static final BlockEntry<FuelTankBlock> MOLTEN_SALT_FUEL_TANK = REGISTRATE
-            .block("molten_salt_fuel_tank", FuelTankBlock::new)
-            .initialProperties(SharedProperties::softMetal)
-            .properties(p -> p.noOcclusion()
-                    .lightLevel(state -> state.getValue(FuelTankBlock.LIGHT_LEVEL))
-                    .isRedstoneConductor((p1, p2, p3) -> true))
-            .transform(TagGen.pickaxeOnly())
-            .blockstate((c, p) -> p.getVariantBuilder(c.get())
-                    .forAllStatesExcept(state -> {
-                        boolean topOpen = state.getValue(FuelTankBlock.TOP_OPEN);
-                        boolean sideOpen = state.getValue(FuelTankBlock.SIDE_OPEN);
-                        String variant = "block_" + (topOpen ? "top_open" : "top_close")
-                                + "_side_" + (sideOpen ? "open" : "close");
-                        return ConfiguredModel.builder()
-                                .modelFile(p.models()
-                                        .getExistingFile(p.modLoc("block/molten_salt_fuel_tank/" + variant)))
-                                .build();
-                    }, FuelTankBlock.LIGHT_LEVEL))
-            .onRegister(CreateRegistrate.blockModel(() -> FuelTankModel::new))
-            .transform(mountedFluidStorage(CMIMountedStorageTypes.MOLTEN_SALT_FUEL_TANK))
-            .onRegister(movementBehaviour(new FuelTankMovementBehavior()))
-            .item()
-            // Datagen-generated item model parenting the default open-window variant.
-            .model((c, p) -> p.withExistingParent(c.getName(),
-                    p.modLoc("block/molten_salt_fuel_tank/block_top_open_side_open")))
-            .build()
-            .register();
-
-    /**
-     * Block of Prismarine Quartz — strictly mirrors Create's Rose Quartz Block
-     * ({@link RotatedPillarBlock}, amethyst-baseline hardness, correct-tool
-     * drops, deepslate sound, pickaxe-only, axis blockstate, stonecutting 2→1),
-     * with only the map color changed to the prismarine cyan family.
-     */
-    public static final BlockEntry<RotatedPillarBlock> PRISMARINE_QUARTZ_BLOCK = REGISTRATE
-            .block("prismarine_quartz_block", RotatedPillarBlock::new)
-            .initialProperties(() -> Blocks.AMETHYST_BLOCK)
-            .properties(p -> p.mapColor(MapColor.COLOR_CYAN)
-                    .requiresCorrectToolForDrops()
-                    .sound(SoundType.DEEPSLATE))
-            .transform(TagGen.pickaxeOnly())
-            .blockstate((c, p) -> p.axisBlock(c.get(),
-                    p.modLoc("block/prismarine_quartz_side"),
-                    p.modLoc("block/prismarine_quartz_top")))
-            .recipe((c, p) -> p.stonecutting(DataIngredient.items(CMIItems.PRISMARINE_QUARTZ.get()),
-                    RecipeCategory.BUILDING_BLOCKS, c::get, 2))
-            .simpleItem()
-            .lang("Block of Prismarine Quartz")
-            .register();
 
     /** Vanilla vine attachment/shape rules, with growth disabled and full block light. */
     @SuppressWarnings("removal") // addLayer is deprecated but remains Registrate's render-layer hook

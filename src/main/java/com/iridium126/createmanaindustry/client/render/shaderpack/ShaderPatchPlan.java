@@ -17,7 +17,7 @@ public final class ShaderPatchPlan {
     public String family(){return family;} public String reason(){return reason;}
     public Map<String,String> edits(){return edits;} public int blockId(){return blockId;}
     public int donorId(){return donorId;} public int replacementId(){return replacementId;}
-    public boolean enabled(){return blockId>=0&&!edits.isEmpty();}
+    public boolean enabled(){return !edits.isEmpty();}
     public boolean rawLayers(){return mistBuffer>=0;} public int mistBuffer(){return mistBuffer;}public int glowBuffer(){return glowBuffer;}
     public String transform(String path,String original) {
         String p=ShaderPackInventory.normalize(path);
@@ -43,7 +43,7 @@ public final class ShaderPatchPlan {
                 var entries=entries(code,start,end);
                 require(entries.size()==n,"LUT declaration and entries disagree");
                 String floodPath=Objects.requireNonNull(inv.uniqueSuffix("lighting/lpv/floodfill.glsl"));
-                Matcher range=unique(ShaderPackInventory.code(inv.source(floodPath)),"\\bbool\\s+is_emitter\\s*\\([^)]*\\)\\s*\\{\\s*return\\s+(\\d+)u?\\s*<=\\s*block_id\\s*&&\\s*block_id\\s*<\\s*(\\d+)u?\\s*;");
+                Matcher range=unique(ShaderPackInventory.code(inv.source(floodPath)),"\\bbool\\s+is_emitter\\s*\\([^)]*\\)\\s*\\{\\s*return\\s*(\\d+)u?\\s*<=\\s*block_id\\s*&&\\s*block_id\\s*<\\s*(\\d+)u?\\s*;");
                 int base=Integer.parseInt(range.group(1)),limit=Integer.parseInt(range.group(2));
                 require(limit-base==n,"emitter range and LUT disagree");
                 String props=inv.source("block.properties").replaceAll("\\\\\\s*\\R", " ");
@@ -73,20 +73,12 @@ public final class ShaderPatchPlan {
                 edits.put(path,insert(source,"if\\s*\\(\\s*lightRange\\s*>\\s*0(?:\\.0)?\\s*\\)\\s*lightRange\\s*\\+=\\s*1(?:\\.0)?\\s*;",
                         "if (blockId == "+block+") { lightColor = vec3(1.00, 0.35, 0.55); lightRange = 15.0; } // CMI\n"));
             } else {
-                block=free(inv.materialIds(),7110,7200,1);
-                String settings=inv.source("Lib/Settings.glsl");var used=new HashSet<Integer>();
-                Matcher m=Pattern.compile("#define\\s+MATID_\\w+\\s+(\\d+)").matcher(ShaderPackInventory.code(settings));while(m.find())used.add(Integer.parseInt(m.group(1)));
-                int mat=free(used,29,40,1);
                 var occupied=inv.colorBuffers();int a=-1,b=-1;
                 try{a=free(occupied,9,32,1);var more=new HashSet<>(occupied);more.add(a);b=free(more,9,32,1);}catch(IllegalArgumentException unavailable){a=b=-1;}
-                var adapter=new CurveEncodedSourcePatch(block,mat,a,b);
-                for(String suffix:List.of("Settings.glsl","Terrain_VS.glsl","GbufferData.glsl","Blocklight.glsl")) {
-                    String path=suffix.equals("Terrain_VS.glsl")?"Lib/Programs/Gbuffers/Terrain_VS.glsl":Objects.requireNonNull(inv.uniqueSuffix(suffix));
-                    String changed=adapter.transformShader(suffix,inv.source(path));require(changed!=null,"missing/ambiguous "+path);edits.put(path,changed);
-                }
-                String composite=inv.source("composite.fsh");String changed=a>=0&&b>=0?adapter.transformShader("composite.fsh",composite):null;
-                if(changed!=null) {
-                    edits.put("composite.fsh",changed);mist=a;glow=b;
+                if(a>=0&&b>=0){
+                    var adapter=new CurveEncodedSourcePatch(a,b);
+                    String changed=adapter.transformShader("composite.fsh",inv.source("composite.fsh"));
+                    if(changed!=null){edits.put("composite.fsh",changed);mist=a;glow=b;}
                 }
             }
             return new ShaderPatchPlan(family,"complete source/ID preflight",inv.sources(),edits,block,donor,replacement,mist,glow);

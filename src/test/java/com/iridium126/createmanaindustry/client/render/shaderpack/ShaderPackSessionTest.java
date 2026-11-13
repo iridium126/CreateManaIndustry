@@ -35,7 +35,7 @@ class ShaderPackSessionTest {
         var items=new Object2IntOpenHashMap<NamespacedId>();var candle=new NamespacedId("minecraft","candle");items.put(candle,10050);
         var result=session.apply(new BlockIdMapContext(blocks,items));
         assertEquals(10050,items.getInt(candle));assertEquals(1,blocks.get(10036).size());assertEquals("candle",blocks.get(10050).getFirst().id().getName());
-        assertEquals(10036,result.itemIds().getInt(candle));assertEquals(2,result.blockProperties().get(10036).size());assertEquals("molten_salt_fuel_tank",result.blockProperties().get(10050).getFirst().id().getName());
+        assertEquals(10036,result.itemIds().getInt(candle));assertEquals(2,result.blockProperties().get(10036).size());assertEquals("candle",result.blockProperties().get(10050).getFirst().id().getName());
         blocks.remove(10036);assertThrows(IllegalStateException.class,()->session.apply(new BlockIdMapContext(blocks,items)));
         assertEquals("candle",blocks.get(10050).getFirst().id().getName());assertEquals(10050,items.getInt(candle));
     }

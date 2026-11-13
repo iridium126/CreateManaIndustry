@@ -7,7 +7,7 @@ class CurveEncodedSourcePatchTest {
     @Test void layerMergeKeepsMainClosingBraceOutsideLineComment(){
         String input="#version 330 core\nlayout(location = 0) out vec4 compositeOutput1;\nvoid main(){\nif(true){compositeOutput1=vec4(0);}\nelse {\nvec3 finalComposite=vec3(0);\ncompositeOutput1 = vec4(finalComposite, 0.0);\n}\n}\n";
         for(String newline:new String[]{"\n","\r\n"}){
-            String output=new CurveEncodedSourcePatch(7110,29,9,10).transformShader("composite.fsh",input.replace("\n",newline));
+            String output=new CurveEncodedSourcePatch(9,10).transformShader("composite.fsh",input.replace("\n",newline));
             assertNotNull(output);
             assertEquals(0,braceBalance(ShaderPackInventory.code(output)));
             String broken=output.replace("// [CMI] layer merge — end"+newline,"// [CMI] layer merge — end");

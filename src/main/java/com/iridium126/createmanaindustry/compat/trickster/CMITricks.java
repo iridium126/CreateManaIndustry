@@ -3,7 +3,6 @@ package com.iridium126.createmanaindustry.compat.trickster;
 import com.iridium126.createmanaindustry.compat.hextrick.bootstrap.CMITricksterFragmentTypes;
 
 import com.iridium126.createmanaindustry.compat.hextrick.execution.EvalIotaTrick;
-import com.iridium126.createmanaindustry.compat.hextrick.conversion.ManaToMediaTrick;
 import com.iridium126.createmanaindustry.compat.hextrick.execution.ReadIotaTrick;
 import com.iridium126.createmanaindustry.compat.trickster.trick.ReadPotionEffectsTrick;
 import com.iridium126.createmanaindustry.compat.trickster.trick.TemporaryKineticStressTrick;
@@ -41,7 +40,6 @@ public final class CMITricks {
     public static final class Hexcasting {
         public static final ReadIotaTrick READ_IOTA = CMITricks.register("read_iota", new ReadIotaTrick());
         public static final EvalIotaTrick EVAL_IOTA = CMITricks.register("eval_iota", new EvalIotaTrick());
-        public static final ManaToMediaTrick MANA_TO_MEDIA = CMITricks.register("mana_to_media", new ManaToMediaTrick());
 
         private Hexcasting() {}
 

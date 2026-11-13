@@ -23,19 +23,6 @@
       "output": "any",
       "text": "hexcasting.page.createmanaindustry.trickster_patterns.eval"
     },
-    "hexcasting.page.createmanaindustry.trickster_patterns.trick_iota",
-    {
-      "type": "hexcasting:pattern",
-      "op_id": "createmanaindustry:media_to_mana",
-      "anchor": "createmanaindustry:media_to_mana",
-      "input": "num",
-      "output": "num",
-      "text": "hexcasting.page.createmanaindustry.trickster_patterns.media_to_mana"
-    },
-    {
-      "type": "patchouli:text",
-      "title": "hexcasting.page.createmanaindustry.trickster_patterns.media_to_mana.storage.title",
-      "text": "hexcasting.page.createmanaindustry.trickster_patterns.media_to_mana.storage"
-    }
+    "hexcasting.page.createmanaindustry.trickster_patterns.trick_iota"
   ]
 }

@@ -51,13 +51,9 @@ public class CMIPonderPlugin implements PonderPlugin {
         add(helper, "rose_deposition", ProcessingPonderScenes::roseDeposition, PROCESSING, "create:framed_glass_trapdoor", "rose_quartz_deposited_iron_sheet", "rose_quartz_deposited_copper_sheet", "rose_quartz_deposited_golden_sheet", "rose_quartz_deposited_brass_sheet");
         add(helper, "media_conversion", ProcessingPonderScenes::mediaConversion, PROCESSING, "liquid_media_bucket", "liquid_mana_bucket");
         add(helper, "mist_amethyst", ProcessingPonderScenes::glass, PROCESSING, "allay_burner", "kinetic_atomizer");
-        add(helper, "prismarine_quartz", ProcessingPonderScenes::prismarine, PROCESSING, "prismarine_quartz", "prismarine_quartz_block", "molten_prismarine_quartz_bucket");
         add(helper, "rose_quartz", ProcessingPonderScenes::roseQuartz, PROCESSING, "molten_rose_quartz_bucket", "create:rose_quartz");
         add(helper, "coolant", ProcessingPonderScenes::coolant, PROCESSING, "coolant_bucket", "condenser");
         add(helper, "liquid_source", ProcessingPonderScenes::source, PROCESSING, "liquid_source_bucket");
-        add(helper, "fuel_tank_storage", FuelTankPonderScenes::storage, PROCESSING, "molten_salt_fuel_tank");
-        add(helper, "fuel_tank_windows", FuelTankPonderScenes::decoration, PROCESSING, "molten_salt_fuel_tank");
-        add(helper, "fuel_rod_structure", FuelTankPonderScenes::structure, PROCESSING, "molten_salt_fuel_tank");
         if (ModList.get().isLoaded("trickster") && available("incomplete_emerald_knot", "trickster:emerald_knot", "trickster:cracked_emerald_knot")) {
             add(helper, "trickster_knots", TricksterPonderScenes::knots, MAGIC, "incomplete_emerald_knot", "incomplete_prismatic_knot", "incomplete_diamond_knot", "incomplete_echo_knot", "incomplete_astral_knot", "trickster:emerald_knot");
         }
@@ -89,7 +85,7 @@ public class CMIPonderPlugin implements PonderPlugin {
                     .title("Magic Automation").description("Charge, assemble and connect magical items").register();
         tag(helper, AllCreatePonderTags.ARM_TARGETS, "allay_burner", "trickster:charging_array", "trickster:spell_construct", "trickster:modular_spell_construct");
         tag(helper, AllCreatePonderTags.DISPLAY_TARGETS, "trickster:spell_construct", "trickster:modular_spell_construct");
-        tag(helper, PROCESSING, "empty_allay_burner", "allay_burner", "molten_salt_fuel_tank", "liquid_media_bucket", "liquid_mana_bucket", "liquid_source_bucket", "coolant_bucket", "prismarine_quartz", "prismarine_quartz_block", "molten_prismarine_quartz_bucket", "molten_rose_quartz_bucket", "create:rose_quartz", "create:framed_glass_trapdoor",
+        tag(helper, PROCESSING, "empty_allay_burner", "allay_burner", "liquid_media_bucket", "liquid_mana_bucket", "liquid_source_bucket", "coolant_bucket", "molten_rose_quartz_bucket", "create:rose_quartz", "create:framed_glass_trapdoor",
                 "amethyst_deposited_iron_sheet", "amethyst_deposited_copper_sheet", "amethyst_deposited_golden_sheet", "amethyst_deposited_brass_sheet",
                 "rose_quartz_deposited_iron_sheet", "rose_quartz_deposited_copper_sheet", "rose_quartz_deposited_golden_sheet", "rose_quartz_deposited_brass_sheet");
         tag(helper, MIST, "kinetic_atomizer", "mana_cogwheel", "allay_burner", "liquid_soul_bucket", "condenser", "exposed_condenser", "weathered_condenser", "oxidized_condenser", "waxed_condenser", "waxed_exposed_condenser", "waxed_weathered_condenser", "waxed_oxidized_condenser");
@@ -101,8 +97,7 @@ public class CMIPonderPlugin implements PonderPlugin {
             tag(helper, MAGIC, "incomplete_cypher", "incomplete_trinket", "incomplete_artifact", "incomplete_media_battery", "hexcasting:cypher", "hexcasting:trinket", "hexcasting:artifact", "hexcasting:battery");
         tag(helper, AllCreatePonderTags.KINETIC_SOURCES, "mana_cogwheel");
         tag(helper, AllCreatePonderTags.KINETIC_APPLIANCES, "kinetic_atomizer", "kinetic_mana_generator");
-        tag(helper, AllCreatePonderTags.FLUIDS, "condenser", "molten_salt_fuel_tank", "kinetic_atomizer");
-        tag(helper, AllCreatePonderTags.CONTRAPTION_ACTOR, "molten_salt_fuel_tank");
+        tag(helper, AllCreatePonderTags.FLUIDS, "condenser", "kinetic_atomizer");
     }
     private static void tag(PonderTagRegistrationHelper<ResourceLocation> helper, ResourceLocation tag, String... items) {
         for (String item : items) if (present(item)) helper.addToTag(tag).add(component(item));

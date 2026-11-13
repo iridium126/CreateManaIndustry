@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.compat.hextrick.bootstrap;
 
-import com.iridium126.createmanaindustry.compat.hextrick.conversion.ConversionTickTime;
 import com.iridium126.createmanaindustry.compat.hextrick.conversion.FragmentConverter;
 import com.iridium126.createmanaindustry.compat.hextrick.data.FragmentStructures;
 import com.iridium126.createmanaindustry.compat.hextrick.data.InlineTrickData;
@@ -28,7 +27,6 @@ public final class HexTricksBootstrap {
         CMIHexIotaTypes.register(modEventBus);
         InlineAPI.INSTANCE.addDataType(InlineTrickData.InlineTrickDataType.INSTANCE);
         CMIHexTrickActions.register(modEventBus);
-        ConversionTickTime.register();
         SlateKnotInteraction.register();
         CircleSlateManaPool.ensureTypeRegistered();
         BlockSpellExecutionManager.register();

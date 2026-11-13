@@ -5,7 +5,6 @@ import at.petrak.hexcasting.api.casting.math.HexDir;
 import at.petrak.hexcasting.api.casting.math.HexPattern;
 import at.petrak.hexcasting.common.lib.HexRegistries;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
-import com.iridium126.createmanaindustry.compat.hextrick.conversion.OpMediaToMana;
 import com.iridium126.createmanaindustry.compat.hextrick.execution.OpReadTrickFromItem;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -30,10 +29,6 @@ public class CMIHexTrickActions {
                     new ActionRegistryEntry(
                             HexPattern.fromAngleString("qqqqqa", HexDir.NORTH_WEST),
                             OpReadTrickFromItem.INSTANCE));
-
-    public static final DeferredHolder<ActionRegistryEntry, ActionRegistryEntry> MEDIA_TO_MANA =
-            ACTIONS.register("media_to_mana", () -> new ActionRegistryEntry(
-                    HexPattern.fromAngleString("dadaw", HexDir.NORTH_EAST), OpMediaToMana.INSTANCE));
 
     public static void register(IEventBus modEventBus) {
         ACTIONS.register(modEventBus);

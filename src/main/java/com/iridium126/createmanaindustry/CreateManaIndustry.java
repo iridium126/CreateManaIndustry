@@ -9,8 +9,6 @@ import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
 import com.iridium126.createmanaindustry.infrastructure.data.CMIRegistrate;
-import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelRodStructure;
-import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankBlock;
 import com.iridium126.createmanaindustry.content.kinetics.kineticmanagenerator.KineticManaGeneratorBlock;
 import com.simibubi.create.api.boiler.BoilerHeater;
 import com.simibubi.create.api.stress.BlockStressValues;
@@ -22,13 +20,9 @@ import com.simibubi.create.foundation.item.KineticStats;
 import com.simibubi.create.foundation.item.TooltipModifier;
 
 import net.createmod.catnip.lang.FontHelper;
-import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.BlockTags;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.ModList;
@@ -41,7 +35,6 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacke
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -106,7 +99,6 @@ public class CreateManaIndustry {
         CMIComponents.register(modEventBus);
         CMIAttachments.register(modEventBus);
         CMIBlocks.register();
-        CMIMountedStorageTypes.register();
         CMIFluids.register();
         CMIBlockEntityTypes.register();
         CMIItems.register();
@@ -135,12 +127,6 @@ public class CreateManaIndustry {
             // Keep Inline and Trickster types out of this constructor's verifier.
             com.iridium126.createmanaindustry.compat.hextrick.bootstrap.HexTricksBootstrap.register(modEventBus);
         }
-
-        // Fuel rod structure recognition: glass has no block entity, so its
-        // place/break must be observed through game events (fuel tanks re-validate
-        // through their own connectivity update instead).
-        NeoForge.EVENT_BUS.addListener(CreateManaIndustry::onBlockPlacedForRod);
-        NeoForge.EVENT_BUS.addListener(CreateManaIndustry::onBlockBrokenForRod);
 
         // Allay dimension cube loading driver (block access is routed by the
         // allvr.* mixins; this only ticks the per-level cube map).
@@ -337,34 +323,4 @@ public class CreateManaIndustry {
         });
     }
 
-    // ---- fuel rod structure events ------------------------------------------
-
-    /**
-     * Glass (and tank) placement: re-validate any fuel rod whose structure could
-     * contain the placed block. Fuel tanks additionally re-validate through their
-     * own connectivity update; this event mainly catches glass, which has no
-     * block entity of its own.
-     */
-    private static void onBlockPlacedForRod(BlockEvent.EntityPlaceEvent event) {
-        if (!(event.getLevel() instanceof Level level) || level.isClientSide)
-            return;
-        BlockState state = event.getPlacedBlock();
-        if (state.getBlock() instanceof FuelTankBlock || state.is(BlockTags.IMPERMEABLE))
-            FuelRodStructure.validateFor(level, event.getPos());
-    }
-
-    /**
-     * Player break: fires before the block is removed, so the validation is
-     * deferred until the world reflects the break. Non-player removals (pistons,
-     * explosions, contraptions) are healed by the rod controller's lazy self-check.
-     */
-    private static void onBlockBrokenForRod(BlockEvent.BreakEvent event) {
-        if (!(event.getLevel() instanceof Level level) || level.isClientSide)
-            return;
-        BlockState state = event.getState();
-        if (state.getBlock() instanceof FuelTankBlock || state.is(BlockTags.IMPERMEABLE)) {
-            BlockPos pos = event.getPos().immutable();
-            level.getServer().execute(() -> FuelRodStructure.validateFor(level, pos));
-        }
-    }
 }

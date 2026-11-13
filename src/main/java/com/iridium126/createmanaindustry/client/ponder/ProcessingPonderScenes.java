@@ -134,26 +134,6 @@ public final class ProcessingPonderScenes {
         w.mistOff(mist); w.finish();
     }
 
-    public static void prismarine(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "prismarine_quartz", "Prismarine quartz: solid, liquid, mist", "熔化与汽化海晶石英");
-        BlockPos basin = p(4, 2, 3);
-        w.depot(p(6, 1, 2), CMIItems.PRISMARINE_QUARTZ.asStack());
-        w.text(70, p(6, 1, 2), "Craft Prismarine Quartz from one Quartz and eight Prismarine Shards.", "1 个石英和 8 个海晶碎片可以合成海晶石英");
-        press(w, basin, true); w.basinItems(basin, CMIItems.PRISMARINE_QUARTZ.asStack());
-        w.explain(70, basin, "Superheated compacting melts the crystal. A burning Allay Burner supplies enough heat.", "海晶石英需要超级加热冲压，悦灵燃烧室可以提供所需热量");
-        w.press(basin.above(2), true); w.basinItems(basin);
-        w.liquid(basin, CMIFluids.MOLTEN_PRISMARINE_QUARTZ.get(), 250);
-        w.text(70, basin, "One crystal gives 250 mB of Molten Prismarine Quartz.", "每个海晶石英可得到 250 mB 熔融海晶石英");
-        w.explain(80, basin.above(), "For mist, replace the press with an open Framed Glass Trapdoor and keep Allay Heat below.", "将冲压机换成打开的边框玻璃活板门，再提供悦灵加热，可以进行汽化");
-        w.remove(basin.above(2)); w.remove(basin.above(2).west()); w.remove(basin.above(2).west(2));
-        lid(w, basin, true);
-        w.explain(70, basin, "Each vaporizing operation consumes 125 mB. Molten fluids cannot be fed to an Atomizer.", "每次汽化消耗 125 mB，熔融流体无法直接输入雾化器");
-        w.liquid(basin, CMIFluids.MOLTEN_PRISMARINE_QUARTZ.get(), 125);
-        Workshop.Mist mist = w.mist(basin, 0x59D4CC, 3);
-        w.waitForText();
-        w.mistOff(mist); w.finish();
-    }
-
     public static void roseQuartz(SceneBuilder builder, SceneBuildingUtil util) {
         Workshop w = new Workshop(builder, util, "rose_quartz", "Preparing rose quartz vapor", "熔化与汽化玫瑰石英");
         BlockPos basin = p(4, 2, 3);

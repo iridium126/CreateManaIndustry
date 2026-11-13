@@ -10,9 +10,9 @@ import net.minecraft.world.level.material.Fluid;
 public final class CMITags {
 
     /**
-     * Fluids that behave like this mod's molten fluids (Molten Rose Quartz,
-     * Molten Prismarine Quartz, …) plus vanilla lava. Entities standing in them
-     * are treated as in lava, the Kinetic Atomizer refuses to atomize them, and
+     * Fluids that behave like this mod's molten fluids (Molten Rose Quartz, …)
+     * plus vanilla lava. Entities standing in them are treated as in lava, the
+     * Kinetic Atomizer refuses to atomize them, and
      * mist of them ignites living entities exactly like a fire block. Add future
      * molten fluids here — both the source and flowing variant.
      */

@@ -42,7 +42,7 @@ Trickster's existing close-range reading, writing, channel and mana-converter ch
 
 Operations that normally spend media instead spend mana, and those spending mana instead spend media. The equivalent payment is **doubled**.
 
-Equivalence compares the server's media and mana content per bucket. It does not use the [Transmuter's](^createmanaindustry:mana_industry/mana_conversion) workload-dependent rate or change actual fluid recipes.
+Equivalence compares the server's media and mana content per bucket. It does not change actual fluid recipes.
 
 ;;;;;
 

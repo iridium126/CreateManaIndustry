@@ -140,17 +140,13 @@ public final class ShaderPackSession {
     }
     /** Copies maps before validation. A rejection aborts this candidate, never publishes a partial map. */
     public BlockIdMapContext apply(BlockIdMapContext original) {
-        if(!patch.enabled())return original;
+        if(!patch.enabled()||patch.donorId()<0)return original;
         var blocks=new Int2ObjectLinkedOpenHashMap<List<BlockEntry>>(original.blockProperties());
         var items=new Object2IntOpenHashMap<NamespacedId>(original.itemIds());items.defaultReturnValue(-1);
-        int id=patch.blockId();
-        if(patch.donorId()>=0) {
-            var donor=blocks.get(patch.donorId());var replacement=blocks.get(patch.replacementId());
-            if(donor==null||donor.isEmpty()||replacement==null||replacement.isEmpty())throw reject("effective donor mapping absent");
-            var merged=new ArrayList<>(replacement);merged.addAll(donor);blocks.put(patch.replacementId(),List.copyOf(merged));
-            for(var entry:items.object2IntEntrySet())if(entry.getIntValue()==patch.donorId())entry.setValue(patch.replacementId());
-        } else if(blocks.containsKey(id))throw reject("effective material ID collision: "+id);
-        blocks.put(id,List.of(new BlockEntry(new NamespacedId("createmanaindustry","molten_salt_fuel_tank"),Map.of("lit","true"))));
+        var donor=blocks.get(patch.donorId());var replacement=blocks.get(patch.replacementId());
+        if(donor==null||donor.isEmpty()||replacement==null||replacement.isEmpty())throw reject("effective donor mapping absent");
+        var merged=new ArrayList<>(replacement);merged.addAll(donor);blocks.put(patch.replacementId(),List.copyOf(merged));
+        for(var entry:items.object2IntEntrySet())if(entry.getIntValue()==patch.donorId())entry.setValue(patch.replacementId());
         mapsApplied=true;return new BlockIdMapContext(blocks,items);
     }
     private IllegalStateException reject(String reason){failure=reason;return new IllegalStateException("CMI shader patch rejected: "+reason);}

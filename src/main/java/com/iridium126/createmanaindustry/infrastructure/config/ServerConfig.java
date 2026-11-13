@@ -124,16 +124,6 @@ public final class ServerConfig {
     private static ModConfigSpec.IntValue ALLAY_BURNER_MIST_RADIUS;
     private static ModConfigSpec.IntValue ALLAY_BURNER_MIST_PER_TICK;
 
-    // ---- fuel_tank ---------------------------------------------------------
-
-    private static ModConfigSpec.IntValue FUEL_TANK_CAPACITY;
-    private static ModConfigSpec.IntValue FUEL_TANK_MAX_BLOCKS;
-
-    // ---- fuel_rod ----------------------------------------------------------
-
-    private static ModConfigSpec.IntValue FUEL_ROD_MAX_RADIUS;
-    private static ModConfigSpec.BooleanValue FUEL_ROD_STRICT_STACKING;
-
     // ---- allay storm -------------------------------------------------------
 
     private static ModConfigSpec.DoubleValue STORM_CORRECTION_HZ;
@@ -269,28 +259,6 @@ public final class ServerConfig {
         ALLAY_BURNER_MIST_PER_TICK = BUILDER
                 .comment("Liquid Soul mist capacity (mB) added per tick by a burning Allay Burner.")
                 .defineInRange("allayBurnerMistPerTick", 1, 1, 1000);
-        BUILDER.pop();
-
-        BUILDER.comment("Molten Salt Fuel Tank — multi-block fluid storage connecting in arbitrary shapes.").push("fuel_tank");
-        // Bounds are coupled: blocks × capacity × 1000 must stay ≤ Integer.MAX_VALUE
-        // (FluidTank stores mB as an int). 21,474 × 100 × 1000 = 2,147,400,000 ✓.
-        FUEL_TANK_CAPACITY = BUILDER
-                .comment("Fluid capacity of one fuel tank block, in buckets. Total capacity of a connected group = blocks × fuelTankCapacity × 1000 mB. Capped at 100 so blocks × capacity × 1000 never overflows the int tank capacity.")
-                .defineInRange("fuelTankCapacity", 8, 1, 100);
-        FUEL_TANK_MAX_BLOCKS = BUILDER
-                .comment("Maximum number of blocks in one connected fuel tank group. Bounds the connectivity/basin recomputation cost. Capped at 21,474 (= 2,147,483 / 100) so blocks × fuelTankCapacity × 1000 never overflows the int tank capacity.")
-                .defineInRange("fuelTankMaxBlocks", 4096, 1, 21474);
-        BUILDER.pop();
-
-        BUILDER.comment("Molten Salt Reactor Fuel Rod — a multi-block structure of fuel tanks and glass.").push("fuel_rod");
-        // A layer of radius r holds 2(r-2)² + 2(r-2) + 1 tanks; r = 32 gives 1,861,
-        // comfortably inside the fuelTankMaxBlocks group cap with several layers.
-        FUEL_ROD_MAX_RADIUS = BUILDER
-                .comment("Maximum horizontal radius (in blocks) of one fuel rod layer. A layer is a solid diamond of fuel tanks (Manhattan distance < radius - 1) outlined by glass (#minecraft:impermeable) at distance radius - 1; the minimum valid layer (radius 2) is one tank surrounded by four glass blocks.")
-                .defineInRange("fuelRodMaxRadius", 5, 2, 32);
-        FUEL_ROD_STRICT_STACKING = BUILDER
-                .comment("Whether every fuel rod layer's radius must be less than or equal to the layer below it (a cone that widens downward). When false, layers may stack in any radius order as long as their centers align.")
-                .define("fuelRodStrictStacking", true);
         BUILDER.pop();
 
         BUILDER.comment("Allay Storm — the GPU-driven boss swarm (persistence + network sync).").push("allay_storm");
@@ -561,10 +529,6 @@ public final class ServerConfig {
     public static double condenseEfficiency = 5.0;
     public static int allayBurnerMistRadius = 4;
     public static int allayBurnerMistPerTick = 1;
-    public static int fuelTankCapacity = 8;
-    public static int fuelTankMaxBlocks = 4096;
-    public static int fuelRodMaxRadius = 5;
-    public static boolean fuelRodStrictStacking = true;
     public static double stormCorrectionHz = 5.0;
     public static int stormMaxCount = 65536;
     public static int stormLodMaxDistance=4096;
@@ -662,10 +626,6 @@ public final class ServerConfig {
             condenseEfficiency = CONDENSE_EFFICIENCY.get();
             allayBurnerMistRadius = ALLAY_BURNER_MIST_RADIUS.get();
             allayBurnerMistPerTick = ALLAY_BURNER_MIST_PER_TICK.get();
-            fuelTankCapacity = FUEL_TANK_CAPACITY.get();
-            fuelTankMaxBlocks = FUEL_TANK_MAX_BLOCKS.get();
-            fuelRodMaxRadius = FUEL_ROD_MAX_RADIUS.get();
-            fuelRodStrictStacking = FUEL_ROD_STRICT_STACKING.get();
             stormCorrectionHz = STORM_CORRECTION_HZ.get();
             packageGpuAuthority=PACKAGE_GPU_AUTHORITY.get();
             packageMainThreadBudgetMs=PACKAGE_MAIN_THREAD_BUDGET_MS.get();

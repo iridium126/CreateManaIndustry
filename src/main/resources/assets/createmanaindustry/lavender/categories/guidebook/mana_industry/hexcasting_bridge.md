@@ -16,4 +16,3 @@
 
 Hex Casting and the Great Language each have their own data and fuel. This section introduces reading and executing fragments and iotas, followed by the media reserve used by Spell Constructs.
 
-For resource exchange, see [Mana and Media](^createmanaindustry:mana_industry/mana_conversion).

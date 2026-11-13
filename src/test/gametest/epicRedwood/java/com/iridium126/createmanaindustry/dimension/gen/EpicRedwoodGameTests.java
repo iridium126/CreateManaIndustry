@@ -82,8 +82,8 @@ public final class EpicRedwoodGameTests {
                 sawSpruce |= state.is(net.minecraft.world.level.block.Blocks.SPRUCE_WOOD);
             }
             helper.assertTrue(sawDarkOak && sawSpruce, "Weighted D variants did not mix");
-            json.add("D", com.google.gson.JsonParser.parseString("{\"Name\":\"createmanaindustry:prismarine_quartz_block\"}"));
-            helper.assertTrue(new EpicRedwoodPalette(json).state(1).is(CMIBlocks.PRISMARINE_QUARTZ_BLOCK.get()), "Cross-namespace mapping rejected");
+            json.add("D", com.google.gson.JsonParser.parseString("{\"Name\":\"createmanaindustry:condenser\"}"));
+            helper.assertTrue(new EpicRedwoodPalette(json).state(1).is(CMIBlocks.CONDENSER.get()), "Cross-namespace mapping rejected");
             json.remove("N");
             boolean rejected = false;
             try { new EpicRedwoodPalette(json); } catch (IllegalArgumentException expected) { rejected = true; }

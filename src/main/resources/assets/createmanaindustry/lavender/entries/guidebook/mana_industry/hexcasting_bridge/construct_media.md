@@ -28,7 +28,7 @@ All four cores in a Modular Spell Construct share the same media reserve.
 
 Insert media items eligible for battery construction, such as Amethyst Dust, Amethyst Shards or Charged Amethyst. Hoppers and other item transport can supply them automatically.
 
-An ordinary Media Battery can fuel a player, but cannot be emptied into this reserve. Casting the [Ploy of the Transmuter](^createmanaindustry:mana_industry/mana_conversion) from the construct is another way to replenish it.
+An ordinary Media Battery can fuel a player, but cannot be emptied into this reserve.
 
 ;;;;;
 

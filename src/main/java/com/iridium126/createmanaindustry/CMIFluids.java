@@ -158,36 +158,6 @@ public class CMIFluids {
                     .build()
                     .register();
 
-    /**
-     * Molten Prismarine Quartz — the second molten fluid, sharing
-     * {@link MoltenFluid} / {@link MoltenFluidType} and the whole
-     * {@code molten_fluid} tag treatment (damage, mist ignition, atomizer
-     * exclusion, fan blasting catalyst, boiler heat). Only the textures and the
-     * fluid block's map color differ from the rose variant.
-     */
-    public static final FluidEntry<MoltenFluid.Flowing> MOLTEN_PRISMARINE_QUARTZ =
-            REGISTRATE.fluid("molten_prismarine_quartz",
-                    CreateManaIndustry.modLoc("fluid/molten_prismarine_quartz_still"),
-                    CreateManaIndustry.modLoc("fluid/molten_prismarine_quartz_flow"),
-                    MoltenFluidType::new,
-                    MoltenFluid.Flowing::new)
-                    .properties(b -> b.lightLevel(15).density(3000).viscosity(6000).temperature(1300)
-                            .canSwim(false).canDrown(false)
-                            .pathType(PathType.LAVA)
-                            .sound(SoundActions.BUCKET_FILL, SoundEvents.BUCKET_FILL_LAVA)
-                            .sound(SoundActions.BUCKET_EMPTY, SoundEvents.BUCKET_EMPTY_LAVA))
-                    .fluidProperties(p -> p.levelDecreasePerBlock(2).explosionResistance(100f))
-                    .source(MoltenFluid.Source::new)
-                    .block()
-                    .properties(p -> p.mapColor(MapColor.COLOR_CYAN))
-                    .build()
-                    .bucket()
-                    .model(NonNullBiConsumer.noop())
-                    .onRegister(CMIFluids::registerFluidDispenseBehavior)
-                    .tag(Tags.Items.BUCKETS)
-                    .build()
-                    .register();
-
     public static void register() {}
 
     private static final DispenseItemBehavior DISPENSE_FLUID = new DefaultDispenseItemBehavior() {

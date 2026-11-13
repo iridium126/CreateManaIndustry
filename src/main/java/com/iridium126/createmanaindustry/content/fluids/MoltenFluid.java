@@ -18,8 +18,8 @@ import net.minecraft.world.level.material.FluidState;
 import net.neoforged.neoforge.fluids.BaseFlowingFluid;
 
 /**
- * Shared base for this mod's molten fluids (Molten Rose Quartz, Molten
- * Prismarine Quartz, …) — strictly mirrors vanilla {@code LavaFluid} behaviour
+ * Shared base for this mod's molten fluids (Molten Rose Quartz, …) —
+ * strictly mirrors vanilla {@code LavaFluid} behaviour
  * (particles, sounds, flowing parameters, fluid replacement, block fizzing),
  * except for the exceptions the mod owner carved out:
  * <ul>

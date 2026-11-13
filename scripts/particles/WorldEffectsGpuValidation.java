@@ -129,7 +129,7 @@ public final class WorldEffectsGpuValidation {
         long window=GpuValidationSupport.open("CMI world effects validation");check(window!=0,"OpenGL context");
         try{
             RenderSystem.initRenderThread();System.out.println(GL11.glGetString(GL11.GL_RENDERER));
-            for(String name:new String[]{"mist_volumetric_iris","fuel_rod_glow_iris","storm_visual_probe"}){int p=program(name);try{check(p!=0,"production fragment "+name);try(var copy=new SceneColorCopy()){if(name.equals("storm_visual_probe")){probe(p,32,copy);probe(p,64,copy);}if(name.equals("mist_volumetric_iris"))mistLighting(p,copy);}}finally{GL20.glDeleteProgram(p);}}
+            for(String name:new String[]{"mist_volumetric_iris","storm_visual_probe"}){int p=program(name);try{check(p!=0,"production fragment "+name);try(var copy=new SceneColorCopy()){if(name.equals("storm_visual_probe")){probe(p,32,copy);probe(p,64,copy);}if(name.equals("mist_volumetric_iris"))mistLighting(p,copy);}}finally{GL20.glDeleteProgram(p);}}
             check(GL11.glGetError()==GL11.GL_NO_ERROR,"GL errors");System.out.println("World effects GPU: "+checks+" assertions passed");
         }finally{GpuValidationSupport.close(window);}
     }

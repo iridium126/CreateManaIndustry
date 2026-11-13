@@ -22,16 +22,15 @@ those systems are still under active development.
 - **Allay Burner** is a Create heat source built around a captured allay and fueled by amethyst
   materials or Liquid Media. It supports records and releases Liquid Soul mist while burning; basins
   can request its `allayheated` heat level.
-- Adds Liquid Mana, Liquid Media, Liquid Source, Liquid Soul, Coolant, Molten Rose Quartz, and
-  Molten Prismarine Quartz. Create pipes and tanks can move the fluids; optional magic-mod
-  integrations add their respective resource bridges.
+- Adds Liquid Mana, Liquid Media, Liquid Source, Liquid Soul, Coolant, and Molten Rose Quartz.
+  Create pipes and tanks can move the fluids; optional magic-mod integrations add their respective
+  resource bridges.
 - Adds heated compacting, mist compacting/mixing, vaporizing, and vapor-deposition processing.
   Recipes cover amethyst-to-media conversion, quartz processing, and sheets coated with amethyst and
   rose quartz.
 - The included heated mixing recipe converts 250 mB of Liquid Media into 125 mB of Liquid Mana. A
   superheated mist recipe turns 250 mB of Liquid Mana into a Liquid Media mist emission. Ice can be
   compacted into Coolant.
-- Adds connected Molten Salt Fuel Tanks and the fuel-rod multiblock structure.
 
 ### Hexcasting
 
@@ -51,7 +50,7 @@ localization.
 ### Trickster, Bits 'n' Bobs, and Ars Nouveau
 
 - Trickster adds knot assembly and filling, mechanical-arm interaction with knots and constructs,
-  Display Link targets, a temporary kinetic-stress trick, and mana/media exchange tricks.
+  Display Link targets and a temporary kinetic-stress trick.
 - The Kinetics Spell Core exposes cogwheel-chain stress from Create: Bits 'n' Bobs to Trickster
   spells.
 - Ars Nouveau integration provides Liquid Source support and source-jar fluid handling. Source
@@ -94,7 +93,7 @@ The following mods are optional. Their integration is enabled when the mod is in
 | [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-64 | Casting-item automation, media storage, and custom actions |
 | HexParse | 1.21.1-1.11.2.pre53 | Adapters for integration-specific Hexcasting data |
 | [Veil](https://modrinth.com/mod/veil) | 4.1.4 | Volumetric mist and related rendering effects |
-| [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0-alpha | Shaderpack integration for mist and fuel-rod glow |
+| [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0-alpha | Shaderpack integration for mist |
 | [Ars Nouveau](https://modrinth.com/mod/ars-nouveau) | 5.13.0 | Liquid Source and source-jar handling |
 
 ## Configuration
@@ -113,11 +112,10 @@ Common server settings:
 | `mist.mistMaxRadius` | 16 | Maximum atomizer mist radius in blocks |
 | `mist.mistFluidPerTick` | 8 | Base atomizer fluid use at 256 RPM, in mB/tick |
 | `mist.condenseEfficiency` | 5.0 | Condenser base output per concentration unit, in mB/tick |
-| `fuel_tank.fuelTankCapacity` | 8 | Buckets stored per fuel-tank block |
 | `hexcasting.jit.mode` | `AUTO` | Hex JIT mode: `OFF`, `PROFILE`, or `AUTO` |
 
-The server file also has settings for Allay Burner fuel, fuel-rod structure limits, Hexcasting item
-capacities, and Allay Storm behavior. The client file controls mist glow, GPU particle limits and
+The server file also has settings for Allay Burner fuel, Hexcasting item capacities, and Allay Storm
+behavior. The client file controls mist glow, GPU particle limits and
 throttling, Hexcasting particle redirects, and ALLVR LOD. GPU package authority is disabled by
 default on both sides.
 

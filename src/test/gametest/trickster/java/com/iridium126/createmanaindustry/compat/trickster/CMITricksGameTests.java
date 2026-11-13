@@ -52,7 +52,6 @@ public final class CMITricksGameTests {
                 CMITricks.TEMPORARY_KINETIC_STRESS);
         assertRegistered(helper, "read_iota", Pattern.of(6, 7, 4, 1, 0, 3, 4, 5, 2, 1), CMITricks.Hexcasting.READ_IOTA);
         assertRegistered(helper, "eval_iota", Pattern.of(3, 6, 7, 8, 5, 4, 3, 0, 1, 4, 7, 3), CMITricks.Hexcasting.EVAL_IOTA);
-        assertRegistered(helper, "mana_to_media", Pattern.of(3, 0, 4, 2), CMITricks.Hexcasting.MANA_TO_MEDIA);
         helper.assertTrue(FragmentType.REGISTRY.get(CreateManaIndustry.modLoc("iota")) == CMITricksterFragmentTypes.IOTA,
                 "Hex iota fragment type was not registered before the bridge tricks");
         var original = new IotaFragment(IotaFragment.serializeIota(new at.petrak.hexcasting.api.casting.iota.DoubleIota(42)));

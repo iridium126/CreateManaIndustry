@@ -2,7 +2,6 @@ package com.iridium126.createmanaindustry.client.ponder;
 
 import com.iridium126.createmanaindustry.CMIBlocks;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
-import com.iridium126.createmanaindustry.content.fluids.fueltank.FuelTankBlockEntity;
 import com.simibubi.create.AllBlocks;
 import com.simibubi.create.content.fluids.tank.FluidTankBlockEntity;
 import com.simibubi.create.content.kinetics.press.MechanicalPressBlockEntity;
@@ -187,8 +186,6 @@ final class Workshop {
         scene.world().modifyBlockEntity(pos, SmartBlockEntity.class, be -> {
             FluidStack stack = amount == 0 ? FluidStack.EMPTY : new FluidStack(fluid, amount);
             if (be instanceof FluidTankBlockEntity tank) {
-                tank.getTankInventory().setFluid(stack);
-            } else if (be instanceof FuelTankBlockEntity tank) {
                 tank.getTankInventory().setFluid(stack);
             } else {
                 SmartFluidTankBehaviour tank = be instanceof BasinBlockEntity basin ? basin.inputTank

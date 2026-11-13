@@ -19,7 +19,7 @@ public final class ClientConfig {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
     // Definition order matches the generated TOML and the configuration screen.
-    private static ModConfigSpec.DoubleValue MIST_GLOW_STRENGTH, FUEL_ROD_BLOOM_RING_STRENGTH;
+    private static ModConfigSpec.DoubleValue MIST_GLOW_STRENGTH;
     private static ModConfigSpec.BooleanValue MIST_DEBUG_SHADOW;
     private static ModConfigSpec.BooleanValue PARTICLE_ENABLED, PARTICLE_AUTO_THROTTLE, PARTICLE_SHADER_PACK_INTEGRATION;
     private static ModConfigSpec.IntValue PARTICLE_MAX_COUNT, PARTICLE_FADE_DISTANCE;
@@ -46,9 +46,6 @@ public final class ClientConfig {
         MIST_DEBUG_SHADOW = BUILDER
                 .comment("Debug shadow visualization.")
                 .define("mistDebugShadow", false);
-        FUEL_ROD_BLOOM_RING_STRENGTH = BUILDER
-                .comment("Bloom ring strength multiplier.")
-                .defineInRange("fuelRodBloomRingStrength", 1.0, 0.0, 100.0);
         BUILDER.pop();
 
 
@@ -132,7 +129,7 @@ public final class ClientConfig {
 
     public static final ModConfigSpec SPEC = BUILDER.build();
 
-    public static double mistGlowStrength = .5, fuelRodBloomRingStrength = 1.;
+    public static double mistGlowStrength = .5;
     public static boolean mistDebugShadow = false;
     public static boolean particleEnabled = true;
     public static int particleMaxCount = 2_000_000;
@@ -162,7 +159,6 @@ public final class ClientConfig {
         if (event.getConfig().getSpec() == SPEC
                 && (event instanceof ModConfigEvent.Loading || event instanceof ModConfigEvent.Reloading)) {
             mistGlowStrength = MIST_GLOW_STRENGTH.get();
-            fuelRodBloomRingStrength = FUEL_ROD_BLOOM_RING_STRENGTH.get();
             mistDebugShadow = MIST_DEBUG_SHADOW.get();
             particleEnabled = PARTICLE_ENABLED.get();
             particleMaxCount = PARTICLE_MAX_COUNT.get();

@@ -12,10 +12,9 @@
 - **动力雾化器**将管道输入的支持流体转化为雾场。雾场半径随转速变化，浓度随距离衰减；自定义配方可以要求雾场，也可以排放雾作为副产物。
 - **冷凝管**通过独立冷却液管路，从附近雾场中回收对应流体，并将产物流入下方的动力排液口。
 - **悦灵燃烧室**以被捕获的悦灵为核心，是机械动力的加热源；可燃烧紫水晶类材料或液态媒质，支持唱片播放，并在燃烧时排放液态灵魂雾。工作盆配方可指定 `allayheated` 热需求。
-- 新增液态魔力、液态媒质、液态魔源、液态灵魂、冷却液、熔融玫瑰石英与熔融海晶石英。流体可由机械动力管道和储罐运输；可选魔法模组会提供对应的资源桥接。
+- 新增液态魔力、液态媒质、液态魔源、液态灵魂、冷却液、熔融玫瑰石英。流体可由机械动力管道和储罐运输；可选魔法模组会提供对应的资源桥接。
 - 新增加热冲压、雾化冲压/搅拌、汽化与汽相沉积配方，涵盖紫水晶制媒质、紫水晶和玫瑰石英镀层板等流程。
 - 内置的加热搅拌配方会将 250 mB 液态媒质转为 125 mB 液态魔力；加热雾化搅拌配方会将 250 mB 液态魔力转为液态媒质雾。冰可通过冲压制成冷却液。
-- 新增可连接成组的熔盐燃料罐，以及燃料棒多方块结构。
 
 ### 咒法学（Hexcasting）
 
@@ -27,7 +26,7 @@
 
 ### Trickster、Bits 'n' Bobs 与 Ars Nouveau
 
-- Trickster 联动增加晶结装配与灌注、机械臂对晶结和法术构装台的操作、显示链接器目标、临时动能应力戏法，以及媒质/魔力转换戏法。
+- Trickster 联动增加晶结装配与灌注、机械臂对晶结和法术构装台的操作、显示链接器目标、临时动能应力戏法。
 - **动力法术核心**可将机械动力与 Create: Bits 'n' Bobs 的齿轮链应力提供给 Trickster 法术核心。
 - Ars Nouveau 联动提供液态魔源和源质罐流体处理。魔源浆果相关配方仅在安装 Ars Nouveau 时生效。
 
@@ -61,7 +60,7 @@
 | [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) | 2.1.9-beta | 动力法术核心的齿轮链数据 |
 | [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-64 | 施法物品自动化、媒质存储与自定义动作 |
 | [Veil](https://modrinth.com/mod/veil) | 4.1.4 | 体积雾及相关渲染效果 |
-| [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0-alpha | 雾效与燃料棒辉光的光影包适配 |
+| [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0-alpha | 雾效的光影包适配 |
 | [Ars Nouveau](https://modrinth.com/mod/ars-nouveau) | 5.13.0 | 液态魔源与源质罐处理 |
 
 ## 配置
@@ -78,10 +77,9 @@ NeoForge 会在配置目录中生成 `createmanaindustry-server.toml` 与 `creat
 | `mist.mistMaxRadius` | 16 | 雾化器的最大雾场半径（格） |
 | `mist.mistFluidPerTick` | 8 | 256 RPM 时雾化器的基础流体消耗（mB/tick） |
 | `mist.condenseEfficiency` | 5.0 | 每浓度单位每 tick 的冷凝基础产量（mB） |
-| `fuel_tank.fuelTankCapacity` | 8 | 每个燃料罐方块的容量（桶） |
 | `hexcasting.jit.mode` | `AUTO` | Hex JIT 模式：`OFF`、`PROFILE` 或 `AUTO` |
 
-服务端配置还包括悦灵燃烧室燃料、燃料棒结构限制、Hexcasting 物品容量和悦灵风暴行为。客户端配置控制雾场辉光、GPU 粒子上限与限流、咒法学粒子重定向和 ALLVR LOD。GPU 包裹权威模拟在客户端和服务端均默认关闭。
+服务端配置还包括悦灵燃烧室燃料、Hexcasting 物品容量和悦灵风暴行为。客户端配置控制雾场辉光、GPU 粒子上限与限流、咒法学粒子重定向和 ALLVR LOD。GPU 包裹权威模拟在客户端和服务端均默认关闭。
 
 ## 构建
 

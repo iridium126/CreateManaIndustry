@@ -1,7 +1,6 @@
 package com.iridium126.createmanaindustry;
 
 import com.iridium126.createmanaindustry.client.particles.BlockParticleEmitterClient;
-import com.iridium126.createmanaindustry.client.render.fuelrod.FuelRodBloomHandler;
 import com.iridium126.createmanaindustry.client.render.mist.MistClientHandler;
 import com.iridium126.createmanaindustry.client.render.InlineTrickRenderer;
 import com.iridium126.createmanaindustry.client.render.InlineYsmGeometryRenderer;
@@ -21,7 +20,6 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrBlockUpda
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacket;
 import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrForgetCubePacket;
 import com.samsthenerd.inline.api.client.InlineClientAPI;
-import com.simibubi.create.content.decoration.copycat.CopycatBlock;
 
 import net.createmod.ponder.foundation.PonderIndex;
 import net.minecraft.client.Minecraft;
@@ -121,15 +119,13 @@ public class CreateManaIndustryClient {
             });
 
         // Register the Veil post-processing uniform injection listeners.
-        // The mist/fuel-rod-glow pipelines are added/removed on demand when
-        // atomizers activate / rods form — see MistClientHandler.setActive()
-        // and FuelRodBloomHandler.onRodSync(). The Veil pipelines and the iris
-        // gbuffer hooks are all initialised inside the handlers' init().
+        // The mist pipeline is added/removed on demand when atomizers activate —
+        // see MistClientHandler.setActive(). The Veil pipeline and the iris
+        // gbuffer hooks are initialised inside the handler's init().
         if (CreateManaIndustry.VEIL_ACTIVE) {
             ClientboundMistSyncPacket.installClientHandler(packet ->
                     MistClientHandler.setActive(packet.pos(), packet.fluid(), packet.radius()));
             MistClientHandler.init();
-            FuelRodBloomHandler.init();
         }
 
         // The shader-pack MODEL-particle path needs no client init here: the
@@ -277,15 +273,9 @@ public class CreateManaIndustryClient {
         });
     }
 
-    /**
-     * Tints the copycat shell of the fuel tank with the material's biome color
-     * (grass, leaves…): the tank's own shell quads carry the material's tint
-     * index (see {@code FuelTankModel}, which re-textures those quads), and
-     * Create's wrapped block color resolves that index against the material.
-     */
+    /** Tints the glowing vine with the biome's foliage color. */
     @SubscribeEvent
     private static void onRegisterBlockColors(RegisterColorHandlersEvent.Block event) {
-		event.register(CopycatBlock.wrappedColor(), CMIBlocks.MOLTEN_SALT_FUEL_TANK.get());
 		event.register((state, level, pos, tintIndex) -> level != null && pos != null
 			? BiomeColors.getAverageFoliageColor(level, pos)
 			: FoliageColor.getDefaultColor(), CMIBlocks.GLOWING_VINE.get());
@@ -298,7 +288,7 @@ public class CreateManaIndustryClient {
 	}
 
     /**
-     * Clears client mist sources, fuel rod glows and GPU particles when the
+     * Clears client mist sources and GPU particles when the
      * client's level/dimension changes.
      */
     @SubscribeEvent
@@ -315,7 +305,6 @@ public class CreateManaIndustryClient {
             BlockParticleEmitterClient.clear();
             if (CreateManaIndustry.VEIL_ACTIVE) {
                 MistClientHandler.clearAll();
-                FuelRodBloomHandler.clearAll();
             }
             // Allay-dimension streamed cubes die with the level (dimension
             // switch or logout); the server restarts the stream on re-entry.

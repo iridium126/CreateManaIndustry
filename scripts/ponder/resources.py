@@ -188,7 +188,7 @@ def optional_guards():
             assert 'isLoaded("hexcasting")' in guards and 'available(' in guards
         if 'ChainPonderScenes::' in line:
             assert 'isLoaded("trickster")' in guards and 'isLoaded("bits_n_bobs")' in guards
-    core = ['Workshop.java', 'AllayBurnerPonderScenes.java', 'MistPonderScenes.java', 'ProcessingPonderScenes.java', 'FuelTankPonderScenes.java']
+    core = ['Workshop.java', 'AllayBurnerPonderScenes.java', 'MistPonderScenes.java', 'ProcessingPonderScenes.java']
     for name in core:
         code = (JAVA / name).read_text(encoding='utf-8')
         assert not re.search(r'import (?:dev.enjarai|at.petrak|com.kipti)', code), f'Optional type in core: {name}'
@@ -214,7 +214,7 @@ def recipe_contracts():
     source = read('mixing/sweet_berries_to_source')
     assert source['ingredients'] == [{'item': 'minecraft:sweet_berries'}, {'type': 'neoforge:single', 'amount': 25, 'fluid': 'minecraft:water'}]
     assert source['results'] == [{'id': 'createmanaindustry:liquid_source', 'amount': 25}]
-    for quartz in ('rose_quartz', 'prismarine_quartz'):
+    for quartz in ('rose_quartz',):
         melted = read('heated_compacting/molten_' + quartz)
         assert melted['heat_requirement'] == 'superheated'
         assert melted['results'] == [{'id': 'createmanaindustry:molten_' + quartz, 'amount': 250}]

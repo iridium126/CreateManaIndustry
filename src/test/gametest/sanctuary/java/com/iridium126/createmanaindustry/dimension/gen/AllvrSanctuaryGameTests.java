@@ -155,9 +155,9 @@ public final class AllvrSanctuaryGameTests {
         helper.assertTrue(wallMaterials.contains(Blocks.DRIPSTONE_BLOCK)
             && wallMaterials.contains(Blocks.TUFF), "Weighted wall_base variants did not mix");
         var custom=json.deepCopy();
-        custom.add("bridge_deck",com.google.gson.JsonParser.parseString("{\"Name\":\"createmanaindustry:prismarine_quartz_block\"}"));
+        custom.add("bridge_deck",com.google.gson.JsonParser.parseString("{\"Name\":\"createmanaindustry:condenser\"}"));
         var palette=new SanctuaryPalette(custom);
-        helper.assertTrue(palette.material(SanctuaryNetwork.DECK).is(com.iridium126.createmanaindustry.CMIBlocks.PRISMARINE_QUARTZ_BLOCK.get()),"Cross-namespace palette ignored");
+        helper.assertTrue(palette.material(SanctuaryNetwork.DECK).is(com.iridium126.createmanaindustry.CMIBlocks.CONDENSER.get()),"Cross-namespace palette ignored");
         for(String key:new String[]{"path","root_core","wall_base"}) {
             var invalid=json.deepCopy();invalid.remove(key);boolean rejected=false;
             try { new SanctuaryPalette(invalid); } catch(IllegalArgumentException ex) { rejected=true; }

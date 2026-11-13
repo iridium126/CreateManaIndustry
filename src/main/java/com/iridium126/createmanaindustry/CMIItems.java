@@ -15,11 +15,9 @@ import com.tterrag.registrate.util.nullness.NonNullBiConsumer;
 
 import net.minecraft.data.recipes.RecipeCategory;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
-import net.minecraft.data.recipes.ShapelessRecipeBuilder;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
-import net.neoforged.neoforge.common.Tags;
 
 public final class CMIItems {
 
@@ -34,30 +32,6 @@ public final class CMIItems {
     public static ItemEntry<IncompleteHexItem> INCOMPLETE_TRINKET;
     public static ItemEntry<IncompleteHexItem> INCOMPLETE_ARTIFACT;
     public static ItemEntry<IncompleteMediaBatteryItem> INCOMPLETE_MEDIA_BATTERY;
-
-    // Prismarine Quartz — this mod's parallel to Create's Rose Quartz: a plain
-    // gem item obtained from quartz + prismarine shards, smelted (superheated
-    // compacting) into Molten Prismarine Quartz. Core item, always registered.
-    public static final ItemEntry<Item> PRISMARINE_QUARTZ = REGISTRATE.item("prismarine_quartz", Item::new)
-                .recipe((c, p) -> {
-                    // Mirrors Create's rose_quartz crafting (1 c:gems/quartz + 8 redstone),
-                    // substituting prismarine shards for the mod's own prismarine identity.
-                    // Saved under crafting/materials like Create's own rose_quartz.json.
-                    ShapelessRecipeBuilder.shapeless(RecipeCategory.MISC, c.get())
-                            .requires(Tags.Items.GEMS_QUARTZ)
-                            .requires(Items.PRISMARINE_SHARD)
-                            .requires(Items.PRISMARINE_SHARD)
-                            .requires(Items.PRISMARINE_SHARD)
-                            .requires(Items.PRISMARINE_SHARD)
-                            .requires(Items.PRISMARINE_SHARD)
-                            .requires(Items.PRISMARINE_SHARD)
-                            .requires(Items.PRISMARINE_SHARD)
-                            .requires(Items.PRISMARINE_SHARD)
-                            .unlockedBy("has_prismarine_shard",
-                                    RegistrateRecipeProvider.has(Items.PRISMARINE_SHARD))
-                            .save(p, CreateManaIndustry.modLoc("crafting/materials/prismarine_quartz"));
-                })
-                .register();
 
     // Deposited metal sheets — produced by vapor deposition: a mist deposits
     // amethyst or rose quartz onto a Create metal sheet. Core items, always

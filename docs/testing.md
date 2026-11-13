@@ -40,7 +40,6 @@
 | Trickster 出库 | `scripts/trickster/gametest.init.gradle` | 无 |
 | Create 包裹输出/恢复 | `scripts/particles/package-output-gametest.init.gradle` | `-PpackageRecoveryGameTest` 切换恢复模式 |
 | 大范围碰撞 | `scripts/collision/gametest.init.gradle` | 无 |
-| 资源转换 | `scripts/conversion/gametest.init.gradle` | `-PconversionAbsent=hexcasting` 或 `trickster` |
 | HexParse | `scripts/hexparse/gametest.init.gradle` | 缺席用 `scripts/hexparse/absent.init.gradle` |
 | Hex JIT | `scripts/hexjit/gametest.init.gradle` | 正确性子集追加 `-I scripts/hexjit/regression.init.gradle` |
 | Allay Storm | `scripts/allaystorm/gametest.init.gradle` | 可选 `-PdomeEvidence=<生产GPU证据JSON>`；见 [验证说明](allay-storm-validation.md) |
@@ -74,9 +73,6 @@ python scripts/benchmarks/run.py validateStarfallGpu validateDomeGpu validateHel
 
 ```powershell
 .\gradlew.bat test runGameTestServer -I scripts/trickster/gametest.init.gradle --offline --no-configuration-cache
-.\gradlew.bat runGameTestServer -I scripts/conversion/gametest.init.gradle --offline --no-configuration-cache
-.\gradlew.bat runGameTestServer -I scripts/conversion/gametest.init.gradle -PconversionAbsent=hexcasting --offline --no-configuration-cache
-.\gradlew.bat runGameTestServer -I scripts/conversion/gametest.init.gradle -PconversionAbsent=trickster --offline --no-configuration-cache
 .\gradlew.bat runGameTestServer -I scripts/hexparse/gametest.init.gradle --offline --no-configuration-cache
 .\gradlew.bat runGameTestServer -I scripts/hexparse/absent.init.gradle --offline --no-configuration-cache
 .\gradlew.bat runGameTestServer -I scripts/hexjit/gametest.init.gradle -I scripts/hexjit/regression.init.gradle --offline --no-configuration-cache
