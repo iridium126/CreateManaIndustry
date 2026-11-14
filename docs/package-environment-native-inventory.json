@@ -2,55 +2,48 @@
   "minecraft": "1.21.1",
   "reference_create": "6.0.10-281",
   "create_commit": "c308d004788fce2998bf41653f6d39412b6fc8ed",
-  "create_binary_sha256": "2fe00cb77d68019f2af55494dc41601cd7f6735aab8a22ee0b0ebd04c808bc9a",
   "sources": [
     {
       "source": "com/simibubi/create/api/behaviour/interaction/MovingInteractionBehaviour.java",
       "entries": [
         "handleEntityCollision"
       ],
-      "entity_queries": [],
-      "sha256": "7ff648232dd26fe4f34ad69f68a88dfd807ea7a62f1d72d16d5858b21418473c"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/contraptions/Contraption.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "b8dd76a491d7ec2ce14ee1c2c7cd7aa885ef514f578a519488c7042929b9648e"
+      ]
     },
     {
       "source": "com/simibubi/create/content/contraptions/ContraptionCollider.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "8db0b4fd229cc991c8cc71181bf5289dee506e32c7be1ff5e675d47d72cb20e1"
+      ]
     },
     {
       "source": "com/simibubi/create/content/contraptions/actors/contraptionControls/ContraptionControlsBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "69bedccc8aedc89a2ffde8dcf92ce02af512203d4ffa690f462c7c8748e8fba2"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/contraptions/actors/plough/PloughMovementBehaviour.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "03a11d2a8ac9d28133fe0946b2424eaaf0f5eeaaa6dcf0e6e8027141d3c4c272"
+      ]
     },
     {
       "source": "com/simibubi/create/content/contraptions/actors/psi/PortableStorageInterfaceBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "db7ca429d5e09551839131bfb0af01961e2ef8b60a4fce12c718614b0c649ff7"
+      ]
     },
     {
       "source": "com/simibubi/create/content/contraptions/actors/seat/SeatBlock.java",
@@ -62,24 +55,21 @@
       "entity_queries": [
         "getEntities",
         "getEntitiesOfClass"
-      ],
-      "sha256": "48827c3c7a73a1f54d3a90afeef61db0a5130a355ff0e55269c33bde9f8c6045"
+      ]
     },
     {
       "source": "com/simibubi/create/content/contraptions/actors/seat/SeatInteractionBehaviour.java",
       "entries": [
         "handleEntityCollision"
       ],
-      "entity_queries": [],
-      "sha256": "bd7c9fb4e1813a6b983e5810214a7e7680ee312c6422249a15f6f79ed50d6dbf"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/contraptions/actors/trainControls/ControlsBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "bc462fd21792cc151ca9b2a2eff375ca3f3aa4be156363a4d3aea53a614d92f0"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/contraptions/bearing/SailBlock.java",
@@ -88,8 +78,7 @@
         "getCollisionShape",
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "fab15788be62810d429fcec2f603aa66db4abe527ca2c140d5cf1fdabbcf8c54"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/contraptions/chassis/StickerBlock.java",
@@ -100,40 +89,35 @@
         "stepOn",
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "f622e83ec6c33e2536f9b11e644b5d2ea477f6dd61d38be61e87e43f4a6cfd3f"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/contraptions/glue/SuperGlueEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "0d19e22736bc3e53b38c37f57b87cf2d231abfa966e51a1f8f3c53d825375c57"
+      ]
     },
     {
       "source": "com/simibubi/create/content/contraptions/glue/SuperGlueSelectionHandler.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "3626f1322587dcefa975a8814c1a99fc2cad8e0e8804bd58b12cdad2b322e372"
+      ]
     },
     {
       "source": "com/simibubi/create/content/contraptions/mounted/CartAssemblerBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "fce2c9a2c455539824ac348c0945bf8a63ab5bb0f045664294172a994127498f"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/contraptions/mounted/MountedContraption.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "ea7e7fa30c2f0206a82c7bb08e97bbce4d9fb88b9ff38d19558a125b25865706"
+      ]
     },
     {
       "source": "com/simibubi/create/content/decoration/MetalScaffoldingBlock.java",
@@ -141,8 +125,7 @@
         "getCollisionShape",
         "isScaffolding"
       ],
-      "entity_queries": [],
-      "sha256": "e4e05de6410e379e1e445c6b953f0e4fae1466e462eab8f38478ba0ac6d21ee0"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/decoration/copycat/CopycatBlock.java",
@@ -154,32 +137,28 @@
         "getFriction",
         "getSoundType"
       ],
-      "entity_queries": [],
-      "sha256": "4456ae6302015251bd497f20443071a4b882e908d76e7c7cb06ddb03b8005962"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/equipment/blueprint/BlueprintEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "89b66f91dff091310a81af723e950b2a830a5ed1dad5e3b3d590961b1cce1733"
+      ]
     },
     {
       "source": "com/simibubi/create/content/equipment/sandPaper/SandPaperItem.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "b4513b5856feb65837b7fddaf89759435c677931d09f8dfbbea8402069ef2bad"
+      ]
     },
     {
       "source": "com/simibubi/create/content/fluids/drain/ItemDrainBlock.java",
       "entries": [
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "5f5952736884302ca9182c578d00215e42c97383429fc78279c039154051f6a3"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/fluids/tank/FluidTankBlock.java",
@@ -187,16 +166,14 @@
         "getCollisionShape",
         "getSoundType"
       ],
-      "entity_queries": [],
-      "sha256": "2daab11d0b34b713291216bd579786cac2f395bf478a99a46c423630771f6192"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/base/BlockBreakingMovementBehaviour.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "455ef461a5deea014d4be3037a647de5bbeb0e4f4070b6bacc6a1f4be1592513"
+      ]
     },
     {
       "source": "com/simibubi/create/content/kinetics/belt/BeltBlock.java",
@@ -205,32 +182,28 @@
         "getCollisionShape",
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "83dfc1eac24b40b7b358377f49625d4f97dbc1f560f1bc58f9aed84e84649d5d"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/belt/BeltShapes.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "92060aa965183c001f28ea1e37dc154aa386938c7cff403129de59c53d447a7e"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/belt/transport/BeltMovementHandler.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "dbc2de4a09c5421b817e6b7f8eafc558bc438f1ec3f005244f59816fe115d363"
+      ]
     },
     {
       "source": "com/simibubi/create/content/kinetics/chainConveyor/ChainConveyorBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "47662a7f92221f5aa90862829f2ead89ebc9cecc1a200c42878c62ce2fd1c5da"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/crusher/CrushingWheelBlock.java",
@@ -238,8 +211,7 @@
         "entityInside",
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "115e2a47bcc71a56d05f709c2ea523631e6a622cd2ac64f38ab44e31d3c8c8f6"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/crusher/CrushingWheelControllerBlock.java",
@@ -252,8 +224,7 @@
       "entity_queries": [
         "processingEntity",
         "startCrushing"
-      ],
-      "sha256": "79b273d014e237a3230a49cd8d541407b09416c720c1ea926abb890a1b5ed5f0"
+      ]
     },
     {
       "source": "com/simibubi/create/content/kinetics/crusher/CrushingWheelControllerBlockEntity.java",
@@ -262,56 +233,49 @@
         "getEntities",
         "processingEntity",
         "startCrushing"
-      ],
-      "sha256": "9e367d3542a8c64dac056c87c7408048a0b37ad8cc5dec023cd0fa32111ae17b"
+      ]
     },
     {
       "source": "com/simibubi/create/content/kinetics/deployer/DeployerBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "31c35b63bd9e8ad20cddcf407a89e36f77e95e94be1ea97910a33bb1ef62b261"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/deployer/DeployerHandler.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "49b23196a4fb5c959a663d2d9bd019d0a93ffd4011e65df0300b25d1218e5a86"
+      ]
     },
     {
       "source": "com/simibubi/create/content/kinetics/drill/DrillBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "17415e1c1767124cda7077c2c9e26b3a30fd77db75a82954ca52d6650f70f8af"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/fan/AirCurrent.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "f0e5ae0c560319cefeb8672384408e76b74030794dd01c785b38f807b84d2740"
+      ]
     },
     {
       "source": "com/simibubi/create/content/kinetics/fan/NozzleBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "cd5a2c4206edea9aa32b4f69a340c03e0698a0f8c9ce653647b8cf948b1727ed"
+      ]
     },
     {
       "source": "com/simibubi/create/content/kinetics/millstone/MillstoneBlock.java",
       "entries": [
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "84fbf9c31024279b847ce7511000365f2d71e4c67ed25a5c4d57749ca1249240"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/press/PressingBehaviour.java",
@@ -319,8 +283,7 @@
       "entity_queries": [
         "getEntities",
         "getEntitiesOfClass"
-      ],
-      "sha256": "2b5e29be5ca9890224084a571bcaf2ce82f3b3f4678e5885965d18dbcba52c4c"
+      ]
     },
     {
       "source": "com/simibubi/create/content/kinetics/saw/SawBlock.java",
@@ -328,38 +291,33 @@
         "entityInside",
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "14792c7798eb66f137098b42c5e321fadf55a31645841d6c7cc9678f0f6ee44f"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/turntable/TurntableBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "5c1ab4ee88d1c02fea9d7644ad68009af6a0cfb5ae792bd43e9a2dac0ff9c8cf"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/kinetics/waterwheel/WaterWheelStructuralBlock.java",
       "entries": [
         "addLandingEffects"
       ],
-      "entity_queries": [],
-      "sha256": "1e9aff5721e01f9cb439d0ccd5d55bcfbf8126d99490e17a830c3976002f9df4"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/box/PackageEntity.java",
       "entries": [],
-      "entity_queries": [],
-      "sha256": "cbe9b4aaa84327530df14debe0f8ece2a1f54fe0e3c835982cbf1ce52726d4f1"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/box/PackageItem.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "f7e41bcd9ce8a3acb1e6c905bf76605d019458cb6d7e119859d06023375de7e8"
+      ]
     },
     {
       "source": "com/simibubi/create/content/logistics/chute/AbstractChuteBlock.java",
@@ -367,32 +325,28 @@
         "getCollisionShape",
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "239e35e2ef3ad91228e300004c7685ab25a8629e3c74887ec3c9be6ba6b1e5f3"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/chute/ChuteBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "2a624edae6971aff9967745b425d6a83a5c159b9ddb24623025abeb687191600"
+      ]
     },
     {
       "source": "com/simibubi/create/content/logistics/chute/ChuteShapes.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "696ca5ef7fbdeb5c03164487c98640b8cc4e0d89eb1ffcdc34b869dc54e327e2"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/depot/DepotBlock.java",
       "entries": [
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "13f257e735d65f2b4f46c91140e277db5c9fc797d6a7fd0c87becc7a6df73525"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/depot/EjectorBlock.java",
@@ -401,32 +355,28 @@
         "getFriction",
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "1995e08b8950ad824cd7a96025d8e68b492dd7e49e021622bfe3b970d494e9d8"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/depot/EjectorBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "85481e49251299acedffc64d644a6138287292ec601216e7a5bff4644c3e5731"
+      ]
     },
     {
       "source": "com/simibubi/create/content/logistics/factoryBoard/FactoryPanelBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "6be21c9959fc05236955ce41fcf8b3c2bf2481c91ce30134f5464f7d9bc9ad69"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/funnel/BeltFunnelBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "fd0136e8311af01801950d869f9c0651fd7e7fa97e29d1ade6323aa9071e9aa3"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/funnel/FunnelBlock.java",
@@ -434,16 +384,14 @@
         "entityInside",
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "834b81c2e0356793c51de120cd769c5f16fdf31c4a8af27ee34282e03b9cf569"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/funnel/FunnelBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "4da67ede116ca71198982c52dd2078a133b539ac7ce786d58dff02c40548ddae"
+      ]
     },
     {
       "source": "com/simibubi/create/content/logistics/funnel/FunnelMovementBehaviour.java",
@@ -451,40 +399,35 @@
       "entity_queries": [
         "getEntities",
         "getEntitiesOfClass"
-      ],
-      "sha256": "d855d79dde96d7f6d9cdecae2bf77b6a9f08c8bf2a2d863707a0f5bc4343f347"
+      ]
     },
     {
       "source": "com/simibubi/create/content/logistics/stockTicker/StockKeeperRequestScreen.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "91ec6ff9f7c50e8be5b83867b02a5faa72f03f39defe36cfdd4e1ef69ea87026"
+      ]
     },
     {
       "source": "com/simibubi/create/content/logistics/stockTicker/StockTickerBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "9cc6241eae450568de183fb920a52260ae66cff65b981b251bfad8b5bbe53647"
+      ]
     },
     {
       "source": "com/simibubi/create/content/logistics/tableCloth/TableClothBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "360278a42e12c0870a33d547e3d71980c87a67341e9b5938f924990c45ded06d"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/logistics/vault/ItemVaultBlock.java",
       "entries": [
         "getSoundType"
       ],
-      "entity_queries": [],
-      "sha256": "b0e58de1fa99e260d49eccaca85eb068c09ea40f7e6fe80c9cb65b2e674f2e1d"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/processing/basin/BasinBlock.java",
@@ -492,56 +435,49 @@
         "getCollisionShape",
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "b8125caf30f6fd9e8ec30e2ddf3079bd0fabee4db68ce9043146fcc5a3f8b4da"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/processing/burner/BlazeBurnerBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "3ea10f2d9b3119296808e0a5ae92d054147ac95b3cb78b50a5caff175b69f3cc"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/processing/burner/LitBlazeBurnerBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "7237edd3b5e583b782ff046b854687709fc28c2b7f2fcf6be91d5b8daa52cca2"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/redstone/displayLink/source/EntityNameDisplaySource.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "ddb60e228d1daffa9b214ec277ad382ebc5017ade1cd9981a27a255de83f18dc"
+      ]
     },
     {
       "source": "com/simibubi/create/content/schematics/table/SchematicTableBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "b498f23e35d3e71f0385cf98d01c53f97cb212ddecf7431d86fa0e7105e09a00"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/trains/entity/TrainRelocator.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "02a5ea52c8cbd8d27908fa6d8a484af3e9216d75c1cf419c5413120f6489a1bd"
+      ]
     },
     {
       "source": "com/simibubi/create/content/trains/station/StationBlock.java",
       "entries": [
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "2cda05da334f7245bb36f968cf6218152be9c6d08e66fe436d07e81f0e9f509c"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/trains/track/FakeTrackBlock.java",
@@ -549,126 +485,110 @@
         "addLandingEffects",
         "addRunningEffects"
       ],
-      "entity_queries": [],
-      "sha256": "9359e4b7be99686ded8d31bdb40d1e1e9cc423b60427185bb3014f7459db87a7"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/content/trains/track/TrackBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "e97197c8a0ff6638208c0ee75bf139e0166ce7a1215686d91e6e5d57f0a6011b"
+      "entity_queries": []
     },
     {
       "source": "com/simibubi/create/foundation/blockEntity/behaviour/animatedContainer/AnimatedContainerBehaviour.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "50239067b8545a4a92d4134d778051bf10f7c98d63d4f385201b776375151252"
+      ]
     },
     {
       "source": "com/simibubi/create/foundation/mixin/client/EntityContraptionInteractionMixin.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "e24ae14ab3c089ddcc3a7f545ce4afd54685cef17b9db96da4fac55b398c2aac"
+      ]
     },
     {
       "source": "com/simibubi/create/foundation/virtualWorld/VirtualRenderWorld.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "029619859c3fdde437a90e235efc6c05745e21cbc21b6473b221bfd5aafe3073"
+      ]
     },
     {
       "source": "com/simibubi/create/impl/effect/LavaEffectHandler.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "5f27e2fade54415df23bae24f0ee8253e631ee15d987406c6195789591267994"
+      ]
     },
     {
       "source": "com/simibubi/create/impl/effect/MilkEffectHandler.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "2a92c8fee7fee1d63081c1f857e58f2b02063e6fd5a14f81c03b08d73a4c3478"
+      ]
     },
     {
       "source": "com/simibubi/create/impl/effect/PotionEffectHandler.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "ada4dd75b3939d28fc776f1d3830121f1c53834e51750e32e0ea9e4ba14a8513"
+      ]
     },
     {
       "source": "com/simibubi/create/impl/effect/TeaEffectHandler.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "4717cef509b236fe90140f96228bf8e2e26deeec4a93bc9c53a44d4c17701012"
+      ]
     },
     {
       "source": "com/simibubi/create/impl/effect/WaterEffectHandler.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "5d0a7a62b281821575c9a3d5e64dc52d0263f88ca83d5cd153d292416899bba3"
+      ]
     },
     {
       "source": "com/simibubi/create/infrastructure/command/CouplingCommand.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "2c23e6d75139721793291380131eb933e2f6b2aca0b0e6d176f26025bda4d92d"
+      ]
     },
     {
       "source": "com/simibubi/create/infrastructure/gametest/CreateGameTestHelper.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "7ab459f837cbde7cdcfd773e2bb8b769cae9b655dc2c0101dd1a76ef4e512798"
+      ]
     },
     {
       "source": "net/minecraft/world/entity/Entity.java",
       "entries": [],
-      "entity_queries": [],
-      "sha256": "8e4d7b36eeea5de997d064ae7f9863d22b702eb650fd7eb22982ebdf76907839"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/entity/LivingEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "bdbca87d4e5d1eabf45597214c4027de319973d0b08e8d2041d147b36ac1bc26"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/BambooStalkBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "52cfe6f0ad2050cf12716131a994b82daeee37b96b2ee2071017fd9ab8cbd580"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/BaseFireBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "731be975aad75dea8e8987e5ba2a31cb0dfc3c52c71ee6304bf589be32b59114"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/BasePressurePlateBlock.java",
@@ -678,8 +598,7 @@
       "entity_queries": [
         "getEntitiesOfClass",
         "getEntityCount"
-      ],
-      "sha256": "002d935ca6c5b7eaadc7d9c6a730c259bb47010b3bda7bf828e2b17d5c5a1b6a"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/BedBlock.java",
@@ -689,24 +608,21 @@
       ],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "67dc291d14c6fc6439216f991a9e10875af8eaaaff0dc84370abdd5657baa4ce"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/BeehiveBlock.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "d27c08b38b4eaddda56e7eb1dc501abdaa7f24f16db3c490a1936dea2fe7e2c7"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/BellBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "d5467966b1853a82e7756ac2d2ff3fab8a1fa61aa782c247b5accfbafe908d7f"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/BigDripleafBlock.java",
@@ -714,8 +630,7 @@
         "entityInside",
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "148fbc824e5835c822ace686fdd0f599f8bf39ea971be775f043867bef77040d"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/Block.java",
@@ -729,16 +644,14 @@
       ],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "90e336f7151e3719a1ae8c0694f0023104a2c599c5851aa2d871ffbd1a95ea8f"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/BubbleColumnBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "a91fe73ae048f67d4de586099d26109be9ccf063c00a77ec65541ba49231f7b7"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/ButtonBlock.java",
@@ -747,8 +660,7 @@
       ],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "e72d4ea2a55bf1c5af7b99fcaa0c8f49bcb7f4de3cc1ea6f34ce664e0c65d206"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/CactusBlock.java",
@@ -756,80 +668,70 @@
         "entityInside",
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "d703e58a1c22ace829f9a0413d418f791e82e6f70cdabe7cc2631e91d331a3f9"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/CampfireBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "b265e01abfaa70d93a708e0e9c68ced4c28ecf488918eac26a96513816239a52"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/CarvedPumpkinBlock.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "79e7afc6ee28b71acdb9cb71480dc2f48d11fe1e1b5fc3e147afdb3d89c2cb92"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/ChestBlock.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "56b9467c5bbc9ede024b93b33d34493181b831a1d2b80265bc13aed85a37a774"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/ComparatorBlock.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "6d03e53fa20b1822ec576e14113bb17dc918e26312fe9a1ed7b8e7f99d4061f1"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/ComposterBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "d92c40cf9646208be43ca8b372266f3ffe53606b411a536dbf597066210152c5"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/CrafterBlock.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "c0aee89036e5ff35fc484ee4ae66d3ef094f19e8bb5d578eae87c20eb5f2aa5f"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/CropBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "ee786c65bd2bc17a10347edf7ad08432fa4443441dd5783bc8e39544e569bf5d"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/CrossCollisionBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "ed339c05460d55d9c47768bcadb4ffbaf9e1c1db902af8654fe88fc84d30de96"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/DecoratedPotBlock.java",
       "entries": [
         "getSoundType"
       ],
-      "entity_queries": [],
-      "sha256": "4d52c77f4edf2c714decb12a0fdadcc57e49d97fa0f12595c084bfb5f722a267"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/DetectorRailBlock.java",
@@ -838,64 +740,56 @@
       ],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "8e2291338536da41a883920fa5ee5212f04677881fb3a82a19ed767be3813ed4"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/EndGatewayBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "23566fdd0cfa3dbff4bad69eefece5f44c040cab254cc815337839560481138f"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/EndPortalBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "a5703f921c85ded31314544935deeb7ac09c9b669e6f7d13c441e7ec8ac277f4"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/FarmBlock.java",
       "entries": [
         "fallOn"
       ],
-      "entity_queries": [],
-      "sha256": "a49d4730add745f5d2e7af3fff5af187b95434622cc2e9a08816a8906d34a0e9"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/FenceGateBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "6cd66d958c33b793464f163391e8ab64745cfffb41fa93b24aa854a4ac1239fc"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/FrogspawnBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "15439419846a25f8f046c7d079f79f669c86078b6bc8c1dafee4a8138e5c9186"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/GrindstoneBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "eeb2ae51f10a5ff99e48ec7c1bd5f41b1e15a7c44b55c21a916dd8816f039859"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/HayBlock.java",
       "entries": [
         "fallOn"
       ],
-      "entity_queries": [],
-      "sha256": "c175395bc946f477ae14bc8262dc15db19e2f3287268b16e9ef31de0b397cd4d"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/HoneyBlock.java",
@@ -904,72 +798,63 @@
         "fallOn",
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "3211813bce20e33da8ef5d838783dcd30f0848d543fb1382f3d1cf71487bc69d"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/HopperBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "8073ee61cd41ab5e6534164a8ddb0ee22f4a06d1ec9f4a4d6f41323d444f967e"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/LavaCauldronBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "d81722ee22cc69a0ed4c46b5becadb4fe59026bcd1fd1d8fd63641bfa46bda4e"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/LayeredCauldronBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "d4aa416a002bbe9c1869183c5a804005b1a0a673c278f62ef957d39cf1b7d892"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/LecternBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "0055619028b88605ae3b51f5586a82e7334f3d8587de8c4deec3e36a50f2a16c"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/LiquidBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "76e44c43268f3eeab80f69045d38811b9a850ef8dbed5562d88c82aae623814d"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/MagmaBlock.java",
       "entries": [
         "stepOn"
       ],
-      "entity_queries": [],
-      "sha256": "b6bbd3ee537a4eb274c6f7242e80eaa6ee35f27d92c57ed1b4f7280dd4a9da18"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/MudBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "937b68dca63cb553213637d249ee6cd8e7e6f507bcb711b4dbddafd98a22b1bc"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/NetherPortalBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "9077c121c9b32828a5e73f628f00461ded56c4c8dc4e5bad599ebb3afbfef28c"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/PitcherCropBlock.java",
@@ -977,16 +862,14 @@
         "entityInside",
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "3f38c1c02e4e697a97b7601ffbb988a169ade47ff769a036496f8e1c1618541f"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/PointedDripstoneBlock.java",
       "entries": [
         "fallOn"
       ],
-      "entity_queries": [],
-      "sha256": "e74f7705e189f5b29dc16eb5cc566d456e7a197393e487c2bbf6e8a230f77ab0"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/PowderSnowBlock.java",
@@ -995,40 +878,35 @@
         "fallOn",
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "8fe1503eca8381348654778ab7707415828a4f997a01ba461877c6cf4042942d"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/PressurePlateBlock.java",
       "entries": [],
       "entity_queries": [
         "getEntityCount"
-      ],
-      "sha256": "8fe7397fca9aca1ebda2b46257b62d0fd733436b866b6f546978b7d5e830f245"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/RedStoneOreBlock.java",
       "entries": [
         "stepOn"
       ],
-      "entity_queries": [],
-      "sha256": "2c7401535f4a63d2b8d1d1f5329d40aa20347bd19a4f4cf6600305d36fe67d77"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/ScaffoldingBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "56999a9696c964dbffe49f9ec4c4d32eda81338920daa6a188fda5cae9a6ee30"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/SculkSensorBlock.java",
       "entries": [
         "stepOn"
       ],
-      "entity_queries": [],
-      "sha256": "3b834c083c53874eca0f81a7377cbffb4967ebb762be27900d23cb7892f199ba"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/SculkShriekerBlock.java",
@@ -1036,8 +914,7 @@
         "getCollisionShape",
         "stepOn"
       ],
-      "entity_queries": [],
-      "sha256": "42d9c55a5e49fdde386c8dd22bc69e0b8030e59c7fa4b422236eb8393fd879a0"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/SlimeBlock.java",
@@ -1046,48 +923,42 @@
         "stepOn",
         "updateEntityAfterFallOn"
       ],
-      "entity_queries": [],
-      "sha256": "5b73c03c796ed001b064aa9af1fce4fca53c2ad356acb5cd9a8a09860e211f95"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/SnowLayerBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "748866c9efa01bf972ade8052610b6b28d202a2fa02678dc93adb48f47865aba"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/SoulSandBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "f4aa9377616b158f1d07fbe176f4857e657422d5cd700c1f5eef9fd10e5dad2d"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/SweetBerryBushBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "1edd6f2c2229c3eaccb4c2d193fdbc0ce82af8006b81c44313747d50bdd1735d"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/TntBlock.java",
       "entries": [
         "onCaughtFire"
       ],
-      "entity_queries": [],
-      "sha256": "480f6a10961ff5f82291ceecc8bbb4bdb99e9b47d55c089d0e7084066420bf5c"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/TrapDoorBlock.java",
       "entries": [
         "isLadder"
       ],
-      "entity_queries": [],
-      "sha256": "def40745d0ae54f6d4a5406132b9583eca23a748fcf9b5d5b26f9247ae69c842"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/TripWireBlock.java",
@@ -1096,8 +967,7 @@
       ],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "aa3b615011e9ebc125fa83e2ceb1a811d7e11347e7b0a61277e5160f8a8cbf2b"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/TurtleEggBlock.java",
@@ -1105,96 +975,84 @@
         "fallOn",
         "stepOn"
       ],
-      "entity_queries": [],
-      "sha256": "b8161b8b84148fdcedf6f707824ab95039434e6f3abef98f3956404037d500dd"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/WallBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "a1c912ff66cad23f9f6fba0c3a52838a1431cac06b872fdb1fac847ad2ec3523"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/WallHangingSignBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "ee7cf99530d77142a91b71385949f50a8575be1e310b6c67a7006c458af11006"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/WaterlilyBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "2fbacab9d20fa6c68c21172046cedf86c7a407e99c8c2bb7332930e2522c1f03"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/WebBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "4378b63ef3683ab0b00a74c8a58886de34131f3b9b0232a0d33cbeec2b4a0aa7"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/WeightedPressurePlateBlock.java",
       "entries": [],
       "entity_queries": [
         "getEntityCount"
-      ],
-      "sha256": "d77abac5e9c9881b9f3c0b9c93855a6bd3e606831133e2358373e9785dc78f02"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/WitherRoseBlock.java",
       "entries": [
         "entityInside"
       ],
-      "entity_queries": [],
-      "sha256": "4a84b6707647c833892f1cf5c5ec2c6971e5d7c86db8d7fd98efec303187fd85"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/WitherSkullBlock.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "d9511e42bdedeaa33882e6fa1b0d47653c51be45960213d781e4afb98a20ed22"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/entity/BeaconBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "ddf2235ae86adf44e9bee943edc139742c3c7c56aab6fc28f0f03151da4f5cb3"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/entity/BellBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "2514cb120302086f04843ad0d79fbe778867b9f0384f3a2b3d9f4c3f536a9696"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/entity/ConduitBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntitiesOfClass"
-      ],
-      "sha256": "7faafd186048186091ba072cfe951c842d8f9e8957eb84bed857c821e1505ac3"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/entity/ContainerOpenersCounter.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "1fc037dc1dd22eb8a8cb4a826bda0b9c1147e50c0f9c1c22edcb2acbea53a127"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/entity/HopperBlockEntity.java",
@@ -1204,32 +1062,28 @@
       "entity_queries": [
         "getEntities",
         "getEntitiesOfClass"
-      ],
-      "sha256": "5c7eae25430d3363c9c9e43f6ffd84d0e1d0fc09e7bbaf903b55a6a5aed7b13d"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/entity/ShulkerBoxBlockEntity.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "86f9c0a05922f34ed3cec9264c4fbe70a0f66d54718fc48983c44fa5a621be27"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/entity/trialspawner/PlayerDetector.java",
       "entries": [],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "b4f37881bb6d80a0b42bf8dee468baa9dfc0e51f901726685c37f635f267a1a8"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/piston/MovingPistonBlock.java",
       "entries": [
         "getCollisionShape"
       ],
-      "entity_queries": [],
-      "sha256": "4f35c0534482ca766bb019d1f52e9e2bd26ede95c55d42e7a3c7760ba679f0c8"
+      "entity_queries": []
     },
     {
       "source": "net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java",
@@ -1238,8 +1092,7 @@
       ],
       "entity_queries": [
         "getEntities"
-      ],
-      "sha256": "cc899ba2266d9d4ac5a95bb61673f200c531d313b3e3fbd4594dec3525e8385d"
+      ]
     },
     {
       "source": "net/minecraft/world/level/block/state/BlockBehaviour.java",
@@ -1248,8 +1101,7 @@
         "getCollisionShape",
         "getSoundType"
       ],
-      "entity_queries": [],
-      "sha256": "a140e321403131dfff7e2510f34799033ddb52744d542bef75c824434c949ed3"
+      "entity_queries": []
     },
     {
       "source": "net/neoforged/neoforge/common/extensions/IBlockExtension.java",
@@ -1267,8 +1119,7 @@
         "makesOpenTrapdoorAboveClimbable",
         "onCaughtFire"
       ],
-      "entity_queries": [],
-      "sha256": "2dea052b03b569b82ca728073ab4299282eb4bb9116637b9ee19ade36975e5a5"
+      "entity_queries": []
     }
   ]
 }

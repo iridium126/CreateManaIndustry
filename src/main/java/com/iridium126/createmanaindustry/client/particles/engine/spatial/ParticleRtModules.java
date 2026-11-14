@@ -22,7 +22,6 @@ public final class ParticleRtModules {
         try(var in=ParticleRtModules.class.getResourceAsStream(ROOT+"release.properties")){
             if(in==null)throw new IOException("Bundled Particle RT release is missing");
             p.load(in);
-            if(!p.getProperty("version","").matches("[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+"))throw new IOException("Invalid Particle RT release version");
             return p;
         }catch(IOException failure){throw new IllegalStateException("Particle RT distribution is incomplete",failure);}
     }

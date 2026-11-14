@@ -17,4 +17,4 @@ powershell -File scripts/particles/build_rt.ps1
 
 GPU 夹具使用隐藏 GLFW 窗口，不启动 Minecraft；顺序运行，避免相互干扰计时。`GpuValidationSupport.java` 统一创建和销毁隐藏 OpenGL 4.5 上下文，由 `validation.init.gradle` 编译并注入全部验证任务的 classpath；`gpu.init.gradle` 按当前入口编译共享夹具，`validation.init.gradle` 提供物流、Hex、阴影和光影适配任务。普通构建不需要原生 SDK。
 
-`package` 生成候选与回退包、当前源码及冻结证据归档，并提供 SHA-256 清单；`topology` 为固定输入查询控制实验，`--capture` 只分析已存在结果。结果缺少新架构客户端整帧数据时保持待验收，离屏探针与复制计时不能换算 FPS。RT 仍是[基础修复候选](../../docs/rt-single-step-status.md)，原生运动所有权和在线 RT 剔除尚未接入。
+`package` 生成候选与回退包、当前源码及冻结证据归档，并核对发行包资源；`topology` 为固定输入查询控制实验，`--capture` 只分析已存在结果。结果缺少新架构客户端整帧数据时保持待验收，离屏探针与复制计时不能换算 FPS。RT 仍是[基础修复候选](../../docs/rt-single-step-status.md)，原生运动所有权和在线 RT 剔除尚未接入。

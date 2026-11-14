@@ -1,7 +1,6 @@
 """Snapshot a Git ref, the preserved index or worktree in build/ for same-driver comparisons."""
 from pathlib import Path
 import argparse
-import hashlib
 import subprocess
 import re
 
@@ -26,11 +25,6 @@ def main():
             return (ROOT/path).read_bytes()
         return git('show',(':' if args.ref=='INDEX' else args.ref+':')+path)
 
-    digest=hashlib.sha256()
-    def snapshot_source(path):
-        data=source(path)
-        digest.update(path.encode());digest.update(b'\0');digest.update(data)
-        return data
     prefix = "src/main/java/com/iridium126/createmanaindustry/client/particles/packages/"
     current={p.stem:p for p in (ROOT/'src/main/java/com/iridium126/createmanaindustry/client/packages').rglob('*.java')}
     def source_path(name):
@@ -44,7 +38,7 @@ def main():
     if b'PackageEnvironmentLayout' in source(source_path('PackageEnvironmentGpu')):
         names += ('PackageEnvironmentLayout',)
     for name in names:
-        text = snapshot_source(source_path(name)).decode("utf-8")
+        text = source(source_path(name)).decode("utf-8")
         for candidate in names:
             text = text.replace(candidate, candidate + "Baseline")
         # Package moves do not make a historical snapshot depend on the old runtime.
@@ -76,10 +70,9 @@ def main():
     for path in paths:
         destination = out / "assets/createmanaindustry" / path.removeprefix(resources)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(snapshot_source(path))
+        destination.write_bytes(source(path))
     if args.ref in ('WORKTREE','INDEX'):
-        summary = digest.hexdigest() if args.ref=='WORKTREE' else hashlib.sha256(git('diff','--cached','--binary')).hexdigest()
-        commit = args.ref+'@'+git('rev-parse','HEAD').decode().strip()+'+'+summary
+        commit = args.ref+'@'+git('rev-parse','HEAD').decode().strip()
     else:
         commit = git('rev-parse',args.ref).decode().strip()
     (out / "commit.txt").write_text(commit + "\n", encoding="utf-8")

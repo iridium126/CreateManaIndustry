@@ -1,5 +1,5 @@
 """Extract completed client telemetry as data; log text is never executed."""
-import argparse,hashlib,json,re
+import argparse,json,re
 from pathlib import Path
 
 def main():
@@ -28,7 +28,7 @@ def main():
             entry['source']='none';entry['options']='unavailable'
         captures.append(entry)
     a.output.parent.mkdir(parents=True,exist_ok=True)
-    a.output.write_text(json.dumps(dict(log_sha256=hashlib.sha256(raw).hexdigest(),captures=captures),ensure_ascii=False,indent=2)+'\n',encoding='utf8')
+    a.output.write_text(json.dumps(dict(captures=captures),ensure_ascii=False,indent=2)+'\n',encoding='utf8')
     print('Completed captures:',len(captures))
 
 if __name__=='__main__':main()

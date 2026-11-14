@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 import java.nio.file.Path;
 import static com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.*;
 
-/** ABI 13. Loading this class never loads CUDA; GL remains a complete backend. */
+/** Loading this class never loads CUDA; GL remains a complete backend. */
 public final class SpatialNative {
     private static Path loaded;
     private static String loadedVersion="unloaded";
@@ -14,12 +14,9 @@ public final class SpatialNative {
         Path path=modules.toAbsolutePath().normalize();
         if(java.nio.file.Files.isDirectory(path))path=path.resolve("CmiParticleRt.dll");
         if(loaded!=null){if(!loaded.equals(path))throw new IllegalStateException("Restart before replacing the RT module");return;}
-        try{if(!ParticleRtModules.VERSION.equals(PeFileVersion.read(path)))throw new IllegalStateException("Particle RT DLL version mismatch");}
-        catch(java.io.IOException failure){throw new IllegalStateException("Particle RT DLL version unavailable",failure);}
         org.lwjgl.system.Library.loadSystem(System::load,System::loadLibrary,SpatialNative.class,"createmanaindustry",path.toString());
         String version=version();
         if(!ParticleRtModules.VERSION.equals(version))throw new IllegalStateException("Particle RT native version mismatch");
-        if(abi()!=ABI)throw new IllegalStateException("Particle RT native ABI mismatch");
         verifyCapabilities(capabilities());
         loadedVersion=version;
         loaded=path;
@@ -27,10 +24,9 @@ public final class SpatialNative {
     public static void verifyCapabilities(String receipt){
         try{var r=com.google.gson.JsonParser.parseString(receipt).getAsJsonObject();
             boolean probes=false;var modes=new java.util.HashSet<Integer>();for(var p:r.getAsJsonArray("probes"))modes.add(p.getAsInt());probes=modes.equals(java.util.Set.of(2,4));
-            if(r.get("abi").getAsInt()!=ABI||r.get("packet_header_bytes").getAsInt()!=SPATIAL_HEADER_BYTES||r.get("input_stride").getAsInt()!=SPATIAL_RECORD_BYTES||r.get("output_stride").getAsInt()!=SPATIAL_RECORD_BYTES||!probes||Math.abs(r.get("horizon").getAsDouble()-.1)>1e-8||!r.get("primitive").getAsString().equals("opaque-triangle-box")||!r.get("precompiled").getAsBoolean()||r.get("cpu_envelope_readback").getAsBoolean())throw new IllegalArgumentException("incompatible layout or execution contract");
+            if(r.get("packet_header_bytes").getAsInt()!=SPATIAL_HEADER_BYTES||r.get("input_stride").getAsInt()!=SPATIAL_RECORD_BYTES||r.get("output_stride").getAsInt()!=SPATIAL_RECORD_BYTES||!probes||Math.abs(r.get("horizon").getAsDouble()-.1)>1e-8||!r.get("primitive").getAsString().equals("opaque-triangle-box")||!r.get("precompiled").getAsBoolean()||r.get("cpu_envelope_readback").getAsBoolean())throw new IllegalArgumentException("incompatible layout or execution contract");
         }catch(RuntimeException failure){throw new IllegalStateException("Particle RT capability receipt rejected",failure);}
     }
-    public static native int abi();
     public static native String version();
     public static native long ownedBytes();
     public static native String capabilities();

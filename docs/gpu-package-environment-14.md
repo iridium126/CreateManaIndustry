@@ -70,7 +70,7 @@ OFFER / FINAL / ENVIRONMENT_ACK 携带冻结、落距、陷入乘数、插入延
 
 ## 审计与验收边界
 
-机器可读清单见 [native inventory](package-environment-native-inventory.json) 和 [逐来源覆盖表](package-environment-coverage.json)。148 个来源类（包含 NeoForge 扩展默认回调）包含环境声明、继承相关入口、主动查询与持有实体引用的机器；每项有显式条件、阶段 / GPU / 服务端职责及测试关联。覆盖表的测试名也必须指向实际存在的测试。新增来源、方法、查询或源码散列变化会使 `audit_package_environment.py --check` 失败。真实 GameTest 还枚举了 1703 个 Minecraft / Create 方块、58393 个状态和声明继承链，防止新增特殊入口被普通分类隐藏。
+机器可读清单见 [native inventory](package-environment-native-inventory.json) 和 [逐来源覆盖表](package-environment-coverage.json)。148 个来源类（包含 NeoForge 扩展默认回调）包含环境声明、继承相关入口、主动查询与持有实体引用的机器；每项有显式条件、阶段 / GPU / 服务端职责及测试关联。覆盖表的测试名也必须指向实际存在的测试。新增来源、方法或查询变化会使 `audit_package_environment.py --check` 失败。真实 GameTest 还枚举了 1703 个 Minecraft / Create 方块、58393 个状态和声明继承链，防止新增特殊入口被普通分类隐藏。
 
 `--check` 证明清单没有漂移，**不证明语义完全一致**。`--acceptance` 是严格的完整对齐门禁，目前应失败。下列工作仍未完成或未有完整原版差分证据：
 

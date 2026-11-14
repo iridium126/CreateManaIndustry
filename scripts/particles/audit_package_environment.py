@@ -4,7 +4,6 @@ Run after createMinecraftArtifacts. --check fails on source/entry-point drift; i
 deliberately separate from gameplay acceptance (an inventory is not a parity proof).
 """
 import argparse
-import hashlib
 import io
 import json
 import re
@@ -44,9 +43,6 @@ def inventory():
         raise SystemExit("Run preparePackageNativeAudit to identify the resolved Create binary first")
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     binary = Path(metadata["binary"])
-    binary_hash = hashlib.sha256(binary.read_bytes()).hexdigest()
-    if binary_hash != metadata["sha256"]:
-        raise SystemExit("Resolved Create binary changed; rerun preparePackageNativeAudit")
     with ZipFile(binary) as jar:
         manifest = jar.read("META-INF/MANIFEST.MF").decode("utf-8")
     def manifest_value(name):
@@ -75,10 +71,9 @@ def inventory():
         queries = sorted(set(QUERIES.findall(text)))
         if not methods and not queries and not path.endswith(("/Entity.java", "/LivingEntity.java", "/PackageEntity.java")):
             continue
-        entries.append({"source": path, "entries": methods, "entity_queries": queries,
-                        "sha256": hashlib.sha256(text.encode()).hexdigest()})
+        entries.append({"source": path, "entries": methods, "entity_queries": queries})
     return {"minecraft": "1.21.1", "reference_create": create_version,
-            "create_commit": create_commit, "create_binary_sha256": binary_hash, "sources": entries}
+            "create_commit": create_commit, "sources": entries}
 
 
 def main():

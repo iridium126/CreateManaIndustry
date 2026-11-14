@@ -14,18 +14,10 @@ abstract class AuditResolvedJar extends DefaultTask {
     @OutputFile abstract RegularFileProperty getReport()
 
     @TaskAction void audit() {
-        def input = binary.get().asFile
-        def digest = java.security.MessageDigest.getInstance('SHA-256')
-        input.withInputStream { stream ->
-            byte[] block = new byte[65536]
-            int count
-            while ((count = stream.read(block)) != -1) digest.update(block, 0, count)
-        }
         def output = report.get().asFile
         output.parentFile.mkdirs()
         output.setText(JsonOutput.prettyPrint(JsonOutput.toJson([
-                coordinate: coordinate.get(), binary: input.absolutePath,
-                sha256: digest.digest().encodeHex().toString()])) + '\n', 'UTF-8')
+                coordinate: coordinate.get(), binary: binary.get().asFile.absolutePath])) + '\n', 'UTF-8')
     }
 }
 

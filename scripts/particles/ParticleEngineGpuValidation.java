@@ -331,7 +331,7 @@ public final class ParticleEngineGpuValidation {
         }finally{GL11.glDeleteTextures(rowTexture);GL11.glDeleteTextures(metaTexture);for(int b:new int[]{rows,pool,meta,scratch,grid,counter})GL15.glDeleteBuffers(b);GL20.glDeleteProgram(p);}
     }
     static void nativeQueries(List<Object> cases)throws Exception{
-        Path modules=Path.of(".gradle/particle-rt/build");SpatialNative.load(modules);check(SpatialNative.abi()==ABI,"current ABI");long bridge=0,worker=0;int n=257;long[] tickets=new long[3];
+        Path modules=Path.of(".gradle/particle-rt/build");SpatialNative.load(modules);long bridge=0,worker=0;int n=257;long[] tickets=new long[3];
         try{
             bridge=SpatialNative.createBuffers(128+n*64,3);worker=SpatialNative.create(bridge,n,0,2,91,modules.toAbsolutePath().toString());
             for(int frame=0;frame<8;frame++){

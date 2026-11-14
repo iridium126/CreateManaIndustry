@@ -23,7 +23,7 @@ python scripts/particles/particle_tool.py package
 
 `replay` 接受通过校验的 schema 3 和 4 命令日志，保留记录时的程序和资源。Schema 4 同时记录 uniform block 的绑定与缓冲区范围。回放覆盖 GL compute、copy、upload、clear 和 barrier。世界绘制和外部 CUDA 任务用整帧采集测量。RT 活动时命令捕获作废。`bench` 使用三轮独立进程交错 A/A 和 A/B。
 
-`frames` 的帧间隔包含交换与限帧；GPU 范围为 runTick HEAD 到 updateDisplay 前。缺失 GPU 样本是未知，不能填零。`-spatial.csv` 将原生 ABI 13 与统计 schema 2 分列；原生完成后才读取事件计时，分别报告外部输入等待、验证及实例整理、IAS、探针和发布。等待不能全部归为互操作成本，也不能把 GL 与 CUDA 区间相加声称整帧时间。
+`frames` 的帧间隔包含交换与限帧；GPU 范围为 runTick HEAD 到 updateDisplay 前。缺失 GPU 样本是未知，不能填零。`-spatial.csv` 将原生 ABI 与统计 schema 2 分列；原生完成后才读取事件计时，分别报告外部输入等待、验证及实例整理、IAS、探针和发布。等待不能全部归为互操作成本，也不能把 GL 与 CUDA 区间相加声称整帧时间。
 
 `-storm-input.csv` 记录客户端线程捕获耗时；`-storm.csv` 追加工作线程索引、几何/上传整理、GPU 输入上传耗时和地形上传字节数。`-storm-display.csv` 记录显示样本接收及每帧年龄，区分重复使用同一样本、超过约 100 ms 缓冲范围和暂停。接收 tick 和年龄采用原生输入逻辑时间，避免服务器世界校时污染；JSON 的 `native_display_time_domain` 记录时间域，并汇总显示缺号、缓冲耗尽帧及槽不足次数。离屏持续运行入口为 `runParticleSuite -PparticleSuite=StormIndexDisplayGpuValidation -PparticleReplaySeconds=900`，
 

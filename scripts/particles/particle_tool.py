@@ -2,7 +2,6 @@
 from __future__ import annotations
 import argparse
 import csv
-import hashlib
 import json
 import math
 import statistics
@@ -13,12 +12,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INIT = ROOT / "scripts/particles/gpu.init.gradle"
-
-def digest(path):
-    result=hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for chunk in iter(lambda:stream.read(1<<20),b""): result.update(chunk)
-    return result.hexdigest()
 
 def write(path, data):
     path = Path(path)

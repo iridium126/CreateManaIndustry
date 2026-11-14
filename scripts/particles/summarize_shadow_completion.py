@@ -1,6 +1,5 @@
 """Summarize isolated candidate stages; deliberately does not issue production qualification."""
 import csv
-import hashlib
 import json
 import statistics
 import sys
@@ -17,10 +16,10 @@ def median(values):
 
 def summarize(kind, filename, keys, a, b):
     reports = []
-    hashes = []
+    samples = []
     for process in range(FIRST_PROCESS, FIRST_PROCESS + 3):
         path = ROOT / f"{kind}-{process}" / filename
-        hashes.append({"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+        samples.append({"path": str(path)})
         cells = defaultdict(lambda: defaultdict(list))
         for row in csv.DictReader(path.open(encoding="utf-8")):
             cells[tuple(row[k] for k in keys)][row["comparison"]].append(row)
@@ -35,7 +34,7 @@ def summarize(kind, filename, keys, a, b):
             reports.append(dict(process=process, cell=dict(zip(keys, key)), baseline_ms=baseline,
                                 candidate_ms=candidate, delta_ms=candidate-baseline, aa_bias_ms=noise,
                                 gate_ms=threshold, stage_regression=candidate-baseline > threshold))
-    return dict(samples=hashes, cells=reports,
+    return dict(samples=samples, cells=reports,
                 decision="NOT QUALIFIED: isolated stages only; full production chain and pack raster measurements required")
 
 

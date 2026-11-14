@@ -36,7 +36,7 @@ python scripts/testing/validate_gradle.py
 - `testImplementation`／`testRuntimeOnly`：JUnit、参考实现、字节码和API验证所需项。
 - `additionalRuntimeClasspath`：Connector与bootstrap的早期加载路径，不能随意合并到普通模组类路径。
 
-第三方坐标只在 `cmiCoordinates` 表中声明一次，共享版本继续在 `gradle.properties` 维护；Loom子项目复用同一张表。优先使用各项目自有 Maven 的可读 GAV 与语义版本，仓库按组限定在 `gradle/repositories.gradle`；这些构件关闭传递依赖，保持与原先无 POM 的 CurseForge／Modrinth jar 一致。Create 由 `maven.createmod.net` 提供，`preparePackageNativeAudit` 按 `com.simibubi.create` 坐标定位解析产物并写入清单／提交信息；版本升级后要重新运行 `python scripts/particles/audit_package_environment.py` 刷新 `docs/package-environment-native-inventory.json`。没有公开 Maven 的模组仍由平台文件／版本 ID 固定，并在属性中注明可读版本。更改范围时检查编译、开发运行和测试文件集合，以及发布POM／module metadata，不以构建能通过作为唯一依据。
+第三方坐标只在 `cmiCoordinates` 表中声明一次，共享版本继续在 `gradle.properties` 维护；Loom子项目复用同一张表。优先使用各项目自有 Maven 的可读 GAV 与语义版本，仓库按组限定在 `gradle/repositories.gradle`；这些构件关闭传递依赖，保持与原先无 POM 的 CurseForge／Modrinth jar 一致。Create 由 `maven.createmod.net` 提供，`preparePackageNativeAudit` 按 `com.simibubi.create` 坐标定位解析产物并写入解析清单；版本升级后要重新运行 `python scripts/particles/audit_package_environment.py` 刷新 `docs/package-environment-native-inventory.json`。没有公开 Maven 的模组仍由平台文件／版本 ID 固定，并在属性中注明可读版本。更改范围时检查编译、开发运行和测试文件集合，以及发布POM／module metadata，不以构建能通过作为唯一依据。
 
 ## 缓存与重映射
 

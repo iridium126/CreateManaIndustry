@@ -4,7 +4,7 @@
 #include "ResourceLayout.h"
 #include <cstddef>
 
-// Independent ABI 12 packet. Production particle records are never imported.
+// Independent packet layout; the ABI marker is CMI_RESOURCE_ABI. Production particle records are never imported.
 // Header: magic,schema,nonce[2],epoch[2],source[2],target[2],capacity,error,
 // time,dt,horizon,reserved,scene[2],complete,reserved[13]. Rows are 64 bytes.
 struct SpatialParticle {float4 position,velocity;uint4 identity;float4 preferred;};

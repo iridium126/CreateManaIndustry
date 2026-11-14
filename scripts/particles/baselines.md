@@ -22,7 +22,7 @@
 `build/baseline-migration-20261031.json`，独立备份为
 `build/distributions/particle-baselines-20261031.zip`。
 
-验证脚本继续从根目录运行；各 prepare 任务读取新目录并校验原 manifest，
+验证脚本继续从根目录运行；各 prepare 任务读取新目录并按 manifest 清单核对输入齐全，
 只向 `build/` 生成改名后的验证类。`scripts/particles/experiments/` 保留实验
 生成逻辑和撤回候选，独立于这些历史基线。日常 `build` 不需要本地冻结输入；
 依赖基线的历史差分任务需要它们。

@@ -1,5 +1,4 @@
 {
-  "abi": 13,
   "version": "13.0.0.0",
   "platform": "windows-x86_64",
   "layout": {
@@ -102,7 +101,6 @@
     "STORM_HELIX_REFERENCE_OFFSET": 13520,
     "STORM_HELIX_REFERENCE_BYTES": 16
   },
-  "source_sha256": "38361a2d28929b462a54e44d5b7e5800372ad926ab4f703a6cec05863c027278",
   "dll_sha256": "e1b2c20a3c19156a9411fba03ba6a8d8fb36a2ab0d398352be4651a832d8c412",
   "embedded_device_programs": true
 }

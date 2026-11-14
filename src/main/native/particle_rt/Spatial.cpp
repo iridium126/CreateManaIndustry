@@ -198,7 +198,6 @@ std::shared_ptr<const TerrainSnapshot> copyTerrainSnapshot(uint64_t scene,uint64
     }
     return snapshot;
 }
-extern "C" JNIEXPORT jint JNICALL JNI_NAME(abi)(JNIEnv*,jclass){return CMI_RT_ABI;}
 extern "C" JNIEXPORT void JNICALL JNI_NAME(terrain)(JNIEnv* e,jclass,jlong h,jlong scene,jlong revision,jobject rows,jint count){
     try{
         auto s=reinterpret_cast<Session*>(h);auto bytes=e->GetDirectBufferCapacity(rows);auto data=static_cast<const SpatialParticle*>(e->GetDirectBufferAddress(rows));
@@ -218,5 +217,5 @@ extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(recycle)(JNIEnv* e,jclass,jlong h
 extern "C" JNIEXPORT jboolean JNICALL JNI_NAME(close)(JNIEnv* e,jclass,jlong h){try{auto s=(Session*)h;if(!s->close())return false;delete s;return true;}catch(const std::exception& x){fail(e,x);return false;}}
 extern "C" JNIEXPORT void JNICALL JNI_NAME(delay)(JNIEnv* e,jclass,jlong h,jint ms){try{if(ms<0||ms>500)throw std::runtime_error("Bounded delay required");auto s=(Session*)h;Guard held(s->lock);s->delay=ms;}catch(const std::exception& x){fail(e,x);}}
 extern "C" JNIEXPORT jdoubleArray JNICALL JNI_NAME(timing)(JNIEnv* e,jclass,jlong h,jint slot,jlong nonce){try{auto s=(Session*)h;int state=s->poll(slot,nonce);if(state!=2&&state!=5&&state!=7)throw std::runtime_error("Timing requires completed or consumed spatial");double values[5]{};for(unsigned i=0;i<5&&s->jobs[slot].error.empty();i++){float ms;checked(cuEventElapsedTime(&ms,s->jobs[slot].marks[i],s->jobs[slot].marks[i+1]));values[i]=ms;}auto a=e->NewDoubleArray(5);e->SetDoubleArrayRegion(a,0,5,values);return a;}catch(const std::exception& x){fail(e,x);return nullptr;}}
-extern "C" JNIEXPORT jstring JNICALL JNI_NAME(capabilities)(JNIEnv* e,jclass){return e->NewStringUTF("{\"abi\":13,\"packet_header_bytes\":128,\"input_stride\":64,\"output_stride\":64,\"probes\":[2,4],\"horizon\":0.1,\"primitive\":\"opaque-triangle-box\",\"precompiled\":true,\"cpu_envelope_readback\":false}");}
+extern "C" JNIEXPORT jstring JNICALL JNI_NAME(capabilities)(JNIEnv* e,jclass){return e->NewStringUTF("{\"packet_header_bytes\":128,\"input_stride\":64,\"output_stride\":64,\"probes\":[2,4],\"horizon\":0.1,\"primitive\":\"opaque-triangle-box\",\"precompiled\":true,\"cpu_envelope_readback\":false}");}
 extern "C" JNIEXPORT jstring JNICALL JNI_NAME(diagnostics)(JNIEnv* e,jclass,jlong h){try{return e->NewStringUTF(((Session*)h)->diagnostics().c_str());}catch(const std::exception& x){fail(e,x);return nullptr;}}
