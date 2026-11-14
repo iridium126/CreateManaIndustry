@@ -68,6 +68,8 @@ public final class PackageRuntime {
     private boolean hookPackagesDrawn;
     public void markHookPackageDrawn(){hookPackagesDrawn=true;}
     public void previewPackages(int count,Vec3 origin,Vec3 forward) {
+        if (count > 0 && !ClientConfig.packageGpuAuthority)
+            throw new IllegalStateException("Enable experimental GPU packages in the client config and restart");
         if(count<0 || count>Math.min(131072,particles.capacity()))throw new IllegalArgumentException("Package preview exceeds pool capacity");
         packagePreviewStatus=count==0?"stopping":"queued "+count;
         requests.add(new PackagePreviewRequest(count,origin,forward));

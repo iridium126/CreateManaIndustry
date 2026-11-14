@@ -194,6 +194,7 @@ public final class PackageWorldRuntime {
     /** Called after collision uploads, before package pool staging. Return value invalidates the
      * particle engine's GL binding cache, including on shutdown or failed initialization. */
     public boolean prepare(Supplier<PackagePoolGpu> poolFactory,Function<String,String> sources,boolean preview) {
+        if (!ClientConfig.packageGpuAuthority && physics == null) return false;
         RenderSystem.assertOnRenderThread();
         long runtimeProfiling=PackageCpuDiagnostics.begin(PackageCpuDiagnostics.Phase.PREPARE);
         boolean measure=com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled();

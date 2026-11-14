@@ -20,6 +20,13 @@ if (!extensions.extraProperties.has('configureCmiGameTests')) {
         tasks.named('runGameTestServer', JavaExec).configure {
             dependsOn(tasks.named(suite.classesTaskName))
             maxHeapSize = '3g'
+            if (options.serverConfig != null) {
+                doFirst {
+                    def config = new File(runDir, 'config/createmanaindustry-server.toml')
+                    config.parentFile.mkdirs()
+                    config.setText(options.serverConfig.toString(), 'UTF-8')
+                }
+            }
         }
         tasks.named('copyTricksterToRunMods', Copy).configure {
             into(new File(runDir, 'mods'))

@@ -46,11 +46,6 @@ repositories {
         content { includeGroup 'dev.architectury' }
     }
     maven {
-        name = 'KotlinForForge'
-        url = 'https://thedarkcolour.github.io/KotlinForForge/'
-        content { includeGroup 'thedarkcolour' }
-    }
-    maven {
         name = 'TheIllusiveC4'
         url = 'https://maven.theillusivec4.top/'
         content {

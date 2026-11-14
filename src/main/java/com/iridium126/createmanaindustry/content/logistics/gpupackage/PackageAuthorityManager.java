@@ -137,13 +137,28 @@ public final class PackageAuthorityManager {
     }
     @SubscribeEvent public static void onJoin(EntityJoinLevelEvent event) {
         if(event.getEntity() instanceof PackageEntity entity && event.getLevel() instanceof ServerLevel level) {
-            if(!((PackageInitialEntityAccess)entity).cmi$validInitialEntity()){event.setCanceled(true);return;}
-            var identity=identity(entity,level);
+            var access = entity instanceof PackageInitialEntityAccess hooks ? hooks : null;
+            if (access == null && ServerConfig.packageGpuAuthority) return;
+            if (access != null && !access.cmi$validInitialEntity()) { event.setCanceled(true); return; }
             Runtime rt=runtime(level);
-            if(PackageLightRestoration.joining(level,entity,rt.light)){rt.nativePackages.put(entity.getUUID(),entity);return;}
+            if(PackageLightRestoration.joining(level,entity,rt.light)){
+                if (access != null) rt.nativePackages.put(entity.getUUID(),entity);
+                return;
+            }
             var backing=rt.light.byUuid(entity.getUUID());
-            // SavedData is authoritative after transfer. An old entity chunk must not duplicate it.
-            if(backing!=null){if(!ServerConfig.packageGpuAuthority)rt.restoration.put(backing.identity,backing);event.setCanceled(true);entity.discard();return;}
+            if (backing != null) {
+                var tag = entity.getPersistentData();
+                // An old native copy of the same package must not duplicate the durable record.
+                if (tag.getLong(ID) == backing.identity.id() && tag.getLong(GENERATION) == backing.identity.generation()) {
+                    if (!ServerConfig.packageGpuAuthority) rt.restoration.put(backing.identity, backing);
+                    event.setCanceled(true);
+                    entity.discard();
+                }
+                // Leave an unrelated UUID occupant alone. The backing record can retry later.
+                return;
+            }
+            if (access == null) return;
+            var identity=identity(entity,level);
             backing=rt.light.byIdentity(identity);
             if(backing!=null){entity.getPersistentData().putLong(ID,PackageIdentityData.get(level).identity());identity=identity(entity,level);}
             if(!ServerConfig.packageGpuAuthority){rt.nativePackages.put(entity.getUUID(),entity);return;}

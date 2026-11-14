@@ -65,7 +65,7 @@ class PackageIrisContractTest {
         field(read(IRIS+"shadows/frustum/BoxCuller"),"maxDistance","D",true);
     }
     @Test void nativeCompilerInvokersAndLifetimeFieldsMatch() throws IOException {
-        var pipeline=read(IRIS+"pipeline/IrisRenderingPipeline");var bridge=read(MIXIN+"PackageIrisPipelineMixin");
+        var pipeline=read(IRIS+"pipeline/IrisRenderingPipeline");var bridge=read(MIXIN+"SharedShaderPipelineMixin");
         field(pipeline,"loadedShaders","Ljava/util/Set;",true);field(pipeline,"destroyed","Z",false);
         field(pipeline,"shadowRenderTargets","L"+IRIS+"shadows/ShadowRenderTargets;",false);
         for(var method:bridge.methods)if(method.name.startsWith("cmi$createPackage")) {

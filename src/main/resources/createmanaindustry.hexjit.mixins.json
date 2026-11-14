@@ -1,8 +1,8 @@
 {
-    "required": false,
+    "required": true,
     "minVersion": "0.8.7",
     "package": "com.iridium126.createmanaindustry.mixin.hexjit",
-    "plugin": "com.iridium126.createmanaindustry.mixin.hexjit.HexJitMixinPlugin",
+    "plugin": "com.iridium126.createmanaindustry.mixin.CMIMixinPlugin",
     "compatibilityLevel": "JAVA_21",
     "priority": 1,
     "mixins": [
@@ -38,5 +38,8 @@
     ],
     "injectors": {
         "defaultRequire": 1
+    },
+    "overwrites": {
+        "requireAnnotations": true
     }
 }

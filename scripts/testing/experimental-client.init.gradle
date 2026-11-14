@@ -1,0 +1,72 @@
+// Isolated integrated-server launch. Prepare the default dedicated probe first.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    def side = (p.findProperty('experimentClientSide') ?: 'client').toString()
+    if (!(side in ['client', 'server'])) throw new GradleException('Use -PexperimentClientSide=client or server')
+    def withIris = !p.hasProperty('experimentWithoutIris')
+    def diagnostic = p.hasProperty('experimentDiagnostics')
+    def runDir = p.file("build/experimental-client-${side}${withIris ? '-iris' : '-plain'}${diagnostic ? '-diagnostics' : ''}")
+    def fixture = p.file('build/gametest/experimental-default/world')
+    def suite = p.sourceSets.create('experimentalClient')
+    suite.java.srcDir(p.file('src/test/client/experimental/java'))
+    suite.compileClasspath += p.sourceSets.main.output + p.sourceSets.main.compileClasspath
+    suite.runtimeClasspath += p.sourceSets.main.runtimeClasspath
+    p.neoForge.mods.getByName(p.mod_id.toString()).sourceSet(suite)
+    p.neoForge.runs.client.sourceSet.set(suite)
+    p.neoForge.runs.client.gameDirectory.set(runDir)
+    p.neoForge.runs.client.programArguments.addAll('--width', '800', '--height', '480', '--quickPlaySingleplayer', 'Experimental')
+    p.neoForge.runs.client.systemProperty('cmi.experimentClientSide', side)
+    if (diagnostic) p.neoForge.runs.client.systemProperty('cmi.testDiagnosticCommands', 'true')
+    def iris = p.configurations.detachedConfiguration(p.dependencies.create(p.cmiCoordinates.iris))
+    def irisVeil = p.configurations.detachedConfiguration(p.dependencies.create(p.cmiCoordinates.irisVeil))
+    iris.transitive = false
+    irisVeil.transitive = false
+    def shaderPack = p.findProperty('experimentDiagnosticShaderPack')
+    if (shaderPack != null && (!diagnostic || !withIris || !p.file(shaderPack).isFile()))
+        throw new GradleException('A diagnostic shader pack requires -PexperimentDiagnostics, Iris, and a readable pack')
+    def packFile = shaderPack == null ? null : p.file(shaderPack)
+    if (packFile != null) p.neoForge.runs.client.systemProperty('cmi.testDiagnosticShaderPack', 'true')
+    p.tasks.named('copyTricksterToRunMods', Copy).configure { into(new File(runDir, 'mods')) }
+    def prepare = p.tasks.register('prepareExperimentalClient') {
+        dependsOn(p.tasks.named('copyTricksterToRunMods'))
+        doLast {
+            if (!new File(fixture, 'level.dat').isFile()) throw new GradleException('Run the default experimental startup GameTest first')
+            def world = new File(runDir, 'saves/Experimental')
+            if (!new File(world, 'level.dat').isFile()) project.copy {
+                from(fixture)
+                into(world)
+                exclude 'session.lock', 'serverconfig/**'
+            }
+            project.copy {
+                from(project.configurations.sodiumDistribution)
+                if (withIris) from(iris)
+                if (shaderPack != null) from(irisVeil)
+                into(new File(runDir, 'mods'))
+            }
+            new File(runDir, 'config').mkdirs()
+            ['client', 'server'].each { key ->
+                new File(runDir, "config/createmanaindustry-${key}.toml").text =
+                    "[experimental.gpuPackages]\nenabled = ${key == side}\n"
+            }
+            new File(runDir, 'options.txt').text =
+                    'onboardAccessibility:false\nrenderDistance:2\nsimulationDistance:5\npauseOnLostFocus:false\nmaxFps:30\n'
+            if (packFile != null) {
+                project.copy { from(packFile); into(new File(runDir, 'shaderpacks')) }
+                new File(runDir, 'config/iris.properties').text =
+                        "enableShaders=true\nshaderPack=${packFile.name}\n"
+            }
+        }
+    }
+    prepare.configure { notCompatibleWithConfigurationCache('Copies an isolated client fixture and its runtime mods') }
+    p.tasks.named('runClient', JavaExec).configure {
+        dependsOn(prepare, p.tasks.named(suite.classesTaskName))
+        maxHeapSize = '4g'
+        doLast {
+            def log = new File(runDir, 'logs/latest.log')
+            if (!log.isFile() || !log.text.contains("CMI_EXPERIMENTAL_CLIENT_PASSED ${side}"))
+                throw new GradleException("Experimental client probe did not complete; inspect ${log}")
+            if (diagnostic && !log.text.contains('CMI_DIAGNOSTIC_COMMANDS_PASSED'))
+                throw new GradleException("Diagnostic command probe did not complete; inspect ${log}")
+        }
+    }
+}

@@ -113,14 +113,33 @@ Common server settings:
 | `mist.mistMaxRadius` | 16 | Maximum atomizer mist radius in blocks |
 | `mist.mistFluidPerTick` | 8 | Base atomizer fluid use at 256 RPM, in mB/tick |
 | `mist.condenseEfficiency` | 5.0 | Condenser base output per concentration unit, in mB/tick |
-| `hexcasting.jit.mode` | `AUTO` | Hex JIT mode: `OFF`, `PROFILE`, or `AUTO` |
 
 The server file also has settings for Allay Burner fuel, Hexcasting item capacities, and Allay Storm
 behavior. The client file controls mist glow, GPU particle limits and
-throttling, Hexcasting particle redirects, and ALLVR LOD. GPU package authority is disabled by
-default on both sides.
+throttling, Hexcasting particle redirects, and ALLVR LOD.
+
+Experimental switches are read from the instance's `config/` directory before Mixins load.
+Restart the whole game or dedicated server after changing them. A world's `serverconfig/`
+can still override tuning such as budgets and thresholds.
+
+| File in `config/` | Setting | Default |
+|---|---|---|
+| `createmanaindustry-server.toml` | `experimental.gpuPackages.enabled` | `false` |
+| `createmanaindustry-server.toml` | `experimental.hexJit.mode` | `OFF` |
+| `createmanaindustry-client.toml` | `experimental.gpuPackages.enabled` | `false` |
+
+Use `PROFILE` for Hex JIT profiling or `AUTO` for compilation. GPU package authority needs the
+server opt-in and a ready client that opted in. When the server switch is off, saved lightweight
+packages return to Create as their chunks load. To opt in after upgrading, set the new keys explicitly.
 
 Existing worlds must redraw CMI's old Tick Acceleration pattern using Hexal's `hexal:tick` pattern.
+
+Client diagnostics start from commands in the current session. Use
+`/cmi particle profile frames <seconds>` for whole-frame and render-stage timings,
+`/cmi particle profile frames cancel` to cancel, and `/cmi particle profile capture <name>`
+for a GPU command capture. Use `/cmi particle shaderpack stormcloud profile on` or `off`
+to control cloud-stage profiling. The client keeps the frame boundary hooks ready and creates
+diagnostic GPU queries only when a capture or profiling session needs them.
 
 ## Build
 
@@ -136,8 +155,8 @@ On Windows, use `.\gradlew.bat`. To reuse a local Hexal checkout, pass
 `build/libs/createmanaindustry-<version>.jar`. The bootstrap-only jar used by development launches is
 kept under `build/internal/` and is not a separate player-installation file.
 
-When Connector is installed, the bundled early startup service recognizes and patches the verified
-Trickster `2.0.0-beta.56` jar before Connector scans Fabric mods. It checks the target class hashes,
+When Connector is installed, the bundled early startup service patches Trickster before Connector
+scans Fabric mods if its target classes match the verified hashes. It
 saves the original beside the jar as `.jar.backup`, and leaves unrecognized or modified jars
 untouched. In development runs, Gradle copies the Trickster dependency into `run/mods/` before
 launch so the same service can process it there.
@@ -147,6 +166,10 @@ launch so the same service can process it there.
 See [docs/README.md](./docs/README.md) for the development-documentation index, implementation
 status, and known gaps. It covers GPU particles and packages, ALLVR, Allay Storm, and shader-pack
 integration.
+
+Mixin registrations and mod version ranges live in `neoforge.mods.toml`. The two manifests use the
+same plugin, and the separate Hex JIT manifest preserves its low priority. See the
+[Mixin maintenance checks](./docs/testing.md#mixin-维护检查) for group ownership and test commands.
 
 ## License
 

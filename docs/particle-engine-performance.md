@@ -21,7 +21,7 @@ python scripts/particles/particle_tool.py package
 
 `verify` 覆盖固定时钟、身份、显示不连续状态、独立 FP64 扫掠接触、GL/RT 最近距离、65536 成员、ABI 错配、NaN、不完整输入及 10/50/500 ms 原生延迟。Dome 生产审核、地形、动画、阴影、物流和 Hex 继续由共享夹具验证；测试通过不代表视觉和所有密集初态已经验收。
 
-`replay` 只接受校验完整的 schema 3 命令日志，保留记录时的真实程序和资源。回放范围为 GL compute/copy/upload/clear/barrier，排除未记录的世界绘制及外部 CUDA 任务；RT 活动时命令捕获明确作废，避免遗漏原生成本。正式 RT 比较使用整帧采集。`bench` 使用三轮独立进程交错 A/A、A/B；它不能仅凭 GL 日志证明 GPU 重叠或 RT 整帧收益。
+`replay` 接受通过校验的 schema 3 和 4 命令日志，保留记录时的程序和资源。Schema 4 同时记录 uniform block 的绑定与缓冲区范围。回放覆盖 GL compute、copy、upload、clear 和 barrier。世界绘制和外部 CUDA 任务用整帧采集测量。RT 活动时命令捕获作废。`bench` 使用三轮独立进程交错 A/A 和 A/B。
 
 `frames` 的帧间隔包含交换与限帧；GPU 范围为 runTick HEAD 到 updateDisplay 前。缺失 GPU 样本是未知，不能填零。`-spatial.csv` 将原生 ABI 13 与统计 schema 2 分列；原生完成后才读取事件计时，分别报告外部输入等待、验证及实例整理、IAS、探针和发布。等待不能全部归为互操作成本，也不能把 GL 与 CUDA 区间相加声称整帧时间。
 

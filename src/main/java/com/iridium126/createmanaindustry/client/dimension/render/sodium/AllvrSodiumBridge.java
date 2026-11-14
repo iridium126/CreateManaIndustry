@@ -101,10 +101,7 @@ public final class AllvrSodiumBridge {
         AllvrSodiumCompatibilityProbe.Availability availability =
             AllvrSodiumCompatibilityProbe.probe();
         if (!availability.available()) {
-            throw new IllegalStateException("Sodium "
-                + AllvrSodiumCompatibilityProbe.VERSION_PREFIX
-                + " is required for Allay terrain, but its ABI probe failed: "
-                + availability.reason());
+            throw new IllegalStateException("Sodium terrain ABI mismatch: " + availability.reason());
         }
         initialized = true;
         resourceRevision++;

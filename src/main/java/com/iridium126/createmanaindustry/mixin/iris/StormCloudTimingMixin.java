@@ -15,7 +15,12 @@ public abstract class StormCloudTimingMixin {
     @Shadow @Final private CompositePass compositePass;
     @WrapMethod(method="renderAll()V")
     private void cmi$cloudTiming(Operation<Void> original){
-        var session=ShaderPackSession.current();boolean timing=session.beginCloudTiming(this,compositePass.name().toLowerCase(java.util.Locale.ROOT)),success=false;
+        var session=ShaderPackSession.current();
+        if (!session.samplingCloudTiming()) {
+            original.call();
+            return;
+        }
+        boolean timing=session.beginCloudTiming(this,compositePass.name().toLowerCase(java.util.Locale.ROOT)),success=false;
         try{original.call();success=true;}finally{if(timing)session.endCloudTiming(this,success);}
     }
 }

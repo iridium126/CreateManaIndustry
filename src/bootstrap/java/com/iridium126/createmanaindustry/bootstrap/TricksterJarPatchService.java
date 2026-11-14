@@ -40,7 +40,6 @@ public final class TricksterJarPatchService implements ITransformationService {
     private static final String LOG_PREFIX = "[Create Mana Industry] ";
     private static final String CONNECTOR_SERVICE = "connector_loader";
     private static final String TRICKSTER_ID = "trickster";
-    private static final String SUPPORTED_TRICKSTER_VERSION = "2.0.0-beta.56";
     private static final String EXPECTED_MIXIN_CLASS_SHA256 =
             "47a8849c8056c8f7776d3aa83cd359247ebf1b640a2994dd8f230c8ab6af7769";
     private static final String TEMPLATE_CLASS =
@@ -54,9 +53,11 @@ public final class TricksterJarPatchService implements ITransformationService {
             "2ba126372f77660835ad7d363098c7ec01accb44eb9b536d9589d7d97a3e27c7";
     private static final String WORLD_PIN_TARGET = "method_39998(Lnet/minecraft/class_1923;)Z";
     private static final String PATCH_MARKER_ENTRY = "META-INF/cmi/trickster-keybinding-patch.txt";
+    // Existing installations carry this marker verbatim. The original class hashes
+    // and the patched method signatures determine whether the patch applies.
     private static final byte[] PATCH_MARKER = (
             "patch=cmi-trickster-keybinding-beta56-v4\n"
-                    + "tricksterVersion=" + SUPPORTED_TRICKSTER_VERSION + "\n"
+                    + "tricksterVersion=2.0.0-beta.56\n"
                     + "sourceClassSha256=" + EXPECTED_MIXIN_CLASS_SHA256 + "\n"
                     + "handlers=native-neoforge-keymapping-lookup\n"
                     + "worldPinTarget=" + WORLD_PIN_TARGET + "\n"
@@ -115,18 +116,11 @@ public final class TricksterJarPatchService implements ITransformationService {
         }
 
         InstalledJar trickster = tricksterJars.getFirst();
-        if (!SUPPORTED_TRICKSTER_VERSION.equals(trickster.version())) {
-            log("WARNING", "Trickster " + trickster.version() + " is installed at " + trickster.path()
-                    + ", but automatic patching supports only " + SUPPORTED_TRICKSTER_VERSION
-                    + ". The jar was left unchanged.");
-            return;
-        }
-
         try {
             if (trickster.patchMarker() != null) {
                 if (MessageDigest.isEqual(PATCH_MARKER, trickster.patchMarker())
                         && hasPatchedTricksterMixins(trickster.path())) {
-                    log("INFO", "Trickster " + SUPPORTED_TRICKSTER_VERSION + " was already patched.");
+                    log("INFO", "Trickster " + trickster.version() + " was already patched.");
                 } else {
                     log("WARNING", "A patch marker or modified KeyBindingMixin was found in " + trickster.path()
                             + ", but it does not match this patch. The jar was left unchanged.");
@@ -136,8 +130,8 @@ public final class TricksterJarPatchService implements ITransformationService {
 
             String actualClassSha256 = mixinClassSha256(trickster.path());
             if (!EXPECTED_MIXIN_CLASS_SHA256.equals(actualClassSha256)) {
-                log("WARNING", "Trickster reports version " + SUPPORTED_TRICKSTER_VERSION
-                        + ", but its KeyBindingMixin.class does not match the supported upstream class."
+                log("WARNING", "Trickster " + trickster.version()
+                        + " has an unrecognized KeyBindingMixin.class."
                         + " Expected SHA-256 " + EXPECTED_MIXIN_CLASS_SHA256 + ", found " + actualClassSha256
                         + ". The jar was left unchanged.");
                 return;
@@ -267,7 +261,7 @@ public final class TricksterJarPatchService implements ITransformationService {
             moveReplacing(temporaryPath, jarPath);
             replacedOriginal = true;
             verifyPatchedJar(jarPath);
-            log("INFO", "Patched Trickster " + SUPPORTED_TRICKSTER_VERSION + " before Connector scanned it."
+            log("INFO", "Patched Trickster before Connector scanned it."
                     + " The original jar is backed up as " + backupPath.getFileName() + ".");
         } catch (IOException exception) {
             if (replacedOriginal) {
@@ -387,9 +381,7 @@ public final class TricksterJarPatchService implements ITransformationService {
         try (JarFile jar = new JarFile(jarPath.toFile(), false)) {
             JarEntry metadata = jar.getJarEntry("fabric.mod.json");
             if (metadata == null
-                    || !TRICKSTER_ID.equals(topLevelJsonString(readBounded(jar, metadata, 1_048_576), "id"))
-                    || !SUPPORTED_TRICKSTER_VERSION.equals(
-                    topLevelJsonString(readBounded(jar, metadata, 1_048_576), "version"))) {
+                    || !TRICKSTER_ID.equals(topLevelJsonString(readBounded(jar, metadata, 1_048_576), "id"))) {
                 throw new IOException("Patched jar metadata did not verify");
             }
 

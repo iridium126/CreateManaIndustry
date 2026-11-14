@@ -60,11 +60,12 @@ tasks.register('validatePackageSableAbsent', JavaExec) {
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
 }
 
+String createModule = "create-${minecraft_version}"
 def resolvedCreate = configurations.compileClasspath.incoming.artifacts.resolvedArtifacts.map { artifacts ->
     def matches = artifacts.findAll {
         def id = it.id.componentIdentifier
         id instanceof ModuleComponentIdentifier && id.group == 'com.simibubi.create' &&
-                id.module == "create-${minecraft_version}"
+                id.module == createModule
     }
     if (matches.size() != 1) throw new GradleException('Expected exactly one resolved Create binary')
     matches.first()

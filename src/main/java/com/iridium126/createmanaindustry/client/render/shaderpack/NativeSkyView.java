@@ -73,7 +73,7 @@ public final class NativeSkyView {
     public NativeSkyView(IrisRenderingPipeline pipeline,ProgramSet programs,NativeRiftPatchPlan contract) throws IOException {
         this.programs=programs;this.pipeline=pipeline;family=contract.family();
         var access=(NativeSkyPipelineAccess)pipeline;
-        skyFlips=access.cmi$sourceFlips();
+        skyFlips=pipeline.getFlippedAfterPrepare();
         var mc=Minecraft.getInstance();width=mc.getMainRenderTarget().width;height=mc.getMainRenderTarget().height;
         var resolver=new ProgramFallbackResolver(programs);
         var selected=new EnumMap<ProgramArrayId,ProgramSource[]>(ProgramArrayId.class);
@@ -100,7 +100,7 @@ public final class NativeSkyView {
         skyFlips.forEach(flipper::flip);
         try(var textureState=new SkyTextureState();var state=new SkyRenderState()) {
         depth=new DepthTexture("cmi_target_sky_depth",width,height,DepthBufferFormat.DEPTH24);
-        targets=new NativeSkyTargets(width,height,depth.getTextureId(),programs.getPackDirectives(),access.cmi$targets(),access.cmi$sourceFlips(),writes);
+        targets=new NativeSkyTargets(width,height,depth.getTextureId(),programs.getPackDirectives(),access.cmi$targets(),skyFlips,writes);
         conditionalTransfersSafe=family.equals("complementary");
         for(var array:selected.values())for(var source:array)if(source!=null)for(int mip:source.getDirectives().getMipmappedBuffers())
             if(!writes.contains(mip)||targets.getOrCreate(mip).getInternalFormat().getPixelFormat().isInteger())conditionalTransfersSafe=false;

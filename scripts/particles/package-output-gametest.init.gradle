@@ -4,7 +4,7 @@ gradle.projectsEvaluated {
     p.apply from: p.file('scripts/testing/common.gradle')
     def recovery = p.hasProperty('packageRecoveryGameTest')
     def suite = p.configureCmiGameTests(name: 'packages', sources: 'src/test/gametest/packages/java',
-            structure: 'package_output_test')
+            structure: 'package_output_test', serverConfig: '[experimental.gpuPackages]\nenabled = true\n')
     suite.java.exclude(recovery ? '**/PackageOutputGameTests.java' : '**/PackageRecoveryGameTests.java')
     if (recovery) suite.java.exclude('**/PackageEnvironmentGameTests.java')
     def audit = p.tasks.register('packageEnvironmentAuditFixture', Copy) {
@@ -13,15 +13,11 @@ gradle.projectsEvaluated {
         into(p.layout.buildDirectory.dir('gametest/packages-audit-resources'))
     }
     suite.resources.srcDir(audit)
-    def runDir = p.file('build/gametest/packages')
-    def defaults = new File(runDir, 'defaultconfigs/createmanaindustry-server.toml')
-    def config = new File(runDir, 'world/serverconfig/createmanaindustry-server.toml')
     p.tasks.named('runGameTestServer', JavaExec).configure {
-        doFirst {
-            for (target in [defaults, config]) {
-                target.parentFile.mkdirs()
-                target.text = '[gpuPackages]\nauthorityEnabled = ' + (!recovery) + '\n'
-            }
+        def log = p.file('build/gametest/packages/logs/latest.log')
+        doLast {
+            if (!log.isFile() || !(log.text =~ /All [1-9]\d* required tests passed/).find())
+                throw new GradleException("Package GameTests did not complete successfully. Inspect ${log}")
         }
     }
 }

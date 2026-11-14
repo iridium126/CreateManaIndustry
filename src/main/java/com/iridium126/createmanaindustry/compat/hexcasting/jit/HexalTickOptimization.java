@@ -184,6 +184,7 @@ public final class HexalTickOptimization {
             if (state.isRandomlyTicking()
                     && level.getRandom().nextInt(HexalConfig.Server.TICK_RANDOM_TICK_I_PROB.get()) == 0) {
                 beforeWorldEffect();
+                if (scope != null) scope.recordRandomTick();
                 state.randomTick(level, pos, level.getRandom());
             }
         }

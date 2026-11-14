@@ -27,10 +27,10 @@ gradle.projectsEvaluated {
         dependsOn(runtimeMods,p.tasks.named('copyTricksterToRunMods'))
         doLast {
             def client=new File(runtime,'config/createmanaindustry-client.toml')
-            def server=new File(runtime,'defaultconfigs/createmanaindustry-server.toml')
+            def server=new File(runtime,'config/createmanaindustry-server.toml')
             client.parentFile.mkdirs();server.parentFile.mkdirs()
-            if(!client.exists())client.text='[particles]\nautoThrottle = false\npackageGpuAuthority = true\n'
-            if(!server.exists())server.text='[gpuPackages]\nauthorityEnabled = true\n'
+            if(!client.exists())client.text='[experimental.gpuPackages]\nenabled = true\n\n[particles]\nautoThrottle = false\n'
+            if(!server.exists())server.text='[experimental.gpuPackages]\nenabled = true\n'
             logger.lifecycle('GPU client check directory: '+runtime)
         }
     }

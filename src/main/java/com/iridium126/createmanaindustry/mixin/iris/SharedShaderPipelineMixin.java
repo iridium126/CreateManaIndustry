@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.injection.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value=IrisRenderingPipeline.class,remap=false)
-public abstract class PackageIrisPipelineMixin implements CMIPackageIrisPipeline {
+public abstract class SharedShaderPipelineMixin implements CMIPackageIrisPipeline {
     @Unique private ProgramSet cmi$packageProgramSet;
     @Shadow @Final private Set<ShaderInstance> loadedShaders;
     @Shadow private ShadowRenderTargets shadowRenderTargets;

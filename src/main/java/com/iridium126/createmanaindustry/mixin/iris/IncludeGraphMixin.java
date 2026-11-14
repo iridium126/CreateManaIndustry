@@ -17,8 +17,7 @@ import net.irisshaders.iris.shaderpack.include.IncludeGraph;
 @Mixin(value = IncludeGraph.class, remap = false)
 public class IncludeGraphMixin {
 
-	// require = 0: same rationale as IrisIdMapMixin.
-	@Inject(method = "readFile", at = @At("RETURN"), cancellable = true, remap = false, require = 0)
+	@Inject(method = "readFile(Ljava/nio/file/Path;)Ljava/lang/String;", at = @At("RETURN"), cancellable = true)
 	private static void cmi$transformShaderSource(Path path, CallbackInfoReturnable<String> cir) {
 		cir.setReturnValue(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current()
                 .transform(path, cir.getReturnValue()));

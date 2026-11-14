@@ -8,7 +8,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Client-only, exact Create ABI gated by CMIMixinPlugin. */
+/** Client-only GPU package collision for Create contraptions. */
 @Mixin(value=Contraption.class,remap=false)
 public abstract class ContraptionCollisionMixin {
     @Inject(method="invalidateColliders",at=@At("HEAD"))

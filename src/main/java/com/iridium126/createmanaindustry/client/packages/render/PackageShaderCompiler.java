@@ -8,7 +8,6 @@ import com.iridium126.createmanaindustry.client.particles.engine.ParticleProgram
 import com.mojang.blaze3d.shaders.Uniform;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.gl.shader.StandardMacros;
-import net.irisshaders.iris.pipeline.IrisRenderingPipeline;
 import net.irisshaders.iris.shaderpack.loading.ProgramId;
 import net.irisshaders.iris.shaderpack.preprocessor.JcppProcessor;
 import net.irisshaders.iris.shaderpack.programs.*;
@@ -54,8 +53,7 @@ public final class PackageShaderCompiler implements AutoCloseable {
         long session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().generation();
         if(session!=sessionGeneration){invalidate();sessionGeneration=session;}
         var pipeline=Iris.getPipelineManager().getPipelineNullable();
-        if(!(pipeline instanceof IrisRenderingPipeline))return false;
-        CMIPackageIrisPipeline bridge=(CMIPackageIrisPipeline)pipeline;
+        if (!(pipeline instanceof CMIPackageIrisPipeline bridge)) return false;
         boolean hasShadows=bridge.cmi$packageHasShadows();
         if(attemptedPipeline==pipeline && attemptedRevision==revision && attemptedShadows==hasShadows)
             return live!=null && live.owner==pipeline && (!hasShadows || live.shadow!=null);

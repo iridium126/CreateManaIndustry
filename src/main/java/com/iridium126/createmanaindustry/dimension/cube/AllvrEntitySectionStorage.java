@@ -77,6 +77,11 @@ public final class AllvrEntitySectionStorage<T extends EntityAccess> extends Ent
     @Override public Stream<EntitySection<T>> getExistingSectionsInChunk(long key) {
         return enabled() ? getExistingSectionPositionsInChunk(key).mapToObj(sections::get).filter(Objects::nonNull) : super.getExistingSectionsInChunk(key);
     }
+    public Stream<EntitySection<T>> nativeSectionsInChunk(long key) {
+        return getExistingSectionPositionsInChunk(key)
+                .filter(section -> com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits.isVanillaSection(coordinate(section).y()))
+                .mapToObj(this::getSection);
+    }
     @Override public LongSet getAllChunksWithExistingSections() { return enabled() ? new LongOpenHashSet(columns.keySet()) : super.getAllChunksWithExistingSections(); }
     @Override public int count() { return enabled() ? sections.size() : super.count(); }
     public int identityCount() { return identities.size(); }

@@ -36,7 +36,7 @@ public final class ServerConfig {
 
     public enum HexJitMode { OFF, PROFILE, AUTO }
 
-    public static volatile HexJitMode hexJitMode = HexJitMode.AUTO;
+    public static volatile HexJitMode hexJitMode = HexJitMode.OFF;
     public static volatile int hexTrickMaxDepth = 32;
     private static ModConfigSpec.IntValue HEX_TRICK_MAX_DEPTH;
     public static volatile int hexJitThreshold = 64;
@@ -88,7 +88,6 @@ public final class ServerConfig {
     public static volatile boolean hexJitCachePerWorldPatternLookup = true;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
-    private static final ModConfigSpec.BooleanValue PACKAGE_GPU_AUTHORITY;
     private static final ModConfigSpec.DoubleValue PACKAGE_MAIN_THREAD_BUDGET_MS;
     public static volatile boolean packageGpuAuthority;
     public static volatile double packageMainThreadBudgetMs = 10.0;
@@ -143,7 +142,6 @@ public final class ServerConfig {
     private static ModConfigSpec.LongValue BATTERY_MAX_MEDIA;
     private static ModConfigSpec.IntValue YSM_APPLY_CRYSTALS;
     private static ModConfigSpec.IntValue YSM_EXPORT_CRYSTALS;
-    private static ModConfigSpec.EnumValue<HexJitMode> HEX_JIT_MODE;
     private static ModConfigSpec.IntValue HEX_JIT_THRESHOLD;
     private static ModConfigSpec.IntValue HEX_JIT_MAX_UNITS;
     private static ModConfigSpec.IntValue HEX_JIT_BYTE_BUDGET_MIB;
@@ -193,9 +191,17 @@ public final class ServerConfig {
     private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_PER_WORLD_PATTERN_LOOKUP;
 
     static {
+        BUILDER.comment("Experimental features. Set these switches in the instance config directory and restart the game or server.").push("experimental");
         BUILDER.push("gpuPackages");
-        PACKAGE_GPU_AUTHORITY=BUILDER.comment("Development ownership transport. Remains inactive until a client has verified complete GPU collision/render resources.")
-                .define("authorityEnabled",false);
+        BUILDER.comment("Enable server-side GPU package authority and its Mixins. Requires a full process restart.")
+                .worldRestart().define("enabled", false);
+        BUILDER.pop();
+        BUILDER.push("hexJit");
+        BUILDER.comment("OFF skips the Hex JIT Mixins; PROFILE collects hot calls; AUTO enables tiered compilation. Requires a full process restart.")
+                .worldRestart().defineEnum("mode", HexJitMode.OFF);
+        BUILDER.pop(2);
+
+        BUILDER.comment("Server-side GPU package tuning.").push("gpuPackages");
         PACKAGE_MAIN_THREAD_BUDGET_MS=BUILDER
                 .comment("Maximum server main-thread time per tick for each GPU package processing pass, in milliseconds.")
                 .defineInRange("mainThreadBudgetMs",10.0,0.25,50.0);
@@ -307,9 +313,6 @@ public final class ServerConfig {
                 .comment("Charged amethyst units consumed when exporting a YSM model.")
                 .defineInRange("ysmExportCrystalUnits", 1, 0, 64);
         BUILDER.comment("Server-side Hex JIT controls. These tune execution only; compiled calls preserve Hexcasting action semantics.").push("jit");
-        HEX_JIT_MODE = BUILDER
-                .comment("OFF uses the interpreter; PROFILE counts hot calls without compiling; AUTO enables tiered compilation.")
-                .defineEnum("mode", HexJitMode.AUTO);
         HEX_JIT_THRESHOLD = BUILDER
                 .comment("Valid executions at a shared call site before compilation is requested.")
                 .defineInRange("hotThreshold", 64, 1, 1000000);
@@ -596,7 +599,7 @@ public final class ServerConfig {
             allayBurnerMistRadius = ALLAY_BURNER_MIST_RADIUS.get();
             allayBurnerMistPerTick = ALLAY_BURNER_MIST_PER_TICK.get();
             stormCorrectionHz = STORM_CORRECTION_HZ.get();
-            packageGpuAuthority=PACKAGE_GPU_AUTHORITY.get();
+            packageGpuAuthority = ExperimentalStartup.settings().serverPackages();
             packageMainThreadBudgetMs=PACKAGE_MAIN_THREAD_BUDGET_MS.get();
             stormMaxCount = STORM_MAX_COUNT.get();
             stormLodMaxDistance=STORM_LOD_MAX_DISTANCE.get();
@@ -621,7 +624,7 @@ public final class ServerConfig {
     }
 
     public static void refreshHexJitSettings() {
-        hexJitMode = HEX_JIT_MODE.get();
+        hexJitMode = ExperimentalStartup.settings().hexJitMode();
         hexTrickMaxDepth = HEX_TRICK_MAX_DEPTH.get();
         hexJitThreshold = HEX_JIT_THRESHOLD.get();
         hexJitMaxUnits = HEX_JIT_MAX_UNITS.get();

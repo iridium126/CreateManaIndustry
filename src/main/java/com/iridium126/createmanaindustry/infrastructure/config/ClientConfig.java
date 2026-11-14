@@ -30,7 +30,6 @@ public final class ClientConfig {
     private static ModConfigSpec.IntValue ALLAY_FEATHER_RATE, ALLAY_GOLD_RATE, STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT, PARTICLE_HEX_PATTERN_REDIRECT;
     private static ModConfigSpec.IntValue HEX_PATTERN_GPU_BUDGET;
-    private static ModConfigSpec.BooleanValue PACKAGE_GPU_AUTHORITY;
     private static ModConfigSpec.DoubleValue PACKAGE_MAIN_THREAD_BUDGET_MS;
     private static ModConfigSpec.IntValue PACKAGE_COLLISION_MAX_SECTIONS;
     private static ModConfigSpec.DoubleValue GRID_SNAP_THRESHOLD;
@@ -39,6 +38,12 @@ public final class ClientConfig {
     private static ModConfigSpec.EnumValue<RiftCulling> RIFT_CULLING;
 
     static {
+        BUILDER.comment("Experimental features. Changes to these switches require restarting the game.").push("experimental");
+        BUILDER.push("gpuPackages");
+        BUILDER.comment("Enable client GPU package simulation and its Mixins. Requires a participating server and compatible GPU resources.")
+                .gameRestart().define("enabled", false);
+        BUILDER.pop(2);
+
         BUILDER.comment("Volumetric mist rendering options.").push("rendering");
         MIST_GLOW_STRENGTH = BUILDER
                 .comment("Global multiplier for mist glow.")
@@ -100,8 +105,6 @@ public final class ClientConfig {
         BUILDER.pop();
 
         BUILDER.comment("Create package GPU resources.").push("packages");
-        PACKAGE_GPU_AUTHORITY = BUILDER.comment("Experimental Create package authority opt-in. Requires matching server opt-in and complete GPU collision/render resources; visual validation is pending. Further bandwidth optimization is deferred.")
-                .define("packageGpuAuthority", false);
         PACKAGE_MAIN_THREAD_BUDGET_MS = BUILDER
                 .comment("Soft client-frame allowance shared by geometry capture and atlas upload, in milliseconds. Capture reserves half for upload; force/world reads and solver submission are measured separately.")
                 .defineInRange("packageMainThreadBudgetMs", 10.0, 0.25, 50.0);
@@ -177,7 +180,7 @@ public final class ClientConfig {
             hexParticleRedirect = PARTICLE_HEX_REDIRECT.get();
             hexPatternRedirect = PARTICLE_HEX_PATTERN_REDIRECT.get();
             hexPatternGpuBudgetMiB = HEX_PATTERN_GPU_BUDGET.get();
-            packageGpuAuthority = PACKAGE_GPU_AUTHORITY.get();
+            packageGpuAuthority = ExperimentalStartup.settings().clientPackages();
             packageMainThreadBudgetMs = PACKAGE_MAIN_THREAD_BUDGET_MS.get();
             packageCollisionMaxSections = PACKAGE_COLLISION_MAX_SECTIONS.get();
             gridSnapThreshold = GRID_SNAP_THRESHOLD.get();

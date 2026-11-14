@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Direct Sable 2.0.5 hook: its LevelChunk bridge calls this after applying plot block changes. */
+/** Sable's LevelChunk bridge calls the plot after applying block changes. */
 @Mixin(LevelPlot.class)
 public abstract class PackageSableCollisionPlotMixin {
     @Shadow @Final private SubLevel subLevel;

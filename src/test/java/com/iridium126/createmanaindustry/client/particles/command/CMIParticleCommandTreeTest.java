@@ -48,6 +48,7 @@ class CMIParticleCommandTreeTest {
         accepts(dispatcher,"cmi particle profile on");accepts(dispatcher,"cmi particle profile off");
         rejects(dispatcher,"cmi particle profile details on");
         accepts(dispatcher,"cmi particle profile frames 30");accepts(dispatcher,"cmi particle profile frames 900");
+        accepts(dispatcher,"cmi particle profile frames cancel");
         rejects(dispatcher,"cmi particle profile frames 0");rejects(dispatcher,"cmi particle profile frames 901");
         accepts(dispatcher,"cmi particle profile capture photon_dense_A");rejects(dispatcher,"cmi particle profile capture");
         rejects(dispatcher,"cmi particle profile querysequence moving_A 15");rejects(dispatcher,"cmi particle profile querysequence moving_A 129");rejects(dispatcher,"cmi particle profile querysequence moving_A");

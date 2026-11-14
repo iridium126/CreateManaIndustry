@@ -15,10 +15,11 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
 
-/** Diagnostic schema 3: initial resources before first access/write, CPU upload
+/** Diagnostic journal: initial resources before first access/write, CPU upload
  * bytes and actual dispatch configurations. One bounded capture, no FPS overlap. */
 public final class ParticleChainCapture implements GpuReplayCommands.Sink,com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement.Snapshot {
     public static final ParticleChainCapture INSTANCE=new ParticleChainCapture();
+    private static final int JOURNAL_SCHEMA = 4;
     private static final long LIMIT=512L<<20;
     private record Part(String file,int buffer,int bytes){}
     private final Map<Integer,String> buffers=new LinkedHashMap<>(),programs=new LinkedHashMap<>();
@@ -30,9 +31,10 @@ public final class ParticleChainCapture implements GpuReplayCommands.Sink,com.ir
     private boolean active;private volatile boolean exporting;private long bytes,fence;private Path output;private String failure="";
     private volatile String requested;
     private ParticleChainCapture(){}
-    public synchronized boolean request(String name){if(name==null||!name.matches("[A-Za-z0-9_-]{1,64}")||busy()||requested!=null||ClientFrameCapture.INSTANCE.busy())return false;requested=name;return true;}
+    public synchronized boolean request(String name){if(name==null||!name.matches("[A-Za-z0-9_-]{1,64}")||busy()||ClientFrameCapture.INSTANCE.busy())return false;requested=name;return true;}
     public void beginRequested(long frame,long generation,Map<String,Object> inputs){String name=requested;if(name==null)return;requested=null;ClientFrameCapture.INSTANCE.invalidate("instrumented command capture");start(name,frame,generation,inputs);}
-    public boolean busy(){return active||fence!=0||exporting;}
+    public boolean busy(){return requested!=null||active||fence!=0||exporting;}
+    boolean requested(){return requested!=null;}
     public boolean active(){return active;}
     public void inputs(Map<String,Object> values){if(active)manifest.put("cpu_inputs",Map.copyOf(values));}
     @Override public void forgetBuffer(int id){if(active&&buffers.containsKey(id))invalidate("recorded buffer retired within capture; resource generation changed");}
@@ -50,7 +52,7 @@ public final class ParticleChainCapture implements GpuReplayCommands.Sink,com.ir
     /** Isolated recorder regression; never impersonates a client capture. */
     public void startAt(Path directory,long frame,long generation,Map<String,Object> inputs){
         if(busy())throw new IllegalStateException("Chain capture already pending");output=directory;active=true;bytes=0;failure="";
-        manifest.put("gl_context_reset_strategy",org.lwjgl.opengl.GL.getCapabilities().OpenGL45||org.lwjgl.opengl.GL.getCapabilities().GL_ARB_robustness?GL11.glGetInteger(GL45.GL_RESET_NOTIFICATION_STRATEGY):-1);manifest.put("gl_context_release_behavior",org.lwjgl.opengl.GL.getCapabilities().OpenGL45||org.lwjgl.opengl.GL.getCapabilities().GL_KHR_context_flush_control?GL11.glGetInteger(GL45.GL_CONTEXT_RELEASE_BEHAVIOR):-1);manifest.put("gl_context_flags",GL11.glGetInteger(GL30.GL_CONTEXT_FLAGS));manifest.put("gl_context_profile_mask",GL11.glGetInteger(GL32.GL_CONTEXT_PROFILE_MASK));manifest.put("source_replay_available",true);manifest.put("schema",3);manifest.put("kind","gpu-command-chain");manifest.put("frame",frame);manifest.put("generation",generation);manifest.put("cpu_inputs",Map.copyOf(inputs));manifest.put("instrumented",true);manifest.put("byte_order","little-endian");manifest.put("gpu",GL11.glGetString(GL11.GL_RENDERER));manifest.put("driver",GL11.glGetString(GL11.GL_VERSION));manifest.put("engine_source_sha256",ParticlePrograms.INSTANCE.diagnosticSourceDigest());manifest.put("boundary","before per-frame CPU input staging and GPU input preparation; through complete publication; pre-frame resource initialization excluded");manifest.put("replay_scope","recorded compute/copy/clear/barrier/upload command stream; rebind submission overhead differs from the client; never convert to FPS");
+        manifest.put("gl_context_reset_strategy",org.lwjgl.opengl.GL.getCapabilities().OpenGL45||org.lwjgl.opengl.GL.getCapabilities().GL_ARB_robustness?GL11.glGetInteger(GL45.GL_RESET_NOTIFICATION_STRATEGY):-1);manifest.put("gl_context_release_behavior",org.lwjgl.opengl.GL.getCapabilities().OpenGL45||org.lwjgl.opengl.GL.getCapabilities().GL_KHR_context_flush_control?GL11.glGetInteger(GL45.GL_CONTEXT_RELEASE_BEHAVIOR):-1);manifest.put("gl_context_flags",GL11.glGetInteger(GL30.GL_CONTEXT_FLAGS));manifest.put("gl_context_profile_mask",GL11.glGetInteger(GL32.GL_CONTEXT_PROFILE_MASK));manifest.put("source_replay_available",true);manifest.put("schema",JOURNAL_SCHEMA);manifest.put("kind","gpu-command-chain");manifest.put("frame",frame);manifest.put("generation",generation);manifest.put("cpu_inputs",Map.copyOf(inputs));manifest.put("instrumented",true);manifest.put("byte_order","little-endian");manifest.put("gpu",GL11.glGetString(GL11.GL_RENDERER));manifest.put("driver",GL11.glGetString(GL11.GL_VERSION));manifest.put("engine_source_sha256",ParticlePrograms.INSTANCE.diagnosticSourceDigest());manifest.put("boundary","before per-frame CPU input staging and GPU input preparation; through complete publication; pre-frame resource initialization excluded");manifest.put("replay_scope","recorded compute/copy/clear/barrier/upload command stream; rebind submission overhead differs from the client; never convert to FPS");
         GL42.glMemoryBarrier(GL42.GL_ALL_BARRIER_BITS);com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement.capture(this);GpuReplayCommands.install(this);
     }
     private void reserve(long count){if(count<0||count>Integer.MAX_VALUE||bytes+count>LIMIT)throw new IllegalStateException("Complete chain capture exceeds bounded 512 MiB storage");bytes+=count;}
@@ -92,7 +94,22 @@ public final class ParticleChainCapture implements GpuReplayCommands.Sink,com.ir
     }
     private Map<String,Object> dispatch(){
         int p=GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);var result=new LinkedHashMap<String,Object>();result.put("program",program(p));var storage=new TreeMap<String,Object>();
-        if(GL20.glGetProgrami(p,GL31.GL_ACTIVE_UNIFORM_BLOCKS)!=0)throw new IllegalStateException("Uniform blocks require a supported journal extension; capture rejected rather than omitting inputs");
+        var uniformBlocks = new TreeMap<String, Object>();
+        int blockCount = GL20.glGetProgrami(p, GL31.GL_ACTIVE_UNIFORM_BLOCKS);
+        for (int block = 0; block < blockCount; block++) {
+            int slot = GL31.glGetActiveUniformBlocki(p, block, GL31.GL_UNIFORM_BLOCK_BINDING);
+            int id = GL30.glGetIntegeri(GL31.GL_UNIFORM_BUFFER_BINDING, slot);
+            if (id == 0) throw new IllegalStateException("Active uniform block has no buffer at slot " + slot);
+            long offset = GL32.glGetInteger64i(GL31.GL_UNIFORM_BUFFER_START, slot);
+            long bytes = GL32.glGetInteger64i(GL31.GL_UNIFORM_BUFFER_SIZE, slot);
+            if (bytes == 0) bytes = GL45.glGetNamedBufferParameteri64(id, GL15.GL_BUFFER_SIZE);
+            if (bytes < GL31.glGetActiveUniformBlocki(p, block, GL31.GL_UNIFORM_BLOCK_DATA_SIZE)) {
+                throw new IllegalStateException("Active uniform block exceeds its bound range at slot " + slot);
+            }
+            uniformBlocks.put(GL31.glGetActiveUniformBlockName(p, block),
+                    Map.of("slot", slot, "buffer", buffer(id), "offset", offset, "bytes", bytes));
+        }
+        result.put("uniform_blocks", uniformBlocks);
         try(var stack=MemoryStack.stackPush()){
             int count=GL43.glGetProgramInterfacei(p,GL43.GL_SHADER_STORAGE_BLOCK,GL43.GL_ACTIVE_RESOURCES);IntBuffer value=stack.mallocInt(1);for(int i=0;i<count;i++){GL43.glGetProgramResourceiv(p,GL43.GL_SHADER_STORAGE_BLOCK,i,stack.ints(GL43.GL_BUFFER_BINDING),null,value);int index=value.get(0);storage.put(Integer.toString(index),Map.of("buffer",buffer(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,index)),"offset",GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,index),"bytes",GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,index)));}
             var uniforms=new TreeMap<String,Object>();var samplers=new TreeMap<String,Object>();var images=new TreeMap<String,Object>();IntBuffer size=stack.mallocInt(1),type=stack.mallocInt(1);
@@ -121,5 +138,13 @@ public final class ParticleChainCapture implements GpuReplayCommands.Sink,com.ir
         }catch(RuntimeException failure){CreateManaIndustry.LOGGER.error("[CMI full chain] readback rejected",failure);}finally{GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,read);cleanup();}
     }
     private void cleanup(){if(fence!=0)GL32.glDeleteSync(fence);fence=0;for(var part:parts)GL15.glDeleteBuffers(part.buffer);parts.clear();validationSources.clear();buffers.clear();textures.clear();programs.clear();resources.clear();programData.clear();manifest.clear();host.clear();commands.clear();output=null;active=false;GpuReplayCommands.install(null);}
-    public void close(){if(active)finish(false);poll();}
+    public void close() {
+        requested = null;
+        try {
+            if (active) finish(false);
+            poll();
+        } finally {
+            if (fence != 0) cleanup();
+        }
+    }
 }

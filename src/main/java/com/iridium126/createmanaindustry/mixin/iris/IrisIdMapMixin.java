@@ -37,9 +37,8 @@ public class IrisIdMapMixin {
 	@Mutable
 	private Object2IntMap<NamespacedId> itemIdMap;
 
-	// require = 0: a future Iris refactor must degrade this cosmetic feature to
-	// a logged no-op rather than crash the game through the config's defaultRequire.
-	@Inject(method = "<init>", at = @At("RETURN"), remap = false, require = 0)
+	@Inject(method = "<init>(Ljava/nio/file/Path;Lnet/irisshaders/iris/shaderpack/option/ShaderPackOptions;Ljava/lang/Iterable;)V",
+            at = @At("RETURN"))
 	private void cmi$applyColoredLightIdMaps(Path shaderPath, ShaderPackOptions shaderPackOptions,
 		Iterable<StringPair> environmentDefines, CallbackInfo ci) {
 		BlockIdMapContext ctx = com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current()

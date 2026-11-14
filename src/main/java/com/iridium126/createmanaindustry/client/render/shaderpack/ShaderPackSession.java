@@ -37,17 +37,30 @@ public final class ShaderPackSession {
     private int cloudPrograms;
     private boolean cloudProfiling;
     private final Map<Object,com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry> cloudTimers=new IdentityHashMap<>();
-    public boolean beginCloudTiming(Object stage){
-        return beginCloudTiming(stage,"unknown");
-    }
     public boolean beginCloudTiming(Object stage,String identity){
-        if((!cloudProfiling&&!com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.active())||com.iridium126.createmanaindustry.client.allaystorm.rift.SkyRenderScope.active())return false;
+        if(com.iridium126.createmanaindustry.client.allaystorm.rift.SkyRenderScope.active())return false;
         var timer=cloudTimers.get(stage);
         if(timer==null){if(cloudTimers.size()>=8)return false;timer=new com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry().named("iris.whole-stage."+identity);cloudTimers.put(stage,timer);}
         timer.poll();timer.begin(true,true,com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),-1);return true;
     }
+    public boolean samplingCloudTiming() {
+        return cloudProfiling || com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.active();
+    }
+
+    public void finishFrameTiming() {
+        if (!cloudProfiling) clearCloudTimers();
+    }
+
+    public void pollFrameTiming() {
+        cloudTimers.values().forEach(com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry::poll);
+    }
+
+    private void clearCloudTimers() {
+        cloudTimers.values().forEach(com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry::close);
+        cloudTimers.clear();
+    }
     public void endCloudTiming(Object stage,boolean publish){var timer=cloudTimers.get(stage);if(timer!=null)timer.end(publish);}
-    public void cloudProfiling(boolean enabled){com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudProfiling(enabled);cloudTimers.values().forEach(com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry::close);cloudTimers.clear();cloudProfiling=enabled;}
+    public void cloudProfiling(boolean enabled){com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudProfiling(enabled);clearCloudTimers();cloudProfiling=enabled;}
     public String cloudTimingReport(){
         var out=new StringBuilder("native whole stages (not cloud-only), profiling="+cloudProfiling);int i=0;
         for(var timer:cloudTimers.values())out.append("; stage ").append(++i).append(": ").append(timer.report());

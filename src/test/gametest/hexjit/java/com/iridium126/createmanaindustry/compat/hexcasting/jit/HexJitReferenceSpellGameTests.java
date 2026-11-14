@@ -191,7 +191,9 @@ public final class HexJitReferenceSpellGameTests {
             ServerConfig.hexJitCacheNormalPatternLookup = true;
             ServerConfig.hexJitCachePerWorldPatternLookup = true;
 
+            String wrapBenchmark = System.getProperty("hexjit.wrapBenchmark");
             for (ReferenceSpell referenceSpell : REFERENCE_SPELLS) {
+                if (wrapBenchmark != null && referenceSpell.expectedTickCalls() == 0) continue;
                 Iota parsed = ParserMain.ParseCode(referenceSpell.source().strip(), player);
                 helper.assertTrue(parsed instanceof ListIota,
                         "HexParse did not return a program list for " + referenceSpell.name());
@@ -200,7 +202,9 @@ public final class HexJitReferenceSpellGameTests {
                 helper.assertTrue(program.stream().noneMatch(GarbageIota.class::isInstance),
                         referenceSpell.name() + " contains a garbage iota while parsing its embedded source");
 
-                if (referenceSpell.name().equals("fisherman-loop"))
+                if (wrapBenchmark != null)
+                    benchmarkMixinWrappers(helper, player, target, referenceSpell, program, yjspIota, tickIota, wrapBenchmark);
+                else if (referenceSpell.name().equals("fisherman-loop"))
                     runFishermanSpell(helper, level, referenceSpell, program);
                 else
                     runReferenceSpell(helper, player, target, referenceSpell, program, yjspIota, tickIota);
@@ -253,6 +257,40 @@ public final class HexJitReferenceSpellGameTests {
             ServerConfig.hexJitCacheNormalPatternLookup = oldPatternCache;
             ServerConfig.hexJitCachePerWorldPatternLookup = oldPerWorldPatternCache;
             HexJitRuntime.invalidate("restore post-test HexJIT settings");
+        }
+    }
+
+    private static void benchmarkMixinWrappers(GameTestHelper helper,
+            net.minecraft.server.level.ServerPlayer player, BlockPos target, ReferenceSpell spell,
+            List<Iota> program, PatternIota yjsp, PatternIota tick, String variant) {
+        var probability = ram.talia.hexal.api.config.HexalConfig.Server.TICK_RANDOM_TICK_I_PROB;
+        int oldProbability = probability.get();
+        try {
+            probability.set(1365);
+            ServerConfig.hexJitMode = ServerConfig.HexJitMode.OFF;
+            SpellRun expected = castInMode(helper, player, target, program, spell, yjsp, tick, ServerConfig.HexJitMode.OFF);
+            assertCompleted(helper, expected, target, spell, "native reference");
+            ServerConfig.hexJitMode = ServerConfig.HexJitMode.AUTO;
+            HexJitRuntime.invalidate("Mixin wrapper benchmark");
+            for (int warmup = 0; warmup < 20; warmup++) {
+                castInMode(helper, player, target, program, spell, yjsp, tick, ServerConfig.HexJitMode.AUTO);
+            }
+            long[] samples = new long[9];
+            for (int index = 0; index < samples.length; index++) {
+                SpellRun sample = castInMode(helper, player, target, program, spell, yjsp, tick, ServerConfig.HexJitMode.AUTO);
+                assertEquivalent(helper, expected, sample, "Mixin wrapper sample " + index);
+                samples[index] = sample.elapsedNanos();
+            }
+            SpellRun counted = castInModeWithMetrics(helper, player, target, program, spell, yjsp, tick, ServerConfig.HexJitMode.AUTO);
+            assertEquivalent(helper, expected, counted, "random tick count sample");
+            long randomTicks = ExecutionScope.lastActualRandomTicks();
+            helper.assertTrue(randomTicks > 0, "Expected the optimized Hexal path to perform random ticks");
+            System.out.println("HEXJIT_MIXIN_WRAPS variant=" + variant + " tickCalls=" + spell.expectedTickCalls()
+                    + " seed=" + WORLD_RANDOM_SEED + " randomTickProbability=" + probability.get()
+                    + " randomTicks=" + randomTicks + " java=" + System.getProperty("java.runtime.version")
+                    + " medianMs=" + median(samples) / 1_000_000.0 + " samplesNs=" + Arrays.toString(samples));
+        } finally {
+            probability.set(oldProbability);
         }
     }
 

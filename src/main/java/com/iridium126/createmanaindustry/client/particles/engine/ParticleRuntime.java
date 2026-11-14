@@ -383,7 +383,11 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         frame.attackBatch=false;frame.spatial=null;frame.committed=false;frame.step=0;frame.simulationTick=simulationTick;
         frame.nativeStorm=com.iridium126.createmanaindustry.client.particles.engine.spatial.NativeStormSimulation.selected();
         this.scale=scale;
-        ParticleChainCapture.INSTANCE.beginRequested(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),committedGeneration+1,java.util.Map.of("input_generation",committedGeneration,"identity_epoch",gpu.identityEpoch(),"capacity",gpu.capacity()));
+        var capture = ParticleChainCapture.INSTANCE;
+        if (capture.requested()) {
+            capture.beginRequested(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),
+                    committedGeneration+1, java.util.Map.of("input_generation",committedGeneration,"identity_epoch",gpu.identityEpoch(),"capacity",gpu.capacity()));
+        }
         try {frame.hasWork=frame.input();return frame;}
         catch(RuntimeException|LinkageError failure){frame.close();throw failure;}
     }
@@ -639,7 +643,10 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         }
         public void simulate() {require(0);
             long updateFrame=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.renderFrameToken(),updateGeneration=committedGeneration+1;
-            ParticleChainCapture.INSTANCE.inputs(java.util.Map.of("dt",dt,"time",AllayStormRuntime.INSTANCE.timeSec(),"capacity",cap,"input_generation",committedGeneration,"identity_epoch",gpu.identityEpoch(),"previous_counter_slot",lastGoodSlot,"counter_slot",slot,"damage_count",damageCount,"frame_seed",frameSeed));
+            var capture = ParticleChainCapture.INSTANCE;
+            if (capture.active()) {
+                capture.inputs(java.util.Map.of("dt",dt,"time",AllayStormRuntime.INSTANCE.timeSec(),"capacity",cap,"input_generation",committedGeneration,"identity_epoch",gpu.identityEpoch(),"previous_counter_slot",lastGoodSlot,"counter_slot",slot,"damage_count",damageCount,"frame_seed",frameSeed));
+            }
             spatial=null;
             shadowInput=null;
             if(ModelShadowGroups.requested()){

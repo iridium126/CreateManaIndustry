@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.mixin.packages;
 
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.*;
+import com.iridium126.createmanaindustry.infrastructure.config.ExperimentalStartup;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorBlockEntity;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorPackage;
 import com.simibubi.create.content.contraptions.StructureTransform;
@@ -52,11 +53,11 @@ public abstract class ChainOwnershipContainersMixin implements PackageChainAcces
     // Server routing needs progress only. Resolve a logical position at transaction boundaries.
     @Redirect(method="tick",at=@At(value="INVOKE",target="Lcom/simibubi/create/content/kinetics/chainConveyor/ChainConveyorBlockEntity;updateBoxWorldPositions()V"))
     private void cmi$skipServerVisualPositions(ChainConveyorBlockEntity self){
-        if(self.getLevel()==null||self.getLevel().isClientSide)self.updateBoxWorldPositions();
+        if(!ExperimentalStartup.settings().serverPackages()||self.getLevel()==null||self.getLevel().isClientSide)self.updateBoxWorldPositions();
     }
     @Unique private void cmi$logicalPosition(ChainConveyorPackage box){
         var self=(ChainConveyorBlockEntity)(Object)this;
-        if(self.getLevel()==null||self.getLevel().isClientSide)return;
+        if(!ExperimentalStartup.settings().serverPackages()||self.getLevel()==null||self.getLevel().isClientSide)return;
         BlockPos connection=null;
         for(var entry:travellingPackages.entrySet())if(entry.getValue().contains(box)){connection=entry.getKey();break;}
         box.worldPosition=self.getPackagePosition(box.chainPosition,connection);

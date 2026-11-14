@@ -18,7 +18,7 @@ ext.cmiCoordinates = [
         patchouli: "vazkii.patchouli:Patchouli:${minecraft_version}-${patchouli_version}-NEOFORGE",
         clothConfig: "me.shedaniel.cloth:cloth-config-neoforge:${cloth_config_version}",
         architectury: "dev.architectury:architectury-neoforge:${architectury_version}",
-        kotlinForForge: "thedarkcolour:kotlinforforge-neoforge:${kotlin_for_forge_version}",
+        kotlinForForge: "curse.maven:kotlin-for-forge-351264:${kotlin_for_forge_file_id}",
         arsNouveau: "com.hollingsworth.ars_nouveau:ars_nouveau-${minecraft_version}:${ars_nouveau_version}",
         curios: "top.theillusivec4.curios:curios-neoforge:${curios_version}",
         geckolib: "software.bernie.geckolib:geckolib-neoforge-${minecraft_version}:${geckolib_version}",
@@ -83,7 +83,7 @@ def remapped = gradle.ext.cmiRemappedLibraries
 // published transitive mod dependencies must be suppressed to keep the development
 // runtime and the published module metadata identical to the pinned binaries.
 def firstPartyMaven = ['create', 'sable', 'sodium', 'caelus', 'patchouli', 'clothConfig',
-                       'architectury', 'kotlinForForge', 'arsNouveau', 'curios', 'geckolib',
+                       'architectury', 'arsNouveau', 'curios', 'geckolib',
                        'accessories', 'forgifiedFabricApi'] as Set
 def declare = { String scope, String key ->
     if (key in firstPartyMaven) {

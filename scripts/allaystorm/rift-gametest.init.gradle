@@ -20,9 +20,9 @@ gradle.projectsEvaluated {
     p.tasks.named(suite.processResourcesTaskName).configure { dependsOn(preset) }
     p.neoForge.runs.gameTestServer.logLevel = org.slf4j.event.Level.INFO
     ['riftFault','riftFaultMode','riftFaultVehicle'].each { key -> if(p.hasProperty(key))p.neoForge.runs.gameTestServer.systemProperty("cmi.test.${key}",p.property(key).toString()) }
+    def log = p.file("build/gametest/${runName}/logs/latest.log")
     p.tasks.named('runGameTestServer').configure {
         doLast {
-            def log = p.file("build/gametest/${runName}/logs/latest.log")
             if (!log.isFile() || !(log.text =~ /All \d+ required tests passed/).find())
                 throw new GradleException('Rift GameTest server did not report successful tests; inspect build/gametest/rift/logs/latest.log')
         }

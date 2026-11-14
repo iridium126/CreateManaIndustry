@@ -4,11 +4,15 @@ gradle.projectsEvaluated {
     p.apply from: p.file('scripts/testing/common.gradle')
     p.dependencies.add('localRuntime', p.cmiCoordinates.hexparse)
     p.dependencies.add('compileOnly', p.cmiCoordinates.kotlinStdlib)
-    p.configureCmiGameTests(name: 'hexal-jit', sources: 'src/test/gametest/hexjit/java', structure: 'hex_jit_test')
+    p.configureCmiGameTests(name: 'hexal-jit', sources: 'src/test/gametest/hexjit/java', structure: 'hex_jit_test',
+            serverConfig: '[experimental.hexJit]\nmode = "AUTO"\n')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.verbose', 'true')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.export', 'true')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.export.filter', 'at.petrak.hexcasting.*')
     p.neoForge.runs.gameTestServer.systemProperty('hexjit.jfr.dir', p.layout.buildDirectory.dir('hexjit-jfr').get().asFile.absolutePath)
     p.neoForge.runs.gameTestServer.systemProperty('hexjit.steadySamples', p.findProperty('hexjitSteadySamples') ?: '9')
     p.neoForge.runs.gameTestServer.systemProperty('hexjit.soundAblationSamples', p.findProperty('hexjitSoundAblationSamples') ?: '5')
+    if (p.hasProperty('hexjitWrapBenchmark')) {
+        p.neoForge.runs.gameTestServer.systemProperty('hexjit.wrapBenchmark', p.property('hexjitWrapBenchmark').toString())
+    }
 }

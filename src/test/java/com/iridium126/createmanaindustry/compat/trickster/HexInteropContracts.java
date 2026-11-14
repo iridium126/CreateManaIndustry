@@ -1,13 +1,11 @@
-package com.iridium126.createmanaindustry.compat.hextrick.bootstrap;
+package com.iridium126.createmanaindustry.compat.trickster;
 
 import java.util.List;
 import java.util.Map;
 import org.objectweb.asm.tree.ClassNode;
 
-/** Bootstrap-safe ABI contracts: inspect bytecode without loading either optional mod. */
-public final class HexInteropContracts {
-    public static final String HEX_VERSION = "0.12.0-devel-pre-64";
-    public static final String TRICKSTER_VERSION = "2.0.0-beta.56";
+/** Build-time ABI contracts for the resolved Hexcasting and Trickster dependencies. */
+final class HexInteropContracts {
     public static final Map<String, List<String>> METHODS = Map.of(
             "dev.enjarai.trickster.spell.execution.TickData", List.of("incrementExecutions()V", "isExecutionLimitReached()Z"),
             "dev.enjarai.trickster.spell.execution.executor.DefaultSpellExecutor", List.of(
@@ -28,8 +26,7 @@ public final class HexInteropContracts {
     public static void verify(String name, ClassNode target) {
         for (String signature : METHODS.getOrDefault(name, List.of())) {
             if (target.methods.stream().noneMatch(method -> (method.name + method.desc).equals(signature))) {
-                throw new IllegalStateException("CMI Hex/Trickster ABI mismatch: " + name + "." + signature
-                        + "; supported Hexcasting " + HEX_VERSION + ", Trickster " + TRICKSTER_VERSION);
+                throw new IllegalStateException("CMI Hex/Trickster ABI mismatch: " + name + "." + signature);
             }
         }
         if (name.equals("dev.enjarai.trickster.spell.execution.TickData")

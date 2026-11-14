@@ -3,6 +3,12 @@ package com.iridium126.createmanaindustry.mixin.allvr;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensionLimits;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubeMap;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrEntitySectionManagerDuck;
+import com.iridium126.createmanaindustry.dimension.cube.AllvrEntityManagerAccess;
+import com.iridium126.createmanaindustry.dimension.cube.AllvrEntitySectionStorage;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import it.unimi.dsi.fastutil.longs.Long2ObjectFunction;
+import java.util.stream.Stream;
 import it.unimi.dsi.fastutil.longs.LongSet;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -11,6 +17,7 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.entity.EntityLookup;
+import net.minecraft.world.level.entity.EntityAccess;
 import net.minecraft.world.level.entity.EntitySection;
 import net.minecraft.world.level.entity.EntitySectionStorage;
 import net.minecraft.world.level.entity.LevelCallback;
@@ -19,6 +26,7 @@ import net.minecraft.world.level.entity.Visibility;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
 
 /**
  * Adds the missing Y-aware visibility transition for cube entity sections.
@@ -28,7 +36,7 @@ import org.spongepowered.asm.mixin.Shadow;
  */
 @Mixin(PersistentEntitySectionManager.class)
 public abstract class AllvrPersistentEntitySectionManagerMixin
-    implements AllvrEntitySectionManagerDuck {
+    implements AllvrEntitySectionManagerDuck, AllvrEntityManagerAccess {
 
     @Shadow @Final private EntitySectionStorage<Entity> sectionStorage;
     @Shadow @Final LevelCallback<Entity> callbacks;
@@ -39,10 +47,54 @@ public abstract class AllvrPersistentEntitySectionManagerMixin
     @org.spongepowered.asm.mixin.Unique private long allvr$lastRevision = Long.MIN_VALUE;
     @Shadow protected abstract void ensureChunkQueuedForLoad(long key);
     @Shadow protected abstract boolean storeChunkSections(long key, java.util.function.Consumer<Entity> consumer);
+
+    @Override public AllvrEntitySectionStorage<Entity> allvr$sections() {
+        return (AllvrEntitySectionStorage<Entity>) sectionStorage;
+    }
+
+    @WrapOperation(method = "<init>", at = @At(value = "NEW", target = "net/minecraft/world/level/entity/EntitySectionStorage"))
+    private <T extends EntityAccess> EntitySectionStorage<T> allvr$storage(Class<T> type,
+            Long2ObjectFunction<Visibility> visibility, Operation<EntitySectionStorage<T>> original) {
+        return new AllvrEntitySectionStorage<>(type, visibility);
+    }
+
+    @WrapOperation(method = "addEntityWithoutEvent(Lnet/minecraft/world/level/entity/EntityAccess;Z)Z",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/core/SectionPos;asLong(Lnet/minecraft/core/BlockPos;)J"))
+    private long allvr$sectionKey(BlockPos pos, Operation<Long> original) {
+        var sections = allvr$sections();
+        return sections.enabled() ? sections.key(pos) : original.call(pos);
+    }
+
+    @WrapOperation(method = "updateChunkStatus(Lnet/minecraft/world/level/ChunkPos;Lnet/minecraft/world/level/entity/Visibility;)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/entity/EntitySectionStorage;getExistingSectionsInChunk(J)Ljava/util/stream/Stream;"))
+    private Stream<EntitySection<Entity>> allvr$nativeSections(EntitySectionStorage<Entity> storage, long column,
+            Operation<Stream<EntitySection<Entity>>> original) {
+        var sections = allvr$sections();
+        return sections.enabled() ? sections.nativeSectionsInChunk(column) : original.call(storage, column);
+    }
+
+    @WrapOperation(method = "lambda$dumpSections$16(Lnet/minecraft/util/CsvOutput;Lnet/minecraft/world/level/entity/PersistentEntitySectionManager$ChunkLoadStatus;J)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/core/SectionPos;x(J)I"))
+    private int allvr$dumpX(long key, Operation<Integer> original) {
+        return allvr$sections().enabled() ? allvr$coordinate(key).x() : original.call(key);
+    }
+
+    @WrapOperation(method = "lambda$dumpSections$16(Lnet/minecraft/util/CsvOutput;Lnet/minecraft/world/level/entity/PersistentEntitySectionManager$ChunkLoadStatus;J)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/core/SectionPos;y(J)I"))
+    private int allvr$dumpY(long key, Operation<Integer> original) {
+        return allvr$sections().enabled() ? allvr$coordinate(key).y() : original.call(key);
+    }
+
+    @WrapOperation(method = "lambda$dumpSections$16(Lnet/minecraft/util/CsvOutput;Lnet/minecraft/world/level/entity/PersistentEntitySectionManager$ChunkLoadStatus;J)V",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/core/SectionPos;z(J)I"))
+    private int allvr$dumpZ(long key, Operation<Integer> original) {
+        return allvr$sections().enabled() ? allvr$coordinate(key).z() : original.call(key);
+    }
+
     @Override public void allvr$requestEntityColumn(long key) { ensureChunkQueuedForLoad(key); }
     @org.spongepowered.asm.mixin.Unique
     private com.iridium126.createmanaindustry.dimension.cube.AllvrSectionCoord allvr$coordinate(long key) {
-        return ((com.iridium126.createmanaindustry.dimension.cube.AllvrEntitySectionStorage<?>) sectionStorage).coordinate(key);
+        return allvr$sections().coordinate(key);
     }
     @org.spongepowered.asm.mixin.injection.Inject(method = "processChunkUnload", at = @org.spongepowered.asm.mixin.injection.At("HEAD"), cancellable = true)
     private void allvr$keepResidentEntities(long key, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {

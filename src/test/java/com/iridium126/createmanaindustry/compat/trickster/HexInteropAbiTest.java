@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.compat.trickster;
 
-import com.iridium126.createmanaindustry.compat.hextrick.bootstrap.HexInteropContracts;
 import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
@@ -42,6 +41,6 @@ class HexInteropAbiTest {
         var failure = assertThrows(IllegalStateException.class,
                 () -> HexInteropContracts.verify("dev.enjarai.trickster.spell.execution.TickData", missing));
         assertTrue(failure.getMessage().contains("ABI mismatch"));
-        assertTrue(failure.getMessage().contains(HexInteropContracts.TRICKSTER_VERSION));
+        assertTrue(failure.getMessage().contains("TickData.incrementExecutions()V"));
     }
 }

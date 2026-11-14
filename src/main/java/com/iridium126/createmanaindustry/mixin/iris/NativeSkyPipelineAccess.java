@@ -1,10 +1,8 @@
 package com.iridium126.createmanaindustry.mixin.iris;
 
-import com.google.common.collect.ImmutableSet;
 import net.irisshaders.iris.pipeline.IrisRenderingPipeline;
 import net.irisshaders.iris.pipeline.CustomTextureManager;
 import net.irisshaders.iris.targets.RenderTargets;
-import net.irisshaders.iris.gl.buffer.ShaderStorageBufferHolder;
 import net.irisshaders.iris.gl.image.GlImage;
 import net.irisshaders.iris.shadows.ShadowRenderTargets;
 import org.spongepowered.asm.mixin.Mixin;
@@ -19,6 +17,4 @@ public interface NativeSkyPipelineAccess {
     @Accessor("customTextureManager") CustomTextureManager cmi$textures();
     @Accessor("shadowTargetsSupplier") Supplier<ShadowRenderTargets> cmi$shadows();
     @Accessor("customImages") Set<GlImage> cmi$images();
-    @Accessor("shaderStorageBufferHolder") ShaderStorageBufferHolder cmi$buffers();
-    @Accessor("flippedAfterPrepare") ImmutableSet<Integer> cmi$sourceFlips();
 }

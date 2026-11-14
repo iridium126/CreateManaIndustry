@@ -102,6 +102,9 @@ public final class CMIParticleCommand {
                                 .then(Commands.argument("amount",IntegerArgumentType.integer(0,131072)).executes(ctx->{
                                     if(!engine(ctx))return 0;
                                     int n=IntegerArgumentType.getInteger(ctx,"amount");
+                                    if(n>0 && !ClientConfig.packageGpuAuthority) {
+                                        tell(ctx,"Enable experimental GPU packages in the client config and restart.");return 0;
+                                    }
                                     if(n>0 && dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()
                                             && (!com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE
                                             || !com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.prepare())) {
@@ -121,6 +124,9 @@ public final class CMIParticleCommand {
                         .then(Commands.literal("packagecollision")
                                 .executes(ctx->{tell(ctx,com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime.report());return 1;})
                                 .then(Commands.literal("capture").executes(ctx->{
+                                    if (!ClientConfig.packageGpuAuthority) {
+                                        tell(ctx,"Enable experimental GPU packages in the client config and restart.");return 0;
+                                    }
                                     var mc=net.minecraft.client.Minecraft.getInstance();
                                     if(mc.level==null || mc.player==null)return 0;
                                     var runtime=com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime.forLevel(mc.level);
@@ -137,7 +143,13 @@ public final class CMIParticleCommand {
                                 .then(Commands.literal("hardware").then(Commands.literal("status").executes(ctx->{
                                     for(String line:com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.status().split("\n"))tell(ctx,line);return 1;
                                 })))
-                                .then(Commands.literal("frames").then(Commands.argument("seconds",IntegerArgumentType.integer(1,900)).executes(ctx->{
+                                .then(Commands.literal("frames")
+                                        .then(Commands.literal("cancel").executes(ctx -> {
+                                            boolean cancelled = com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.cancel();
+                                            tell(ctx, cancelled ? "Frame capture cancelled." : "No frame capture to cancel.");
+                                            return cancelled ? Command.SINGLE_SUCCESS : 0;
+                                        }))
+                                        .then(Commands.argument("seconds",IntegerArgumentType.integer(1,900)).executes(ctx->{
                                     boolean queued=com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.request(IntegerArgumentType.getInteger(ctx,"seconds"));
                                     tell(ctx,queued?"Whole-client frame capture queued; close menus and keep the scene/settings fixed. Results: logs/cmi-particle-frames":"A frame capture is already pending.");return queued?1:0;
                                 })))

@@ -6,6 +6,7 @@ import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexActions;
 import com.iridium126.createmanaindustry.compat.hexcasting.CMISlatePatternRecipes;
 import com.iridium126.createmanaindustry.compat.trickster.CMITricks;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ExperimentalStartup;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.iridium126.createmanaindustry.content.burner.AllayBurnerBlock;
 import com.iridium126.createmanaindustry.infrastructure.data.CMIRegistrate;
@@ -86,8 +87,8 @@ public class CreateManaIndustry {
         HEX_ACTIVE = ModList.get().isLoaded("hexcasting");
         VEIL_ACTIVE = ModList.get().isLoaded("veil");
         ARS_ACTIVE = ModList.get().isLoaded("ars_nouveau");
-        IRISVEIL_ACTIVE = ModList.get().isLoaded("irisveil");
         IRIS_ACTIVE = ModList.get().isLoaded("iris");
+        IRISVEIL_ACTIVE = IRIS_ACTIVE && ModList.get().isLoaded("irisveil");
 
         REGISTRATE.registerEventListeners(modEventBus);
         com.iridium126.createmanaindustry.dimension.gen.markov.MarkovTreeFeature.register(modEventBus);
@@ -142,14 +143,14 @@ public class CreateManaIndustry {
         // the client-only rendering config. ServerConfig.build() must run after
         // block registration so the stress defaults are populated.
         ServerConfig.build();
-        modContainer.registerConfig(ModConfig.Type.SERVER, ServerConfig.SPEC);
-        if (HEX_ACTIVE) {
+        modContainer.registerConfig(ModConfig.Type.SERVER, ServerConfig.SPEC, ExperimentalStartup.SERVER_FILE);
+        if (HEX_ACTIVE && ExperimentalStartup.settings().hexJitMode() != ServerConfig.HexJitMode.OFF) {
             com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime.register(modEventBus);
         }
         BlockStressValues.IMPACTS.registerProvider(ServerConfig::getImpact);
         BlockStressValues.CAPACITIES.registerProvider(ServerConfig::getCapacity);
 
-        modContainer.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC, ExperimentalStartup.CLIENT_FILE);
     }
 
     public static ResourceLocation modLoc(String path) {

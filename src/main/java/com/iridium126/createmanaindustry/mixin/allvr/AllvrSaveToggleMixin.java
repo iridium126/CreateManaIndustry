@@ -11,7 +11,8 @@ import org.spongepowered.asm.mixin.injection.At;
 
 @Mixin({SaveOnCommand.class, SaveOffCommand.class})
 public abstract class AllvrSaveToggleMixin {
-    @WrapOperation(method = "*", at = @At(value = "FIELD", target = "Lnet/minecraft/server/level/ServerLevel;noSave:Z", opcode = Opcodes.PUTFIELD))
+    @WrapOperation(method = "lambda$register$2(Lcom/mojang/brigadier/context/CommandContext;)I",
+            at = @At(value = "FIELD", target = "Lnet/minecraft/server/level/ServerLevel;noSave:Z", opcode = Opcodes.PUTFIELD))
     private static void allvr$saveBarrier(ServerLevel level, boolean noSave, Operation<Void> original) {
         original.call(level, noSave);
         var map = ((AllvrServerLevelDuck) level).allvr$peekCubeMap();

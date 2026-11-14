@@ -35,13 +35,13 @@ import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.JitCompatibility;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.PatternIotaLoopDispatchAccess;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import java.util.List;
 import java.util.Objects;
 import net.minecraft.resources.ResourceKey;
 import org.jetbrains.annotations.NotNull;
-import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
@@ -78,22 +78,23 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
      * Mirrors Hexcasting pre-64 lookup semantics while resolving the display name only on mishap.
      * The upstream method allocates a capturing Supplier for every successful normal pattern.
      */
-    @Overwrite
-    private @NotNull CastResult lookupAndOperate(CastingVM vm, SpellContinuation continuation, boolean inParens) {
+    @WrapMethod(method = "lookupAndOperate")
+    private @NotNull CastResult cmi$lookupAndOperate(CastingVM vm, SpellContinuation continuation, boolean inParens,
+            Operation<CastResult> original) throws Throwable {
+        if (ServerConfig.hexJitMode != ServerConfig.HexJitMode.AUTO || !HexJitRuntime.onServerThread()
+                || !JitCompatibility.ready()) {
+            return original.call(vm, continuation, inParens);
+        }
         PatternIota self = (PatternIota) (Object) this;
         ResourceKey<ActionRegistryEntry> castedKey = null;
         at.petrak.hexcasting.api.casting.castables.SpecialHandler castedHandler = null;
         boolean reqsEnlightenment = false;
         try {
-            boolean onHexJitServerThread = ServerConfig.hexJitMode != ServerConfig.HexJitMode.OFF
-                    && HexJitRuntime.onServerThread();
-            ExecutionScope lookupScope = onHexJitServerThread
-                    ? ExecutionScope.currentOnServerThread() : null;
+            ExecutionScope lookupScope = ExecutionScope.currentOnServerThread();
             long lookupEpoch = lookupScope == null
                     ? HexJitRuntime.generation() : lookupScope.registryGeneration();
             boolean canCachePatternLookup = lookupScope == null
-                    ? ServerConfig.hexJitMode != ServerConfig.HexJitMode.OFF
-                    && onHexJitServerThread && JitCompatibility.specialHandlerLookupReady()
+                    ? JitCompatibility.specialHandlerLookupReady()
                     : lookupScope.patternLookupEnabled();
             boolean cacheNormalPattern = lookupScope == null
                     ? ServerConfig.hexJitCacheNormalPatternLookup
@@ -213,10 +214,14 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
             IOperationResult result;
             ResolvedPatternType resolutionType;
             if (inParens) {
-                result = action.operateInParens(vm.getEnv(), vm.getImage(), continuation, self);
+                CompiledCall code = cmi$compiledCall(action, true);
+                result = code == null ? action.operateInParens(vm.getEnv(), vm.getImage(), continuation, self)
+                        : (ParenthesizedOperationResult) code.call(action, vm.getEnv(), vm.getImage(), continuation, self);
                 resolutionType = ((ParenthesizedOperationResult) result).getResolutionType();
             } else {
-                result = action.operate(vm.getEnv(), vm.getImage(), continuation);
+                CompiledCall code = cmi$compiledCall(action, false);
+                result = code == null ? action.operate(vm.getEnv(), vm.getImage(), continuation)
+                        : (OperationResult) code.call(action, vm.getEnv(), vm.getImage(), continuation, null);
                 resolutionType = ResolvedPatternType.EVALUATED;
             }
 
@@ -236,6 +241,16 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
         }
     }
 
+    @org.spongepowered.asm.mixin.Unique
+    private static CompiledCall cmi$compiledCall(Action action, boolean inParens) {
+        if (ServerConfig.hexJitMode == ServerConfig.HexJitMode.OFF) return null;
+        boolean compileActions = ServerConfig.hexJitCompileActions
+                || ServerConfig.hexJitMode == ServerConfig.HexJitMode.PROFILE;
+        CompiledCall code = compileActions ? ActionSites.acquire(action, inParens) : null;
+        if (code != null) ExecutionScope.markCompiled();
+        return code;
+    }
+
     @WrapOperation(method = "lookupAndOperate", at = @At(value = "INVOKE", target =
             "Lat/petrak/hexcasting/api/casting/castables/Action;operate(" +
                     "Lat/petrak/hexcasting/api/casting/eval/CastingEnvironment;" +
@@ -244,11 +259,8 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
                     "Lat/petrak/hexcasting/api/casting/eval/OperationResult;"))
     private OperationResult cmi$operate(Action action, CastingEnvironment env, CastingImage image,
                                         SpellContinuation continuation, Operation<OperationResult> original) throws Throwable {
-        boolean compileActions = ServerConfig.hexJitCompileActions
-                || ServerConfig.hexJitMode == ServerConfig.HexJitMode.PROFILE;
-        CompiledCall code = compileActions ? ActionSites.acquire(action, false) : null;
+        CompiledCall code = cmi$compiledCall(action, false);
         if (code == null) return original.call(action, env, image, continuation);
-        ExecutionScope.markCompiled();
         return (OperationResult) code.call(action, env, image, continuation, null);
     }
 
@@ -263,11 +275,8 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
                                                               CastingImage image, SpellContinuation continuation,
                                                               Iota iota,
                                                               Operation<ParenthesizedOperationResult> original) throws Throwable {
-        boolean compileActions = ServerConfig.hexJitCompileActions
-                || ServerConfig.hexJitMode == ServerConfig.HexJitMode.PROFILE;
-        CompiledCall code = compileActions ? ActionSites.acquire(action, true) : null;
+        CompiledCall code = cmi$compiledCall(action, true);
         if (code == null) return original.call(action, env, image, continuation, iota);
-        ExecutionScope.markCompiled();
         return (ParenthesizedOperationResult) code.call(action, env, image, continuation, iota);
     }
 }

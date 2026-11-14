@@ -1,10 +1,10 @@
-"""Validate schema-3 full GPU command captures; never upgrade old snapshots."""
+"""Validate full GPU command captures and their resource bindings."""
 import argparse,hashlib,json
 from pathlib import Path
 
 def load(directory):
     root=Path(directory).resolve();data=json.loads((root/'manifest.json').read_text())
-    if data.get('schema')!=3 or data.get('kind')!='gpu-command-chain' or data.get('complete') is not True or data.get('failure_reason'):
+    if data.get('schema') not in (3,4) or data.get('kind')!='gpu-command-chain' or data.get('complete') is not True or data.get('failure_reason'):
         raise ValueError('incomplete full-chain capture; old update snapshots are not a full chain')
     if data.get('storage_bytes',2**63)>512*1024**2 or data.get('byte_order')!='little-endian':raise ValueError('capture budget/byte-order mismatch')
     for name,expected in data['sha256'].items():
@@ -53,6 +53,11 @@ def load(directory):
             if d['program'] not in data['programs']:raise ValueError('unknown dispatch program')
             for binding in d['ssbo'].values():
                 if binding['buffer']!='none':span(binding['buffer'],binding['offset'],binding['bytes'] or buffer(binding['buffer']))
+            if data['schema'] == 4:
+                for binding in d['uniform_blocks'].values():
+                    if binding['slot'] < 0 or binding['bytes'] <= 0:
+                        raise ValueError('uniform block binding')
+                    span(binding['buffer'], binding['offset'], binding['bytes'])
             for image in d['images'].values():
                 if image['texture']!='none' and image['texture'] not in resources:raise ValueError('image resource missing')
             if op=='dispatch-indirect':span(e['indirect'],a[0],12)

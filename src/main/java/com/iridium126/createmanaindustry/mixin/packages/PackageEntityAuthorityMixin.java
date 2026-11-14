@@ -30,7 +30,12 @@ public abstract class PackageEntityAuthorityMixin extends net.minecraft.world.en
     @Inject(method="readAdditionalSaveData",at=@At("TAIL"))
     private void cmi$readNativeState(CompoundTag tag,CallbackInfo ci){
         if(tag.contains("CMIPackageInsertionDelay"))((PackageEntity)(Object)this).insertionDelay=Math.max(0,tag.getInt("CMIPackageInsertionDelay"));
-        cmi$tossedBy(tag.hasUUID("CMIPackageTossedBy")?tag.getUUID("CMIPackageTossedBy"):null);
+        var persistent = ((PackageEntity) (Object) this).getPersistentData();
+        if (tag.hasUUID("CMIPackageTossedBy")) {
+            cmi$tossedBy(tag.getUUID("CMIPackageTossedBy"));
+        } else {
+            cmi$tossedBy(persistent.hasUUID("CMIPackageTossedBy") ? persistent.getUUID("CMIPackageTossedBy") : null);
+        }
     }
     @Inject(method="tick",at=@At("HEAD"))
     private void cmi$resolveThrower(CallbackInfo ci){if(cmi$tossedById!=null&&((PackageEntity)(Object)this).tossedBy.get()==null)cmi$tossedBy(cmi$tossedById);}

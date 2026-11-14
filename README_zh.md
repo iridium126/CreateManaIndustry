@@ -78,11 +78,22 @@ NeoForge 会在配置目录中生成 `createmanaindustry-server.toml` 与 `creat
 | `mist.mistMaxRadius` | 16 | 雾化器的最大雾场半径（格） |
 | `mist.mistFluidPerTick` | 8 | 256 RPM 时雾化器的基础流体消耗（mB/tick） |
 | `mist.condenseEfficiency` | 5.0 | 每浓度单位每 tick 的冷凝基础产量（mB） |
-| `hexcasting.jit.mode` | `AUTO` | Hex JIT 模式：`OFF`、`PROFILE` 或 `AUTO` |
 
-服务端配置还包括悦灵燃烧室燃料、Hexcasting 物品容量和悦灵风暴行为。客户端配置控制雾场辉光、GPU 粒子上限与限流、咒法学粒子重定向和 ALLVR LOD。GPU 包裹权威模拟在客户端和服务端均默认关闭。
+服务端配置还包括悦灵燃烧室燃料、Hexcasting 物品容量和悦灵风暴行为。客户端配置控制雾场辉光、GPU 粒子上限与限流、咒法学粒子重定向和 ALLVR LOD。
+
+实验开关在 Mixin 加载前从实例的 `config/` 目录读取。修改后需完整重启游戏或专用服务器。存档的 `serverconfig/` 仍可覆盖预算、阈值等调优项。
+
+| `config/` 下的文件 | 实验开关 | 默认值 |
+|---|---|---|
+| `createmanaindustry-server.toml` | `experimental.gpuPackages.enabled` | `false` |
+| `createmanaindustry-server.toml` | `experimental.hexJit.mode` | `OFF` |
+| `createmanaindustry-client.toml` | `experimental.gpuPackages.enabled` | `false` |
+
+Hex JIT 使用 `PROFILE` 采集运行数据，使用 `AUTO` 启用编译。GPU 包裹需要服务端启用，并有已启用且资源就绪的客户端。关闭服务端开关后，存档中的轻量包裹会在区块加载时恢复为 Create 原生包裹。升级后请显式设置新键以重新启用。
 
 已有世界里的 CMI Tick 加速图案不会自动迁移。请安装 Hexal，并按其 `hexal:tick` 图案重新绘制。
+
+诊断命令在当前客户端生效。`/cmi particle profile frames <秒数>` 采集整帧和渲染阶段耗时，`/cmi particle profile frames cancel` 取消采集，`/cmi particle profile capture <名称>` 抓取 GPU 命令。`/cmi particle shaderpack stormcloud profile on` 和 `off` 分别启停云阶段计时。客户端预置必要的帧边界钩子，采样会话按需创建 GPU 查询。
 
 ## 构建
 
@@ -94,11 +105,13 @@ bash ./gradlew build
 
 Windows 下使用 `.\gradlew.bat`。已有 Hexal 源码仓库时，可传入 `-Phexal_checkout=<路径>`。可安装的模组文件生成于 `build/libs/createmanaindustry-<版本>.jar`。开发运行使用的 bootstrap 专用 jar 位于 `build/internal/`，不需要作为独立文件安装。
 
-安装 Connector 时，内置的早期启动服务会识别并修补经过验证的 Trickster `2.0.0-beta.56`，确保在 Connector 扫描 Fabric 模组前完成处理。服务会校验目标类哈希，将原文件以 `.jar.backup` 后缀保存在旁边；不认识或已修改过的 jar 会保持原样。在开发运行中，Gradle 会在启动前把 Trickster 依赖复制到 `run/mods/`，供同一服务处理。
+安装 Connector 时，内置的早期启动服务会在 Connector 扫描 Fabric 模组前校验 Trickster 目标类的哈希。匹配后应用补丁，并将原文件以 `.jar.backup` 后缀保存在旁边。在开发运行中，Gradle 会在启动前把 Trickster 依赖复制到 `run/mods/`，供同一服务处理。
 
 ## 开发文档
 
 开发文档索引、实现状态和已知缺口见 [docs/README.md](./docs/README.md)，内容涵盖 GPU 粒子与包裹、ALLVR、悦灵风暴和着色包集成。
+
+Mixin 统一在 `neoforge.mods.toml` 注册，模组运行时版本范围也在此维护。两份清单共用插件，Hex JIT 单独保留低优先级。功能组归属和验证命令见 [Mixin 维护检查](./docs/testing.md#mixin-维护检查)。
 
 ## 许可证
 

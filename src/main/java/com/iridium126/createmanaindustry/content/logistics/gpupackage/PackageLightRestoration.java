@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.content.logistics.gpupackage;
 
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.simibubi.create.content.logistics.box.PackageEntity;
+import java.lang.ref.WeakReference;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import net.minecraft.nbt.*;
@@ -50,8 +51,22 @@ final class PackageLightRestoration {
         entity.setHealth(entry.health);entity.setRemainingFireTicks(entry.fireTicks);entity.setPortalCooldown(entry.portalCooldown);
         entity.removeEffect(net.minecraft.world.effect.MobEffects.WITHER);
         var wither=PackageLightWither.current(entry);if(wither!=null)entity.addEffect(PackageLightWither.copy(wither));
-        entity.tickCount=entry.environmentMotion.age();entity.insertionDelay=entry.insertionDelay;((PackageInitialEntityAccess)entity).cmi$tossedBy(entry.tossedBy);
-        var motion=entry.environmentMotion;((PackageInitialEntityAccess)entity).cmi$stuckMultiplier(new net.minecraft.world.phys.Vec3(motion.stuckX(),motion.stuckY(),motion.stuckZ()));
+        var motion = entry.environmentMotion;
+        entity.tickCount = motion.age();
+        entity.insertionDelay = entry.insertionDelay;
+        if (entity instanceof PackageInitialEntityAccess access) {
+            access.cmi$tossedBy(entry.tossedBy);
+            access.cmi$stuckMultiplier(new net.minecraft.world.phys.Vec3(motion.stuckX(), motion.stuckY(), motion.stuckZ()));
+        } else {
+            entity.tossedBy = new WeakReference<>(entry.tossedBy == null ? null : level.getPlayerByUUID(entry.tossedBy));
+            if (entry.tossedBy != null) entity.getPersistentData().putUUID("CMIPackageTossedBy", entry.tossedBy);
+            if (motion.stuckX() != 0 || motion.stuckY() != 0 || motion.stuckZ() != 0) {
+                var position = net.minecraft.core.BlockPos.containing(entry.position());
+                entity.makeStuckInBlock(level.getBlockState(position),
+                        new net.minecraft.world.phys.Vec3(motion.stuckX(), motion.stuckY(), motion.stuckZ()));
+                entity.fallDistance = motion.fallDistance();
+            }
+        }
         if(entry.pendingPortal!=null){
             var portal=entry.pendingPortalType==1?net.minecraft.world.level.block.Blocks.NETHER_PORTAL:entry.pendingPortalType==2?net.minecraft.world.level.block.Blocks.END_PORTAL:net.minecraft.world.level.block.Blocks.END_GATEWAY;
             entity.portalProcess=new net.minecraft.world.entity.PortalProcessor((net.minecraft.world.level.block.Portal)portal,entry.pendingPortal);

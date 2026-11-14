@@ -241,6 +241,7 @@ public final class ExecutionScope implements AutoCloseable {
     private long loopTickBatchFolds;
     private long foldedBuddingAmethystActions;
     private long foldedBuddingAmethystTickCalls;
+    private long actualRandomTicks;
     private boolean loopTickDispatchActive;
     private boolean previousLoopTickDispatchWasTick;
     private boolean foldedLoopTickEffectPending;
@@ -253,6 +254,7 @@ public final class ExecutionScope implements AutoCloseable {
     private static long lastLoopTickBatchFolds;
     private static long lastFoldedBuddingAmethystActions;
     private static long lastFoldedBuddingAmethystTickCalls;
+    private static long lastActualRandomTicks;
     private Level cachedBuddingStateLevel;
     private BlockPos cachedBuddingStatePos;
     private BlockState cachedBuddingState;
@@ -948,6 +950,8 @@ public final class ExecutionScope implements AutoCloseable {
     public static long lastFoldedBuddingAmethystActions() { return lastFoldedBuddingAmethystActions; }
     public void recordFoldedBuddingAmethystTick() { if (collectMetrics) foldedBuddingAmethystTickCalls++; }
     public static long lastFoldedBuddingAmethystTickCalls() { return lastFoldedBuddingAmethystTickCalls; }
+    void recordRandomTick() { if (collectMetrics) actualRandomTicks++; }
+    public static long lastActualRandomTicks() { return lastActualRandomTicks; }
 
     /** Mark exactly the next AttemptSpell as the already prepared folded loop Tick. */
     public void beginFoldedLoopTickEffect() { foldedLoopTickEffectPending = true; }
@@ -1373,6 +1377,7 @@ public final class ExecutionScope implements AutoCloseable {
                 lastLoopTickBatchFolds = collectMetrics ? loopTickBatchFolds : 0;
                 lastFoldedBuddingAmethystActions = collectMetrics ? foldedBuddingAmethystActions : 0;
                 lastFoldedBuddingAmethystTickCalls = collectMetrics ? foldedBuddingAmethystTickCalls : 0;
+                lastActualRandomTicks = actualRandomTicks;
                 lastSpendMediaTriggerCacheHits = collectMetrics ? spendMediaTriggerCacheHits : 0;
                 lastTickSubstackValidationSkips = collectMetrics ? tickSubstackValidationSkips : 0;
                 lastLoopTickActionPrecheckHits = collectMetrics ? loopTickActionPrecheckHits : 0;
@@ -1396,6 +1401,7 @@ public final class ExecutionScope implements AutoCloseable {
                 lastTickStackPopCacheHits = collectMetrics ? tickStackPopCacheHits : 0;
                 lastTickRangeCheckCacheHits = collectMetrics ? tickRangeCheckCacheHits : 0;
             } else {
+                previous.actualRandomTicks += actualRandomTicks;
                 previous.foldedTickCounterFastUpdates += foldedTickCounterFastUpdates;
                 previous.tickStackPopCacheHits += tickStackPopCacheHits;
                 previous.tickRangeCheckCacheHits += tickRangeCheckCacheHits;

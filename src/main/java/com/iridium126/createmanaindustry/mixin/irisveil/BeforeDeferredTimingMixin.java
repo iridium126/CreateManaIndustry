@@ -4,12 +4,11 @@ import com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameSt
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Pseudo;
+import top.leonx.irisveil.compat.iris.BeforeDeferredWorldRenderers;
 
-@Pseudo
-@Mixin(targets="top.leonx.irisveil.compat.iris.BeforeDeferredWorldRenderers$Frame",remap=false)
+@Mixin(value = BeforeDeferredWorldRenderers.Frame.class, remap = false)
 public abstract class BeforeDeferredTimingMixin {
-    @WrapMethod(method="renderCallbacks",require=0)
+    @WrapMethod(method = "renderCallbacks()V")
     private void cmi$callbacks(Operation<Void> original){
         var scope=ParticleFrameStages.begin("irisveil.before-deferred.callbacks");boolean success=false;
         try{original.call();success=true;}finally{if(scope!=null)scope.end(success);}

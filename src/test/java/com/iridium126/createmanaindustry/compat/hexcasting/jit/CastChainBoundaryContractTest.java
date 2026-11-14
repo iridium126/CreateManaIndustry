@@ -26,7 +26,7 @@ class CastChainBoundaryContractTest {
         }
     }
     @Test void unknownForeignExecutionMixinsRemainRejected() throws Exception {
-        var type = Class.forName("com.iridium126.createmanaindustry.mixin.hexjit.HexJitMixinPlugin$FinalVerifier");
+        var type = Class.forName("com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitMixinChecks$FinalVerifier");
         var constructor = type.getDeclaredConstructor(); constructor.setAccessible(true);
         var verifier = constructor.newInstance();
         var foreign = type.getDeclaredMethod("foreign", List.class); foreign.setAccessible(true);

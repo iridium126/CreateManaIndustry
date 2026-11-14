@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value=ProgramSet.class,remap=false)
-public class PackageProgramSetMixin implements CMIPackageProgramSet {
+public class SharedShaderProgramSetMixin implements CMIPackageProgramSet {
     @Unique private ShaderProperties cmi$packageProperties;
     @Inject(method="<init>",at=@At("TAIL"))
     private void cmi$capturePackageProperties(AbsolutePackPath directory,Function<AbsolutePackPath,String> sources,

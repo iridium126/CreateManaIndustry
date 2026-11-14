@@ -42,6 +42,7 @@
 | 大范围碰撞 | `scripts/collision/gametest.init.gradle` | 无 |
 | HexParse | `scripts/hexparse/gametest.init.gradle` | 缺席用 `scripts/hexparse/absent.init.gradle` |
 | Hex JIT 与 Hexal Tick | `scripts/hexjit/gametest.init.gradle` | 正确性子集追加 `-I scripts/hexjit/regression.init.gradle` |
+| 实验开关与跨进程恢复 | `scripts/testing/experimental-startup.init.gradle` | `-PexperimentPhase=default\|off\|profile\|auto\|save\|restore`。先运行 `save`，然后运行 `restore` 两次 |
 | Allay Storm | `scripts/allaystorm/gametest.init.gradle` | 可选 `-PdomeEvidence=<生产GPU证据JSON>`；见 [验证说明](allay-storm-validation.md) |
 | ALLVR 世界生成 | `scripts/allvr-worldgen-test.init.gradle` | 先运行 `scripts/prepare-allvr-worldgen-test.py`；可选 `-PallvrTestPack=terralith` |
 | Sanctuary/Epic Redwood | `scripts/sanctuary-test.init.gradle` / `scripts/epic-redwood-test.init.gradle` | 先准备 vanilla 世界生成夹具 |
@@ -49,6 +50,17 @@
 | YSM | `scripts/ysm/gametest.init.gradle` | 本地 YSM 运行时及模型；见 [YSM 验证](../scripts/ysm/README.md) |
 
 一次运行选择一个 GameTest 套件。运行目录为 `build/gametest/<套件>/`；生成的结构在相邻 `<套件>-resources/`。世界生成及模型夹具由对应准备脚本生成，缺席探针保留各自依赖控制。
+
+实验开关的集成服务器探针使用默认实验 GameTest 生成的存档。运行 `runClient -I scripts/testing/experimental-client.init.gradle -PexperimentClientSide=client` 和 `-PexperimentClientSide=server`，分别验证只启用一侧时实际加载的 Mixin。
+
+## Mixin 维护检查
+
+- 在 `neoforge.mods.toml` 声明清单和运行时版本范围。按物理侧维护常规和低优先级 Hex JIT 清单，两份清单共用 `CMIMixinPlugin`。`MixinGroups` 按包声明可选依赖和启动开关。跨功能注入使用明确的类名规则，例如 Iris 的 Hex 图案钩子同时需要 Iris 和 Hexcasting。运行 `build` 检查重复注册、漏注册、物理侧和开关。
+- 优先用等价的 API 或事件。保留需要私有渲染目标、帧内准确边界或跨存档事务顺序的注入。新增注入时，用确切的描述符和必要的匹配次数，让 NeoForge 报告应用失败。ALLVR 实体管理器分别定位持久和临时管理器的注册与列可见性路径。Hex JIT 按字节码和行为合同决定快路径可用性。
+- 在集成探针命令上加 `-PexperimentDiagnostics`，验证同一进程内启动、重复请求、取消和退出。需要 Iris 与 IrisVeil 阶段样本时，再传 `-PexperimentDiagnosticShaderPack=<本地 ZIP 路径>`。整帧采集保留 `runTick` 到缓冲交换前的边界和整帧间隔；NeoForge 的帧渲染事件只覆盖其内部渲染区段。
+- Hex JIT 包装性能使用 Hexal 回归入口加 `-PhexjitWrapBenchmark=<标签>`。每次进程预热 20 次，记录 9 个 92,160 次加速的样本，并单独计数实际随机刻。比较不同注入实现时交替启动，汇总三轮样本的中位数。
+
+JDK 21.0.8 下，原实现、仅包装 `FrameEvaluate`、仅包装 `PatternIota`、同时包装的汇总中位数分别为 25.15、23.38、23.81、24.74 ms。四种实现每次计数施法均执行 62 次实际随机刻。两处保留为 `@WrapMethod`。
 
 其余 opt-in 套件按各自初始化脚本单独运行：`scripts/mist/gametest.init.gradle`（Mist 灌溉）、`scripts/allvr-regression.init.gradle`（ALLVR 回归）、`scripts/castchain/optional.init.gradle`（`-PcastChainAbsent=hexal|hexcasting|trickster`）、`scripts/castchain/benchmark.init.gradle` 与 `scripts/hextrick/benchmark.init.gradle`（基准场景）、`scripts/allvr-client-validation.init.gradle`（隔离客户端准备）。
 

@@ -1,6 +1,9 @@
 package com.iridium126.createmanaindustry;
 
 import com.iridium126.createmanaindustry.client.particles.BlockParticleEmitterClient;
+import com.iridium126.createmanaindustry.client.packages.feedback.PackageLightClient;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.ExperimentalStartup;
 import com.iridium126.createmanaindustry.client.render.mist.MistClientHandler;
 import com.iridium126.createmanaindustry.client.render.InlineTrickRenderer;
 import com.iridium126.createmanaindustry.client.render.InlineYsmGeometryRenderer;
@@ -67,10 +70,12 @@ public class CreateManaIndustryClient {
                 com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient::receiveChain);
         com.iridium126.createmanaindustry.content.logistics.gpupackage.network.ClientboundChainInteractionPacket.installClientHandler(
                 com.iridium126.createmanaindustry.client.packages.world.PackageWorldRuntime::chainInteraction);
-        com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainClientHooks.install(
-                com.iridium126.createmanaindustry.client.packages.authority.PackageChainClientOwnership.INSTANCE);
-        com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageForceHooks.install(
-                com.iridium126.createmanaindustry.client.packages.world.PackageForceClient.HOOKS);
+        if (ExperimentalStartup.settings().clientPackages()) {
+            com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainClientHooks.install(
+                    com.iridium126.createmanaindustry.client.packages.authority.PackageChainClientOwnership.INSTANCE);
+            com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageForceHooks.install(
+                    com.iridium126.createmanaindustry.client.packages.world.PackageForceClient.HOOKS);
+        }
         ClientboundStormDamagePacket.installClientHandler(AllayStormClientHandler::onDamage);
         ClientboundStormPositionsPacket.installClientHandler(AllayStormClientHandler::onPositions);
         ClientboundStormCenterPacket.installClientHandler(AllayStormClientHandler::onCenter);
@@ -214,8 +219,13 @@ public class CreateManaIndustryClient {
      */
     @SubscribeEvent
     private static void onAttackKey(InputEvent.InteractionKeyMappingTriggered event) {
-        if (event.isAttack() && com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.handlePlayerAttack())
+        if (!event.isAttack()) return;
+        if (!ClientConfig.packageGpuAuthority && PackageLightClient.input(true)) {
             event.setCanceled(true);
+            event.setSwingHand(false);
+        } else if (com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.handlePlayerAttack()) {
+            event.setCanceled(true);
+        }
     }
 
     /**
@@ -237,6 +247,11 @@ public class CreateManaIndustryClient {
     private static void onUseKey(InputEvent.InteractionKeyMappingTriggered event) {
         if (!event.isUseItem())
             return;
+        if (!ClientConfig.packageGpuAuthority && PackageLightClient.input(false)) {
+            event.setCanceled(true);
+            event.setSwingHand(false);
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (!(mc.hitResult instanceof EntityHitResult hit)
                 || !com.iridium126.createmanaindustry.client.particles.interaction.ModelInteractionRuntime.INSTANCE.isSyntheticPickTarget(hit.getEntity()))
@@ -250,9 +265,7 @@ public class CreateManaIndustryClient {
     private static void onClientSetup(FMLClientSetupEvent event) {
         var sodium = com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumCompatibilityProbe.probe();
         if (!sodium.available()) {
-            throw new IllegalStateException("Create: Mana Industry requires Sodium "
-                + com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumCompatibilityProbe.VERSION_PREFIX
-                + " for the Allay terrain bridge: " + sodium.reason());
+            throw new IllegalStateException("Sodium terrain ABI mismatch: " + sodium.reason());
         }
         CreateManaIndustry.LOGGER.info("[Allvr] Sodium native terrain bridge enabled: adapter Sodium_0813_1211 ({})",
             sodium.reason());

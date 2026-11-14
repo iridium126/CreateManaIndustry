@@ -17,6 +17,8 @@ import org.spongepowered.asm.mixin.injection.At;
     "dev.enjarai.trickster.spell.trick.mana.ConvertManaTrick"
 }, remap = false)
 public abstract class TricksterInvertedRangeMixin {
+    // These entry points include both static and instance methods. The shared
+    // wrapper uses a required match on the reach invocation for each target.
     @WrapOperation(method = "*", require = 1,
             at = @At(value = "INVOKE", target = "Ldev/enjarai/trickster/spell/execution/source/SpellSource;distanceTo(Lorg/joml/Vector3dc;)D"))
     private static double cmi$range(SpellSource source, Vector3dc target, Operation<Double> original) {

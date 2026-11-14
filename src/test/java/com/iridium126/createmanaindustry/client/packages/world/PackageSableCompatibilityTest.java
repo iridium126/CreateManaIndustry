@@ -9,7 +9,6 @@ import com.google.gson.JsonParser;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
-import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 
 class PackageSableCompatibilityTest {
@@ -73,15 +72,6 @@ class PackageSableCompatibilityTest {
             assertTrue(clients.contains("packages.sable.PackageSableCollisionPlotMixin"));
             assertFalse(common.contains("PackageSableCollisionPlotMixin"));
         }
-        var plugin=PackageCollisionHookContractTest.type("com/iridium126/createmanaindustry/mixin/CMIMixinPlugin");
-        var gate=plugin.methods.stream().filter(method->method.name.equals("shouldApplyMixin")).findFirst().orElseThrow();
-        boolean packageGate=false,sableGate=false;
-        for(var instruction:gate.instructions) {
-            if(instruction instanceof LdcInsnNode constant && ".packages.sable.".equals(constant.cst))sableGate=true;
-            if(instruction instanceof MethodInsnNode call && call.name.equals("isSupportedVersion")
-                    && call.desc.equals("(Ljava/lang/String;Ljava/lang/String;)Z"))packageGate=true;
-        }
-        assertTrue(sableGate&&packageGate,"the Sable-specific hook must be gated before its optional target is loaded");
     }
 
     @Test void plotCollisionCaptureUsesEmbeddedCoordinatesWithoutParentChunkGate() throws Exception {

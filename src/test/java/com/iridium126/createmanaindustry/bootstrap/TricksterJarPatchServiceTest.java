@@ -53,15 +53,22 @@ class TricksterJarPatchServiceTest {
     }
 
     @Test
-    void refusesUnknownVersionChangedClassAndAmbiguousInstallation() throws Exception {
+    void patchesMatchingBytecodeRegardlessOfVersionMetadata() throws Exception {
         Path jar = writeJar("trickster.jar", "2.0.0-beta.57", originalClass(), null);
-        assertUnchanged(jar);
+        byte[] original = Files.readAllBytes(jar);
+        patch();
+        assertPatched(jar);
+        assertArrayEquals(original, Files.readAllBytes(mods.resolve("trickster.jar.backup")));
+    }
+
+    @Test
+    void refusesChangedClassAndAmbiguousInstallation() throws Exception {
         ClassNode node = new ClassNode();
         new ClassReader(originalClass()).accept(node, 0);
         node.sourceFile = "Modified.java";
         ClassWriter writer = new ClassWriter(0);
         node.accept(writer);
-        jar = writeJar("trickster.jar", "2.0.0-beta.56", writer.toByteArray(), null);
+        Path jar = writeJar("trickster.jar", "2.0.0-beta.56", writer.toByteArray(), null);
         assertUnchanged(jar);
         jar = writeJar("trickster.jar", "2.0.0-beta.56", originalClass(), null);
         writeJar("duplicate.jar", "2.0.0-beta.56", originalClass(), null);

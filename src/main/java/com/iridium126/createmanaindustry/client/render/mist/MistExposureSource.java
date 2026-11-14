@@ -5,7 +5,7 @@ import java.util.Map;
 
 import com.google.common.collect.ImmutableSet;
 
-import com.iridium126.createmanaindustry.mixin.iris.IrisRenderingPipelineTargetsAccessor;
+import com.iridium126.createmanaindustry.mixin.iris.NativeSkyPipelineAccess;
 
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.gl.framebuffer.GlFramebuffer;
@@ -58,12 +58,11 @@ public final class MistExposureSource {
      * framebuffer before drawing.
      */
     public static int acquireExposureTexture(int bufferIndex) {
-        if (!(Iris.getPipelineManager().getPipelineNullable()
-                instanceof IrisRenderingPipelineTargetsAccessor accessor))
+        if (!(Iris.getPipelineManager().getPipelineNullable() instanceof IrisRenderingPipeline pipeline)
+                || !(pipeline instanceof NativeSkyPipelineAccess accessor))
             return -1;
 
-        IrisRenderingPipeline pipeline = (IrisRenderingPipeline) (Object) accessor;
-        RenderTargets targets = accessor.cmi$getRenderTargets();
+        RenderTargets targets = accessor.cmi$targets();
         int width = targets.getCurrentWidth();
         int height = targets.getCurrentHeight();
 
@@ -83,7 +82,7 @@ public final class MistExposureSource {
         GlFramebuffer altQueryFbo = ALT_QUERY_FBOS.computeIfAbsent(bufferIndex,
                 index -> targets.createFramebufferWritingToAlt(new int[]{index}));
 
-        ImmutableSet<Integer> flipped = accessor.cmi$getFlippedAfterTranslucent();
+        ImmutableSet<Integer> flipped = pipeline.getFlippedAfterTranslucent();
         GlFramebuffer query = flipped != null && flipped.contains(bufferIndex)
                 ? altQueryFbo
                 : mainQueryFbo;

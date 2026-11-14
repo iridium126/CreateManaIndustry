@@ -46,7 +46,8 @@ public abstract class ConstructBlockEntityMediaMixin {
         }
     }
 
-    @Inject(method = "canPlaceItem", at = @At("HEAD"), cancellable = true, require = 0)
+    @Inject(method = "canPlaceItem(ILnet/minecraft/world/item/ItemStack;)Z",
+            at = @At("HEAD"), cancellable = true)
     private void createmanaindustry$canInsertMedia(int slot, ItemStack stack, CallbackInfoReturnable<Boolean> cir) {
         if (ConstructMediaStorage.canInsertMedia((BlockEntity) (Object) this, stack)) {
             cir.setReturnValue(true);

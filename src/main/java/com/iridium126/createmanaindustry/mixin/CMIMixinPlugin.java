@@ -1,166 +1,53 @@
 package com.iridium126.createmanaindustry.mixin;
 
+import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitMixinChecks;
+import com.iridium126.createmanaindustry.infrastructure.config.ExperimentalStartup;
 import java.util.List;
 import java.util.Set;
-
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLLoader;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 
-import net.neoforged.fml.loading.FMLLoader;
-
-/**
- * Conditionally enables mixins based on which optional dependencies are loaded.
- * <p>
- * Gating is purely package-based — the mixin class FQCN decides:
- * <ul>
- *   <li>{@code .bnb.}        → Bits 'n' Bobs AND Trickster required</li>
- *   <li>{@code .hextrick.}   → Hexcasting AND Trickster required</li>
- *   <li>{@code .trickster.}  → Trickster required</li>
- *   <li>{@code .hexcasting.} → Hexcasting required</li>
- *   <li>{@code .iris.}       → iris required</li>
- *   <li>{@code .irisveil.}   → iris-veil-compat required (implies iris)</li>
- *   <li>anything else        → always applied</li>
- * </ul>
- * Subpackages are part of the FQCN, so every mixin under
- * {@code com.iridium126.createmanaindustry.mixin} is covered; new mixins must
- * be placed in the subpackage matching their gate.
- * <p>
- * Uses {@link FMLLoader#getLoadingModList()} rather than {@code ModList.get()}
- * because the mixin plugin runs during the bootstrap phase — before NeoForge's
- * {@code ModList} singleton is populated.  {@code FMLLoader.getLoadingModList()}
- * is the lower-level equivalent available at this stage.
- * <p>
- * The same information is exposed at runtime via the static flags in
- * {@code CreateManaIndustry} ({@code TRICKSTER_ACTIVE}, {@code BNB_ACTIVE}).
- */
-public class CMIMixinPlugin implements IMixinConfigPlugin {
-
-    private static final String BNB_MOD_ID = "bits_n_bobs";
-    private static final String TRICKSTER_MOD_ID = "trickster";
-    private static final String HEX_MOD_ID = "hexcasting";
-    private static final String IRIS_MOD_ID = "iris";
-    private static final String IRISVEIL_MOD_ID = "irisveil";
-    private static final String SODIUM_MOD_ID = "sodium";
-    private static final String VOXY_MOD_ID = "voxy";
+/** Both manifests use the same side, dependency and startup rules. */
+public final class CMIMixinPlugin implements IMixinConfigPlugin {
+    private HexJitMixinChecks hexJit;
 
     @Override
-    public void onLoad(String mixinPackage) {}
-
-    @Override
-    public String getRefMapperConfig() {
-        return null;
+    public void onLoad(String mixinPackage) {
+        if (mixinPackage.equals(MixinGroups.ROOT + "hexjit")
+                && enabled(MixinGroups.HEX_JIT)) {
+            hexJit = new HexJitMixinChecks();
+            hexJit.initialize();
+        }
     }
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        if(mixinClassName.contains(".allaystorm.create."))return isSupportedVersion("create","6.0.10");
-        if(mixinClassName.contains(".allaystorm.sable."))return isSupportedVersion("sable","2.0.6");
-        if (mixinClassName.contains(".packages.sable."))
-            return isSupportedVersion("sable", "2.0.5");
-        if (mixinClassName.contains(".packages."))
-            return isSupportedVersion("create", "6.0.10");
-        // BnB cogwheel-chain mixins require Bits 'n' Bobs AND Trickster
-        if (mixinClassName.contains(".bnb."))
-            return isLoaded(BNB_MOD_ID) && isLoaded(TRICKSTER_MOD_ID);
-
-        // Mixins bridging Hexcasting and Trickster — require both
-        if (mixinClassName.contains(".hextrick."))
-            return isLoaded(HEX_MOD_ID) && isLoaded(TRICKSTER_MOD_ID);
-
-        // Mixins targeting Trickster classes — disable when Trickster is absent
-        if (mixinClassName.contains(".trickster."))
-            return isLoaded(TRICKSTER_MOD_ID);
-
-        // Mixins handling Hexcasting items/recipes — disable when Hexcasting is absent
-        if (mixinClassName.contains(".hexcasting."))
-            return isLoaded(HEX_MOD_ID);
-
-        // Mixins targeting iris internals — disable when iris is absent
-        if (mixinClassName.contains(".iris.FeatherLeaf") || mixinClassName.contains(".sodium.FeatherLeaf"))
-            return isLoaded(IRIS_MOD_ID) && isSupportedVersion(SODIUM_MOD_ID, "0.8.13");
-        if (mixinClassName.contains(".iris."))
-            return isLoaded(IRIS_MOD_ID);
-
-        // Mixins reserving iris-veil-compat resources (the particle TBO texture
-        // units) require iris-veil-compat itself; iris is its hard dependency,
-        // so loading implies everything they target is present
-        if (mixinClassName.contains(".irisveil."))
-            return isLoaded(IRISVEIL_MOD_ID);
-
-        // Voxy runtime adapter hooks — their target classes live inside the
-        // voxy mod itself, so they must never apply without the exact ABI
-        // family.  This check runs before mixin target transformation; the
-        // later reflective probe remains the second line of defense.
-        if (mixinClassName.contains(".voxy."))
-            return isSupportedVoxy();
-
-        // Allay-dimension Sodium bridge — string mixin targets, no compile
-        // dependency; only applies to the fixed 0.8.13 ABI family.
-        if (mixinClassName.contains(".sodium."))
-            return isSupportedVersion(SODIUM_MOD_ID, "0.8.13");
-
-        return true;
+        var group = MixinGroups.of(mixinClassName);
+        if (group == MixinGroups.HEX_JIT) {
+            return hexJit != null && hexJit.supportsTarget(targetClassName, mixinClassName);
+        }
+        return group != null && enabled(group);
     }
 
-    @Override
-    public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) {}
-
-    @Override
-    public List<String> getMixins() {
-        return null;
+    private static boolean enabled(MixinGroups group) {
+        return group.enabled(FMLLoader.getDist() == Dist.CLIENT, ExperimentalStartup.settings(),
+                mod -> FMLLoader.getLoadingModList().getModFileById(mod) != null);
     }
 
     @Override
     public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
-        if (mixinClassName.contains(".hextrick."))
-            com.iridium126.createmanaindustry.compat.hextrick.bootstrap.HexInteropContracts.verify(targetClassName, targetClass);
+        if (hexJit != null) hexJit.preApply(targetClassName, targetClass);
     }
 
     @Override
-    public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}
-
-    // ---- helpers ----------------------------------------------------------
-
-    /**
-     * Checks whether a mod is present during the mixin bootstrap phase.
-     * <p>
-     * This must use {@code FMLLoader.getLoadingModList()} — the higher-level
-     * {@code ModList.get()} is not yet populated when mixin plugins are queried.
-     */
-    private static boolean isLoaded(String modId) {
-        return FMLLoader.getLoadingModList().getModFileById(modId) != null;
+    public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+        if (hexJit != null) hexJit.postApply(mixinClassName);
     }
 
-    /** Bootstrap-safe metadata gate for the Voxy mixin group. */
-    private static boolean isSupportedVoxy() {
-        return isSupportedVersion(VOXY_MOD_ID, "0.2.15-beta");
-    }
-
-    /** Reads loader metadata without loading the optional target mod classes. */
-    private static boolean isSupportedVersion(String modId, String prefix) {
-        Object file = FMLLoader.getLoadingModList().getModFileById(modId);
-        if (file == null) {
-            return false;
-        }
-        try {
-            Object mods = file.getClass().getMethod("getMods").invoke(file);
-            if (!(mods instanceof Iterable<?> iterable)) {
-                return false;
-            }
-            for (Object mod : iterable) {
-                Object id = mod.getClass().getMethod("getModId").invoke(mod);
-                if (!modId.equals(String.valueOf(id))) {
-                    continue;
-                }
-                Object version = mod.getClass().getMethod("getVersion").invoke(mod);
-                return version != null && String.valueOf(version).startsWith(prefix);
-            }
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-            // A metadata ABI change must fail closed: the runtime probe can
-            // still report near-only, while an unknown mixin target cannot
-            // crash bootstrap.
-        }
-        return false;
-    }
+    @Override public String getRefMapperConfig() { return null; }
+    @Override public List<String> getMixins() { return null; }
+    @Override public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) {}
 }

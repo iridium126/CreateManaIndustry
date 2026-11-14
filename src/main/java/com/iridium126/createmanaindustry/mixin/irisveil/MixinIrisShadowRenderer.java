@@ -30,8 +30,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * Player-only packs (entities off, player on) deliberately stay shadow-free:
  * particles are entities, not the player.
  *
- * <p>Gated on iris-veil-compat by {@code CMIMixinPlugin} (the {@code .irisveil.}
- * package rule; iris is its hard dependency). The runtime IRISVEIL_ACTIVE check
+ * <p>The IrisVeil group requires both Iris and IrisVeil. The runtime IRISVEIL_ACTIVE check
  * mirrors {@code LevelRendererBlockEntitiesMixin}: the hook class's irisveil
  * imports must never be resolved when the mod is absent.
  */

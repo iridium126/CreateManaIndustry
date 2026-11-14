@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.mixin.packages;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageAuthorityManager;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainAuthorityManager;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageChainClientHooks;
+import com.iridium126.createmanaindustry.infrastructure.config.ExperimentalStartup;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorBlockEntity;
 import com.simibubi.create.content.kinetics.chainConveyor.ChainConveyorPackage;
 import net.minecraft.core.HolderLookup;
@@ -24,7 +25,7 @@ public abstract class ChainIdentityLifecycleMixin {
         if(cmi$identitiesInitialized)return;
         var self=(ChainConveyorBlockEntity)(Object)this;
         if(self.getLevel()==null)return;
-        if(self.getLevel() instanceof ServerLevel) {
+        if(self.getLevel() instanceof ServerLevel && ExperimentalStartup.settings().serverPackages()) {
             PackageChainAuthorityManager.register(self);
         }
         cmi$identitiesInitialized=true;
@@ -32,7 +33,9 @@ public abstract class ChainIdentityLifecycleMixin {
     @Inject(method="read",at=@At("RETURN"))
     private void cmi$loaded(CompoundTag tag,HolderLookup.Provider registries,boolean clientPacket,CallbackInfo ci){cmi$identitiesInitialized=false;}
     @Inject(method="write",at=@At("HEAD"))
-    private void cmi$beforeSave(CompoundTag tag,HolderLookup.Provider registries,boolean clientPacket,CallbackInfo ci){PackageAuthorityManager.identifyChain((ChainConveyorBlockEntity)(Object)this);}
+    private void cmi$beforeSave(CompoundTag tag,HolderLookup.Provider registries,boolean clientPacket,CallbackInfo ci){
+        if (ExperimentalStartup.settings().serverPackages()) PackageAuthorityManager.identifyChain((ChainConveyorBlockEntity)(Object)this);
+    }
     @Inject(method="addLoopingPackage",at=@At("HEAD"))
     private void cmi$identifyLoop(ChainConveyorPackage box,CallbackInfoReturnable<Boolean> cir){cmi$identify(box);}
     @Inject(method="addTravellingPackage",at=@At("HEAD"))
@@ -46,6 +49,7 @@ public abstract class ChainIdentityLifecycleMixin {
     @Inject(method="notifyUpdate",at=@At("HEAD"),cancellable=true)
     private void cmi$coalesceTransactionSnapshots(CallbackInfo ci){if(PackageChainAuthorityManager.deferNotification((ChainConveyorBlockEntity)(Object)this))ci.cancel();}
     @Unique private void cmi$identify(ChainConveyorPackage box) {
-        if(((ChainConveyorBlockEntity)(Object)this).getLevel() instanceof ServerLevel level)PackageAuthorityManager.identify(box,level);
+        if(ExperimentalStartup.settings().serverPackages()
+                && ((ChainConveyorBlockEntity)(Object)this).getLevel() instanceof ServerLevel level)PackageAuthorityManager.identify(box,level);
     }
 }

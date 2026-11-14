@@ -24,7 +24,8 @@ class ParticleShadowQualityTest {
             assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("particles."+key));
         }
         assertNotNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("hexcasting.hexPatternGpuBudgetMiB"));
-        assertNotNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("packages.packageGpuAuthority"));
+        assertEquals(false, ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("experimental.gpuPackages.enabled").getDefault());
+        assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("packages.packageGpuAuthority"));
         assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("particles.packageGpuAuthority"));
     }
     @Test void qualityReloadDoesNotSplitAFrame(){

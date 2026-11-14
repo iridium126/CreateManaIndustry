@@ -129,14 +129,29 @@ public final class ClientFrameCapture {
         if(event.equals("retired"))w.spatialTickets.remove(key);
     }
     public void invalidate(String reason){if(collecting()){window.invalid=reason;stop();}}
+    public boolean cancel() {
+        if (requestedSeconds != 0) {
+            requestedSeconds = 0;
+            return true;
+        }
+        if (!collecting()) return false;
+        invalidate("cancelled by command");
+        return true;
+    }
     public void close(){requestedSeconds=0;if(window!=null){window.invalid="client shutdown";finish();}}
     public void begin(){
-        com.iridium126.createmanaindustry.client.particles.engine.spatial.RtQueryWorker.retire();
         if(window==null&&requestedSeconds==0)return;
         frameId++;head=System.nanoTime();active=-1;
         pollShadow();
         pollVisibility(false);
-        if(timer!=null){timer.poll();ParticleDiagnostics.INSTANCE.pollFrameSamples();ParticleFrameStages.poll();}
+        if(timer!=null){
+            timer.poll();
+            ParticleDiagnostics.INSTANCE.pollFrameSamples();
+            ParticleFrameStages.poll();
+            if (CreateManaIndustry.IRIS_ACTIVE) {
+                com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().pollFrameTiming();
+            }
+        }
         if(window!=null&&!window.collecting&&((++window.draining>=8&&timer.pending()==0&&window.spatialTickets.isEmpty()
                 &&window.stormTickets.isEmpty())||head-window.stopped>5_000_000_000L))finish();
         var mc=Minecraft.getInstance();
@@ -214,7 +229,8 @@ public final class ClientFrameCapture {
     public void end(boolean success){
         if(timing){timer.end(false,false);timing=false;}
         if(!success&&collecting()){window.invalid="runTick failed";stop();}
-        if(stopAfterFrame&&collecting()){stop();stopAfterFrame=false;}
+        if(stopAfterFrame&&collecting())stop();
+        stopAfterFrame=false;
         active=-1;
     }
     private void stop(){
@@ -349,7 +365,20 @@ public final class ClientFrameCapture {
         if(window!=null)window.metadata.put("rift_visibility_at_end",com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.metadata());
         if(window!=null)window.metadata.put("shadow_path_at_end",com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.performanceShadowPath():"Iris unavailable");
         if(window!=null&&com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE)window.metadata.put("target_sky_visibility_at_end",com.iridium126.createmanaindustry.client.render.shaderpack.RiftIrisUniforms.visibilityMetadata());
-        Window w=window;pollShadow();closeShadow();pollVisibility(true);com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.install(null);ParticleDiagnostics.INSTANCE.frameSampling(false);ParticleFrameStages.close();window=null;timer.close();timer=null;level=null;
+        Window w=window;
+        pollShadow();
+        closeShadow();
+        pollVisibility(true);
+        com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.install(null);
+        ParticleDiagnostics.INSTANCE.frameSampling(false);
+        ParticleFrameStages.close();
+        if (CreateManaIndustry.IRIS_ACTIVE) {
+            com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current().finishFrameTiming();
+        }
+        window=null;
+        if (timer != null) timer.close();
+        timer=null;
+        level=null;
         Path directory=Minecraft.getInstance().gameDirectory.toPath().resolve("logs/cmi-particle-frames");
         w.metadata.put("invalid_reason",w.invalid);w.metadata.put("samples",w.size);w.metadata.put("requested_seconds",w.seconds);w.metadata.put("skipped_gpu",w.skippedGpu);
         w.metadata.put("stage_records",w.stageEntries);

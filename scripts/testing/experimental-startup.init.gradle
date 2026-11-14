@@ -1,0 +1,47 @@
+// Isolated process launches for the experiment gates and cold package recovery.
+gradle.projectsEvaluated {
+    def p = gradle.rootProject
+    def phase = (p.findProperty('experimentPhase') ?: 'default').toString()
+    def cases = [
+        'default': null,
+        'off': '[experimental.gpuPackages]\nenabled = false\n[experimental.hexJit]\nmode = "OFF"\n[gpuPackages]\nmainThreadBudgetMs = 17.0\n',
+        'profile': '[experimental.hexJit]\nmode = "PROFILE"\n',
+        'auto': '[experimental.hexJit]\nmode = "AUTO"\n',
+        'save': '[experimental.gpuPackages]\nenabled = true\n',
+        'restore': '[experimental.gpuPackages]\nenabled = false\n'
+    ]
+    if (!cases.containsKey(phase)) throw new GradleException("Unknown experimentPhase: ${phase}")
+    def absent = p.findProperty('experimentAbsent')
+    if (absent != null && !(absent in ['hexal', 'hexcasting']))
+        throw new GradleException('Use -PexperimentAbsent=hexal or hexcasting')
+    if (absent != null) p.configurations.hexalLocalRuntime.dependencies.clear()
+    if (absent == 'hexcasting') p.configurations.hexcastingLocalRuntime.dependencies.clear()
+    def recovery = phase in ['save', 'restore']
+    def name = recovery ? 'experimental-recovery' : "experimental-${phase}${absent == null ? '' : "-${absent}"}"
+    p.apply from: p.file('scripts/testing/common.gradle')
+    p.configureCmiGameTests(name: name, sources: 'src/test/gametest/experimental/java',
+            structure: 'experimental_startup_test', serverConfig: cases[phase])
+    def runDir = p.file("build/gametest/${name}")
+    p.neoForge.runs.gameTestServer.systemProperty('cmi.experimentPhase', phase)
+    p.neoForge.runs.gameTestServer.systemProperty('cmi.experimentAbsent', absent ?: '')
+    p.tasks.named('runGameTestServer', JavaExec).configure {
+        doFirst {
+            // Intentionally conflicts with every off launch; this is a tuning overlay only.
+            def override = new File(runDir, 'world/serverconfig/createmanaindustry-server.toml')
+            override.parentFile.mkdirs()
+            if (phase == 'off') java.nio.file.Files.deleteIfExists(override.toPath())
+            else override.setText('[experimental.gpuPackages]\nenabled = true\n[experimental.hexJit]\nmode = "AUTO"\n[gpuPackages]\nmainThreadBudgetMs = 17.0\n', 'UTF-8')
+            def client = new File(runDir, 'config/createmanaindustry-client.toml')
+            client.parentFile.mkdirs()
+            client.setText('[experimental.gpuPackages]\nenabled = true\n', 'UTF-8')
+            if (phase == 'default') {
+                java.nio.file.Files.deleteIfExists(new File(runDir, 'config/createmanaindustry-server.toml').toPath())
+            }
+        }
+        doLast {
+            def log = new File(runDir, 'logs/latest.log')
+            if (!log.isFile() || !log.text.contains('All 1 required tests passed'))
+                throw new GradleException("Experimental startup probe did not complete; inspect ${log}")
+        }
+    }
+}

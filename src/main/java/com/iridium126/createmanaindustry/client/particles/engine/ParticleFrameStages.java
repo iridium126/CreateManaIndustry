@@ -8,15 +8,18 @@ public final class ParticleFrameStages {
     private static final Map<String,GpuPassTelemetry> timers=new LinkedHashMap<>();
     private static final Set<String> openScopes=new HashSet<>();
     private ParticleFrameStages(){}
+    public static boolean active() {
+        return ClientFrameCapture.INSTANCE.collecting();
+    }
     /** Target only the unresolved sequential section; shadow/other batches are excluded. */
     public static Scope solidSubmission(String label){
-        if(!openScopes.contains("world.section.solid_particles"))return null;
+        if(!active() || !openScopes.contains("world.section.solid_particles"))return null;
         return begin(label,128);
     }
     /** Diagnostic scopes have no publication ownership: preparation may change generations. */
     public static Scope begin(String label){return begin(label,4);}
     private static Scope begin(String label,int slots){
-        if(!GpuTimingObserver.active()||openScopes.contains(label))return null;
+        if(!active()||openScopes.contains(label))return null;
         var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;
         var timer=timers.computeIfAbsent(label,key->new GpuPassTelemetry(slots).named(key));timer.poll();
         timer.begin(true,true,scene.renderFrameToken(),-1);
@@ -31,13 +34,13 @@ public final class ParticleFrameStages {
         @Override public void close(){end(true);}
     }
     public static void draw(String label,Runnable draw){
-        if(!GpuTimingObserver.active()){draw.run();return;}
+        if(!active()){draw.run();return;}
         var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;
         var publication=scene.publication();
         draw(label,publication==null?-1:publication.generation(),draw);
     }
     public static void draw(String label,long generation,Runnable draw){
-        if(!GpuTimingObserver.active()){draw.run();return;}
+        if(!active()){draw.run();return;}
         var scene=com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE;
         var timer=timers.computeIfAbsent(label,key->new GpuPassTelemetry().named(key));timer.poll();
         timer.begin(true,true,scene.renderFrameToken(),generation);boolean success=false;

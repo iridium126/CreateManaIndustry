@@ -17,10 +17,11 @@ import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.JitCompatibility;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.PatternIotaLoopDispatchAccess;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.server.level.ServerLevel;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 
@@ -36,28 +37,29 @@ public abstract class FrameEvaluateMixin {
      * The harness still evaluates one iota at a time, so op limits, observers, and effects retain
      * their original order and count.
      */
-    @Overwrite
-    public CastResult evaluate(SpellContinuation continuation, ServerLevel level, CastingVM harness) {
+    @WrapMethod(method = "evaluate")
+    private CastResult cmi$evaluate(SpellContinuation continuation, ServerLevel level, CastingVM harness,
+            Operation<CastResult> original) {
+        if (ServerConfig.hexJitMode != ServerConfig.HexJitMode.AUTO || !HexJitRuntime.onServerThread()
+                || !JitCompatibility.ready()) {
+            return original.call(continuation, level, harness);
+        }
         if (list.isEmpty()) {
             return new CastResult(new ListIota(list), continuation, null, java.util.List.of(),
                     ResolvedPatternType.EVALUATED, HexEvalSounds.HERMES.get());
         }
 
-        boolean autoServerCast = ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
-                && HexJitRuntime.onServerThread();
-        boolean needsScope = autoServerCast && (ServerConfig.hexJitCoalesceEvalSounds
-                || isMetacasting && ServerConfig.hexJitLoopSpecialization);
+        boolean needsScope = ServerConfig.hexJitCoalesceEvalSounds
+                || isMetacasting && ServerConfig.hexJitLoopSpecialization;
         ExecutionScope activeScope = needsScope ? ExecutionScope.current() : null;
         boolean canSpecializeLoop = isMetacasting && activeScope != null
                 && activeScope.loopSpecializationEnabled();
         boolean canCoalesceSounds = activeScope != null && activeScope.coalesceEvalSoundsEnabled();
         ExecutionScope scope = canSpecializeLoop ? activeScope : null;
         ExecutionScope loopDispatchScope = scope != null ? scope
-                : autoServerCast && ServerConfig.hexJitLoopSpecialization
+                : ServerConfig.hexJitLoopSpecialization
                 ? ExecutionScope.current() : null;
-        if (scope == null && ServerConfig.hexJitReuseFrameTail
-                && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
-                && HexJitRuntime.onServerThread() && JitCompatibility.frameTailCacheReady()) {
+        if (scope == null && ServerConfig.hexJitReuseFrameTail && JitCompatibility.frameTailCacheReady()) {
             if (cmi$cachedTail == null) cmi$cachedTail = list.tail();
         }
 

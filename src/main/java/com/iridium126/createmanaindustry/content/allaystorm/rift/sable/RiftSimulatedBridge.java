@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.content.allaystorm.rift.sable;
 
-import dev.ryanhcode.sable.api.physics.object.ArbitraryPhysicsObject;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
@@ -11,7 +10,7 @@ import net.minecraft.world.phys.*;
 import java.lang.reflect.*;
 import java.util.*;
 
-/** Optional Simulated 1.3.2 ABI; the full rope codec already lives in its owning block entity NBT. */
+/** Optional Simulated integration. The rope codec lives in its owning block entity NBT. */
 public final class RiftSimulatedBridge {
     private final ServerLevel world;
     private final Object manager;
@@ -20,10 +19,14 @@ public final class RiftSimulatedBridge {
     RiftSimulatedBridge(ServerLevel world) {
         this.world=world;
         if(!net.neoforged.fml.ModList.get().isLoaded("simulated")){manager=null;return;}
-        String version=net.neoforged.fml.ModList.get().getModContainerById("simulated").orElseThrow().getModInfo().getVersion().toString();
-        if(!version.startsWith("1.3.2"))throw new IllegalStateException("Simulated transport ABI is unverified: "+version);
-        try{Class<?> type=Class.forName("dev.simulated_team.simulated.content.blocks.rope.strand.server.ServerLevelRopeManager");manager=type.getMethod("getOrCreate",net.minecraft.world.level.Level.class).invoke(null,world);}
-        catch(ReflectiveOperationException error){throw new IllegalStateException("Simulated rope-manager ABI mismatch",error);}
+        try {
+            Class<?> type = Class.forName("dev.simulated_team.simulated.content.blocks.rope.strand.server.ServerLevelRopeManager");
+            type.getMethod("getAllStrands");
+            type.getMethod("removeStrand", UUID.class);
+            manager = type.getMethod("getOrCreate", net.minecraft.world.level.Level.class).invoke(null, world);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Simulated rope-manager ABI mismatch", error);
+        }
     }
     private static Object call(Object object,String name){try{return object.getClass().getMethod(name).invoke(object);}catch(ReflectiveOperationException error){throw new IllegalStateException("Simulated transport ABI: "+name,error);}}
     @SuppressWarnings("unchecked") private Collection<Object> all(){return manager==null?List.of():(Collection<Object>)call(manager,"getAllStrands");}

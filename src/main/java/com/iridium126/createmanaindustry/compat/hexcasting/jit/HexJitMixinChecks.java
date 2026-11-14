@@ -1,6 +1,5 @@
-package com.iridium126.createmanaindustry.mixin.hexjit;
+package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.jit.JitCompatibility;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.*;
@@ -10,12 +9,11 @@ import org.objectweb.asm.Handle;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.spongepowered.asm.mixin.MixinEnvironment;
-import org.spongepowered.asm.mixin.extensibility.*;
 import org.spongepowered.asm.mixin.transformer.IMixinTransformer;
 import org.spongepowered.asm.mixin.transformer.ext.*;
 
 /** Exact upstream bytecode gate plus a final, fail-closed foreign-Mixin check. */
-public final class HexJitMixinPlugin implements IMixinConfigPlugin {
+public final class HexJitMixinChecks {
     private static final String OWN = "com.iridium126.createmanaindustry.mixin.hexjit.";
     private static final String ROOT = "at/petrak/hexcasting/";
     private static final Map<String, String> SOUND_EMISSION_HASHES = Map.of(
@@ -129,8 +127,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             ROOT + "common/casting/PatternRegistryManifest", Set.of("processRegistry", "matchPatternToSpecialHandler"),
             HEX_DIR, Set.of("rotatedBy", "angleFrom"));
     private final Set<String> pristine = new HashSet<>();
-
-    @Override public void onLoad(String mixinPackage) {
+    public void initialize() {
         try {
             Object transformer = MixinEnvironment.getCurrentEnvironment().getActiveTransformer();
             if (transformer instanceof IMixinTransformer mixin && mixin.getExtensions() instanceof Extensions extensions) {
@@ -257,13 +254,8 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         }
     }
 
-    @Override public boolean shouldApplyMixin(String target, String mixin) {
-        var file = FMLLoader.getLoadingModList().getModFileById("hexcasting");
-        if (file == null) return false;
-        boolean version = file.getMods().stream().anyMatch(mod -> mod.getModId().equals("hexcasting")
-                && mod.getVersion().toString().equals("0.12.0-devel-pre-64"));
-        if (!version) { JitCompatibility.disable("unsupported Hexcasting version"); return false; }
-        // Validate the actual jar, not only a version string. Do not install signature-sensitive hooks on an unknown ABI.
+    public boolean supportsTarget(String target, String mixin) {
+        // The fast paths rely on upstream behavior as well as signatures.
         String internal = target.replace('.', '/');
         if (mixin.equals(OWN + "StaffSoundPlaybackGuardMixin"))
             return SOUND_EMISSION_HASHES.containsKey(internal) && matchesHash(internal, SOUND_EMISSION_HASHES.get(internal));
@@ -423,7 +415,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         return false;
     }
 
-    @Override public void preApply(String target, ClassNode node, String mixin, IMixinInfo info) {
+    public void preApply(String target, ClassNode node) {
         if (!pristine.add(node.name)) return;
         try (InputStream stream = getClass().getClassLoader().getResourceAsStream(node.name + ".class")) {
             if (stream == null) throw new IllegalStateException("missing upstream class");
@@ -755,10 +747,7 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         @Override public void export(MixinEnvironment environment, String name, boolean force, ClassNode node) {}
     }
 
-    @Override public String getRefMapperConfig() { return null; }
-    @Override public List<String> getMixins() { return null; }
-    @Override public void acceptTargets(Set<String> mine, Set<String> others) {}
-    @Override public void postApply(String target, ClassNode node, String mixin, IMixinInfo info) {
+    public void postApply(String mixin) {
         if (mixin.equals(OWN + "PlayerBasedCastEnvMixin")) JitCompatibility.mediaPoolTargetVerified();
         if (mixin.equals(OWN + "PersonalManaHolderMixin")) JitCompatibility.personalMediaBatchTargetVerified();
         if (mixin.equals(OWN + "HexUtilsResourceKeyMixin")) JitCompatibility.actionResourceKeyCacheTargetVerified();
