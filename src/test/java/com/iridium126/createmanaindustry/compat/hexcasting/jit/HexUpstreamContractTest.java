@@ -9,6 +9,15 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Keep the fail-closed JIT gates enabled for the audited dependency, without launching Minecraft. */
 class HexUpstreamContractTest {
+    @Test void hexalTickFingerprintsMatchThePreparedJar() throws Exception {
+        var field = HexJitMixinPlugin.class.getDeclaredField("HEXAL_TICK_HASHES");
+        field.setAccessible(true);
+        for (var entry : ((Map<?, ?>) field.get(null)).entrySet()) {
+            String name = (String) entry.getKey();
+            assertEquals(entry.getValue(), digest(name), name);
+        }
+    }
+
     @Test void allHexcastingFingerprintsMatchTheResolvedJar() throws Exception {
         int verified = 0;
         for (var field : HexJitMixinPlugin.class.getDeclaredFields()) {

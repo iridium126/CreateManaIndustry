@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.HexAPI;
 import at.petrak.hexcasting.api.casting.PatternShapeMatch;
 import at.petrak.hexcasting.api.casting.eval.CastResult;
@@ -20,7 +19,6 @@ import at.petrak.hexcasting.api.casting.mishaps.MishapStackSize;
 import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.api.casting.mishaps.Mishap;
 import at.petrak.hexcasting.common.lib.hex.HexEvalSounds;
-import com.iridium126.createmanaindustry.compat.hexcasting.OpTick;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import java.util.List;
 import net.minecraft.core.BlockPos;
@@ -278,7 +276,6 @@ public final class FastLoopTickDispatch {
     private static CastResult commitPendingIntermediate(CastingVM vm, ExecutionScope scope) {
         CastingImage inputImage = scope.pendingLoopTickInputImage();
         TreeList<Iota> outputStack = scope.pendingLoopTickOutputStack();
-        var userData = scope.pendingLoopTickUserData();
         long outputOpsConsumed = inputImage.getOpsConsumed() + 1;
         SpellContinuation continuation = scope.pendingLoopTickContinuation();
         PatternIota pattern = scope.pendingLoopTickPattern();
@@ -300,7 +297,7 @@ public final class FastLoopTickDispatch {
 
         scope.recordLoopTickBatchFold();
         CastingImage image = new CastingImage(outputStack, inputImage.getParenCount(), inputImage.getParenthesized(),
-                inputImage.getEscapeNext(), inputImage.getSimulateNext(), outputOpsConsumed, CMIHexImageComponents.componentsWithTickData(inputImage, userData));
+                inputImage.getEscapeNext(), inputImage.getSimulateNext(), outputOpsConsumed, inputImage.getComponents());
         vm.setImage(image);
         if (scope.postSuccessfulStaffTick(vm.getEnv(), pattern)) {
             // Preserve all standard Staff behavior without constructing an observer result.
@@ -313,7 +310,7 @@ public final class FastLoopTickDispatch {
         }
         try {
             if (sideEffects.size() == 1 && sideEffects.get(0) instanceof AttemptSpell attempt
-                    && OpTick.isTickSpell(attempt.getSpell())) {
+                    && HexalTickOptimization.isOptimizedEffect(attempt.getSpell())) {
                 // CastingVMMixin's Tick branch forwards this exact effect unchanged. Avoid the
                 // List iterator and wrapper dispatch for the common single-effect folded Tick.
                 // The one-shot scope marker lets TickSpell select its loop-specialized cast body.
@@ -364,28 +361,25 @@ public final class FastLoopTickDispatch {
         if (stack.isEmpty()) return false;
         BlockPos pos = scope.cachedTickTarget(stack.getLast());
         if (pos == null) return false;
-        OpTick.FastTickAssets assets = scope.cachedFastTickAssets(pos);
-        if (assets == null || assets.particles().size() != 1 || assets.attemptSideEffects().size() != 1
-                || !scope.isDuplicateLoopTickParticle(assets.particles().get(0))) return false;
+        HexalTickOptimization.Assets assets = scope.cachedFastTickAssets(pos);
+        if (assets == null || !scope.isDuplicateLoopTickParticle(assets.particle().getSpray())) return false;
         var blockState = scope.cachedBuddingAmethystState(env.getWorld(), pos);
         if (blockState == null || !blockState.is(Blocks.BUDDING_AMETHYST)) return false;
 
         TreeList<Iota> cachedStackWithoutArgs = scope.cacheTickStackPopEnabled()
                 ? ExecutionScope.takeTickStackPopSourceOnServerThread(stack) : null;
         TreeList<Iota> stackWithoutArgs = cachedStackWithoutArgs == null ? stack.init() : cachedStackWithoutArgs;
-        var userData = scope.reuseTickUserData(CMIHexImageComponents.tickData(image));
+        var counters = HexalTickOptimization.counters(image);
+        if (!scope.ownsTickCounters(counters)) return false;
         boolean foldedCounterFast = scope.loopFastTickCounterEnabled()
-                && scope.hasCachedTickCounterFor(
-                userData, OpTick.TAG_TIMES_TICKED, assets.posKey());
-        long cost = foldedCounterFast
-                ? OpTick.INSTANCE.executeForFoldedLoopPath(pos, env, userData, scope, assets)
-                : OpTick.INSTANCE.executeForFastPath(pos, env, userData, true, scope, assets);
+                && scope.hasCachedTickCounterFor(counters, pos);
+        long cost = HexalTickOptimization.prepare(pos, env, image, scope, assets, foldedCounterFast);
         FastTickAction.preflightTickMedia(env, image, cost, scope);
         if (cost > 0) scope.prepareTickMediaExtraction(env, cost);
         scope.rememberTickSubstack(stack, stackWithoutArgs);
         if (foldedCounterFast) scope.prepareFoldedTickCounterFastUpdate();
         scope.preparePendingLoopTickResult(pattern, continuation, image, stackWithoutArgs,
-                userData, assets.attemptSideEffects(), scope.loopTickHermesSound());
+                assets.attemptOnly(), scope.loopTickHermesSound());
         scope.recordFoldedBuddingAmethystAction();
         return true;
     }

@@ -59,6 +59,7 @@
 | [Trickster](https://modrinth.com/mod/trickster) | 2.0.0-beta.56 | 晶结、法术、构装台与动能链接 |
 | [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) | 2.1.9-beta | 动力法术核心的齿轮链数据 |
 | [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-64 | 施法物品自动化、媒质存储与自定义动作 |
+| [Hexal NeoForge 移植版](https://github.com/c-Caelum/hexal-neoforge-1.21.1) | 已验证的 pre-15 构件 | 提供 `hexal:tick` 及其配置，兼容的实现可使用 CMI 的 Hex JIT 快路径 |
 | [Veil](https://modrinth.com/mod/veil) | 4.1.4 | 体积雾及相关渲染效果 |
 | [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0-alpha | 雾效的光影包适配 |
 | [Ars Nouveau](https://modrinth.com/mod/ars-nouveau) | 5.13.0 | 液态魔源与源质罐处理 |
@@ -81,15 +82,17 @@ NeoForge 会在配置目录中生成 `createmanaindustry-server.toml` 与 `creat
 
 服务端配置还包括悦灵燃烧室燃料、Hexcasting 物品容量和悦灵风暴行为。客户端配置控制雾场辉光、GPU 粒子上限与限流、咒法学粒子重定向和 ALLVR LOD。GPU 包裹权威模拟在客户端和服务端均默认关闭。
 
+已有世界里的 CMI Tick 加速图案不会自动迁移。请安装 Hexal，并按其 `hexal:tick` 图案重新绘制。
+
 ## 构建
 
-使用 Java 21，执行：
+使用 Java 21。首次 `build` 会在 Hexal 缓存缺失时自动准备固定版本的依赖，缓存齐备时跳过该步骤。
 
 ```bash
-./gradlew build
+bash ./gradlew build
 ```
 
-Windows 下执行 `.\gradlew.bat build`。可安装的模组文件生成于 `build/libs/createmanaindustry-0.2.6.jar`。开发运行使用的 bootstrap 专用 jar 位于 `build/internal/`，不需要作为独立文件安装。
+Windows 下使用 `.\gradlew.bat`。已有 Hexal 源码仓库时，可传入 `-Phexal_checkout=<路径>`。可安装的模组文件生成于 `build/libs/createmanaindustry-<版本>.jar`。开发运行使用的 bootstrap 专用 jar 位于 `build/internal/`，不需要作为独立文件安装。
 
 安装 Connector 时，内置的早期启动服务会识别并修补经过验证的 Trickster `2.0.0-beta.56`，确保在 Connector 扫描 Fabric 模组前完成处理。服务会校验目标类哈希，将原文件以 `.jar.backup` 后缀保存在旁边；不认识或已修改过的 jar 会保持原样。在开发运行中，Gradle 会在启动前把 Trickster 依赖复制到 `run/mods/`，供同一服务处理。
 

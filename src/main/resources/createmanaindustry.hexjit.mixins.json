@@ -9,7 +9,6 @@
         "CandidatesMixin",
         "ArithmeticEngineMixin",
         "PatternIotaMixin",
-        "CompoundTagAccessor",
         "AddMotionNormalizationMixin",
         "CastingVMMixin",
         "HexDirMixin",

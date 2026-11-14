@@ -20,11 +20,21 @@ public final class CastChainOptionalGameTests {
         var encoded = CastChainSnapshot.CODEC.encodeStart(NbtOps.INSTANCE, snapshot).getOrThrow();
         helper.assertTrue(snapshot.equals(CastChainSnapshot.CODEC.parse(NbtOps.INSTANCE, encoded).getOrThrow()),
                 "Shared snapshot required the absent integration");
-        if (absent.equals("trickster")) {
+        if (absent.equals("hexal")) {
+            helper.assertTrue(CreateManaIndustry.HEX_ACTIVE
+                            && !com.iridium126.createmanaindustry.compat.hexcasting.jit.JitCompatibility.hexalTickReady(),
+                    "Hexal Tick was enabled without Hexal");
+            helper.assertTrue(at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE.getActionRegistry()
+                            .get(net.minecraft.resources.ResourceLocation.parse("createmanaindustry:tick")) == null,
+                    "CMI still registers a separate Tick spell");
+        } else if (absent.equals("trickster")) {
             helper.assertTrue(CreateManaIndustry.HEX_ACTIVE && !CreateManaIndustry.TRICKSTER_ACTIVE, "Compatibility gates were wrong");
             // Loading this registry must not initialize the Endec adapter.
             Class.forName("com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents");
-        } else helper.assertTrue(!CreateManaIndustry.HEX_ACTIVE && CreateManaIndustry.TRICKSTER_ACTIVE, "Compatibility gates were wrong");
+        } else {
+            helper.assertTrue(!CreateManaIndustry.HEX_ACTIVE && CreateManaIndustry.TRICKSTER_ACTIVE
+                            && !ModList.get().isLoaded("hexal"), "Compatibility gates were wrong");
+        }
         helper.succeed();
     }
 }

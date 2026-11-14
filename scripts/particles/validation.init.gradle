@@ -2,7 +2,7 @@
 allprojects {
     afterEvaluate {
         def kotlin = configurations.create('hexGpuValidationKotlin')
-        dependencies.add(kotlin.name, 'org.jetbrains.kotlin:kotlin-stdlib:2.3.0')
+        dependencies.add(kotlin.name, cmiCoordinates.kotlinStdlib)
         // JavaExec defaults workingDir to the project directory; no per-task override needed.
         def gpuSupportDir = layout.buildDirectory.dir('gpu-validation-support/classes')
         def compileGpuSupport = tasks.register('compileGpuValidationSupport', JavaCompile) {

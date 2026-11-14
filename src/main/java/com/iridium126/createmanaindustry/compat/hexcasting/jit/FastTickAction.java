@@ -1,7 +1,5 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
-import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.api.casting.castables.Action;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
 import at.petrak.hexcasting.api.casting.eval.CastResult;
@@ -21,15 +19,12 @@ import at.petrak.hexcasting.api.casting.mishaps.MishapNotEnoughMedia;
 import at.petrak.hexcasting.common.lib.hex.HexEvalSounds;
 import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.api.casting.eval.env.StaffCastEnv;
-import com.iridium126.createmanaindustry.compat.hexcasting.OpTick;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
-import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.core.BlockPos;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.phys.Vec3;
 
-/** Allocation-lean equivalent of SpellAction.operate for the project's read-only Tick action. */
+/** Allocation-lean equivalent of SpellAction.operate for the verified Hexal Tick action. */
 public final class FastTickAction {
     private static final ClassValue<Boolean> HAS_READ_ONLY_POST_EXECUTION = new ClassValue<>() {
         @Override
@@ -113,14 +108,20 @@ public final class FastTickAction {
     }
 
     public static boolean enabled() {
-        return ServerConfig.hexJitFastTickAction
+        return JitCompatibility.hexalTickReady()
+                && ServerConfig.hexJitFastTickAction
                 && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
+                && HexJitRuntime.onServerThread()
                 && HexJitRuntime.enabled()
                 && JitCompatibility.fastAddMotionReady();
     }
 
     public static boolean supports(Action action) {
-        return action == OpTick.INSTANCE && enabled();
+        return enabled() && isHexalTick(action);
+    }
+
+    public static boolean isHexalTick(Action action) {
+        return JitCompatibility.hexalTickReady() && HexalTickOptimization.isAction(action);
     }
 
     public static boolean mayMutateExecutionState(CastingEnvironment env) {
@@ -193,9 +194,8 @@ public final class FastTickAction {
     private static CastResult operate(CastingEnvironment env, CastingImage image,
                                       SpellContinuation continuation, PatternIota cast,
                                       ExecutionScope currentScope, boolean deferCastResult) {
-        OpTick action = OpTick.INSTANCE;
         TreeList<Iota> stack = image.getStack();
-        int argc = action.getArgc();
+        int argc = HexalTickOptimization.argumentCount();
         if (argc > stack.size()) throw new MishapNotEnoughArgs(argc, stack.size());
 
         Iota target = stack.getLast();
@@ -211,66 +211,27 @@ public final class FastTickAction {
         TreeList<Iota> cachedStackWithoutArgs = currentScope == null || !currentScope.cacheTickStackPopEnabled()
                 ? null : ExecutionScope.takeTickStackPopSourceOnServerThread(stack);
         TreeList<Iota> stackWithoutArgs = cachedStackWithoutArgs == null ? stack.init() : cachedStackWithoutArgs;
-        boolean mutateUserDataInPlace = currentScope == null
-                ? mayMutateExecutionState(env) : currentScope.canMutateTickUserDataInPlace(env);
-        ExecutionScope scope = mutateUserDataInPlace ? currentScope : null;
-        OpTick.FastTickAssets tickAssets = OpTick.fastAssets(pos, mutateUserDataInPlace, scope);
-        CompoundTag userData;
-        if (mutateUserDataInPlace && scope != null && scope.reuseTickUserDataEnabled()) {
-            // Isolate the caller's input image once, then reuse this private tag after each
-            // read-only postExecution callback instead of copying it for every Tick action.
-            userData = scope.reuseTickUserData(
-                    CMIHexImageComponents.tickData(image));
-        } else {
-            userData = FastCompoundTagCopy.copy(CMIHexImageComponents.tickData(image));
-        }
-        long cost = action.executeForFastPath(pos, env, userData, mutateUserDataInPlace,
-                currentScope, tickAssets);
+        ExecutionScope scope = currentScope != null && !image.getSimulateNext()
+                && currentScope.canMutateTickUserDataInPlace(env) ? currentScope : null;
+        if (currentScope != null && scope == null) currentScope.leaveTickRun();
+        var assets = HexalTickOptimization.assets(pos, scope);
+        long cost = HexalTickOptimization.prepare(pos, env, image, scope, assets, false);
+        preflightTickMedia(env, image, cost, scope);
 
-        preflightTickMedia(env, image, cost, currentScope);
-
-        boolean combineTickSideEffects = mutateUserDataInPlace && scope != null
-                && scope.combineTickSideEffectsEnabled() && !image.getSimulateNext();
-        boolean includeConsumeMedia = cost > 0 && !combineTickSideEffects;
-        if (combineTickSideEffects && cost > 0)
-            scope.prepareTickMediaExtraction(env, cost);
-
-        List<ParticleSpray> particles = tickAssets.particles();
-        OperatorSideEffect.AttemptSpell attempt = tickAssets.attempt();
-        boolean canCoalesce = scope != null && mutateUserDataInPlace && scope.coalesceDecorationsEnabled();
+        boolean combineMedia = scope != null && scope.combineTickSideEffectsEnabled();
+        if (combineMedia && cost > 0) scope.prepareTickMediaExtraction(env, cost);
+        boolean duplicateParticle = scope != null && scope.coalesceDecorationsEnabled()
+                && (scope.isDuplicateLoopTickParticle(assets.particle().getSpray())
+                    || scope.isDuplicateParticle(assets.particle().getSpray(), scope.getPigment(env)));
         List<OperatorSideEffect> sideEffects;
-        if (particles.size() == 1 && canCoalesce) {
-            ParticleSpray spray = particles.get(0);
-            if (scope.isDuplicateLoopTickParticle(spray)
-                    || scope.isDuplicateParticle(spray, scope.getPigment(env))) {
-                sideEffects = includeConsumeMedia
-                        ? List.of(new OperatorSideEffect.ConsumeMedia(cost), attempt)
-                        : tickAssets.attemptSideEffects();
-            } else {
-                sideEffects = includeConsumeMedia
-                        ? List.of(new OperatorSideEffect.ConsumeMedia(cost), attempt,
-                                new OperatorSideEffect.Particles(spray))
-                        : tickAssets.attemptAndParticleSideEffects();
-            }
+        if (cost > 0 && !combineMedia) {
+            var consume = new OperatorSideEffect.ConsumeMedia(cost);
+            sideEffects = duplicateParticle ? List.of(consume, assets.attempt())
+                    : List.of(consume, assets.attempt(), assets.particle());
         } else {
-            if (!includeConsumeMedia && particles.size() == 1) {
-                sideEffects = tickAssets.attemptAndParticleSideEffects();
-            } else {
-                List<OperatorSideEffect> mutableSideEffects = new ArrayList<>(particles.size() + 2);
-                if (includeConsumeMedia)
-                    mutableSideEffects.add(new OperatorSideEffect.ConsumeMedia(cost));
-                mutableSideEffects.add(attempt);
-                for (int index = 0; index < particles.size(); index++) {
-                    ParticleSpray spray = particles.get(index);
-                    if (canCoalesce && scope.isDuplicateParticle(spray, scope.getPigment(env))) continue;
-                    mutableSideEffects.add(new OperatorSideEffect.Particles(spray));
-                }
-                sideEffects = mutableSideEffects;
-            }
+            sideEffects = duplicateParticle ? assets.attemptOnly() : assets.withParticles();
         }
-
-        if (mutateUserDataInPlace && scope != null && !image.getSimulateNext())
-            scope.rememberTickSubstack(stack, stackWithoutArgs);
+        if (scope != null) scope.rememberTickSubstack(stack, stackWithoutArgs);
         // FrameEvaluate replaces every successful sound emitted by a metacast with Hermes.
         // Return that final sound here so the loop frame does not allocate a second CastResult
         // just to overwrite Tick's intermediate SPELL/MUTE sound on every iteration.
@@ -278,14 +239,14 @@ public final class FastTickAction {
                 && currentScope.inMetacastingFrame()
                 && ServerConfig.hexJitLoopSpecialization;
         var sound = loopSpecializedMetacast ? currentScope.loopTickHermesSound()
-                : action.hasCastingSound(env) ? HexEvalSounds.SPELL.get() : HexEvalSounds.MUTE.get();
+                : HexEvalSounds.SPELL.get();
         if (deferCastResult) {
             currentScope.preparePendingLoopTickResult(cast, continuation, image,
-                    stackWithoutArgs, userData, sideEffects, sound);
+                    stackWithoutArgs, sideEffects, sound);
             return null;
         }
         CastingImage image2 = image.copy(stackWithoutArgs, image.getParenCount(), image.getParenthesized(),
-                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + 1, CMIHexImageComponents.componentsWithTickData(image, userData));
+                image.getEscapeNext(), image.getSimulateNext(), image.getOpsConsumed() + 1, image.getComponents());
         return new CastResult(cast, continuation, image2, sideEffects, ResolvedPatternType.EVALUATED, sound);
     }
 }

@@ -25,7 +25,9 @@ def run(project, *arguments, success=True):
 def fixture(directory):
     directory.mkdir(parents=True)
     (directory / 'gradle.properties').write_text(
-        'trickster_project_id=123\ntrickster_file_id=456\nfabric_api_version=test\n', encoding='utf-8')
+        ('trickster_project_id=123\ntrickster_file_id=456\nfabric_api_version=test\n'
+         'minecraft_version=1.21.1\nvoxy_version=0.2.15-beta\nvoxy_revision=fixture\n'
+         'neo_version=21.1.236\n'), encoding='utf-8')
     return directory
 
 
@@ -141,6 +143,7 @@ def voxy_cases(output):
         if cached:
             jar.parent.mkdir(parents=True)
             jar.write_bytes(b'cached-voxy')
+            jar.with_suffix('.jar.revision').write_text('fixture/21.1.236\n', encoding='utf-8')
             result = run(project, 'cacheVoxy', '--configuration-cache')
             assert result.count('SKIPPED') == 5 and not (project / '.gradle/voxy/source').exists()
             assert 'Reusing configuration cache.' in run(project, 'cacheVoxy', '--configuration-cache')

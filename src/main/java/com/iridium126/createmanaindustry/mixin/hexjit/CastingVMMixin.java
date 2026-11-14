@@ -20,7 +20,7 @@ import com.iridium126.createmanaindustry.compat.hexcasting.jit.FastHexOPMediaPoo
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.IotaStackValidation;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.JitCompatibility;
-import com.iridium126.createmanaindustry.compat.hexcasting.OpTick;
+import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexalTickOptimization;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
@@ -137,11 +137,11 @@ public abstract class CastingVMMixin {
     private CastResult cmi$step(ContinuationFrame frame, SpellContinuation continuation,
                                 ServerLevel level, CastingVM vm, Operation<CastResult> original) {
         boolean skipObservers = ServerConfig.hexJitSkipObservers;
-        boolean batchTickCounterWrites = ServerConfig.hexJitBatchTickCounterWrites;
-        ExecutionScope scope = skipObservers || batchTickCounterWrites ? ExecutionScope.current() : null;
-        if (batchTickCounterWrites && scope != null && scope.batchTickCounterWritesEnabled()
-                && !FastLoopTickDispatch.willDispatchFastTick(frame, vm, scope))
-            scope.flushTickCounterWrites();
+        ExecutionScope scope = skipObservers || FastTickAction.enabled() ? ExecutionScope.current() : null;
+        if (scope != null && scope.hasTickRunState()
+                && !FastLoopTickDispatch.willDispatchFastTick(frame, vm, scope)) {
+            scope.leaveTickRun();
+        }
         if (!skipObservers) scope = null;
         if (scope != null) scope.startStep();
         if (scope != null) scope.recordFrameDiagnostics(frame, vm.getImage());
@@ -157,6 +157,7 @@ public abstract class CastingVMMixin {
         ExecutionScope scope = ServerConfig.hexJitSkipObservers || skipEmpty ? ExecutionScope.current() : null;
         if (scope != null && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
                 && scope.postSuccessfulStaffResult(env, result)) return;
+        if (scope != null) scope.flushTickCounterWrites();
         if (skipEmpty && scope != null && scope.canSkipEmptyCallbacks(env)) {
             scope.recordEmptyPostExecutionSkipped();
             return;
@@ -195,7 +196,7 @@ public abstract class CastingVMMixin {
         if (ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
                 && ServerConfig.hexJitFastTickAction
                 && effect instanceof AttemptSpell tickAttempt
-                && OpTick.isTickSpell(tickAttempt.getSpell())) {
+                && HexalTickOptimization.isOptimizedEffect(tickAttempt.getSpell())) {
             original.call(effect, vm);
             return;
         }
@@ -215,15 +216,13 @@ public abstract class CastingVMMixin {
         }
         ExecutionScope scope = ExecutionScope.current();
         if (scope != null && !(effect instanceof AttemptSpell tickAttempt
-                && OpTick.isTickSpell(tickAttempt.getSpell()))) {
+                && HexalTickOptimization.isOptimizedEffect(tickAttempt.getSpell()))) {
             if (!(effect instanceof OperatorSideEffect.Particles)) scope.invalidateTickRangeCheck();
             scope.flushTickCounterWrites();
         }
-        if (scope != null && effect instanceof AttemptSpell attempt && !OpTick.isTickSpell(attempt.getSpell())) {
-            scope.flushBuddingAmethystRandomTicks();
+        if (scope != null && effect instanceof AttemptSpell attempt && !HexalTickOptimization.isOptimizedEffect(attempt.getSpell())) {
             scope.invalidateBuddingAmethystState();
         } else if (scope != null && effect instanceof OperatorSideEffect.DoMishap) {
-            scope.flushBuddingAmethystRandomTicks();
             scope.invalidateBuddingAmethystState();
         }
         if (ServerConfig.hexJitCoalesceDecorations && JitCompatibility.particleCoalescingReady()

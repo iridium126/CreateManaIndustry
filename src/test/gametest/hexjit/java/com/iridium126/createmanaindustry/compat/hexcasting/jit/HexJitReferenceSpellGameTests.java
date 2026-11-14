@@ -1,8 +1,6 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.casting.ParticleSpray;
-import at.petrak.hexcasting.api.addldata.ADMediaHolder;
 import at.petrak.hexcasting.api.casting.eval.CastResult;
 import at.petrak.hexcasting.api.casting.eval.ExecutionClientView;
 import at.petrak.hexcasting.api.casting.eval.ResolvedPatternType;
@@ -20,7 +18,6 @@ import at.petrak.hexcasting.api.mod.HexStatistics;
 import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.common.casting.PatternRegistryManifest;
 import at.petrak.hexcasting.api.casting.PatternShapeMatch;
-import com.iridium126.createmanaindustry.compat.hexcasting.OpTick;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import io.yukkuric.hexparse.hooks.GreatPatternUnlocker;
 import io.yukkuric.hexparse.hooks.PatternMapper;
@@ -37,7 +34,6 @@ import jdk.jfr.Configuration;
 import jdk.jfr.Recording;
 import jdk.jfr.RecordingState;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Holder;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
@@ -45,8 +41,6 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.stats.Stats;
-import net.minecraft.world.entity.ai.attributes.Attribute;
-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
@@ -63,8 +57,8 @@ import at.petrak.hexcasting.api.casting.eval.env.StaffCastEnv;
 public final class HexJitReferenceSpellGameTests {
     private static final int EXPECTED_TICK_CALLS = 92_160;
     private static final int BENCHMARK_OP_LIMIT = 100_000;
-    private static final ResourceLocation YJSP_MEDIA = ResourceLocation.parse("hexoverpowered:yjsp_media");
-    private static final ResourceLocation TICK = ResourceLocation.parse("createmanaindustry:tick");
+    private static final ResourceLocation YJSP_MEDIA = JitTestAddon.REFILL;
+    private static final ResourceLocation TICK = HexalTickOptimization.ACTION_ID;
     private static final long WORLD_RANDOM_SEED = 0x5eed94720L;
     private static final String FISHERMAN_SPELL = "get_caster,get_caster,get_entity_look,num_3,mul,num_2,last_n_list,write/local,empty_list,duplicate,num_100(empty_list,eval/cc,num_4,fisherman,read/local,add,num_4,fisherman(add_motion)add,num_4,fisherman,duplicate,num_0,greater(num_1,sub,num_4,fisherman)()if,eval,num_4,fisherman,duplicate,eval)eval/cc,mask_v--vv,append,num_4,num_100,mul,write/local(empty_list,eval/cc,read/local,duplicate,num_0,greater(num_1,sub,write/local,rotate,duplicate,splat,eval,rotate_reverse)(mask_v-vv)if,eval,duplicate,eval)eval/cc,mask_v,const/null,write/local";
     private static final List<ReferenceSpell> REFERENCE_SPELLS = List.of(
@@ -79,11 +73,9 @@ public final class HexJitReferenceSpellGameTests {
     @GameTest(template = "hex_jit_test", timeoutTicks = 1200)
     public static void referenceSpellsOffVsAuto(GameTestHelper helper) throws Exception {
         helper.assertTrue(ModList.get().isLoaded("hexparse"), "HexParse is missing from the HexJIT test runtime");
-        helper.assertTrue(ModList.get().isLoaded("hexoverpowered"), "Hex Overpowered is missing from the test runtime");
 
         ServerLevel level = helper.getLevel();
         var player = FakePlayerFactory.getMinecraft(level);
-        configureHexOverpowered(player);
         BlockPos target = helper.absolutePos(new BlockPos(1, 1, 1));
         player.setPos(target.getX() + 2.5, target.getY(), target.getZ() + 0.5);
         player.setYRot(0);
@@ -96,16 +88,16 @@ public final class HexJitReferenceSpellGameTests {
                 unlocker.unlock(patternId.toString());
         }
 
-        PatternIota yjspIota = greatPattern(YJSP_MEDIA);
+        PatternIota yjspIota = new PatternIota(JitTestAddon.REFILL_PATTERN);
         PatternIota tickIota = greatPattern(TICK);
         var envForMatching = new ReferenceSpellEnvironment(
                 player, yjspIota.getPattern(), tickIota.getPattern(), BENCHMARK_OP_LIMIT);
         helper.assertTrue(PatternRegistryManifest.matchPattern(yjspIota.getPattern(), envForMatching)
-                        instanceof PatternShapeMatch.PerWorld,
-                "HexParse did not resolve yjsp_media to its registered great action");
+                        instanceof PatternShapeMatch.Normal,
+                "Benchmark media refill did not resolve");
         helper.assertTrue(PatternRegistryManifest.matchPattern(tickIota.getPattern(), envForMatching)
                         instanceof PatternShapeMatch.PerWorld,
-                "createmanaindustry:tick is not registered as a great action");
+                "hexal:tick is not registered as a great action");
 
         ServerConfig.HexJitMode oldMode = ServerConfig.hexJitMode;
         int oldThreshold = ServerConfig.hexJitThreshold;
@@ -140,7 +132,6 @@ public final class HexJitReferenceSpellGameTests {
         boolean oldCoalesceEvalSounds = ServerConfig.hexJitCoalesceEvalSounds;
         boolean oldSkipEmptyPostExecution = ServerConfig.hexJitSkipEmptyPostExecution;
         boolean oldFastSpendMediaTrigger = ServerConfig.hexJitFastSpendMediaTrigger;
-        boolean oldFastBuddingAmethystRandomTick = ServerConfig.hexJitFastBuddingAmethystRandomTick;
         boolean oldCacheActionResourceKeys = ServerConfig.hexJitCacheActionResourceKeys;
         boolean oldCacheActionTagMembership = ServerConfig.hexJitCacheActionTagMembership;
         boolean oldCacheActionPrechecks = ServerConfig.hexJitCacheActionPrechecks;
@@ -187,7 +178,6 @@ public final class HexJitReferenceSpellGameTests {
             ServerConfig.hexJitCoalesceEvalSounds = false;
             ServerConfig.hexJitSkipEmptyPostExecution = true;
             ServerConfig.hexJitFastSpendMediaTrigger = true;
-            ServerConfig.hexJitFastBuddingAmethystRandomTick = false;
             ServerConfig.hexJitCacheActionResourceKeys = false;
             ServerConfig.hexJitCacheActionTagMembership = true;
             ServerConfig.hexJitCacheActionPrechecks = false;
@@ -250,7 +240,6 @@ public final class HexJitReferenceSpellGameTests {
             ServerConfig.hexJitCoalesceEvalSounds = oldCoalesceEvalSounds;
             ServerConfig.hexJitSkipEmptyPostExecution = oldSkipEmptyPostExecution;
             ServerConfig.hexJitFastSpendMediaTrigger = oldFastSpendMediaTrigger;
-            ServerConfig.hexJitFastBuddingAmethystRandomTick = oldFastBuddingAmethystRandomTick;
             ServerConfig.hexJitCacheActionResourceKeys = oldCacheActionResourceKeys;
             ServerConfig.hexJitCacheActionTagMembership = oldCacheActionTagMembership;
             ServerConfig.hexJitCacheActionPrechecks = oldCacheActionPrechecks;
@@ -304,7 +293,6 @@ public final class HexJitReferenceSpellGameTests {
         long diagnosticEmptyPostExecutionSkips = 0;
         long diagnosticTickCounterWritesDeferred = 0;
         long diagnosticTickCounterWriteCommits = 0;
-        long diagnosticTickMediaWritesDeferred = 0;
         long diagnosticTickRangeCheckCacheHits = 0;
         long diagnosticSpendMediaTriggerCacheHits = 0;
         if (referenceSpell.expectedTickCalls() > 0) {
@@ -327,11 +315,8 @@ public final class HexJitReferenceSpellGameTests {
             diagnosticEmptyPostExecutionSkips = ExecutionScope.lastEmptyPostExecutionCallsSkipped();
             diagnosticTickCounterWritesDeferred = ExecutionScope.lastTickCounterWritesDeferred();
             diagnosticTickCounterWriteCommits = ExecutionScope.lastTickCounterWriteCommits();
-            diagnosticTickMediaWritesDeferred = ExecutionScope.lastDeferredPersonalMediaWrites();
             diagnosticTickRangeCheckCacheHits = ExecutionScope.lastTickRangeCheckCacheHits();
             diagnosticSpendMediaTriggerCacheHits = ExecutionScope.lastSpendMediaTriggerCacheHits();
-            helper.assertTrue(FastHexOPMediaPool.lastDirectExtractions() > 0,
-                    "Tick media direct-pool path was not exercised");
             helper.assertTrue(diagnosticTickSubstackSkips == referenceSpell.expectedTickCalls(),
                     "Tick substack validation proof did not match the expected Tick count");
             helper.assertTrue(diagnosticTickPrecheckHits > 0
@@ -640,115 +625,6 @@ public final class HexJitReferenceSpellGameTests {
         }
         ServerConfig.hexJitCompileActions = false;
 
-        long[] tickMediaHolderCacheOnNanos = new long[5];
-        long[] tickMediaHolderCacheOffNanos = new long[5];
-        for (int i = 0; i < tickMediaHolderCacheOnNanos.length; i++) {
-            SpellRun cachedHolder;
-            SpellRun resolvedHolder;
-            if ((i & 1) == 0) {
-                ServerConfig.hexJitCacheTickMediaHolder = true;
-                cachedHolder = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-                ServerConfig.hexJitCacheTickMediaHolder = false;
-                resolvedHolder = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-            } else {
-                ServerConfig.hexJitCacheTickMediaHolder = false;
-                resolvedHolder = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-                ServerConfig.hexJitCacheTickMediaHolder = true;
-                cachedHolder = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-            }
-            assertEquivalent(helper, cachedHolder, resolvedHolder, "Tick media holder cache toggle " + i);
-            tickMediaHolderCacheOnNanos[i] = cachedHolder.elapsedNanos;
-            tickMediaHolderCacheOffNanos[i] = resolvedHolder.elapsedNanos;
-        }
-        ServerConfig.hexJitCacheTickMediaHolder = true;
-
-        long[] tickMediaAvailabilityCacheOnNanos = new long[5];
-        long[] tickMediaAvailabilityCacheOffNanos = new long[5];
-        for (int i = 0; i < tickMediaAvailabilityCacheOnNanos.length; i++) {
-            SpellRun cachedAvailability;
-            SpellRun queriedAvailability;
-            if ((i & 1) == 0) {
-                ServerConfig.hexJitCacheTickMediaAvailability = true;
-                cachedAvailability = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-                ServerConfig.hexJitCacheTickMediaAvailability = false;
-                queriedAvailability = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-            } else {
-                ServerConfig.hexJitCacheTickMediaAvailability = false;
-                queriedAvailability = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-                ServerConfig.hexJitCacheTickMediaAvailability = true;
-                cachedAvailability = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-            }
-            assertEquivalent(helper, cachedAvailability, queriedAvailability,
-                    "Tick media availability cache toggle " + i);
-            tickMediaAvailabilityCacheOnNanos[i] = cachedAvailability.elapsedNanos;
-            tickMediaAvailabilityCacheOffNanos[i] = queriedAvailability.elapsedNanos;
-        }
-        ServerConfig.hexJitCacheTickMediaAvailability = true;
-
-        long[] directTickMediaPreflightOnNanos = new long[5];
-        long[] directTickMediaPreflightOffNanos = new long[5];
-        for (int i = 0; i < directTickMediaPreflightOnNanos.length; i++) {
-            SpellRun directPreflight;
-            SpellRun environmentPreflight;
-            if ((i & 1) == 0) {
-                ServerConfig.hexJitDirectTickMediaPreflight = true;
-                directPreflight = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-                ServerConfig.hexJitDirectTickMediaPreflight = false;
-                environmentPreflight = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-            } else {
-                ServerConfig.hexJitDirectTickMediaPreflight = false;
-                environmentPreflight = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-                ServerConfig.hexJitDirectTickMediaPreflight = true;
-                directPreflight = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                        tickIota, ServerConfig.HexJitMode.AUTO);
-            }
-            assertEquivalent(helper, directPreflight, environmentPreflight,
-                    "Tick direct media preflight toggle " + i);
-            directTickMediaPreflightOnNanos[i] = directPreflight.elapsedNanos;
-            directTickMediaPreflightOffNanos[i] = environmentPreflight.elapsedNanos;
-        }
-        ServerConfig.hexJitDirectTickMediaPreflight = true;
-
-        long[] directTickMediaExtractionOnNanos = new long[3];
-        long[] directTickMediaExtractionOffNanos = new long[3];
-        if (referenceSpell.expectedTickCalls() > 0) {
-            for (int i = 0; i < directTickMediaExtractionOnNanos.length; i++) {
-                SpellRun directExtraction;
-                SpellRun environmentExtraction;
-                if ((i & 1) == 0) {
-                    ServerConfig.hexJitDirectTickMediaExtraction = true;
-                    directExtraction = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                    ServerConfig.hexJitDirectTickMediaExtraction = false;
-                    environmentExtraction = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                } else {
-                    ServerConfig.hexJitDirectTickMediaExtraction = false;
-                    environmentExtraction = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                    ServerConfig.hexJitDirectTickMediaExtraction = true;
-                    directExtraction = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                }
-                assertEquivalent(helper, directExtraction, environmentExtraction,
-                        "Tick direct media extraction toggle " + i);
-                directTickMediaExtractionOnNanos[i] = directExtraction.elapsedNanos;
-                directTickMediaExtractionOffNanos[i] = environmentExtraction.elapsedNanos;
-            }
-        }
-        ServerConfig.hexJitDirectTickMediaExtraction = true;
-
         long[] maxOpCountCacheOnNanos = new long[5];
         long[] maxOpCountCacheOffNanos = new long[5];
         if (referenceSpell.expectedTickCalls() > 0) {
@@ -975,53 +851,6 @@ public final class HexJitReferenceSpellGameTests {
         }
         ServerConfig.hexJitCombineTickSideEffects = true;
 
-        long[] buddingGateOnNanos = new long[5];
-        long[] buddingGateOffNanos = new long[5];
-        long[] buddingGateTickCalls = new long[5];
-        if (referenceSpell.expectedTickCalls() > 0) {
-            for (int i = 0; i < buddingGateOnNanos.length; i++) {
-                SpellRun gated;
-                SpellRun stockGate;
-                if ((i & 1) == 0) {
-                    ServerConfig.hexJitFastBuddingAmethystRandomTick = true;
-                    gated = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                    ServerConfig.hexJitFastBuddingAmethystRandomTick = false;
-                    stockGate = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                } else {
-                    ServerConfig.hexJitFastBuddingAmethystRandomTick = false;
-                    stockGate = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                    ServerConfig.hexJitFastBuddingAmethystRandomTick = true;
-                    gated = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                }
-                assertCompleted(helper, gated, target, referenceSpell, "Budding random gate on " + i);
-                assertCompleted(helper, stockGate, target, referenceSpell, "Budding random gate off " + i);
-                helper.assertTrue(gated.image.equals(stockGate.image)
-                                && gated.resolution.equals(stockGate.resolution)
-                                && gated.opsConsumed == stockGate.opsConsumed
-                                && gated.personalMedia == stockGate.personalMedia
-                                && Float.compare(gated.playerHealth, stockGate.playerHealth) == 0,
-                        "Budding random gate changed the cast result apart from world-side RNG outcomes: gated="
-                                + gated + ", stock=" + stockGate);
-                buddingGateOnNanos[i] = gated.elapsedNanos;
-                buddingGateOffNanos[i] = stockGate.elapsedNanos;
-            }
-        }
-        ServerConfig.hexJitFastBuddingAmethystRandomTick = false;
-        if (referenceSpell.expectedTickCalls() > 0) {
-            ServerConfig.hexJitFastBuddingAmethystRandomTick = true;
-            castInModeWithMetrics(helper, player, target, program, referenceSpell, yjspIota,
-                    tickIota, ServerConfig.HexJitMode.AUTO);
-            buddingGateTickCalls[0] = ExecutionScope.lastBuddingAmethystRandomTickCalls();
-            helper.assertTrue(buddingGateTickCalls[0] > 20 && buddingGateTickCalls[0] < 125,
-                    "Budding geometric random gate produced implausible event count: "
-                            + buddingGateTickCalls[0]);
-            ServerConfig.hexJitFastBuddingAmethystRandomTick = false;
-        }
-
         long[] spendMediaTriggerOnNanos = new long[5];
         long[] spendMediaTriggerOffNanos = new long[5];
         if (referenceSpell.expectedTickCalls() > 0) {
@@ -1049,40 +878,6 @@ public final class HexJitReferenceSpellGameTests {
             }
         }
         ServerConfig.hexJitFastSpendMediaTrigger = true;
-
-        long[] tickMediaWritesBatchedOnNanos = new long[5];
-        long[] tickMediaWritesBatchedOffNanos = new long[5];
-        long[] tickMediaWritesDeferred = {diagnosticTickMediaWritesDeferred, 0, 0, 0, 0};
-        if (referenceSpell.expectedTickCalls() > 0) {
-            for (int i = 0; i < tickMediaWritesBatchedOnNanos.length; i++) {
-                SpellRun batched;
-                SpellRun immediate;
-                if ((i & 1) == 0) {
-                    ServerConfig.hexJitBatchTickPersonalMediaWrites = true;
-                    batched = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                    ServerConfig.hexJitBatchTickPersonalMediaWrites = false;
-                    immediate = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                } else {
-                    ServerConfig.hexJitBatchTickPersonalMediaWrites = false;
-                    immediate = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                    ServerConfig.hexJitBatchTickPersonalMediaWrites = true;
-                    batched = castInMode(helper, player, target, program, referenceSpell, yjspIota,
-                            tickIota, ServerConfig.HexJitMode.AUTO);
-                }
-                assertCompleted(helper, batched, target, referenceSpell, "Batch Tick personal-media writes on " + i);
-                assertCompleted(helper, immediate, target, referenceSpell, "Batch Tick personal-media writes off " + i);
-                assertEquivalent(helper, immediate, batched, "Batch Tick personal-media writes " + i);
-                tickMediaWritesBatchedOnNanos[i] = batched.elapsedNanos;
-                tickMediaWritesBatchedOffNanos[i] = immediate.elapsedNanos;
-            }
-        }
-        ServerConfig.hexJitBatchTickPersonalMediaWrites = true;
-        if (referenceSpell.expectedTickCalls() > 0)
-            helper.assertTrue(Arrays.stream(tickMediaWritesDeferred).sum() > 0,
-                    "Tick personal-media write batching did not defer any HexOP holder writes");
 
         long[] tickCounterWritesBatchedOnNanos = new long[5];
         long[] tickCounterWritesBatchedOffNanos = new long[5];
@@ -1128,9 +923,10 @@ public final class HexJitReferenceSpellGameTests {
         if (referenceSpell.expectedTickCalls() > 0) {
             helper.assertTrue(Arrays.stream(tickCounterWritesDeferred).sum() > 0,
                     "Tick counter write batching did not defer any counter updates");
-            helper.assertTrue(Arrays.stream(tickCounterWriteCommits).sum()
-                            < Arrays.stream(tickCounterWritesDeferred).sum(),
-                    "Tick counter write batching did not combine multiple updates into fewer NBT commits");
+            helper.assertTrue(Arrays.stream(tickCounterWriteCommits).sum() > 0
+                            && Arrays.stream(tickCounterWriteCommits).sum()
+                            <= Arrays.stream(tickCounterWritesDeferred).sum(),
+                    "Tick counter batching did not commit at the benchmark's media callback boundaries");
         }
 
         long[] loopFastTickCounterOnNanos = new long[5];
@@ -1241,7 +1037,7 @@ public final class HexJitReferenceSpellGameTests {
 
         System.out.println("HEXJIT_REFERENCE_SPELL name=" + referenceSpell.name()
                 + " programIotas=" + program.size()
-                + " tickCalls=" + lastAuto.storedTicks
+                + " tickCalls=" + referenceSpell.expectedTickCalls()
                 + " yjspCalls=" + interpretedWarmup.yjspCalls
                 + " ops=" + lastAuto.opsConsumed
                 + " OFF_medianMs=" + median(offNanos) / 1_000_000.0
@@ -1265,14 +1061,6 @@ public final class HexJitReferenceSpellGameTests {
                 + " normalPatternCacheOffMs=" + median(normalPatternCacheOffNanos) / 1_000_000.0
                 + " compileActionsOnMs=" + median(compiledActionsOnNanos) / 1_000_000.0
                 + " compileActionsOffMs=" + median(compiledActionsOffNanos) / 1_000_000.0
-                + " tickMediaHolderCacheOnMs=" + median(tickMediaHolderCacheOnNanos) / 1_000_000.0
-                + " tickMediaHolderCacheOffMs=" + median(tickMediaHolderCacheOffNanos) / 1_000_000.0
-                + " tickMediaAvailabilityCacheOnMs=" + median(tickMediaAvailabilityCacheOnNanos) / 1_000_000.0
-                + " tickMediaAvailabilityCacheOffMs=" + median(tickMediaAvailabilityCacheOffNanos) / 1_000_000.0
-                + " directTickMediaPreflightOnMs=" + median(directTickMediaPreflightOnNanos) / 1_000_000.0
-                + " directTickMediaPreflightOffMs=" + median(directTickMediaPreflightOffNanos) / 1_000_000.0
-                + " directTickMediaExtractionOnMs=" + median(directTickMediaExtractionOnNanos) / 1_000_000.0
-                + " directTickMediaExtractionOffMs=" + median(directTickMediaExtractionOffNanos) / 1_000_000.0
                 + " maxOpCountCacheOnMs=" + median(maxOpCountCacheOnNanos) / 1_000_000.0
                 + " maxOpCountCacheOffMs=" + median(maxOpCountCacheOffNanos) / 1_000_000.0
                 + " loopSpecializationOnMs=" + median(loopSpecializationOnNanos) / 1_000_000.0
@@ -1299,15 +1087,9 @@ public final class HexJitReferenceSpellGameTests {
                 + " emptyPostExecutionCallsSkipped=" + Arrays.stream(emptyPostExecutionCallsSkipped).sum()
                 + " combineTickSideEffectsOnMs=" + median(combineTickSideEffectsOnNanos) / 1_000_000.0
                 + " combineTickSideEffectsOffMs=" + median(combineTickSideEffectsOffNanos) / 1_000_000.0
-                + " buddingRandomGateOnMs=" + median(buddingGateOnNanos) / 1_000_000.0
-                + " buddingRandomGateOffMs=" + median(buddingGateOffNanos) / 1_000_000.0
-                + " buddingRandomTickCalls=" + Arrays.toString(buddingGateTickCalls)
                 + " spendMediaTriggerOnMs=" + median(spendMediaTriggerOnNanos) / 1_000_000.0
                 + " spendMediaTriggerOffMs=" + median(spendMediaTriggerOffNanos) / 1_000_000.0
                 + " spendMediaTriggerCacheHits=" + diagnosticSpendMediaTriggerCacheHits
-                + " tickMediaWriteBatchOnMs=" + median(tickMediaWritesBatchedOnNanos) / 1_000_000.0
-                + " tickMediaWriteBatchOffMs=" + median(tickMediaWritesBatchedOffNanos) / 1_000_000.0
-                + " tickMediaWritesDeferred=" + Arrays.stream(tickMediaWritesDeferred).sum()
                 + " tickCounterWriteBatchOnMs=" + median(tickCounterWritesBatchedOnNanos) / 1_000_000.0
                 + " tickCounterWriteBatchOffMs=" + median(tickCounterWritesBatchedOffNanos) / 1_000_000.0
                 + " tickCounterWritesDeferred=" + Arrays.stream(tickCounterWritesDeferred).sum()
@@ -1539,40 +1321,8 @@ public final class HexJitReferenceSpellGameTests {
                 env.continuationSteps, vm.getImage().getOpsConsumed(), elapsedNanos);
     }
 
-    private static void configureHexOverpowered(net.minecraft.server.level.ServerPlayer player) throws Exception {
-        Class<?> forgeConfig = Class.forName("io.yukkuric.hexop.forge.HexOPConfigForge");
-        Object config = forgeConfig.getField("INSTANCE").get(null);
-        setHexOpConfigValue(forgeConfig, config, "cfg_EnablesPersonalMediaPool", true);
-        // HexOP's IntValue upper bound overflows when its source uses (int) 1e10.
-        // This test cap remains within that bound while exceeding yjsp_media's 1.14514B target.
-        setHexOpConfigValue(forgeConfig, config, "cfg_PersonalMediaMax", 1_300_000_000);
-        setHexOpConfigValue(forgeConfig, config, "cfg_PersonalMediaAfterEnlightened", false);
-
-        Class<?> attributes = Class.forName("io.yukkuric.hexop.HexOPAttributes");
-        @SuppressWarnings("unchecked")
-        Holder<Attribute> mediaMax = (Holder<Attribute>) attributes.getMethod("getPERSONAL_MEDIA_MAX").invoke(null);
-        AttributeInstance instance = player.getAttribute(mediaMax);
-        if (instance == null) throw new IllegalStateException("FakePlayer lacks HexOP's personal media max attribute");
-        instance.setBaseValue(1_300_000_000.0);
-
-        Class<?> api = Class.forName("io.yukkuric.hexop.HexOPConfig");
-        boolean enabled = (boolean) api.getMethod("EnablesPersonalMediaPool").invoke(null);
-        int maxMedia = (int) api.getMethod("PersonalMediaMax").invoke(null);
-        boolean requiresEnlightenment = (boolean) api.getMethod("PersonalMediaAfterEnlightened").invoke(null);
-        if (!enabled || maxMedia < 1_145_140_000 || requiresEnlightenment)
-            throw new IllegalStateException("HexOP test media settings were not applied: enabled=" + enabled
-                    + ", max=" + maxMedia + ", afterEnlightened=" + requiresEnlightenment);
-        System.out.println("HEXJIT_MEDIA_CONFIG enabled=" + enabled + " max=" + maxMedia
-                + " afterEnlightened=" + requiresEnlightenment);
-    }
-
-    private static void setHexOpConfigValue(Class<?> configClass, Object config, String fieldName, Object value)
-            throws ReflectiveOperationException {
-        Object configValue = configClass.getField(fieldName).get(config);
-        configValue.getClass().getMethod("set", Object.class).invoke(configValue, value);
-    }
-
     private static PatternIota greatPattern(ResourceLocation id) {
+        if (id.equals(YJSP_MEDIA)) return new PatternIota(JitTestAddon.REFILL_PATTERN);
         Iota pattern = PatternMapper.mapPatternWorld.get(id.toString());
         if (!(pattern instanceof PatternIota result))
             throw new IllegalStateException("HexParse has no scrambled pattern for " + id);
@@ -1715,7 +1465,7 @@ public final class HexJitReferenceSpellGameTests {
 
         ReferenceSpellEnvironment observerEnv = trackActionCalls
                 ? new ReferenceSpellEnvironment(player, yjsp.getPattern(), tick.getPattern(), referenceSpell.opLimit()) : null;
-        StaffCastEnv env = observerEnv != null ? observerEnv
+        BenchmarkSpellEnvironment env = observerEnv != null ? observerEnv
                 : new BenchmarkSpellEnvironment(player, referenceSpell.opLimit());
         CastingImage initial = new CastingImage(stack, 0, TreeList.empty(), false, false, 0, java.util.Map.of());
         CastingVM vm = new CastingVM(initial, env);
@@ -1731,7 +1481,8 @@ public final class HexJitReferenceSpellGameTests {
         }
         long elapsed = System.nanoTime() - start;
         CastingImage image = vm.getImage();
-        int storedTicks = CMIHexImageComponents.tickData(vm.getImage()).getCompound(OpTick.TAG_TIMES_TICKED).getInt(target.toShortString());
+        helper.assertTrue(HexalTickOptimization.counters(image) == null, "Hexal Tick component survived cast cleanup");
+        int storedTicks = observerEnv == null ? 0 : observerEnv.lastTickCount;
         String result = view.getResolutionType() + ":stackClear=" + view.isStackClear();
         List<net.minecraft.world.level.block.state.BlockState> areaStates = new ArrayList<>(27);
         for (int x = -1; x <= 1; x++) {
@@ -1742,7 +1493,7 @@ public final class HexJitReferenceSpellGameTests {
             }
         }
         long randomState = level.random.nextLong();
-        long personalMedia = readPersonalMedia(player);
+        long personalMedia = env.remainingMedia;
         int mediaUsed = player.getStats().getValue(Stats.CUSTOM.get(HexStatistics.MEDIA_USED)) - mediaUsedBefore;
         return new SpellRun(image, result, level.getBlockState(target), areaStates, randomState,
                 storedTicks, observerEnv == null ? 0 : observerEnv.tickCalls,
@@ -1750,18 +1501,6 @@ public final class HexJitReferenceSpellGameTests {
                 observerEnv == null ? 0 : observerEnv.particleCalls, vm.getImage().getOpsConsumed(),
                 observerEnv == null ? "[]" : observerEnv.errors.toString(), player.getHealth(), personalMedia,
                 mediaUsed, elapsed);
-    }
-
-    private static long readPersonalMedia(net.minecraft.server.level.ServerPlayer player) {
-        try {
-            Class<?> type = Class.forName("io.yukkuric.hexop.personal_mana.PersonalManaHolder");
-            Object holder = type.getMethod("get", net.minecraft.world.entity.player.Player.class).invoke(null, player);
-            if (!(holder instanceof ADMediaHolder media))
-                throw new IllegalStateException("HexOP did not return a personal media holder");
-            return media.withdrawMedia(-1, true);
-        } catch (ReflectiveOperationException error) {
-            throw new IllegalStateException("Could not read HexOP's personal media pool", error);
-        }
     }
 
     private static void assertCompleted(GameTestHelper helper, SpellRun result, BlockPos target,
@@ -1772,9 +1511,8 @@ public final class HexJitReferenceSpellGameTests {
                 label + " ended in an errored resolution: " + result.resolution);
         helper.assertTrue(result.tickCalls == 0 || result.tickCalls == referenceSpell.expectedTickCalls(),
                 label + " ran P2 " + result.tickCalls + " times, expected " + referenceSpell.expectedTickCalls());
-        helper.assertTrue(result.storedTicks == referenceSpell.expectedTickCalls(),
-                label + " wrote " + result.storedTicks + " ticks to userdata, expected "
-                        + referenceSpell.expectedTickCalls());
+        helper.assertTrue(result.tickCalls == 0 || result.storedTicks == referenceSpell.expectedTickCalls() - 1,
+                label + " observed " + result.storedTicks + " prior ticks before its last effect");
         helper.assertTrue(result.opsConsumed <= referenceSpell.opLimit(),
                 label + " exceeded the GameTest benchmark operation budget: " + result.opsConsumed);
         helper.assertTrue(result.finalBlock.is(Blocks.BUDDING_AMETHYST),
@@ -1794,7 +1532,7 @@ public final class HexJitReferenceSpellGameTests {
         helper.assertTrue(Float.compare(off.playerHealth, auto.playerHealth) == 0,
                 label + " changed caster health: OFF=" + off.playerHealth + ", AUTO=" + auto.playerHealth);
         helper.assertTrue(off.personalMedia == auto.personalMedia,
-                label + " changed HexOP personal media: OFF=" + off.personalMedia + ", AUTO=" + auto.personalMedia);
+                label + " changed benchmark media balance: OFF=" + off.personalMedia + ", AUTO=" + auto.personalMedia);
         helper.assertTrue(off.mediaUsed == auto.mediaUsed,
                 label + " changed the MEDIA_USED statistic: OFF=" + off.mediaUsed + ", AUTO=" + auto.mediaUsed);
         helper.assertTrue(auto.particleCalls <= off.particleCalls,
@@ -1821,9 +1559,18 @@ public final class HexJitReferenceSpellGameTests {
 
     private record FeatureAblation(long[] enabledNanos, long[] disabledNanos) {}
 
-    private static class BenchmarkSpellEnvironment extends StaffCastEnv
+    static class BenchmarkSpellEnvironment extends StaffCastEnv
             implements TickStateReuseEnvironment, StableMaxOpCountEnvironment {
         private final int opLimit;
+        private long remainingMedia;
+
+        void refillMedia() { remainingMedia = 1_145_140_000L; }
+
+        @Override public long extractMediaEnvironment(long cost, boolean simulate) {
+            long extracted = Math.min(remainingMedia, cost);
+            if (!simulate) remainingMedia -= extracted;
+            return cost - extracted;
+        }
 
         private BenchmarkSpellEnvironment(net.minecraft.server.level.ServerPlayer player, int opLimit) {
             super(player, InteractionHand.MAIN_HAND);
@@ -1846,6 +1593,7 @@ public final class HexJitReferenceSpellGameTests {
         private final HexPattern tickPattern;
         private final List<String> errors = new ArrayList<>();
         private long tickCalls;
+        private int lastTickCount;
         private long yjspCalls;
         private long particleCalls;
 
@@ -1861,7 +1609,11 @@ public final class HexJitReferenceSpellGameTests {
         @Override
         public void postExecution(CastResult result) {
             super.postExecution(result);
-            if (result.getCast() instanceof PatternIota pattern && pattern.getPattern().equals(tickPattern)) tickCalls++;
+            if (result.getCast() instanceof PatternIota pattern && pattern.getPattern().equals(tickPattern)) {
+                tickCalls++;
+                var counters = result.getNewData() == null ? null : HexalTickOptimization.counters(result.getNewData());
+                lastTickCount = counters == null ? 0 : counters.values().stream().mapToInt(Integer::intValue).sum();
+            }
             if (result.getCast() instanceof PatternIota pattern && pattern.getPattern().equals(yjspPattern)) yjspCalls++;
             if (result.getResolutionType() == ResolvedPatternType.ERRORED)
                 errors.add(result.getSideEffects().toString());

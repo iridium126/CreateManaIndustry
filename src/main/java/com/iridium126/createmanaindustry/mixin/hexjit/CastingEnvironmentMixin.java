@@ -7,7 +7,7 @@ import at.petrak.hexcasting.api.casting.ActionRegistryEntry;
 import at.petrak.hexcasting.api.casting.PatternShapeMatch;
 import at.petrak.hexcasting.api.casting.eval.env.PlayerBasedCastEnv;
 import at.petrak.hexcasting.api.casting.eval.env.StaffCastEnv;
-import com.iridium126.createmanaindustry.compat.hexcasting.OpTick;
+import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexalTickOptimization;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.CastingEnvironmentObserverAccess;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.HexJitRuntime;
@@ -110,7 +110,7 @@ public abstract class CastingEnvironmentMixin implements CastingEnvironmentObser
         ResourceKey<ActionRegistryEntry> key = match instanceof PatternShapeMatch.Normal normal
                 ? normal.key : match instanceof PatternShapeMatch.PerWorld perWorld ? perWorld.key : null;
         ExecutionScope scope = ExecutionScope.current();
-        boolean loopTickPrecheck = key != null && OpTick.ACTION_ID.equals(key.location())
+        boolean loopTickPrecheck = key != null && HexalTickOptimization.ACTION_ID.equals(key.location())
                 && ServerConfig.hexJitLoopSpecialization
                 && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
                 && scope != null && scope.inMetacastingFrame();

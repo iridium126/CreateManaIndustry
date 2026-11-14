@@ -33,7 +33,7 @@
 .\gradlew.bat runGameTestServer -I scripts/particles/package-output-gametest.init.gradle -PpackageRecoveryGameTest --offline --no-configuration-cache
 ```
 
-各套件共用 [common.gradle](../scripts/testing/common.gradle) 的 `gameTest` source set、NeoForge 模组绑定、工作目录、Owo 依赖准备和空结构夹具。准备脚本只生成资源或数据包；测试类及夹具不会进入 main 输出或发行 JAR，包括同一调用同时执行 `assemble` 的情况。
+各套件共用 [common.gradle](../scripts/testing/common.gradle) 的 `gameTest` source set、NeoForge 模组绑定、工作目录和空结构夹具。准备脚本只生成资源或数据包；测试类及夹具不会进入 main 输出或发行 JAR，包括同一调用同时执行 `assemble` 的情况。
 
 | 范围 | 初始化脚本 | 额外准备/选项 |
 | --- | --- | --- |
@@ -41,7 +41,7 @@
 | Create 包裹输出/恢复 | `scripts/particles/package-output-gametest.init.gradle` | `-PpackageRecoveryGameTest` 切换恢复模式 |
 | 大范围碰撞 | `scripts/collision/gametest.init.gradle` | 无 |
 | HexParse | `scripts/hexparse/gametest.init.gradle` | 缺席用 `scripts/hexparse/absent.init.gradle` |
-| Hex JIT | `scripts/hexjit/gametest.init.gradle` | 正确性子集追加 `-I scripts/hexjit/regression.init.gradle` |
+| Hex JIT 与 Hexal Tick | `scripts/hexjit/gametest.init.gradle` | 正确性子集追加 `-I scripts/hexjit/regression.init.gradle` |
 | Allay Storm | `scripts/allaystorm/gametest.init.gradle` | 可选 `-PdomeEvidence=<生产GPU证据JSON>`；见 [验证说明](allay-storm-validation.md) |
 | ALLVR 世界生成 | `scripts/allvr-worldgen-test.init.gradle` | 先运行 `scripts/prepare-allvr-worldgen-test.py`；可选 `-PallvrTestPack=terralith` |
 | Sanctuary/Epic Redwood | `scripts/sanctuary-test.init.gradle` / `scripts/epic-redwood-test.init.gradle` | 先准备 vanilla 世界生成夹具 |
@@ -50,7 +50,7 @@
 
 一次运行选择一个 GameTest 套件。运行目录为 `build/gametest/<套件>/`；生成的结构在相邻 `<套件>-resources/`。世界生成及模型夹具由对应准备脚本生成，缺席探针保留各自依赖控制。
 
-其余 opt-in 套件按各自初始化脚本单独运行：`scripts/mist/gametest.init.gradle`（Mist 灌溉）、`scripts/allvr-regression.init.gradle`（ALLVR 回归）、`scripts/castchain/optional.init.gradle`（`-PcastChainAbsent=hexcasting|trickster`）、`scripts/castchain/benchmark.init.gradle` 与 `scripts/hextrick/benchmark.init.gradle`（基准场景）、`scripts/allvr-client-validation.init.gradle`（隔离客户端准备）。
+其余 opt-in 套件按各自初始化脚本单独运行：`scripts/mist/gametest.init.gradle`（Mist 灌溉）、`scripts/allvr-regression.init.gradle`（ALLVR 回归）、`scripts/castchain/optional.init.gradle`（`-PcastChainAbsent=hexal|hexcasting|trickster`）、`scripts/castchain/benchmark.init.gradle` 与 `scripts/hextrick/benchmark.init.gradle`（基准场景）、`scripts/allvr-client-validation.init.gradle`（隔离客户端准备）。
 
 ## GPU 验证与性能
 

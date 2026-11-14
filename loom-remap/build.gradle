@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'net.fabricmc.fabric-loom-remap' version "1.15-SNAPSHOT"
+    id 'net.fabricmc.fabric-loom-remap'
 }
 
 group = rootProject.group
@@ -23,10 +23,12 @@ repositories {
     maven {
         name = "Fabric"
         url = "https://maven.fabricmc.net/"
+        content { includeGroupByRegex 'net\\.fabricmc(\\..*)?' }
     }
     maven {
         name = "CurseMaven"
         url = "https://cursemaven.com"
+        content { includeGroup 'curse.maven' }
     }
 }
 

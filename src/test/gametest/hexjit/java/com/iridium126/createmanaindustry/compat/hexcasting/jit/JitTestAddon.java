@@ -24,6 +24,8 @@ import net.neoforged.neoforge.registries.RegisterEvent;
 /** Standard third-party APIs only. The JIT must never need to know about these classes. */
 @EventBusSubscriber(modid = "createmanaindustry")
 public final class JitTestAddon {
+    static final ResourceLocation REFILL = id("refill");
+    static final HexPattern REFILL_PATTERN = HexPattern.fromAngleString("eaddaddaeaeaddaddaeaeaddaddae", HexDir.NORTH_EAST);
     static final HexPattern ORDINARY = HexPattern.fromAngleString("w", HexDir.EAST);
     static final HexPattern DYNAMIC = HexPattern.fromAngleString("aqawewdq", HexDir.WEST);
     static final HexPattern THROWING = HexPattern.fromAngleString("ewdadaqw", HexDir.WEST);
@@ -36,6 +38,13 @@ public final class JitTestAddon {
 
     @SubscribeEvent public static void register(RegisterEvent event) {
         event.register(HexRegistries.IMAGE_COMPONENT, id("calls"), () -> CALLS);
+        event.register(HexRegistries.ACTION, REFILL, () -> new ActionRegistryEntry(REFILL_PATTERN, new ConstMediaAction() {
+            @Override public int getArgc() { return 0; }
+            @Override public List<Iota> execute(List<? extends Iota> args, CastingEnvironment env) {
+                ((HexJitReferenceSpellGameTests.BenchmarkSpellEnvironment) env).refillMedia();
+                return List.of();
+            }
+        }));
         event.register(HexRegistries.ACTION, id("action"), () -> new ActionRegistryEntry(ORDINARY, new ExtensionAction(false)));
         event.register(HexRegistries.ACTION, id("throw"), () -> new ActionRegistryEntry(THROWING, new ExtensionAction(true)));
         event.register(HexRegistries.SPECIAL_HANDLER, id("dynamic"), () -> (pattern, env) -> {

@@ -53,7 +53,6 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
     private static final String CASTING_VM = ROOT + "api/casting/eval/vm/CastingVM";
     private static final String SPELL_ACTION = ROOT + "api/casting/castables/SpellAction";
     private static final String ADD_MOTION = ROOT + "common/casting/actions/spells/OpAddMotion";
-    private static final String NBT_COMPOUND = "net/minecraft/nbt/CompoundTag";
     private static final String NUMBER_LITERAL = ROOT + "common/casting/actions/math/SpecialHandlerNumberLiteral";
     private static final String NUMBER_LITERAL_INNER = NUMBER_LITERAL + "$InnerAction";
     private static final String CONST_MEDIA_ACTION = ROOT + "api/casting/castables/ConstMediaAction";
@@ -83,10 +82,16 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             Map.entry(TREE_LIST + "$TreeList4", "5d9e5693e610651bb7bd63860fba5457fc9bafcb4bb3cf276a660689dd3c5993"),
             Map.entry(TREE_LIST + "$TreeList5", "7276744142983a4568c03b1b537a2767537785dd2b70f0256573a70517b5cabd"),
             Map.entry(TREE_LIST + "$TreeList6", "c4dd9c460203abf84ca6da7879c25d7a168f2e9b10172d19e3691430d03c045f"));
+    private static final String HEXAL_TICK = "ram/talia/hexal/common/casting/actions/spells/great/OpTick";
+    private static final Map<String, String> HEXAL_TICK_HASHES = Map.of(
+            HEXAL_TICK, "b005d62d2ab2ed02bb2c7a3cf7c03c277581c95f3d8c82121b04ba07678e7ac9",
+            HEXAL_TICK + "$Spell", "94e2e15a3a5c48fdeef2db1fa448906607b689d956eac24d5299fd6cd888e946",
+            "ram/talia/hexal/common/lib/hex/HexalImageComponents", "941fc5df62f960b4f7bab161c26d5ec7bbcd89c743cfa57975079815e97c255d",
+            "ram/talia/hexal/api/config/HexalConfig$Server", "e40c8dc036a02dc9797c9fb64eedfb4b03076ca4c8202bd6595f36ecd842d771",
+            "ram/talia/hexal/Hexal", "3dfb7bf870c6f795f0f57a3f961d67079083c86a01603e2b2328ddf306299f63");
     private static final Map<String, String> FAST_ACTION_HASHES = Map.of(
             SPELL_ACTION, "ce8759a61ccc7aef321498de4e0e0f9dc13053767d1782c067b9eea7d575ff19",
-            ADD_MOTION, "34faa4238aa4011fc87605809081f049f95168f9b8d43002fc7bbde29ee9d6af",
-            NBT_COMPOUND, "7616e1f84d10bfad84bd1934fde392bc5ef29a216b25389643cbb2251424f4aa");
+            ADD_MOTION, "34faa4238aa4011fc87605809081f049f95168f9b8d43002fc7bbde29ee9d6af");
     private static final Map<String, String> NUMBER_LITERAL_HASHES = Map.of(
             NUMBER_LITERAL, "d11de498526f9e8ab671d6bcd62fced072c1b0730c8db8b94fb876d96bc6560f",
             NUMBER_LITERAL_INNER, "887a97dd6523e4a781d8dfd5670dc6a6e6c2c9a14fe7c621a3f2d19d9974b890",
@@ -133,6 +138,9 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
                 JitCompatibility.verifierInstalled();
             } else JitCompatibility.disable("final transformer verifier unavailable");
             verifyFastActionTargets();
+            if (FMLLoader.getLoadingModList().getModFileById("hexal") != null
+                    && HEXAL_TICK_HASHES.entrySet().stream().allMatch(target -> matchesHash(target.getKey(), target.getValue())))
+                JitCompatibility.verifyHexalTick();
             verifyNumberLiteralTargets();
             verifyFastStackValidationTarget();
             verifyTreeListTarget();
@@ -299,12 +307,6 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             String expected = FAST_ACTION_HASHES.get(ADD_MOTION);
             if (expected != null && matchesHash(internal, expected)) return true;
             JitCompatibility.disableFastAction("upstream Add Motion bytecode mismatch");
-            return false;
-        }
-        if (NBT_COMPOUND.equals(internal)) {
-            String expected = FAST_ACTION_HASHES.get(NBT_COMPOUND);
-            if (matchesHash(internal, expected)) return true;
-            JitCompatibility.disableFastAction("Minecraft CompoundTag bytecode mismatch");
             return false;
         }
         try (InputStream stream = getClass().getClassLoader().getResourceAsStream(internal + ".class")) {
@@ -539,6 +541,8 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
         @Override public void preApply(ITargetClassContext context) {}
         @Override public void postApply(ITargetClassContext context) {
             ClassNode node = context.getClassNode();
+            if (HEXAL_TICK_HASHES.containsKey(node.name) && hasAnyForeignMixin(node))
+                JitCompatibility.disableHexalTick();
             if (SOUND_EMISSION_HASHES.containsKey(node.name)) {
                 if (!originalMethods(node, Set.of("playSound", "playSeededSound", "onPlaySoundAtPosition"))) JitCompatibility.disableSoundElision();
                 else JitCompatibility.verifiedSoundEmission(node.name);
@@ -596,11 +600,6 @@ public final class HexJitMixinPlugin implements IMixinConfigPlugin {
             if (CONST_MEDIA_ACTION.equals(node.name)) {
                 if (hasForeignMixin(node, Set.of("operate", "executeWithOpCount", "getMediaCost")))
                     JitCompatibility.disableNumberLiteral("foreign Mixin changed ConstMediaAction semantics");
-                return;
-            }
-            if (NBT_COMPOUND.equals(node.name)) {
-                if (hasForeignMixin(node, Set.of("copy")))
-                    JitCompatibility.disableFastAction("foreign Mixin changed CompoundTag.copy");
                 return;
             }
             if (IOTA_TYPE.equals(node.name)) {

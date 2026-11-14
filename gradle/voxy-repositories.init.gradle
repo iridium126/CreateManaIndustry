@@ -1,0 +1,19 @@
+// NeoForge's project repositories take precedence over Voxy's settings repositories.
+// Resolve these Voxy libraries directly from their publishing repository.
+gradle.beforeProject { project ->
+    project.repositories {
+        exclusiveContent {
+            forRepository { mavenCentral() }
+            filter {
+                includeModule('org.lwjgl', 'lwjgl-lmdb')
+                includeModule('org.lwjgl', 'lwjgl-zstd')
+                includeModule('redis.clients', 'jedis')
+                includeModule('org.rocksdb', 'rocksdbjni')
+                includeModule('org.apache.commons', 'commons-pool2')
+                includeModule('org.json', 'json')
+                includeModule('org.tukaani', 'xz')
+                includeModule('org.xerial', 'sqlite-jdbc')
+            }
+        }
+    }
+}

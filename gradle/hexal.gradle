@@ -1,0 +1,85 @@
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+
+// Hexal's pinned source tree ships the matching Hexcasting, PAUCAL and MoreIotas binaries.
+def upstream = providers.gradleProperty('hexal_checkout').map { file(it) }
+def revision = providers.gradleProperty('hexal_revision').get()
+def repository = 'https://github.com/c-Caelum/hexal-neoforge-1.21.1.git'
+def stack = layout.projectDirectory.dir(".gradle/hexal/${revision}/${neo_version}")
+def checkout = stack.dir('checkout').asFile
+def source = stack.dir('source').asFile
+def dependenciesDir = stack.dir('libs').asFile
+def artifactNames = [
+        hexal: "hexal-${hexal_version}.jar",
+        hexcasting: "hexcasting-neoforge-${minecraft_version}-${hexcasting_version}.jar",
+        paucal: "paucal-${paucal_version}+${minecraft_version}-neoforge.jar",
+        moreiotas: "moreiotas-${moreiotas_version}.jar"
+].asImmutable()
+def artifacts = artifactNames.values().collect { new File(dependenciesDir, it) }
+def ready = { artifacts.every { it.isFile() } }
+def wrapper = providers.systemProperty('os.name').get().startsWith('Windows')
+        ? ['cmd', '/d', '/c', 'gradlew.bat'] : ['bash', './gradlew']
+def offline = gradle.startParameter.offline
+def checkoutOverride = upstream.orNull
+tasks.register('prepareHexal') {
+    group = 'build setup'
+    description = 'Prepares Hexal and its matching dependencies from the pinned upstream checkout'
+    // Run as a separate invocation so the flat-directory repository sees the finished files.
+    notCompatibleWithConfigurationCache('Runs the upstream Git checkout and Gradle wrapper')
+    outputs.files(artifacts)
+    onlyIf { !ready() }
+    doLast {
+        def run = { File directory, List<String> command ->
+            def process = new ProcessBuilder(command).directory(directory).redirectErrorStream(true).start()
+            process.inputStream.withReader { reader -> reader.eachLine { logger.lifecycle(it) } }
+            if (process.waitFor() != 0) throw new GradleException("Failed to prepare Hexal: ${command.join(' ')}")
+        }
+        def gitSource = checkoutOverride
+        if (gitSource == null) {
+            if (offline) throw new GradleException('Hexal is missing; run prepareHexal online or supply -Phexal_checkout=<upstream checkout>')
+            checkout.mkdirs()
+            if (!new File(checkout, 'HEAD').isFile()) run(checkout, ['git', 'init', '--bare'])
+            run(checkout, ['git', 'fetch', '--no-tags', '--depth=1', repository, revision])
+            gitSource = checkout
+        }
+        def archive = new File(temporaryDir, 'hexal.zip')
+        run(gitSource, ['git', 'archive', '--format=zip', "--output=${archive.absolutePath}".toString(), revision])
+        copy { from zipTree(archive); into source }
+        def arguments = wrapper + ['jar', '--no-configuration-cache', '--console=plain', "-Pneo_version=${neo_version}".toString()]
+        if (offline) arguments += '--offline'
+        run(source, arguments)
+        dependenciesDir.mkdirs()
+        artifactNames.each { key, name ->
+            def jar = new File(source, (key == 'hexal' ? 'build/libs/' : 'libs/') + name)
+            if (!jar.isFile()) throw new GradleException("Expected pinned Hexal dependency: ${jar}")
+            def staged = Files.createTempFile(dependenciesDir.toPath(), 'hexal-', '.tmp')
+            try {
+                Files.copy(jar.toPath(), staged, StandardCopyOption.REPLACE_EXISTING)
+                Files.move(staged, new File(dependenciesDir, name).toPath(), StandardCopyOption.REPLACE_EXISTING)
+            } finally {
+                Files.deleteIfExists(staged)
+            }
+        }
+    }
+}
+
+// Keep the pinned jars as file dependencies rather than flatDir module coordinates.
+// The configuration cache serializes a classpath before any task runs, so a cold
+// cache cannot contain an unresolvable external module; builtBy attaches the
+// producer task implicitly and lets Gradle order the consumers after it.
+def hexalCacheReady = ready()
+def prepare = tasks.named('prepareHexal')
+ext.cmiHexalCoordinates = artifactNames.collectEntries { key, name ->
+    def jar = files(new File(dependenciesDir, name))
+    [(key): hexalCacheReady ? jar : jar.builtBy(prepare)]
+}.asImmutable()
+
+// Wire the upstream build into the task graph only when the cache is cold:
+// prepareHexal is deliberately not configuration-cache compatible, so a warm
+// build keeps its configuration cache.
+if (!hexalCacheReady) {
+    tasks.named('build') { dependsOn(prepare) }
+    tasks.withType(JavaCompile).configureEach { dependsOn(prepare) }
+    tasks.withType(Test).configureEach { dependsOn(prepare) }
+    tasks.matching { it.name.startsWith('run') }.configureEach { dependsOn(prepare) }
+}

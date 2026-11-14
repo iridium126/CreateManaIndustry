@@ -3,12 +3,12 @@
 Java 21、Gradle Wrapper 9.2.1。从项目根目录运行，正常构建不启动Minecraft客户端。
 
 ```powershell
-.\gradlew.bat help --offline
+.\gradlew.bat build
 .\gradlew.bat test check build --offline
 python scripts/testing/validate_gradle.py
 ```
 
-`--offline`要求依赖、命名重映射及Voxy缓存已准备好。首次准备依赖使用联网构建；不要把缓存缺失当作可以跳过的编译输入。配置缓存默认启用；使用不兼容的独立验证init脚本时按该工具说明加 `--no-configuration-cache`。
+`build` 在 Hexal 缓存缺失时自动先执行 `prepareHexal`；缓存齐备时不把该任务接入任务图，以保留配置缓存。四个 Hexal JAR 以带 `builtBy` 生产者信息的文件依赖进入类路径，因此冷缓存不会在配置缓存序列化阶段要求 JAR 已存在。`prepareHexal` 从固定的上游提交构建 Hexal，并准备同一提交自带的 Hexcasting、PAUCAL 和 MoreIotas；也可以显式运行并向它传入 `-Phexal_checkout=<路径>` 从现有 Git 仓库读取该提交。`--offline` 要求依赖、Hexal、命名重映射及 Voxy 缓存已准备好。配置缓存默认启用；使用不兼容的独立验证 init 脚本时按该工具说明加 `--no-configuration-cache`。
 
 ## 职责与依赖顺序
 
@@ -18,8 +18,10 @@ python scripts/testing/validate_gradle.py
 | `settings.gradle`／`gradle/remapped-libs.gradle` | 稳定项目名、完整命名缓存检查、决定是否加载Loom子项目 |
 | `gradle/repositories.gradle` | 外部仓库、特殊发布源与解析顺序 |
 | `gradle/dependencies.gradle` | 唯一外部坐标表、依赖范围、主／测试类路径连接 |
+| `gradle/hexal.gradle` | 固定提交取件、上游 Wrapper 构建及带生产者信息的本地 JAR 文件依赖 |
 | `gradle/optional-apis.gradle` | 共享惰性嵌套API提取任务、精确单匹配及输出依赖 |
 | `gradle/voxy.gradle` | 按需获取、准备和构建Voxy，正常命中缓存不执行源码构建 |
+| `gradle/voxy-repositories.init.gradle` | 限定上游 Voxy 的 Maven Central 依赖来源 |
 | `gradle/packaging.gradle` | bootstrap服务层、内嵌mod及发行JAR、对外产物 |
 | `gradle/verification.gradle` | JVM测试、Sable缺席探针、Create二进制审计 |
 | `loom-remap/build.gradle` | 缓存缺失时导出Mojang命名的Trickster与Fabric API |
@@ -29,19 +31,20 @@ python scripts/testing/validate_gradle.py
 ## 依赖范围
 
 - `implementation`：生产实现依赖；不等于把第三方JAR嵌入模组。
-- `compileOnly`：外部提供的API及可选适配。Veil、Hexcasting、Ars Nouveau、Bits 'n' Bobs及JEI同时加入 `localRuntime`，供开发环境使用，不作为Maven消费者的强制传递依赖。
+- `compileOnly` 声明外部 API 和可选适配。Veil、Hexcasting、Hexal、Ars Nouveau、Bits 'n' Bobs 及 JEI 同时进入开发运行类路径。
 - `localRuntime`：仅开发／验证运行环境需要的模组；不进入发布依赖。
 - `testImplementation`／`testRuntimeOnly`：JUnit、参考实现、字节码和API验证所需项。
 - `additionalRuntimeClasspath`：Connector与bootstrap的早期加载路径，不能随意合并到普通模组类路径。
 
-第三方坐标只在 `cmiCoordinates` 表中声明一次，共享版本继续在 `gradle.properties` 维护；Loom子项目复用同一张表。更改范围时检查编译、开发运行和测试文件集合，以及发布POM／module metadata，不以构建能通过作为唯一依据。
+第三方坐标只在 `cmiCoordinates` 表中声明一次，共享版本继续在 `gradle.properties` 维护；Loom子项目复用同一张表。优先使用各项目自有 Maven 的可读 GAV 与语义版本，仓库按组限定在 `gradle/repositories.gradle`；这些构件关闭传递依赖，保持与原先无 POM 的 CurseForge／Modrinth jar 一致。Create 由 `maven.createmod.net` 提供，`preparePackageNativeAudit` 按 `com.simibubi.create` 坐标定位解析产物并写入清单／提交信息；版本升级后要重新运行 `python scripts/particles/audit_package_environment.py` 刷新 `docs/package-environment-native-inventory.json`。没有公开 Maven 的模组仍由平台文件／版本 ID 固定，并在属性中注明可读版本。更改范围时检查编译、开发运行和测试文件集合，以及发布POM／module metadata，不以构建能通过作为唯一依据。
 
 ## 缓存与重映射
 
 | 位置 | 用途 |
 | --- | --- |
 | `.gradle/cmi/optional-apis/` | Sodium、Sable、CCA、Endec嵌套API；正常clean后保留，分发变更使任务输入失效并刷新 |
-| `.gradle/voxy/` | 原有Voxy源码与成品缓存；保留已有目录避免重复克隆／构建 |
+| `.gradle/hexal/` | 按上游提交和 NeoForge 版本缓存 Hexal 源码与四个依赖 JAR |
+| `.gradle/voxy/` | 按固定提交和 NeoForge 版本缓存 Voxy 成品 |
 | `loom-remap/remapped-libs/` | 按版本命名的Trickster与Fabric API导出 |
 | `build/generated/resources/modMetadata/` | 生成的模组元数据 |
 | `build/internal/` | bootstrap开发JAR与内部mod载荷 |

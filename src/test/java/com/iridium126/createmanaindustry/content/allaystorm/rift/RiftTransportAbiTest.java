@@ -3,18 +3,32 @@ package com.iridium126.createmanaindustry.content.allaystorm.rift;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
-import java.nio.file.*;
 import java.util.*;
 import java.util.jar.JarFile;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Exact descriptors and call-site owners from installed jars; catches required-mixin failures before launch. */
+/** Exact descriptors and call-site owners from resolved jars; catches required-mixin failures before launch. */
 class RiftTransportAbiTest {
     ClassNode read(String name)throws Exception {
-        byte[] bytes=null;
-        if(name.startsWith("dev/ryanhcode/sable/"))try(var files=Files.list(Path.of("run/mods"))){for(Path path:files.filter(p->p.getFileName().toString().startsWith("sable-neoforge-")).toList())try(var jar=new JarFile(path.toFile())){var entry=jar.getJarEntry(name+".class");if(entry!=null)bytes=jar.getInputStream(entry).readAllBytes();}}
-        if(bytes==null)try(var input=getClass().getClassLoader().getResourceAsStream(name+".class")){assertNotNull(input,name);bytes=input.readAllBytes();}
-        var node=new ClassNode();new ClassReader(bytes).accept(node,0);return node;
+        if (name.startsWith("dev/ryanhcode/sable/")) {
+            String sableJar = System.getProperty("cmi.test.sableJar");
+            assertNotNull(sableJar, "Gradle must supply the resolved Sable distribution");
+            try (var jar = new JarFile(sableJar)) {
+                var entry = jar.getJarEntry(name + ".class");
+                assertNotNull(entry, name);
+                try (var input = jar.getInputStream(entry)) {
+                    var node = new ClassNode();
+                    new ClassReader(input).accept(node, 0);
+                    return node;
+                }
+            }
+        }
+        try (var input = getClass().getClassLoader().getResourceAsStream(name + ".class")) {
+            assertNotNull(input, name);
+            var node = new ClassNode();
+            new ClassReader(input).accept(node, 0);
+            return node;
+        }
     }
     List<AnnotationNode> annotations(List<AnnotationNode> a,List<AnnotationNode> b){var all=new ArrayList<AnnotationNode>();if(a!=null)all.addAll(a);if(b!=null)all.addAll(b);return all;}
     Object value(AnnotationNode annotation,String key){if(annotation.values!=null)for(int i=0;i<annotation.values.size();i+=2)if(annotation.values.get(i).equals(key))return annotation.values.get(i+1);return null;}

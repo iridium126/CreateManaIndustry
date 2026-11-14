@@ -12,7 +12,7 @@ Great Trick 的字形、书本及交互 UI 仍有独立 CPU 绘制路径；Hex �
 
 真实客户端验收按用户要求交由用户执行，不再由代理操作客户端；自动代码／GLSL／GameTest／性能夹具继续推进。检查清单及隔离运行入口见[客户端验收](gpu-runtime-client-acceptance.md)，尚无用户执行结果的项目保持待验收。
 
-执行基线已明确为 Minecraft 1.21.1／NeoForge 21.1.236／**Create 6.0.10**，不升级或扩大为双版本支持。实际解析 JAR 的 `Git-Hash` 与本地 Create 提交 `ac0c444d9828da3453ae8cc65338e8de063286fb` 一致；环境审计改为读取该提交，不读取参考工作树 HEAD。Hex 使用实际依赖 `0.12.0-devel-pre-53`。
+执行基线已明确为 Minecraft 1.21.1／NeoForge 21.1.236／**Create 6.0.10**（`maven.createmod.net` 的 `6.0.10-281` 构建），不升级或扩大为双版本支持。实际解析 JAR 的 `Git-Hash` 与本地 Create 提交 `c308d004788fce2998bf41653f6d39412b6fc8ed` 一致；环境审计改为读取该提交，不读取参考工作树 HEAD。Hex 使用实际依赖 `0.12.0-devel-pre-53`。
 
 | 项目 | 当前实现 | 验收／剩余工作 |
 | --- | --- | --- |

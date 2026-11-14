@@ -44,6 +44,8 @@ public final class JitCompatibility {
     private static volatile boolean directPreflightPlayerEnvironmentVerified;
     private static volatile boolean directPreflightStaffEnvironmentVerified;
     private static volatile String directPreflightFailure;
+    private static volatile boolean hexalTickVerified;
+    private static volatile boolean hexalTickDisabled;
     private static volatile boolean verifierInstalled;
     private static volatile boolean coreReady;
     private static volatile boolean motionReady;
@@ -150,6 +152,9 @@ public final class JitCompatibility {
     }
     public static boolean motionBatchingReady() { return motionReady; }
     public static boolean particleCoalescingReady() { return coreReady && particleCoalescingFailure == null; }
+    public static void verifyHexalTick() { hexalTickVerified = true; }
+    public static void disableHexalTick() { hexalTickDisabled = true; }
+    public static boolean hexalTickReady() { return coreReady && hexalTickVerified && !hexalTickDisabled; }
     public static boolean fastAddMotionReady() { return coreReady && fastActionTargetVerified && fastActionFailure == null; }
     public static boolean fastStackValidationReady() {
         return coreReady && stackValidationTargetVerified && treeListTargetVerified && stackValidationFailure == null;
@@ -181,7 +186,7 @@ public final class JitCompatibility {
     }
     public static String status() {
         String core = failure != null ? failure : ready() ? "verified pre-64" : "waiting for target verification (" + VERIFIED.size() + "/7)";
-        return core + ", staffCallbacks=" + (fastStaffCallbacksReady() ? "verified" : staffCallbackFailure != null
+        return core + ", hexalTick=" + (hexalTickReady() ? "verified" : "inactive") + ", staffCallbacks=" + (fastStaffCallbacksReady() ? "verified" : staffCallbackFailure != null
                 ? staffCallbackFailure : "waiting")
                 + (motionBatchingReady() ? ", motionBatch=verified" : motionFailure != null
                 ? ", motionBatch=disabled (" + motionFailure + ")" : ", motionBatch=unverified")

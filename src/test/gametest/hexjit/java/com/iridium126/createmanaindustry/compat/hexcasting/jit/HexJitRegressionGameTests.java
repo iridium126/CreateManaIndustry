@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.api.casting.PatternShapeMatch;
 import at.petrak.hexcasting.api.casting.eval.env.StaffCastEnv;
@@ -15,18 +14,22 @@ import at.petrak.hexcasting.common.casting.PatternRegistryManifest;
 import at.petrak.hexcasting.common.lib.hex.HexArithmetics;
 import at.petrak.hexcasting.common.lib.hex.HexActions;
 import at.petrak.hexcasting.common.lib.hex.HexIotaTypes;
-import com.iridium126.createmanaindustry.compat.hexcasting.OpTick;
+import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import java.util.*;
+import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.*;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.util.FakePlayerFactory;
 import net.neoforged.neoforge.gametest.*;
+import ram.talia.hexal.Hexal;
+import ram.talia.hexal.api.config.HexalConfig;
 
 /** Differential regressions for the optimized VM boundaries. */
 @GameTestHolder("createmanaindustry")
@@ -53,7 +56,14 @@ public final class HexJitRegressionGameTests {
     private static final class LimitedEnv extends StaffCastEnv implements TickStateReuseEnvironment {
         LimitedEnv(ServerPlayer player) { super(player, InteractionHand.MAIN_HAND); }
         @Override public boolean isEnlightened() { return true; }
+        private final List<CastingImage> attempted = new ArrayList<>();
         @Override public int maxOpCount() { return Math.min(super.maxOpCount(), 3); }
+        @Override public void postExecution(at.petrak.hexcasting.api.casting.eval.CastResult result) {
+            super.postExecution(result);
+            if (result.getNewData() != null && result.getSideEffects().stream()
+                    .anyMatch(OperatorSideEffect.AttemptSpell.class::isInstance))
+                attempted.add(result.getNewData());
+        }
     }
     private static final class CallbackEnv extends StaffCastEnv implements TickStateReuseEnvironment {
         int sounds;
@@ -90,6 +100,93 @@ public final class HexJitRegressionGameTests {
         return new CastingVM(new CastingImage(TreeList.from(stack), 0, TreeList.empty(),
                 false, false, 0, java.util.Map.of()), env);
     }
+
+    @GameTest(template = "hex_jit_test", batch = "hexjit_regression")
+    public static void hexalTickUsesLiveRules(GameTestHelper helper) {
+        var player = FakePlayerFactory.getMinecraft(helper.getLevel());
+        var level = helper.getLevel();
+        BlockPos furnace = helper.absolutePos(new BlockPos(0, 2, 0));
+        BlockPos budding = furnace.east();
+        player.setPos(furnace.getCenter());
+        var tick = new PatternIota(Objects.requireNonNull(PatternRegistryManifest.getCanonicalStrokesPerWorld(
+                ResourceKey.create(HexRegistries.ACTION, HexalTickOptimization.ACTION_ID), level)));
+        var config = HexalConfig.Server.DISALLOWED_BLOCKS_TICK;
+        var oldDenyList = config.get();
+        var base = HexalConfig.Server.TICK_CONSTANT_COST;
+        var scaling = HexalConfig.Server.TICK_COST_PER_TICKED;
+        double oldBase = base.get(), oldScaling = scaling.get();
+        var oldMode = ServerConfig.hexJitMode;
+        try {
+            base.set(0.01009);
+            scaling.set(0.00209);
+            for (boolean denied : List.of(false, true)) {
+                config.set(denied ? List.of("minecraft:furnace") : List.of());
+                TickProbe off = probeTick(helper, player, furnace, budding, tick, ServerConfig.HexJitMode.OFF, false);
+                TickProbe auto = probeTick(helper, player, furnace, budding, tick, ServerConfig.HexJitMode.AUTO, false);
+                helper.assertTrue(off.equals(auto), "Hexal Tick changed price, count, block state or RNG: " + off + " / " + auto);
+                helper.assertTrue(auto.burnTime == (denied ? 10 : 8), "Furnace tick did not honor Hexal's deny list");
+                long first = Hexal.toMediaFromDust(base.get());
+                long second = Hexal.toMediaFromDust(base.get() + scaling.get());
+                helper.assertTrue(auto.costs.equals(List.of(first, first, second)),
+                        "Hexal price rounding or per-position count changed: " + auto.costs);
+                helper.assertTrue(auto.beforeLast.equals(Map.of(furnace, 1, budding, 1)),
+                        "Previous attempts did not preserve independent coordinates");
+            }
+            config.set(List.of());
+            TickProbe simulatedOff = probeTick(helper, player, furnace, budding, tick, ServerConfig.HexJitMode.OFF, true);
+            TickProbe simulatedAuto = probeTick(helper, player, furnace, budding, tick, ServerConfig.HexJitMode.AUTO, true);
+            helper.assertTrue(simulatedOff.equals(simulatedAuto) && simulatedAuto.burnTime == 10
+                    && simulatedAuto.costs.isEmpty(), "Simulated Tick performed a real effect");
+        } finally {
+            config.set(oldDenyList);
+            base.set(oldBase);
+            scaling.set(oldScaling);
+            ServerConfig.hexJitMode = oldMode;
+        }
+        helper.succeed();
+    }
+
+    private static TickProbe probeTick(GameTestHelper helper, ServerPlayer player, BlockPos furnace, BlockPos budding,
+                                       PatternIota tick, ServerConfig.HexJitMode mode, boolean simulate) {
+        var level = helper.getLevel();
+        level.setBlockAndUpdate(furnace, Blocks.AIR.defaultBlockState());
+        level.setBlockAndUpdate(furnace, Blocks.FURNACE.defaultBlockState());
+        level.setBlockAndUpdate(budding, Blocks.BUDDING_AMETHYST.defaultBlockState());
+        var entity = Objects.requireNonNull(level.getBlockEntity(furnace));
+        var tag = new CompoundTag();
+        tag.putInt("BurnTime", 10);
+        tag.putInt("CookTimeTotal", 200);
+        entity.loadWithComponents(tag, level.registryAccess());
+        level.getRandom().setSeed(0x1234bcde);
+        var costs = new ArrayList<Long>();
+        var snapshots = new ArrayList<Map<BlockPos, Integer>>();
+        var env = new Env(player) {
+            @Override public long extractMediaEnvironment(long cost, boolean simulateMedia) {
+                if (!simulateMedia) costs.add(cost);
+                return 0;
+            }
+
+            @Override public void postExecution(at.petrak.hexcasting.api.casting.eval.CastResult result) {
+                if (result.getNewData() == null || !(result.getCast() instanceof PatternIota pattern)
+                        || !pattern.getPattern().equals(tick.getPattern())) return;
+                var counters = HexalTickOptimization.counters(result.getNewData());
+                snapshots.add(counters == null ? Map.of() : Map.copyOf(counters));
+            }
+        };
+        var stack = simulate ? List.<Iota>of(new Vec3Iota(furnace.getCenter()))
+                : List.<Iota>of(new Vec3Iota(furnace.getCenter()), new Vec3Iota(budding.getCenter()), new Vec3Iota(furnace.getCenter()));
+        var vm = new CastingVM(new CastingImage(TreeList.from(stack), 0, TreeList.empty(), false, simulate,
+                0, Map.of()), env);
+        ServerConfig.hexJitMode = mode;
+        var result = vm.queueExecuteAndWrapIotas(simulate ? List.of(tick) : List.of(tick, tick, tick), level);
+        helper.assertTrue(result.getResolutionType().getSuccess() && HexalTickOptimization.counters(vm.getImage()) == null,
+                "Tick probe did not complete and clear its counters: " + result.getResolutionType());
+        return new TickProbe(entity.saveWithoutMetadata(level.registryAccess()).getInt("BurnTime"),
+                List.copyOf(costs), snapshots.getLast(), level.getRandom().nextLong());
+    }
+
+    private record TickProbe(int burnTime, List<Long> costs, Map<BlockPos, Integer> beforeLast, long nextRandom) {}
+
     @GameTest(template="hex_jit_test", timeoutTicks=1200, batch="hexjit_regression")
     public static void vmBoundaryParity(GameTestHelper helper) throws Exception {
         try {
@@ -101,11 +198,11 @@ public final class HexJitRegressionGameTests {
             player.setPos(Vec3.atCenterOf(pos));
             var target = new Vec3Iota(Vec3.atCenterOf(pos));
             var tick = new PatternIota(Objects.requireNonNull(PatternRegistryManifest.getCanonicalStrokesPerWorld(
-                    ResourceKey.create(HexRegistries.ACTION, OpTick.ACTION_ID),
+                    ResourceKey.create(HexRegistries.ACTION, HexalTickOptimization.ACTION_ID),
                     helper.getLevel().getServer().overworld())));
             ServerConfig.hexJitMode = ServerConfig.HexJitMode.AUTO;
             vm(new Env(player), List.of(target)).queueExecuteAndWrapIotas(List.of(tick), helper.getLevel());
-            helper.assertTrue(HexJitRuntime.enabled(), "Review requires verified JIT: " + HexJitRuntime.status());
+            helper.assertTrue(FastTickAction.enabled(), "Review requires verified JIT: " + HexJitRuntime.status());
 
             int stage = Integer.getInteger("hexjit.regression.stage", 5);
             // The inherited Staff callback must still report argument underflow.
@@ -168,11 +265,15 @@ public final class HexJitRegressionGameTests {
             ServerConfig.hexJitMode = ServerConfig.HexJitMode.AUTO;
             var limitedAutoVm = vm(limitedAuto, loopStack);
             limitedAutoVm.queueExecuteAndWrapIotas(List.of(eval), helper.getLevel());
-            int offTicks = CMIHexImageComponents.tickData(limitedOffVm.getImage()).getCompound(OpTick.TAG_TIMES_TICKED).getInt(pos.toShortString());
-            int autoTicks = CMIHexImageComponents.tickData(limitedAutoVm.getImage()).getCompound(OpTick.TAG_TIMES_TICKED).getInt(pos.toShortString());
-            System.out.println("HEXJIT_REVIEW_OP_LIMIT limit=3 offTicks=" + offTicks + " autoTicks=" + autoTicks
-                    + " offOps=" + limitedOffVm.getImage().getOpsConsumed() + " autoOps=" + limitedAutoVm.getImage().getOpsConsumed());
-            helper.assertTrue(autoTicks == offTicks && autoTicks == 2, "Overridden maxOpCount probe changed");
+            helper.assertTrue(limitedOff.attempted.size() == 2 && limitedAuto.attempted.size() == 2,
+                    "An action beyond the operation limit attempted a Tick");
+            var offCounters = HexalTickOptimization.counters(limitedOff.attempted.get(1));
+            var autoCounters = HexalTickOptimization.counters(limitedAuto.attempted.get(1));
+            helper.assertTrue(offCounters.get(pos) == 1 && offCounters.equals(autoCounters),
+                    "Tick count visible before the second attempt changed");
+            helper.assertTrue(HexalTickOptimization.counters(limitedOffVm.getImage()) == null
+                    && HexalTickOptimization.counters(limitedAutoVm.getImage()) == null,
+                    "Completed casts must clear the transient Tick component");
 
             }
             if (stage >= 5) {
@@ -181,6 +282,10 @@ public final class HexJitRegressionGameTests {
             snapshotEnv.observedVm = snapshotVm;
             snapshotVm.queueExecuteAndWrapIotas(List.of(eval), helper.getLevel());
             var snapshots = snapshotEnv.observedImages;
+            helper.assertTrue(HexalTickOptimization.counters(snapshots.get(0)) == null
+                    && HexalTickOptimization.counters(snapshots.get(1)).get(pos) == 1
+                    && HexalTickOptimization.counters(snapshots.get(2)).get(pos) == 2,
+                    "Observed Tick images lost their original counts");
             System.out.println("HEXJIT_REVIEW_SNAPSHOTS count=" + snapshots.size()
                     + " ops=" + snapshots.stream().map(CastingImage::getOpsConsumed).toList()
                     + " secondAndThirdSame=" + (snapshots.get(1) == snapshots.get(2)));

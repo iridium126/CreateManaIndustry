@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.casting.*;
 import at.petrak.hexcasting.api.casting.castables.Action;
 import at.petrak.hexcasting.api.casting.arithmetic.*;
@@ -70,7 +69,6 @@ public final class HexJitGameTests {
         helper.assertTrue(JitCompatibility.fastNumberLiteralReady(),
                 "Number-literal target failed verification: " + JitCompatibility.status());
         verifyStackValidation(helper);
-        verifyCompoundTagCopy(helper);
         verifyHexDirMath(helper);
         verifyAddMotionNormalizationCache(helper);
         var ordinaryMatch = PatternRegistryManifest.matchPattern(JitTestAddon.ORDINARY, env);
@@ -290,7 +288,7 @@ public final class HexJitGameTests {
         env.limit = scenario.opLimit;
         env.getWorld().random.setSeed(9128374L);
         CastingVM vm = new CastingVM(new CastingImage(TreeList.from(scenario.stack), 0, TreeList.empty(),
-                false, false, 0, java.util.Map.of(CMIHexImageComponents.TICK_DATA.get(), new CompoundTag())), env);
+                false, false, 0, java.util.Map.of()), env);
         ExecutionClientView view = vm.queueExecuteAndWrapIotas(scenario.program, helper.getLevel());
         Snapshot snapshot = new Snapshot(CastingImage.Companion.getCODEC().encodeStart(NbtOps.INSTANCE, vm.getImage()).getOrThrow(),
                 List.copyOf(env.trace), view.getResolutionType() + ":" + view.isStackClear(), env.getWorld().random.nextLong(), "-",
@@ -335,8 +333,8 @@ public final class HexJitGameTests {
             public Operator getOperator(HexPattern pattern) { return second; }
         };
         var engine = new ArithmeticEngine(List.of(doubleExtension, booleanExtension));
-        var doubleImage = new CastingImage(TreeList.from(List.<Iota>of(new DoubleIota(4))), 0, TreeList.empty(), false, false, 0, java.util.Map.of(CMIHexImageComponents.TICK_DATA.get(), new CompoundTag()));
-        var booleanImage = new CastingImage(TreeList.from(List.<Iota>of(new BooleanIota(true))), 0, TreeList.empty(), false, false, 0, java.util.Map.of(CMIHexImageComponents.TICK_DATA.get(), new CompoundTag()));
+        var doubleImage = new CastingImage(TreeList.from(List.<Iota>of(new DoubleIota(4))), 0, TreeList.empty(), false, false, 0, java.util.Map.of());
+        var booleanImage = new CastingImage(TreeList.from(List.<Iota>of(new BooleanIota(true))), 0, TreeList.empty(), false, false, 0, java.util.Map.of());
         ServerConfig.hexJitMode = ServerConfig.HexJitMode.AUTO;
         for (int i = 0; i < 50; i++) {
             var doubleResult = engine.run(Arithmetic.ADD, new TestEnvironment(helper.getLevel()), doubleImage, SpellContinuation.Done.INSTANCE);
@@ -363,7 +361,7 @@ public final class HexJitGameTests {
         for (int depth : new int[] {2, 64, 1024}) {
             var values = new ArrayList<Iota>();
             for (int i = 0; i < depth; i++) values.add(new DoubleIota(i));
-            var image = new CastingImage(TreeList.from(values), 0, TreeList.empty(), false, false, 0, java.util.Map.of(CMIHexImageComponents.TICK_DATA.get(), new CompoundTag()));
+            var image = new CastingImage(TreeList.from(values), 0, TreeList.empty(), false, false, 0, java.util.Map.of());
             // Alternate rounds to avoid always measuring the same mode first.
             for (int round = 0; round < 6; round++) {
                 ServerConfig.hexJitMode = (round & 1) == 0 ? ServerConfig.HexJitMode.OFF : ServerConfig.HexJitMode.AUTO;
@@ -417,7 +415,7 @@ public final class HexJitGameTests {
 
     private static void runSinglePattern(TestEnvironment env, List<Iota> program, ServerLevel level) {
         CastingVM vm = new CastingVM(new CastingImage(TreeList.empty(), 0, TreeList.empty(),
-                false, false, 0, java.util.Map.of(CMIHexImageComponents.TICK_DATA.get(), new CompoundTag())), env);
+                false, false, 0, java.util.Map.of()), env);
         blackhole = vm.queueExecuteAndWrapIotas(program, level);
     }
 
@@ -665,7 +663,7 @@ public final class HexJitGameTests {
         for (ItemStack stack : usableStacks) env.usableStacks.add(stack.copy());
         env.getWorld().random.setSeed(0x434d495f4a4954L);
         CastingVM vm = new CastingVM(new CastingImage(TreeList.from(List.<Iota>of(target)), 0, TreeList.empty(),
-                false, simulateNext, 0, java.util.Map.of(CMIHexImageComponents.TICK_DATA.get(), new CompoundTag())), env);
+                false, simulateNext, 0, java.util.Map.of()), env);
         ExecutionClientView view = vm.queueExecuteAndWrapIotas(
                 List.of(new PatternIota(action.value().prototype())), helper.getLevel());
         List<BlockSnapshot> blocks = nearbyBlockSnapshots(helper.getLevel(), pos);
@@ -802,68 +800,11 @@ public final class HexJitGameTests {
         }
     }
 
-    private static void verifyCompoundTagCopy(GameTestHelper helper) {
-        class CopyTrackingCompoundTag extends CompoundTag {
-            int copies;
-            @Override public CompoundTag copy() { copies++; return new CompoundTag(); }
-        }
-
-        CompoundTag empty = new CompoundTag();
-        CompoundTag emptyCopy = FastCompoundTagCopy.copy(empty);
-        helper.assertTrue(empty != emptyCopy && empty.copy().equals(emptyCopy),
-                "Allocation-lean CompoundTag copy changed an empty tag");
-        emptyCopy.putString("copy-only", "value");
-        helper.assertTrue(empty.isEmpty(), "Copying an empty CompoundTag retained a mutable alias");
-        CompoundTag source = new CompoundTag();
-        CompoundTag child = new CompoundTag();
-        child.putString("text", "deep");
-        child.putIntArray("ints", new int[] {1, 2, 3});
-        CompoundTag grandchild = new CompoundTag();
-        grandchild.putString("level", "third");
-        child.put("grandchild", grandchild);
-        CopyTrackingCompoundTag customChild = new CopyTrackingCompoundTag();
-        ListTag list = new ListTag();
-        CompoundTag listed = new CompoundTag();
-        listed.putLongArray("longs", new long[] {4L, 5L});
-        list.add(listed);
-        source.put("nested", child);
-        source.put("custom", customChild);
-        source.put("list", list);
-        source.putString("text", "entry");
-        source.put("bytes", new ByteArrayTag(new byte[] {6, 7, 8}));
-        source.put("number", IntTag.valueOf(9));
-
-        CompoundTag vanilla = source.copy();
-        helper.assertTrue(customChild.copies == 1, "Vanilla copy did not invoke the custom CompoundTag override");
-        customChild.copies = 0;
-        CompoundTag optimized = FastCompoundTagCopy.copy(source);
-        helper.assertTrue(customChild.copies == 1, "Fast copy bypassed a custom CompoundTag copy override");
-        helper.assertTrue(vanilla.equals(optimized) && vanilla.toString().equals(optimized.toString()),
-                "Allocation-lean CompoundTag copy changed NBT content or iteration order");
-        helper.assertTrue(source != optimized && source.get("nested") != optimized.get("nested")
-                        && source.getCompound("nested").get("grandchild")
-                        != optimized.getCompound("nested").get("grandchild")
-                        && source.get("list") != optimized.get("list")
-                        && source.get("bytes") != optimized.get("bytes"),
-                "Allocation-lean CompoundTag copy retained mutable child aliases");
-        optimized.getCompound("nested").putString("text", "changed");
-        optimized.getCompound("nested").getCompound("grandchild").putString("level", "changed");
-        optimized.getList("list", Tag.TAG_COMPOUND).getCompound(0).putLong("extra", 10L);
-        helper.assertTrue(source.getCompound("nested").getString("text").equals("deep")
-                        && source.getCompound("nested").getCompound("grandchild").getString("level").equals("third")
-                        && !source.getList("list", Tag.TAG_COMPOUND).getCompound(0).contains("extra"),
-                "Mutating copied nested NBT changed the source tag");
-
-        CopyTrackingCompoundTag customRoot = new CopyTrackingCompoundTag();
-        helper.assertTrue(FastCompoundTagCopy.copy(customRoot) != customRoot && customRoot.copies == 1,
-                "Fast copy bypassed the root CompoundTag subclass override");
-    }
-
     private static void benchmarkCold(ArithmeticEngine template, TestEnvironment env,
                                       com.sun.management.ThreadMXBean bean) throws Throwable {
         int perRound = 32; // Below the default 64-call compilation threshold.
         var image = new CastingImage(TreeList.from(List.<Iota>of(new DoubleIota(1), new DoubleIota(2))),
-                0, TreeList.empty(), false, false, 0, java.util.Map.of(CMIHexImageComponents.TICK_DATA.get(), new CompoundTag()));
+                0, TreeList.empty(), false, false, 0, java.util.Map.of());
         var arithmetics = Arrays.asList(template.arithmetics);
         ServerConfig.hexJitThreshold = 64;
         for (int round = 0; round < 16; round++) {
@@ -936,10 +877,6 @@ public final class HexJitGameTests {
                                     ^ Double.doubleToRawLongBits(motion.x)
                                     ^ Long.rotateLeft(Double.doubleToRawLongBits(motion.y), 17)
                                     ^ Long.rotateLeft(Double.doubleToRawLongBits(motion.z), 31);
-                        }
-                        if (result.getNewData() != null) {
-                            CompoundTag tag = CMIHexImageComponents.tickData(result.getNewData());
-                            tag.putInt("observed", tag.getInt("observed") + 1);
                         }
                         trace.add("stateful observer");
                     }

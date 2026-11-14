@@ -1,12 +1,11 @@
 gradle.projectsEvaluated {
     def p = gradle.rootProject
     def absent = p.findProperty('castChainAbsent')
-    if (!(absent in ['hexcasting', 'trickster'])) throw new GradleException('Use -PcastChainAbsent=hexcasting or trickster')
-    if (absent == 'hexcasting') {
-        p.configurations.localRuntime.dependencies.removeAll { it.group == 'hexcasting' }
-    } else {
-        p.configurations.tricksterLocalRuntime.dependencies.clear()
-    }
+    if (!(absent in ['hexal', 'hexcasting', 'trickster']))
+        throw new GradleException('Use -PcastChainAbsent=hexal, hexcasting or trickster')
+    if (absent in ['hexal', 'hexcasting']) p.configurations.hexalLocalRuntime.dependencies.clear()
+    if (absent == 'hexcasting') p.configurations.hexcastingLocalRuntime.dependencies.clear()
+    if (absent == 'trickster') p.configurations.tricksterLocalRuntime.dependencies.clear()
     p.apply from: p.file('scripts/testing/common.gradle')
     p.configureCmiGameTests(name: "castchain-absent-${absent}", sources: 'src/test/gametest/castchain-optional/java',
             structure: 'cast_chain_test', trickster: absent != 'trickster')

@@ -1,6 +1,5 @@
 package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
-import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexImageComponents;
 import at.petrak.hexcasting.api.casting.ParticleSpray;
 import at.petrak.hexcasting.api.addldata.ADMediaHolder;
 import at.petrak.hexcasting.api.casting.eval.CastingEnvironment;
@@ -24,9 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.Random;
 import java.util.UUID;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -49,7 +46,6 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.core.BlockPos;
 import at.petrak.hexcasting.api.utils.TreeList;
-import com.iridium126.createmanaindustry.compat.hexcasting.OpTick;
 
 /** Optional observer bookkeeping. Scopes hold booleans only and are removed in finally blocks. */
 public final class ExecutionScope implements AutoCloseable {
@@ -87,7 +83,6 @@ public final class ExecutionScope implements AutoCloseable {
     private final boolean directTickMediaExtraction;
     private final boolean cacheTickMediaAvailability;
     private final boolean combineTickSideEffects;
-    private final boolean fastBuddingAmethystRandomTick;
     private final boolean loopSpecialization;
     private final boolean fastTickAction;
     private final boolean loopTickBatch;
@@ -111,23 +106,15 @@ public final class ExecutionScope implements AutoCloseable {
     private PigmentSnapshot lastPigment;
     private FrozenPigment lastFrozenPigment;
     private boolean hasLastParticle;
-    private CompoundTag tickUserData;
+    private Map<BlockPos, Integer> tickCounters;
     private boolean hasMaxOpCount;
     private int maxOpCount;
-    private CompoundTag pendingTickCounterRoot;
-    private CompoundTag pendingTickCounterMap;
-    private BlockPos pendingTickCounterPos;
-    private String pendingTickCounterKey;
-    private String pendingTickCounterTag;
-    private int pendingTickCounterValue;
-    private boolean hasPreparedTickCounterUpdate;
-    private CompoundTag deferredTickCounterRoot;
-    private CompoundTag deferredTickCounterMap;
-    private BlockPos deferredTickCounterPos;
-    private String deferredTickCounterKey;
-    private String deferredTickCounterTag;
-    private int deferredTickCounterValue;
-    private boolean hasDeferredTickCounterWrite;
+    private Map<BlockPos, Integer> preparedTickCounters;
+    private BlockPos preparedTickPos;
+    private int preparedTickValue;
+    private Map<BlockPos, Integer> deferredTickCounters;
+    private BlockPos deferredTickPos;
+    private int deferredTickValue;
     private long tickCounterWritesDeferred;
     private long tickCounterWriteCommits;
     private long foldedTickCounterFastUpdates;
@@ -138,7 +125,6 @@ public final class ExecutionScope implements AutoCloseable {
     private TreeList<?> pendingTickStackPopSource;
     private CastingImage pendingLoopTickInputImage;
     private TreeList<Iota> pendingLoopTickOutputStack;
-    private CompoundTag pendingLoopTickUserData;
     private SpellContinuation pendingLoopTickContinuation;
     private PatternIota pendingLoopTickPattern;
     private List<OperatorSideEffect> pendingLoopTickSideEffects;
@@ -178,24 +164,21 @@ public final class ExecutionScope implements AutoCloseable {
     private CastingEnvironment checkedFastMediaPoolEnvironment;
     private boolean fastMediaPoolEnvironmentChecked;
     private boolean fastMediaPoolEnvironmentEligible;
-    private CompoundTag cachedTickCounterRoot;
-    private CompoundTag cachedTickCounterMap;
-    private String cachedTickCounterTag;
-    private String cachedTickCounterKey;
+    private Map<BlockPos, Integer> cachedTickCounters;
+    private BlockPos cachedTickPos;
     private int cachedTickCounterValue;
-    private boolean hasCachedTickCounter;
-    private boolean cachedTickCounterMapAttached;
     private boolean pendingFoldedTickCounterFastUpdate;
     private Iota tickTargetIota;
     private BlockPos tickTargetPos;
     private BlockPos fastTickAssetsPos;
-    private OpTick.FastTickAssets fastTickAssets;
+    private HexalTickOptimization.Assets fastTickAssets;
     private Level tickChunkLevel;
     private int tickChunkX;
     private int tickChunkZ;
     private LevelChunk tickChunk;
     private Block tickEligibilityBlock;
     private Boolean tickBlockEligibility;
+    private List<? extends String> tickDenyList;
     private TagLookup[] tagLookups;
     private int nextTagLookup;
     private TagLookup lastTagLookup;
@@ -270,20 +253,9 @@ public final class ExecutionScope implements AutoCloseable {
     private static long lastLoopTickBatchFolds;
     private static long lastFoldedBuddingAmethystActions;
     private static long lastFoldedBuddingAmethystTickCalls;
-    private Level buddingAmethystGateLevel;
-    private BlockPos buddingAmethystGatePos;
-    private int buddingAmethystGateProbability;
-    private int buddingAmethystTicksUntilTick;
-    private Random buddingAmethystGateRandom;
-    private long buddingAmethystRandomTickCalls;
-    private static long lastBuddingAmethystRandomTickCalls;
     private Level cachedBuddingStateLevel;
     private BlockPos cachedBuddingStatePos;
     private BlockState cachedBuddingState;
-    private ServerLevel pendingBuddingTickLevel;
-    private BlockPos pendingBuddingTickPos;
-    private BlockState pendingBuddingTickState;
-    private int pendingBuddingRandomTicks;
     private ExecutionScope(boolean batchMotion) {
         ownerThread = Thread.currentThread();
         serverThreadScope = HexJitRuntime.onServerThread();
@@ -300,15 +272,13 @@ public final class ExecutionScope implements AutoCloseable {
         directTickMediaExtraction = ServerConfig.hexJitDirectTickMediaExtraction;
         cacheTickMediaAvailability = ServerConfig.hexJitCacheTickMediaAvailability;
         combineTickSideEffects = ServerConfig.hexJitCombineTickSideEffects;
-        fastBuddingAmethystRandomTick = ServerConfig.hexJitFastBuddingAmethystRandomTick;
         loopSpecialization = serverThreadScope
                 && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
                 && ServerConfig.hexJitLoopSpecialization && JitCompatibility.frameTailCacheReady();
         collectMetrics = ServerConfig.hexJitCollectMetrics || previous != null && previous.collectMetrics;
         fastTickAction = serverThreadScope
                 && ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO
-                && ServerConfig.hexJitFastTickAction && HexJitRuntime.enabled()
-                && JitCompatibility.fastAddMotionReady();
+                && FastTickAction.enabled();
         loopTickBatch = loopSpecialization && fastTickAction && ServerConfig.hexJitLoopTickBatch;
         repeatedTickMediaPreflight = loopTickBatch && ServerConfig.hexJitFastHexOPMediaPool
                 && ServerConfig.hexJitDirectTickMediaPreflight && ServerConfig.hexJitCacheTickMediaHolder
@@ -328,6 +298,11 @@ public final class ExecutionScope implements AutoCloseable {
         cacheNormalPatternLookup = patternLookupEnabled
                 && ServerConfig.hexJitCacheNormalPatternLookup && JitCompatibility.actionPrechecksReady();
         cachePerWorldPatternLookup = patternLookupEnabled && ServerConfig.hexJitCachePerWorldPatternLookup;
+        if (previous != null) {
+            previous.flushTickCounterWrites();
+            previous.invalidateCachedTickCounter();
+            previous.invalidateBuddingAmethystState();
+        }
         if (previous == null) {
             lastMotionPushes = 0;
             lastMotionWrites = 0;
@@ -338,6 +313,12 @@ public final class ExecutionScope implements AutoCloseable {
         return new ExecutionScope(batchMotion);
     }
     public void startStep() { compiled = false; notifying = false; }
+    public void leaveTickRun() {
+        flushTickCounterWrites();
+        invalidateCachedTickCounter();
+        invalidateBuddingAmethystState();
+        invalidateTickRangeCheck();
+    }
     public void metacastingFrame(boolean value) { metacastingFrame = value; }
     public boolean inMetacastingFrame() { return metacastingFrame; }
     public void notifying(boolean value) { notifying = value; }
@@ -355,7 +336,6 @@ public final class ExecutionScope implements AutoCloseable {
         ExecutionScope scope = HexJitRuntime.onServerThread() ? serverCurrent : OTHER_THREADS.get();
         if (scope != null) {
             scope.flushTickCounterWrites();
-            scope.flushBuddingAmethystRandomTicks();
             scope.flushAllMotion();
         }
     }
@@ -386,7 +366,6 @@ public final class ExecutionScope implements AutoCloseable {
     public boolean directTickMediaExtractionEnabled() { return directTickMediaExtraction; }
     public boolean cacheTickMediaAvailabilityEnabled() { return cacheTickMediaAvailability; }
     public boolean combineTickSideEffectsEnabled() { return combineTickSideEffects; }
-    public boolean fastBuddingAmethystRandomTickEnabled() { return fastBuddingAmethystRandomTick; }
     public boolean loopSpecializationEnabled() { return loopSpecialization; }
     public boolean fastTickActionEnabled() { return fastTickAction; }
     public boolean loopTickBatchEnabled() { return loopTickBatch; }
@@ -674,115 +653,73 @@ public final class ExecutionScope implements AutoCloseable {
     public static long lastEvalSoundCopiesSkipped() { return lastEvalSoundCopiesSkipped; }
     public void recordEmptyPostExecutionSkipped() { if (collectMetrics) emptyPostExecutionCallsSkipped++; }
     public static long lastEmptyPostExecutionCallsSkipped() { return lastEmptyPostExecutionCallsSkipped; }
-    /**
-     * Keep a cast-private Tick user-data tag and reuse it while it is the VM's current tag.
-     * The caller only uses this after verifying that no post-execution observer can retain an
-     * intermediate CastingImage.
-     */
-    public CompoundTag reuseTickUserData(CompoundTag source) {
-        if (tickUserData == source) return source;
-        tickUserData = FastCompoundTagCopy.copy(source);
-        return tickUserData;
+    public boolean ownsTickCounters(Map<BlockPos, Integer> counters) {
+        return counters != null && counters == tickCounters;
     }
 
-    /** Carry the Tick count already read for media pricing to the same fast-path side effect. */
-    public void prepareTickCounterUpdate(CompoundTag root, CompoundTag counterMap, BlockPos pos,
-                                         String counterTag, String counterKey, int nextValue) {
-        pendingTickCounterRoot = root;
-        pendingTickCounterMap = counterMap;
-        pendingTickCounterPos = pos;
-        pendingTickCounterTag = counterTag;
-        pendingTickCounterKey = counterKey;
-        pendingTickCounterValue = nextValue;
-        hasPreparedTickCounterUpdate = true;
+    public void ownTickCounters(Map<BlockPos, Integer> counters) {
+        flushTickCounterWrites();
+        invalidateCachedTickCounter();
+        tickCounters = counters;
     }
 
-    /** Reuse the current Tick count while the cast-private user-data compound stays identical. */
-    public int cachedTickCounterValue(CompoundTag root, CompoundTag counterMap,
-                                     String counterTag, String counterKey) {
-        if (!hasCachedTickCounter || cachedTickCounterRoot != root || cachedTickCounterMap != counterMap
-                || cachedTickCounterTag != counterTag || cachedTickCounterKey != counterKey) {
-            cachedTickCounterRoot = root;
-            cachedTickCounterMap = counterMap;
-            cachedTickCounterTag = counterTag;
-            cachedTickCounterKey = counterKey;
-            cachedTickCounterValue = counterMap.getInt(counterKey);
-            cachedTickCounterMapAttached = root.get(counterTag) == counterMap;
-            hasCachedTickCounter = true;
+    /** Carry the value used for pricing through to the matching successful effect. */
+    public void prepareTickCounterUpdate(Map<BlockPos, Integer> counters, BlockPos pos, int nextValue) {
+        preparedTickCounters = counters;
+        preparedTickPos = pos;
+        preparedTickValue = nextValue;
+    }
+
+    public int cachedTickCounterValue(Map<BlockPos, Integer> counters, BlockPos pos) {
+        if (!hasCachedTickCounterFor(counters, pos)) {
+            flushTickCounterWrites();
+            cachedTickCounters = counters;
+            cachedTickPos = pos;
+            cachedTickCounterValue = counters.getOrDefault(pos, 0);
         }
         return cachedTickCounterValue;
     }
 
-    /** True while the current loop still has the same private Tick counter compound. */
-    public boolean hasCachedTickCounterFor(CompoundTag root, String counterTag, String counterKey) {
-        return hasCachedTickCounter && cachedTickCounterRoot == root
-                && cachedTickCounterTag == counterTag && cachedTickCounterKey == counterKey;
+    public boolean hasCachedTickCounterFor(Map<BlockPos, Integer> counters, BlockPos pos) {
+        return cachedTickCounters != null && cachedTickCounters == counters && pos.equals(cachedTickPos);
     }
 
-    /** Read the already validated counter directly inside a consecutive Tick-only loop run. */
     public int currentCachedTickCounterValue() { return cachedTickCounterValue; }
 
-    /** Mark that this folded Tick can advance the already validated cache without a prepared tuple. */
     public void prepareFoldedTickCounterFastUpdate() {
         pendingFoldedTickCounterFastUpdate = true;
     }
 
-    /** Apply one successful folded Tick's increment using the cast-local counter cache. */
-    public boolean applyFoldedTickCounterFastUpdate(CompoundTag root, BlockPos pos,
-                                                     String counterTag, String counterKey) {
-        if (!pendingFoldedTickCounterFastUpdate) return false;
-        pendingFoldedTickCounterFastUpdate = false;
-        if (!hasCachedTickCounterFor(root, counterTag, counterKey)) {
-            invalidateCachedTickCounter();
-            return false;
+    public void incrementTickCounter(Map<BlockPos, Integer> counters, BlockPos pos) {
+        int nextValue;
+        if (pendingFoldedTickCounterFastUpdate && hasCachedTickCounterFor(counters, pos)) {
+            nextValue = cachedTickCounterValue + 1;
+            if (collectMetrics) foldedTickCounterFastUpdates++;
+        } else if (preparedTickCounters == counters && pos.equals(preparedTickPos)) {
+            nextValue = preparedTickValue;
+        } else {
+            nextValue = cachedTickCounterValue(counters, pos) + 1;
         }
-
-        int nextValue = cachedTickCounterValue + 1;
-        cachedTickCounterValue = nextValue;
-        if (collectMetrics) foldedTickCounterFastUpdates++;
+        pendingFoldedTickCounterFastUpdate = false;
+        clearPreparedTickCounterUpdate();
+        if (hasCachedTickCounterFor(counters, pos)) cachedTickCounterValue = nextValue;
         if (batchTickCounterWrites) {
-            boolean sameDeferredCounter = hasDeferredTickCounterWrite
-                    && deferredTickCounterRoot == root && deferredTickCounterMap == cachedTickCounterMap
-                    && deferredTickCounterPos != null
-                    && (deferredTickCounterPos == pos || deferredTickCounterPos.equals(pos))
-                    && (deferredTickCounterTag == counterTag || deferredTickCounterTag.equals(counterTag))
-                    && (deferredTickCounterKey == counterKey || deferredTickCounterKey.equals(counterKey));
-            if (hasDeferredTickCounterWrite && !sameDeferredCounter) flushTickCounterWrites();
-            deferredTickCounterRoot = root;
-            deferredTickCounterMap = cachedTickCounterMap;
-            deferredTickCounterPos = pos;
-            deferredTickCounterTag = counterTag;
-            deferredTickCounterKey = counterKey;
-            deferredTickCounterValue = nextValue;
-            hasDeferredTickCounterWrite = true;
+            if (deferredTickCounters != null && (deferredTickCounters != counters || !pos.equals(deferredTickPos)))
+                flushTickCounterWrites();
+            deferredTickCounters = counters;
+            deferredTickPos = pos;
+            deferredTickValue = nextValue;
             if (collectMetrics) tickCounterWritesDeferred++;
         } else {
-            cachedTickCounterMap.putInt(counterKey, nextValue);
-            if (!cachedTickCounterMapAttached) {
-                root.put(counterTag, cachedTickCounterMap);
-                cachedTickCounterMapAttached = true;
-            }
+            counters.put(pos, nextValue);
         }
-        return true;
     }
 
-    /** Reuse the counter compound without a root-tag lookup between Tick actions in one cast. */
-    public CompoundTag cachedTickCounterMap(CompoundTag root, String counterTag, String counterKey) {
-        if (hasCachedTickCounter && cachedTickCounterRoot == root
-                && cachedTickCounterTag == counterTag && cachedTickCounterKey == counterKey)
-            return cachedTickCounterMap;
-        return root.getCompound(counterTag);
-    }
-
-    /** Other actions may replace Tick's user-data compound, so forget its cached child map first. */
     public void invalidateCachedTickCounter() {
         pendingFoldedTickCounterFastUpdate = false;
-        hasCachedTickCounter = false;
-        cachedTickCounterRoot = null;
-        cachedTickCounterMap = null;
-        cachedTickCounterTag = null;
-        cachedTickCounterKey = null;
-        cachedTickCounterMapAttached = false;
+        cachedTickCounters = null;
+        cachedTickPos = null;
+        clearPreparedTickCounterUpdate();
     }
 
     public void prepareTickMediaExtraction(CastingEnvironment env, long cost) {
@@ -802,79 +739,13 @@ public final class ExecutionScope implements AutoCloseable {
         return matches ? cost : -1;
     }
 
-    public boolean applyPreparedTickCounterUpdate(CompoundTag root, BlockPos pos, String counterTag,
-                                                   String counterKey) {
-        boolean matches = hasPreparedTickCounterUpdate && pendingTickCounterRoot == root
-                && pendingTickCounterPos != null
-                && (pendingTickCounterPos == pos || pendingTickCounterPos.equals(pos))
-                && (counterTag == pendingTickCounterTag || counterTag.equals(pendingTickCounterTag))
-                && (counterKey == pendingTickCounterKey || counterKey.equals(pendingTickCounterKey));
-        if (matches) {
-            boolean sameDeferredCounter = hasDeferredTickCounterWrite
-                    && deferredTickCounterRoot == root && deferredTickCounterMap == pendingTickCounterMap
-                    && (deferredTickCounterPos == pendingTickCounterPos
-                            || deferredTickCounterPos.equals(pendingTickCounterPos))
-                    && (deferredTickCounterTag == pendingTickCounterTag
-                            || deferredTickCounterTag.equals(pendingTickCounterTag))
-                    && (deferredTickCounterKey == pendingTickCounterKey
-                            || deferredTickCounterKey.equals(pendingTickCounterKey));
-            if (batchTickCounterWrites) {
-                if (hasDeferredTickCounterWrite && !sameDeferredCounter) flushTickCounterWrites();
-                deferredTickCounterRoot = root;
-                deferredTickCounterMap = pendingTickCounterMap;
-                deferredTickCounterPos = pendingTickCounterPos;
-                deferredTickCounterTag = pendingTickCounterTag;
-                deferredTickCounterKey = pendingTickCounterKey;
-                deferredTickCounterValue = pendingTickCounterValue;
-                hasDeferredTickCounterWrite = true;
-                if (collectMetrics) tickCounterWritesDeferred++;
-                if (hasCachedTickCounter && cachedTickCounterRoot == root
-                        && cachedTickCounterMap == pendingTickCounterMap
-                        && cachedTickCounterTag == pendingTickCounterTag
-                        && cachedTickCounterKey == pendingTickCounterKey) {
-                    cachedTickCounterValue = pendingTickCounterValue;
-                }
-            } else {
-                pendingTickCounterMap.putInt(pendingTickCounterKey, pendingTickCounterValue);
-                if (hasCachedTickCounter && cachedTickCounterRoot == root
-                        && cachedTickCounterMap == pendingTickCounterMap
-                        && cachedTickCounterTag == pendingTickCounterTag
-                        && cachedTickCounterKey == pendingTickCounterKey) {
-                    cachedTickCounterValue = pendingTickCounterValue;
-                    if (!cachedTickCounterMapAttached) {
-                        root.put(pendingTickCounterTag, pendingTickCounterMap);
-                        cachedTickCounterMapAttached = true;
-                    }
-                } else {
-                    root.put(pendingTickCounterTag, pendingTickCounterMap);
-                }
-            }
-        }
-        clearPreparedTickCounterUpdate();
-        return matches;
-    }
+    public boolean hasTickRunState() { return deferredTickCounters != null || cachedBuddingState != null; }
 
-    /** Commit the latest logically applied Tick count before another action can observe user data. */
     public void flushTickCounterWrites() {
-        if (!hasDeferredTickCounterWrite) return;
-        CompoundTag root = deferredTickCounterRoot;
-        CompoundTag map = deferredTickCounterMap;
-        String tag = deferredTickCounterTag;
-        String key = deferredTickCounterKey;
-        map.putInt(key, deferredTickCounterValue);
-        if (root.get(tag) != map) root.put(tag, map);
-        if (hasCachedTickCounter && cachedTickCounterRoot == root && cachedTickCounterMap == map
-                && cachedTickCounterTag == tag && cachedTickCounterKey == key) {
-            cachedTickCounterValue = deferredTickCounterValue;
-            cachedTickCounterMapAttached = true;
-        }
-        hasDeferredTickCounterWrite = false;
-        deferredTickCounterRoot = null;
-        deferredTickCounterMap = null;
-        deferredTickCounterPos = null;
-        deferredTickCounterTag = null;
-        deferredTickCounterKey = null;
-        deferredTickCounterValue = 0;
+        if (deferredTickCounters == null) return;
+        deferredTickCounters.put(deferredTickPos, deferredTickValue);
+        deferredTickCounters = null;
+        deferredTickPos = null;
         if (collectMetrics) tickCounterWriteCommits++;
     }
 
@@ -964,13 +835,8 @@ public final class ExecutionScope implements AutoCloseable {
     public static long lastTickRangeCheckCacheHits() { return lastTickRangeCheckCacheHits; }
 
     private void clearPreparedTickCounterUpdate() {
-        pendingTickCounterRoot = null;
-        pendingTickCounterMap = null;
-        pendingTickCounterPos = null;
-        pendingTickCounterKey = null;
-        pendingTickCounterTag = null;
-        pendingTickCounterValue = 0;
-        hasPreparedTickCounterUpdate = false;
+        preparedTickCounters = null;
+        preparedTickPos = null;
     }
 
     /** Reuse the immutable BlockPos derived from a repeated Tick vector iota. */
@@ -985,12 +851,12 @@ public final class ExecutionScope implements AutoCloseable {
     }
 
     /** Hold target-specific Tick actions for this cast, avoiding global cache probes per loop turn. */
-    public OpTick.FastTickAssets cachedFastTickAssets(BlockPos pos) {
+    public HexalTickOptimization.Assets cachedFastTickAssets(BlockPos pos) {
         return fastTickAssets != null && (fastTickAssetsPos == pos || fastTickAssetsPos.equals(pos))
                 ? fastTickAssets : null;
     }
 
-    public void rememberFastTickAssets(BlockPos pos, OpTick.FastTickAssets assets) {
+    public void rememberFastTickAssets(BlockPos pos, HexalTickOptimization.Assets assets) {
         fastTickAssetsPos = pos.immutable();
         fastTickAssets = assets;
     }
@@ -1028,13 +894,12 @@ public final class ExecutionScope implements AutoCloseable {
     /** Hold a folded Tick outcome without allocating its short-lived CastResult wrapper. */
     public void preparePendingLoopTickResult(PatternIota pattern, SpellContinuation continuation,
                                              CastingImage inputImage, TreeList<Iota> outputStack,
-                                             CompoundTag userData, List<OperatorSideEffect> sideEffects,
+                                             List<OperatorSideEffect> sideEffects,
                                              EvalSound sound) {
         pendingLoopTickPattern = pattern;
         pendingLoopTickContinuation = continuation;
         pendingLoopTickInputImage = inputImage;
         pendingLoopTickOutputStack = outputStack;
-        pendingLoopTickUserData = userData;
         pendingLoopTickSideEffects = sideEffects;
         pendingLoopTickSound = sound;
     }
@@ -1042,7 +907,6 @@ public final class ExecutionScope implements AutoCloseable {
     public boolean hasPendingLoopTickResult() { return pendingLoopTickInputImage != null; }
     public CastingImage pendingLoopTickInputImage() { return pendingLoopTickInputImage; }
     public TreeList<Iota> pendingLoopTickOutputStack() { return pendingLoopTickOutputStack; }
-    public CompoundTag pendingLoopTickUserData() { return pendingLoopTickUserData; }
     public SpellContinuation pendingLoopTickContinuation() { return pendingLoopTickContinuation; }
     public PatternIota pendingLoopTickPattern() { return pendingLoopTickPattern; }
     public List<OperatorSideEffect> pendingLoopTickSideEffects() { return pendingLoopTickSideEffects; }
@@ -1053,7 +917,7 @@ public final class ExecutionScope implements AutoCloseable {
         CastingImage inputImage = pendingLoopTickInputImage;
         CastingImage outputImage = new CastingImage(pendingLoopTickOutputStack,
                 inputImage.getParenCount(), inputImage.getParenthesized(), inputImage.getEscapeNext(),
-                inputImage.getSimulateNext(), inputImage.getOpsConsumed() + 1, CMIHexImageComponents.componentsWithTickData(inputImage, pendingLoopTickUserData));
+                inputImage.getSimulateNext(), inputImage.getOpsConsumed() + 1, inputImage.getComponents());
         CastResult result = new CastResult(pendingLoopTickPattern, pendingLoopTickContinuation,
                 outputImage, pendingLoopTickSideEffects, ResolvedPatternType.EVALUATED,
                 pendingLoopTickSound);
@@ -1064,7 +928,6 @@ public final class ExecutionScope implements AutoCloseable {
     public void clearPendingLoopTickResult() {
         pendingLoopTickInputImage = null;
         pendingLoopTickOutputStack = null;
-        pendingLoopTickUserData = null;
         pendingLoopTickContinuation = null;
         pendingLoopTickPattern = null;
         pendingLoopTickSideEffects = null;
@@ -1186,34 +1049,6 @@ public final class ExecutionScope implements AutoCloseable {
                 && (spray == lastSpray || spray.equals(lastSpray));
     }
 
-    /**
-     * Sample the same per-call Bernoulli probability with geometrically spaced successes. The
-     * private RNG keeps the gate cheap between random ticks; seeding it advances world RNG only
-     * once per cast/target, so enabling this optimization intentionally changes the RNG stream.
-     */
-    public boolean shouldRunBuddingAmethystRandomTick(Level level, BlockPos pos, int probability) {
-        if (probability <= 1) {
-            if (collectMetrics) buddingAmethystRandomTickCalls++;
-            return true;
-        }
-        if (buddingAmethystGateRandom == null || buddingAmethystGateLevel != level
-                || buddingAmethystGatePos == null || !buddingAmethystGatePos.equals(pos)
-                || buddingAmethystGateProbability != probability) {
-            buddingAmethystGateLevel = level;
-            buddingAmethystGatePos = pos.immutable();
-            buddingAmethystGateProbability = probability;
-            buddingAmethystGateRandom = new Random(level.getRandom().nextLong());
-            buddingAmethystTicksUntilTick = sampleGeometricFailures(probability);
-        }
-        if (buddingAmethystTicksUntilTick > 0) {
-            buddingAmethystTicksUntilTick--;
-            return false;
-        }
-        if (collectMetrics) buddingAmethystRandomTickCalls++;
-        buddingAmethystTicksUntilTick = sampleGeometricFailures(probability);
-        return true;
-    }
-
     /** Reuse the fixed budding-amethyst state while no other spell effect can change the target. */
     public BlockState cachedBuddingAmethystState(Level level, BlockPos pos) {
         if (cachedBuddingState == null) return null;
@@ -1234,45 +1069,10 @@ public final class ExecutionScope implements AutoCloseable {
         cachedBuddingState = state;
     }
 
-    /** Batch only the random-tick block effects; media and per-cast Tick counters remain ordered. */
-    public void deferBuddingAmethystRandomTick(ServerLevel level, BlockPos pos, BlockState state) {
-        if (pendingBuddingRandomTicks != 0
-                && (pendingBuddingTickLevel != level || !pendingBuddingTickPos.equals(pos))) {
-            flushBuddingAmethystRandomTicks();
-        }
-        pendingBuddingTickLevel = level;
-        pendingBuddingTickPos = pos;
-        pendingBuddingTickState = state;
-        pendingBuddingRandomTicks++;
-    }
-
-    /** Apply queued random ticks before any other world-mutating spell effect or postCast. */
-    public void flushBuddingAmethystRandomTicks() {
-        int ticks = pendingBuddingRandomTicks;
-        if (ticks == 0) return;
-        ServerLevel level = pendingBuddingTickLevel;
-        BlockPos pos = pendingBuddingTickPos;
-        BlockState state = pendingBuddingTickState;
-        pendingBuddingRandomTicks = 0;
-        pendingBuddingTickLevel = null;
-        pendingBuddingTickPos = null;
-        pendingBuddingTickState = null;
-        if (level == null || pos == null || state == null || !state.is(Blocks.BUDDING_AMETHYST)) return;
-        for (int tick = 0; tick < ticks; tick++)
-            state.randomTick(level, pos, level.getRandom());
-    }
-
     public void invalidateBuddingAmethystState() {
         cachedBuddingStateLevel = null;
         cachedBuddingStatePos = null;
         cachedBuddingState = null;
-    }
-
-    public static long lastBuddingAmethystRandomTickCalls() { return lastBuddingAmethystRandomTickCalls; }
-
-    private int sampleGeometricFailures(int probability) {
-        double unit = buddingAmethystGateRandom.nextDouble();
-        return (int) Math.floor(Math.log1p(-unit) / Math.log1p(-1.0 / probability));
     }
 
     /** Cache only the chunk wrapper; callers still read its live block state on every Tick. */
@@ -1290,12 +1090,13 @@ public final class ExecutionScope implements AutoCloseable {
         return chunk;
     }
 
-    /** The deny-list depends on the block identity and cannot change during this synchronous cast. */
-    public Boolean cachedTickBlockEligibility(Block block) {
-        return tickEligibilityBlock == block ? tickBlockEligibility : null;
+    /** A replacement configuration list invalidates the cached eligibility. */
+    public Boolean cachedTickBlockEligibility(Block block, List<? extends String> denyList) {
+        return tickEligibilityBlock == block && tickDenyList == denyList ? tickBlockEligibility : null;
     }
 
-    public void rememberTickBlockEligibility(Block block, boolean allowed) {
+    public void rememberTickBlockEligibility(Block block, List<? extends String> denyList, boolean allowed) {
+        tickDenyList = denyList;
         tickEligibilityBlock = block;
         tickBlockEligibility = allowed;
     }
@@ -1502,15 +1303,9 @@ public final class ExecutionScope implements AutoCloseable {
             flushDeferredMediaUsedStat();
             flushTickCounterWrites();
             if (previous == null) flushAllMotion();
-            if (previous == null) flushBuddingAmethystRandomTicks();
             if (emittedParticles != null) emittedParticles.clear();
-            tickUserData = null;
-            cachedTickCounterRoot = null;
-            cachedTickCounterMap = null;
-            cachedTickCounterTag = null;
-            cachedTickCounterKey = null;
-            hasCachedTickCounter = false;
-            cachedTickCounterMapAttached = false;
+            tickCounters = null;
+            invalidateCachedTickCounter();
             hasMaxOpCount = false;
             pendingTickValidationOutput = null;
             validatedTickStack = null;
@@ -1541,17 +1336,11 @@ public final class ExecutionScope implements AutoCloseable {
             previousLoopTickDispatchWasTick = false;
             foldedLoopTickEffectPending = false;
             tickEligibilityBlock = null;
+            tickDenyList = null;
             tickBlockEligibility = null;
             cachedBuddingStateLevel = null;
             cachedBuddingStatePos = null;
             cachedBuddingState = null;
-            pendingBuddingTickLevel = null;
-            pendingBuddingTickPos = null;
-            pendingBuddingTickState = null;
-            pendingBuddingRandomTicks = 0;
-            buddingAmethystGateLevel = null;
-            buddingAmethystGatePos = null;
-            buddingAmethystGateRandom = null;
             pigmentPlayer = null;
             pigmentTagSnapshot = null;
             castPigment = null;
@@ -1598,7 +1387,6 @@ public final class ExecutionScope implements AutoCloseable {
                 lastSoundsCoalesced = collectMetrics ? soundsCoalesced : 0;
                 lastRepeatedTickPreflights = collectMetrics ? repeatedTickPreflights : 0;
                 lastUniformTickSteps = collectMetrics ? uniformTickSteps : 0;
-                lastBuddingAmethystRandomTickCalls = collectMetrics ? buddingAmethystRandomTickCalls : 0;
                 lastMotionPushes = !collectMetrics || motions == null ? 0 : motions.pushes;
                 lastMotionWrites = !collectMetrics || motions == null ? 0 : motions.writes;
                 lastDeferredPersonalMediaWrites = collectMetrics ? deferredPersonalMediaWrites : 0;
@@ -1608,7 +1396,6 @@ public final class ExecutionScope implements AutoCloseable {
                 lastTickStackPopCacheHits = collectMetrics ? tickStackPopCacheHits : 0;
                 lastTickRangeCheckCacheHits = collectMetrics ? tickRangeCheckCacheHits : 0;
             } else {
-                previous.buddingAmethystRandomTickCalls += buddingAmethystRandomTickCalls;
                 previous.foldedTickCounterFastUpdates += foldedTickCounterFastUpdates;
                 previous.tickStackPopCacheHits += tickStackPopCacheHits;
                 previous.tickRangeCheckCacheHits += tickRangeCheckCacheHits;

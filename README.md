@@ -91,6 +91,7 @@ The following mods are optional. Their integration is enabled when the mod is in
 | [Trickster](https://modrinth.com/mod/trickster) | 2.0.0-beta.56 | Knots, spells, constructs, and kinetic links |
 | [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) | 2.1.9-beta | Cogwheel-chain data for the Kinetics Spell Core |
 | [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-64 | Casting-item automation, media storage, and custom actions |
+| [Hexal for NeoForge](https://github.com/c-Caelum/hexal-neoforge-1.21.1) | Verified pre-15 build | Supplies `hexal:tick` and its settings. CMI accelerates the verified action in Hex JIT. |
 | HexParse | 1.21.1-1.11.2.pre53 | Adapters for integration-specific Hexcasting data |
 | [Veil](https://modrinth.com/mod/veil) | 4.1.4 | Volumetric mist and related rendering effects |
 | [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0-alpha | Shaderpack integration for mist |
@@ -119,16 +120,20 @@ behavior. The client file controls mist glow, GPU particle limits and
 throttling, Hexcasting particle redirects, and ALLVR LOD. GPU package authority is disabled by
 default on both sides.
 
+Existing worlds must redraw CMI's old Tick Acceleration pattern using Hexal's `hexal:tick` pattern.
+
 ## Build
 
-Use Java 21 and run:
+Use Java 21. The first `build` prepares the pinned Hexal dependencies automatically when
+their cache is missing; later builds skip that step.
 
 ```bash
-./gradlew build
+bash ./gradlew build
 ```
 
-On Windows, run `.\gradlew.bat build`. The installable mod jar is written to
-`build/libs/createmanaindustry-0.2.6.jar`. The bootstrap-only jar used by development launches is
+On Windows, use `.\gradlew.bat`. To reuse a local Hexal checkout, pass
+`-Phexal_checkout=<path>`. The installable mod jar is written to
+`build/libs/createmanaindustry-<version>.jar`. The bootstrap-only jar used by development launches is
 kept under `build/internal/` and is not a separate player-installation file.
 
 When Connector is installed, the bundled early startup service recognizes and patches the verified

@@ -12,7 +12,7 @@ gradle.projectsEvaluated {
         include '**/owo-lib-neoforge-0.13.0-alpha.15+1.21.jar'
     }.files
     p.dependencies.add('localRuntime', p.files(owo))
-    p.dependencies.add('localRuntime', 'maven.modrinth:WjFyIzFj:fFV6HwT2')
+    p.dependencies.add('localRuntime', p.cmiCoordinates.hexparse)
     p.neoForge.runs.client.gameDirectory.set(client)
     p.neoForge.runs.server.gameDirectory.set(server)
     [p.neoForge.runs.client, p.neoForge.runs.server].each { it.sourceSet.set(probe) }

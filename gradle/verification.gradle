@@ -29,7 +29,20 @@ abstract class AuditResolvedJar extends DefaultTask {
     }
 }
 
+// The ABI audit inspects Sable without linking it into tests that exercise its absence.
+abstract class SableAbiArguments implements CommandLineArgumentProvider {
+    @InputFiles @PathSensitive(PathSensitivity.NONE)
+    abstract ConfigurableFileCollection getDistribution()
+
+    @Override Iterable<String> asArguments() {
+        ["-Dcmi.test.sableJar=${distribution.singleFile.absolutePath}".toString()]
+    }
+}
+
 tasks.named('test', Test) {
+    def sable = objects.newInstance(SableAbiArguments)
+    sable.distribution.from(configurations.sableDistribution)
+    jvmArgumentProviders.add(sable)
     useJUnitPlatform { excludeTags 'shaderpack-samples' }
     testLogging {
         events 'failed'
@@ -50,7 +63,8 @@ tasks.register('validatePackageSableAbsent', JavaExec) {
 def resolvedCreate = configurations.compileClasspath.incoming.artifacts.resolvedArtifacts.map { artifacts ->
     def matches = artifacts.findAll {
         def id = it.id.componentIdentifier
-        id instanceof ModuleComponentIdentifier && id.group == 'curse.maven' && id.module == 'create-328085'
+        id instanceof ModuleComponentIdentifier && id.group == 'com.simibubi.create' &&
+                id.module == "create-${minecraft_version}"
     }
     if (matches.size() != 1) throw new GradleException('Expected exactly one resolved Create binary')
     matches.first()

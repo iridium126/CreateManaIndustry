@@ -56,7 +56,8 @@ def inventory():
         return match.group(1).strip()
     create_version = manifest_value("Implementation-Version")
     create_commit = manifest_value("Git-Hash")
-    if create_version != "6.0.10" or not re.fullmatch(r"[0-9a-f]{40}", create_commit):
+    # maven.createmod.net appends the release build number (e.g. 6.0.10-281).
+    if not re.fullmatch(r"6\.0\.10(?:-\d+)?", create_version) or not re.fullmatch(r"[0-9a-f]{40}", create_commit):
         raise SystemExit("Unaudited Create version/commit: " + create_version)
     # Read the immutable commit recorded by the actual jar, not the checkout's HEAD.
     archive = subprocess.run(["git", "-C", str(ROOT / ".refs/Create"), "archive", "--format=zip",

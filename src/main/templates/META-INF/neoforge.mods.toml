@@ -122,7 +122,13 @@ config="${mod_id}.hexjit.mixins.json"
 [[dependencies.${mod_id}]]
     modId="hexcasting"
     type="optional"
-    versionRange="[0.12.0-devel-pre-64,)"
+    versionRange="[${hexcasting_version},)"
+    ordering="AFTER"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="hexal"
+    type="optional"
     ordering="AFTER"
     side="BOTH"
 

@@ -24,7 +24,6 @@ import at.petrak.hexcasting.api.mod.HexTags;
 import at.petrak.hexcasting.common.casting.PatternRegistryManifest;
 import at.petrak.hexcasting.common.lib.hex.HexEvalSounds;
 import at.petrak.hexcasting.xplat.IXplatAbstractions;
-import com.iridium126.createmanaindustry.compat.hexcasting.OpTick;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ActionSites;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.CompiledCall;
 import com.iridium126.createmanaindustry.compat.hexcasting.jit.ExecutionScope;
@@ -65,7 +64,7 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
     public PatternShapeMatch.PerWorld cmi$getCachedLoopTickMatch(long registryGeneration) {
         if (!ServerConfig.hexJitCachePerWorldPatternLookup
                 || cmi$perWorldPatternEpoch != registryGeneration || cmi$perWorldActionEpoch != registryGeneration
-                || cmi$perWorldAction != OpTick.INSTANCE)
+                || !FastTickAction.isHexalTick(cmi$perWorldAction))
             return null;
         return cmi$perWorldPatternMatch;
     }
@@ -191,9 +190,10 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
                 throw new IllegalStateException();
             }
 
-            if (inParens || action != OpTick.INSTANCE) {
+            boolean fastTick = !inParens && FastTickAction.supports(action);
+            if (!fastTick) {
                 ExecutionScope scope = lookupScope == null ? ExecutionScope.current() : lookupScope;
-                if (scope != null) scope.invalidateCachedTickCounter();
+                if (scope != null && scope.hasTickRunState()) scope.leaveTickRun();
                 FastHexOPMediaPool.invalidateCachedMediaAvailability(scope);
             }
 
@@ -205,7 +205,7 @@ public abstract class PatternIotaMixin implements PatternIotaLoopDispatchAccess 
                 return FastAddMotionArguments.operate(vm.getEnv(), vm.getImage(), continuation, self);
             }
 
-            if (!inParens && FastTickAction.supports(action)) {
+            if (fastTick) {
                 ExecutionScope.markCompiled();
                 return FastTickAction.operate(vm.getEnv(), vm.getImage(), continuation, self, lookupScope);
             }

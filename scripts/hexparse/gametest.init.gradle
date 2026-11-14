@@ -2,6 +2,6 @@
 gradle.projectsEvaluated {
     def p = gradle.rootProject
     p.apply from: p.file('scripts/testing/common.gradle')
-    p.dependencies.add('localRuntime', 'maven.modrinth:WjFyIzFj:fFV6HwT2')
+    p.dependencies.add('localRuntime', p.cmiCoordinates.hexparse)
     p.configureCmiGameTests(name: 'hexparse', sources: 'src/test/gametest/hexparse/java', structure: 'worldgen_test')
 }

@@ -38,12 +38,6 @@ public class CMIHexActions {
                             HexPattern.fromAngleString("eaqwqaewa", HexDir.SOUTH_WEST),
                             OpPlayersInCircle.INSTANCE));
 
-    public static final DeferredHolder<ActionRegistryEntry, ActionRegistryEntry> TICK =
-            ACTIONS.register("tick", () ->
-                    new ActionRegistryEntry(
-                            HexPattern.fromAngleString("wwwdwdwwwawqqeqwqqwqeqwqq", HexDir.SOUTH_EAST),
-                            OpTick.INSTANCE));
-
     public static void register(IEventBus modEventBus) {
         CMIHexImageComponents.register(modEventBus);
         ACTIONS.register(modEventBus);

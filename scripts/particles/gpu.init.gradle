@@ -1,7 +1,7 @@
 allprojects {
     afterEvaluate {
         def kotlin=configurations.create('particleValidationKotlin')
-        dependencies.add(kotlin.name,'org.jetbrains.kotlin:kotlin-stdlib:2.3.0')
+        dependencies.add(kotlin.name,cmiCoordinates.kotlinStdlib)
         tasks.register('writeParticlePackage'){
             dependsOn 'build'
             doLast{

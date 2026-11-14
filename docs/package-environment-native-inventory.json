@@ -1,8 +1,8 @@
 {
   "minecraft": "1.21.1",
-  "reference_create": "6.0.10",
-  "create_commit": "ac0c444d9828da3453ae8cc65338e8de063286fb",
-  "create_binary_sha256": "ef87fe5709f1ba1f5b8bb20a2925b5afb4669e178fd6d8bf10c167759eefe37a",
+  "reference_create": "6.0.10-281",
+  "create_commit": "c308d004788fce2998bf41653f6d39412b6fc8ed",
+  "create_binary_sha256": "2fe00cb77d68019f2af55494dc41601cd7f6735aab8a22ee0b0ebd04c808bc9a",
   "sources": [
     {
       "source": "com/simibubi/create/api/behaviour/interaction/MovingInteractionBehaviour.java",

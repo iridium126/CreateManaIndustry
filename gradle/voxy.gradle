@@ -1,56 +1,63 @@
 def voxyRepoUrl = "https://github.com/m3t4f1v3/voxy.git"
-def voxyRepoBranch = "multiversion"
-def voxyMinecraftVersion = "1.21.1"
+def voxyRevision = providers.gradleProperty("voxy_revision").get()
+def voxyMinecraftVersion = providers.gradleProperty("minecraft_version").get()
 def voxyLoader = "neoforge"
 
 def offline = gradle.startParameter.offline
-def voxyVersion = providers.gradleProperty("voxy_version").orElse("0.2.15-beta").get()
+def voxyVersion = providers.gradleProperty("voxy_version").get()
+def voxyNeoForgeVersion = providers.gradleProperty("neo_version").get()
+def voxyBuildIdentity = "${voxyRevision}/${voxyNeoForgeVersion}"
 def voxyArtifactName = "voxy-${voxyVersion}+${voxyMinecraftVersion}-${voxyLoader}.jar"
 def voxyCacheRoot = project.file(".gradle/voxy")
+def voxyArtifactRevision = new File(voxyCacheRoot, "artifacts/${voxyArtifactName}.revision")
 def voxySourceDir = project.file("${voxyCacheRoot}/source")
 def voxyCachedJar = project.file("${voxyCacheRoot}/artifacts/${voxyArtifactName}")
 def voxyUpstreamJar = project.file(
         "${voxySourceDir}/versions/${voxyMinecraftVersion}-${voxyLoader}/build/libs/${voxyArtifactName}"
 )
+def voxyUpstreamRevision = new File(voxyCacheRoot, "built.revision")
+def voxyUpstreamReady = {
+    voxyUpstreamJar.isFile() && voxyUpstreamRevision.isFile()
+            && voxyUpstreamRevision.getText('UTF-8').trim() == voxyBuildIdentity
+}
+def voxyArtifactReady = {
+    voxyCachedJar.isFile() && voxyArtifactRevision.isFile()
+            && voxyArtifactRevision.getText('UTF-8').trim() == voxyBuildIdentity
+}
 def voxyRebuild = providers.gradleProperty("voxy_rebuild")
         .map { it.toBoolean() }
         .orElse(false)
         .get()
 
-// The clone is deliberately shallow, single-branch, and tagless. A cached
-// artifact is checked first so subsequent builds do not even need to clone or
-// invoke Voxy's Gradle build again.
-def cloneVoxy = tasks.register("cloneVoxy", Exec) {
+// Fetch only the pinned source revision when the compiled jar is absent.
+def cloneVoxy = tasks.register("cloneVoxy") {
     group = "voxy"
-    description = "Clones Voxy's multiversion branch when its cached jar is absent"
+    description = "Checks out the pinned Voxy revision when its cached jar is absent"
     inputs.property("repository", voxyRepoUrl)
-    inputs.property("branch", voxyRepoBranch)
+    inputs.property("revision", voxyRevision)
     outputs.dir(voxySourceDir)
-    onlyIf {
-        if (voxyCachedJar.isFile() && !voxyRebuild) {
-            return false
+    onlyIf { voxyRebuild || !voxyArtifactReady() }
+    doLast {
+        def run = { List<String> command ->
+            def process = new ProcessBuilder(command).directory(voxySourceDir).inheritIO().start()
+            if (process.waitFor() != 0) throw new GradleException("Failed to prepare Voxy: ${command.join(' ')}")
         }
-        // Gradle may create an empty output directory before a failed/offline action.
-        if (voxySourceDir.exists() && !new File(voxySourceDir, ".git").isDirectory()
-                && (!voxySourceDir.isDirectory() || voxySourceDir.list()?.length != 0)) {
-            throw new GradleException("Voxy cache path is not a Git checkout: ${voxySourceDir}")
-        }
-        return !new File(voxySourceDir, ".git").isDirectory()
-    }
-    doFirst {
+        def gitDir = new File(voxySourceDir, '.git')
+        def head = gitDir.isDirectory()
+                ? new ProcessBuilder('git', 'rev-parse', 'HEAD').directory(voxySourceDir).start().inputStream.text.trim()
+                : ''
+        if (head == voxyRevision) return
         if (offline) throw new GradleException('Voxy cache/source is missing; prepare it online before using --offline')
-        voxyCacheRoot.mkdirs()
+        voxySourceDir.mkdirs()
+        if (!gitDir.isDirectory()) run(['git', 'init'])
+        run(['git', 'fetch', '--no-tags', '--depth=1', voxyRepoUrl, voxyRevision])
+        // Only the generated Stonecutter selections below are modified in the cached checkout.
+        run(['git', 'checkout', '--detach', '--force', voxyRevision])
+        voxyUpstreamJar.delete()
+        voxyUpstreamRevision.delete()
+        new File(voxyCacheRoot, 'neoforge-only.marker').delete()
+        new File(voxyCacheRoot, 'neoforge-active.marker').delete()
     }
-    workingDir(voxyCacheRoot)
-    commandLine(
-            "git", "clone",
-            "--branch", voxyRepoBranch,
-            "--single-branch",
-            "--depth", "1",
-            "--no-tags",
-            voxyRepoUrl,
-            voxySourceDir.absolutePath
-    )
 }
 
 def voxySettingsFile = new File(voxySourceDir, "settings.gradle.kts")
@@ -70,7 +77,7 @@ def prepareVoxy = tasks.register("prepareVoxy") {
     inputs.file(voxyStonecutterFile)
     outputs.file(voxyPatchMarker)
     outputs.upToDateWhen { !voxyRebuild && voxyPatchMarker.isFile() }
-    onlyIf { voxyRebuild || !voxyCachedJar.isFile() }
+    onlyIf { voxyRebuild || !voxyArtifactReady() }
     doLast {
         if (!voxySettingsFile.isFile() || !voxyStonecutterFile.isFile()) {
             throw new GradleException("Voxy checkout is missing its Stonecutter settings")
@@ -117,8 +124,11 @@ def prepareVoxy = tasks.register("prepareVoxy") {
 
 def voxyGradleCommand = providers.systemProperty('os.name').get().startsWith('Windows')
         ? ["cmd", "/c", "gradlew.bat"]
-        : ["./gradlew"]
-def voxyGradleArguments = ["--no-daemon", "--console=plain", "--configure-on-demand"]
+        : ["bash", "./gradlew"]
+def voxyRepositoryInit = rootProject.file('gradle/voxy-repositories.init.gradle')
+def voxyGradleArguments = ["--no-daemon", "--console=plain", "--configure-on-demand",
+                          "--init-script", voxyRepositoryInit.absolutePath]
+voxyGradleArguments += "-Pdeps.neoforge=${voxyNeoForgeVersion}".toString()
 if (offline) voxyGradleArguments += '--offline'
 if (voxyRebuild) {
     voxyGradleArguments += "--rerun-tasks"
@@ -136,7 +146,7 @@ def activateVoxy = tasks.register("activateVoxy", Exec) {
     inputs.file(voxyStonecutterFile)
     outputs.file(voxyActiveMarker)
     outputs.upToDateWhen { !voxyRebuild && voxyActiveMarker.isFile() }
-    onlyIf { voxyRebuild || (!voxyCachedJar.isFile() && !voxyActiveMarker.isFile()) }
+    onlyIf { voxyRebuild || (!voxyArtifactReady() && !voxyActiveMarker.isFile()) }
     workingDir(voxySourceDir)
     commandLine(*(voxyGradleCommand + voxyGradleArguments + [
             "stonecutterSwitchTo${voxyMinecraftVersion}-${voxyLoader}"
@@ -154,15 +164,19 @@ def buildVoxy = tasks.register("buildVoxy", Exec) {
     inputs.property("minecraftVersion", voxyMinecraftVersion)
     inputs.property("loader", voxyLoader)
     inputs.property("version", voxyVersion)
-    outputs.file(voxyUpstreamJar)
-    outputs.upToDateWhen { !voxyRebuild && voxyUpstreamJar.isFile() }
+    inputs.property("neoForgeVersion", voxyNeoForgeVersion)
+    outputs.files(voxyUpstreamJar, voxyUpstreamRevision)
+    outputs.upToDateWhen { !voxyRebuild && voxyUpstreamReady() }
     onlyIf {
-        voxyRebuild || (!voxyCachedJar.isFile() && !voxyUpstreamJar.isFile())
+        voxyRebuild || (!voxyArtifactReady() && !voxyUpstreamReady())
     }
     workingDir(voxySourceDir)
     commandLine(*(voxyGradleCommand + voxyGradleArguments + [
             ":${voxyMinecraftVersion}-${voxyLoader}:jar"
     ]))
+    doLast {
+        voxyUpstreamRevision.setText(voxyBuildIdentity + "\n", "UTF-8")
+    }
 }
 
 def cacheVoxy = tasks.register("cacheVoxy") {
@@ -170,9 +184,9 @@ def cacheVoxy = tasks.register("cacheVoxy") {
     description = "Copies the Voxy NeoForge 1.21.1 jar into the persistent project cache"
     dependsOn(buildVoxy)
     inputs.file(voxyUpstreamJar)
-    outputs.file(voxyCachedJar)
-    outputs.upToDateWhen { !voxyRebuild && voxyCachedJar.isFile() }
-    onlyIf { voxyRebuild || !voxyCachedJar.isFile() }
+    outputs.files(voxyCachedJar, voxyArtifactRevision)
+    outputs.upToDateWhen { !voxyRebuild && voxyArtifactReady() }
+    onlyIf { voxyRebuild || !voxyArtifactReady() }
     doLast {
         if (!voxyUpstreamJar.isFile()) {
             throw new GradleException(
@@ -185,6 +199,7 @@ def cacheVoxy = tasks.register("cacheVoxy") {
                 voxyCachedJar.toPath(),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING
         )
+        voxyArtifactRevision.setText(voxyBuildIdentity + "\n", "UTF-8")
     }
 }
 
