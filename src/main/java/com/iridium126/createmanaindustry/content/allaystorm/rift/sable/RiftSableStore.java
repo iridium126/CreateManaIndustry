@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Exclusive, asynchronous native storage checkpoint. Workers see detached NBT and storage codecs only. */
 public final class RiftSableStore {
@@ -26,9 +27,9 @@ public final class RiftSableStore {
     public record Located(GlobalSavedSubLevelPointer pointer,CompoundTag tag){}
     private record Input(SubLevelStorage storage,Map<ChunkPos,CompoundTag> holding,Set<GlobalSavedSubLevelPointer> deletes){}
     private record Output(Map<UUID,Located> found,Map<ChunkPos,CompoundTag> changed,Set<GlobalSavedSubLevelPointer> removed){}
-    public static void poll(){for(Job job:List.copyOf(LIVE))if(job.ready()){try{job.finish();}catch(Throwable failure){com.mojang.logging.LogUtils.getLogger().error("Sable rift storage checkpoint failed; journal retained",failure);LIVE.remove(job);}}}
+    public static void poll(){for(Job job:List.copyOf(LIVE))if(job.ready()){try{job.finish();}catch(Throwable failure){com.mojang.logging.LogUtils.getLogger().error(CMILog.RIFT + "Sable rift storage checkpoint failed; journal retained",failure);LIVE.remove(job);}}}
     /** Only server shutdown drains detached disk I/O; tick preparation never waits on a future. */
-    public static void stopping(net.minecraft.server.MinecraftServer server){for(Job job:List.copyOf(LIVE)){server.managedBlock(job::ready);try{job.finish();}catch(Throwable error){com.mojang.logging.LogUtils.getLogger().error("Incomplete Sable rift checkpoint retained for recovery",error);}}}
+    public static void stopping(net.minecraft.server.MinecraftServer server){for(Job job:List.copyOf(LIVE)){server.managedBlock(job::ready);try{job.finish();}catch(Throwable error){com.mojang.logging.LogUtils.getLogger().error(CMILog.RIFT + "Incomplete Sable rift checkpoint retained for recovery",error);}}}
     public static void clear(){LIVE.clear();BUSY.clear();RiftSableFreeze.clear();RiftSableRecovery.clear();RiftPlotReservations.clear();}
     public static boolean defer(SubLevelHoldingChunkMap map,Runnable action){Job job=BUSY.get(map);if(job==null)return false;job.deferred.add(action);return true;}
     public static boolean busy(SubLevelHoldingChunkMap map){return BUSY.containsKey(map);}

@@ -32,6 +32,7 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Cube ↔ NBT on the service/decode threads (plan §7.1) — the ALLVR counterpart of
@@ -216,7 +217,7 @@ public final class AllvrCubeSerializer {
             CompoundTag beTag = blockEntities.getCompound(i);
             BlockPos at = new BlockPos(beTag.getInt("x"), beTag.getInt("y"), beTag.getInt("z"));
             if (!AllvrCubePos.of(at).equals(pos)) {
-                LOGGER.error("[Allvr] cube {}: block entity record at {} does not belong to this cube — skipped", pos, at);
+                LOGGER.error(CMILog.ALLVR + "cube {}: block entity record at {} does not belong to this cube — skipped", pos, at);
                 continue;
             }
             BlockState state = cube.getBlockState(at);
@@ -224,11 +225,11 @@ public final class AllvrCubeSerializer {
             try {
                 be = BlockEntity.loadStatic(at, state, beTag, level.registryAccess());
             } catch (Exception e) {
-                LOGGER.error("[Allvr] cube {}: failed to load block entity at {} — skipped", pos, at, e);
+                LOGGER.error(CMILog.ALLVR + "cube {}: failed to load block entity at {} — skipped", pos, at, e);
                 continue;
             }
             if (be == null || !state.hasBlockEntity() || !be.getType().isValid(state)) {
-                LOGGER.error("[Allvr] cube {}: block entity {} at {} is not supported by the recorded block state — skipped",
+                LOGGER.error(CMILog.ALLVR + "cube {}: block entity {} at {} is not supported by the recorded block state — skipped",
                     pos, beTag.getString("id"), at);
                 continue;
             }
@@ -258,7 +259,7 @@ public final class AllvrCubeSerializer {
     private static <T> T parse(Codec<T> codec, CompoundTag tag, AllvrCubePos pos, String what)
         throws AllvrCubeCorruptedException {
         return codec.parse(NbtOps.INSTANCE, tag)
-            .promotePartial(message -> LOGGER.error("[Allvr] cube {}: partial error decoding {}: {}", pos, what, message))
+            .promotePartial(message -> LOGGER.error(CMILog.ALLVR + "cube {}: partial error decoding {}: {}", pos, what, message))
             .getOrThrow(message -> new AllvrCubeCorruptedException(
                 "cube " + pos + ": decoding " + what + " failed: " + message));
     }

@@ -18,6 +18,7 @@ import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Actual server native-object adapter. Readiness remains gated by the client's chain resources;
  * unprepared/no-authority objects keep their normal Create simulation and replication. */
@@ -59,7 +60,7 @@ public final class PackageChainAuthorityManager {
         void deliver(ClientboundChainPackagePacket packet) {
             var player=runtime.level.getServer().getPlayerList().getPlayer(authority.owner());if(player==null || player.serverLevel()!=runtime.level)return;
             try{PacketDistributor.sendToPlayer(player,packet);}
-            catch(RuntimeException error){failed=true;CreateManaIndustry.LOGGER.error("[CMI packages] chain transport failed; retiring session",error);}
+            catch(RuntimeException error){failed=true;CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "chain transport failed; retiring session",error);}
         }
         void close(){if(closing)return;closing=true;runtime.epochs.remove(authority.epoch(),this);try{authority.close();}finally{send(new ClientboundChainPackagePacket(ClientboundChainPackagePacket.CLOSE,runtime.level.dimension().location(),authority.epoch(),null,null,null,0,0,0));}}
         void retire(){if(closing)return;closing=true;runtime.epochs.remove(authority.epoch(),this);authority.beginClose();runtime.retiring.addLast(this);send(new ClientboundChainPackagePacket(ClientboundChainPackagePacket.CLOSE,runtime.level.dimension().location(),authority.epoch(),null,null,null,0,0,0));}
@@ -232,7 +233,7 @@ public final class PackageChainAuthorityManager {
             if(baseline==null)return;
             if(packet.action()==ServerboundChainPackagePacket.FINAL_READY)target.activated=true;
             session.send(packet(session,packet.action()==ServerboundChainPackagePacket.PREPARED?ClientboundChainPackagePacket.FINAL:ClientboundChainPackagePacket.ACTIVE,baseline,null));
-        }catch(RuntimeException failure){CreateManaIndustry.LOGGER.error("[CMI packages] native chain authority failed",failure);session.close();}
+        }catch(RuntimeException failure){CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "native chain authority failed",failure);session.close();}
     }
     public static void receiveInteraction(ServerboundChainInteractionPacket packet,IPayloadContext context) {
         if(!(context.player() instanceof ServerPlayer player) || !ServerConfig.packageGpuAuthority)return;
@@ -269,7 +270,7 @@ public final class PackageChainAuthorityManager {
                     target.discovery.location.conveyor.setChanged();runtime.dirty.add(target.discovery.location.conveyor);
                 });
                 if(result==PackageChainAuthority.Result.FAILED)session.close();
-            }catch(RuntimeException failure){CreateManaIndustry.LOGGER.error("[CMI packages] native chain pickup failed",failure);session.close();result=PackageChainAuthority.Result.FAILED;}
+            }catch(RuntimeException failure){CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "native chain pickup failed",failure);session.close();result=PackageChainAuthority.Result.FAILED;}
             finally{runtime.batching=false;flush(runtime);}
         }
         PacketDistributor.sendToPlayer(player,new ClientboundChainInteractionPacket(request.epoch(),request.identity(),request.transaction(),result));

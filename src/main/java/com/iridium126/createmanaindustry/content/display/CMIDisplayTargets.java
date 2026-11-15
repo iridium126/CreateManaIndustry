@@ -11,6 +11,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.registries.RegisterEvent;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 @EventBusSubscriber(modid = CreateManaIndustry.MODID)
 public final class CMIDisplayTargets {
@@ -48,6 +49,6 @@ public final class CMIDisplayTargets {
         if (type != null)
             DisplayTarget.BY_BLOCK_ENTITY.register(type, target);
         else
-            CreateManaIndustry.LOGGER.warn("Could not bind DisplayTarget to missing block entity type {}", id);
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Could not bind DisplayTarget to missing block entity type {}", id);
     }
 }

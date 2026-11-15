@@ -15,6 +15,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.util.INBTSerializable;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 
 /** Session-scoped resource deployment and per-player selection; all public calls run on the server thread. */
 public final class YsmOverrideManager implements AutoCloseable {
@@ -72,12 +74,12 @@ public final class YsmOverrideManager implements AutoCloseable {
                             if (closed) {
                                 if (staged.owned) {
                                     try { removeDirectory(staged.directory); }
-                                    catch (IOException failure) { LOGGER.warn("Could not remove staged YSM model {}", staged.directory, failure); }
+                                    catch (IOException failure) { LOGGER.warn(CMILog.YSM + "Could not remove staged YSM model {}", staged.directory, failure); }
                                 }
                                 promised.cancel(false); return;
                             }
                             if (staged.owned) owned.add(staged.directory);
-                            LOGGER.info("Staged temporary YSM model {}", modelId);
+                            LOGGER.info(CMILog.YSM + "Staged temporary YSM model {}", modelId);
                             loads.addLast(new Load(modelId, archive.digest(), staged, promised, selections));
                             reloadNext();
                         });
@@ -90,10 +92,10 @@ public final class YsmOverrideManager implements AutoCloseable {
         }
         var promisedDeployment = deployment;
         deployment.whenComplete((loadedId, error) -> server.execute(() -> {
-            LOGGER.info("YSM deployment completed for {} (loaded={}, failure={})", modelId, loadedId, error == null ? "none" : error.toString());
+            LOGGER.info(CMILog.YSM + "YSM deployment completed for {} (loaded={}, failure={})", modelId, loadedId, error == null ? "none" : error.toString());
             if (error != null) {
                 if (deployments.get(archive.digest()) == promisedDeployment) deployments.remove(archive.digest());
-                LOGGER.warn("Temporary YSM model deployment failed for {}", modelId, error);
+                LOGGER.warn(CMILog.YSM + "Temporary YSM model deployment failed for {}", modelId, error);
                 inform(id, YsmChatMessages.applicationFailed(error.getMessage())); return;
             }
             restoreSelections(request.selections);
@@ -170,17 +172,17 @@ public final class YsmOverrideManager implements AutoCloseable {
     }
     private void activate(Request request, String modelId) {
         if (closed || !Objects.equals(revisions.get(request.player), request.revision)) {
-            LOGGER.info("Discarded stale YSM override revision {} for {}", request.revision, request.player);
+            LOGGER.info(CMILog.YSM + "Discarded stale YSM override revision {} for {}", request.revision, request.player);
             return;
         }
         ServerPlayer target = server.getPlayerList().getPlayer(request.player);
         if (target == null || target.hasDisconnected()) {
-            LOGGER.info("Discarded YSM override because target {} left", request.player);
+            LOGGER.info(CMILog.YSM + "Discarded YSM override because target {} left", request.player);
             return;
         }
         Selection current = selection(target);
         if (!current.model.equals(request.expected.model)) {
-            LOGGER.info("Discarded YSM override for {} because selected model changed from {} to {}",
+            LOGGER.info(CMILog.YSM + "Discarded YSM override for {} because selected model changed from {} to {}",
                     request.player, request.expected.model, current.model);
             return;
         }
@@ -194,10 +196,10 @@ public final class YsmOverrideManager implements AutoCloseable {
         if (loading || loads.isEmpty() || closed) return;
         Load load = loads.removeFirst(); loading = true;
         try {
-            LOGGER.info("Reloading YSM model {} with {} pre-stage player selections", load.id, load.selections.size());
-            LOGGER.info("Requesting native YSM reload for {}", load.id);
+            LOGGER.info(CMILog.YSM + "Reloading YSM model {} with {} pre-stage player selections", load.id, load.selections.size());
+            LOGGER.info(CMILog.YSM + "Requesting native YSM reload for {}", load.id);
             Consumer<Object> callback = result -> {
-                LOGGER.info("Native YSM reload callback received for {}", load.id);
+                LOGGER.info(CMILog.YSM + "Native YSM reload callback received for {}", load.id);
                 server.execute(() -> {
                 try {
                     var methods = Arrays.stream(result.getClass().getMethods()).filter(method -> method.getParameterCount() == 0).toList();
@@ -206,7 +208,7 @@ public final class YsmOverrideManager implements AutoCloseable {
                     if (flags.size() != 1 || maps.size() != 1 || !(Boolean) flags.getFirst().invoke(result)
                             || !((Map<?, ?>) maps.getFirst().invoke(result)).containsKey(load.id))
                         throw new IllegalStateException("YSM native reload did not publish the modified resource");
-                    LOGGER.info("Native YSM catalog published {}", load.id);
+                    LOGGER.info(CMILog.YSM + "Native YSM catalog published {}", load.id);
                     restoreSelections(load.selections);
                     load.future.complete(load.id);
                 } catch (Exception failure) {
@@ -218,7 +220,7 @@ public final class YsmOverrideManager implements AutoCloseable {
             };
             if (!(Boolean) symbols.serverReload().bind(getClass().getClassLoader()).invoke(null, callback, null))
                 throw new IllegalStateException("YSM native loader is busy");
-            LOGGER.info("Native YSM reload accepted for {}", load.id);
+            LOGGER.info(CMILog.YSM + "Native YSM reload accepted for {}", load.id);
         } catch (Exception failure) {
             load.future.completeExceptionally(failure);
             loading = false; reloadNext();
@@ -231,13 +233,13 @@ public final class YsmOverrideManager implements AutoCloseable {
             if (player == null || player.hasDisconnected() || entry.getValue().model.equals("default")) continue;
             try {
                 Selection current = selection(player);
-                LOGGER.debug("YSM selection recovery for {}: before={}, now={}", entry.getKey(), entry.getValue().model, current.model);
+                LOGGER.debug(CMILog.YSM + "YSM selection recovery for {}: before={}, now={}", entry.getKey(), entry.getValue().model, current.model);
                 if (current.model.equals("default")) {
                     select(player, entry.getValue()); restored++;
                 }
-            } catch (Exception failure) { LOGGER.warn("Could not restore YSM selection after catalog reload for {}", entry.getKey(), failure); }
+            } catch (Exception failure) { LOGGER.warn(CMILog.YSM + "Could not restore YSM selection after catalog reload for {}", entry.getKey(), failure); }
         }
-        LOGGER.info("Restored {} YSM player selections after catalog reload", restored);
+        LOGGER.info(CMILog.YSM + "Restored {} YSM player selections after catalog reload", restored);
     }
     private Staged stage(String id, YsmResourceArchive archive) throws IOException {
         Path root = FMLPaths.CONFIGDIR.get().resolve("yes_steve_model/custom").toAbsolutePath().normalize();
@@ -280,7 +282,8 @@ public final class YsmOverrideManager implements AutoCloseable {
     }
     private void inform(UUID player, Component message) {
         ServerPlayer target = server.getPlayerList().getPlayer(player);
-        if (target != null) target.sendSystemMessage(message);
+        if (target != null) target.sendSystemMessage(
+                CMICommandOutput.prefixed(CMICommandOutput.YSM, CMICommandOutput.Outcome.INFO, message));
     }
     private static void removeDirectory(Path directory) throws IOException {
         if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) return;
@@ -297,7 +300,7 @@ public final class YsmOverrideManager implements AutoCloseable {
         files.shutdownNow();
         for (Path directory : owned) {
             try { removeDirectory(directory); }
-            catch (IOException failure) { com.mojang.logging.LogUtils.getLogger().warn("Could not remove temporary YSM model {}", directory, failure); }
+            catch (IOException failure) { com.mojang.logging.LogUtils.getLogger().warn(CMILog.YSM + "Could not remove temporary YSM model {}", directory, failure); }
         }
         owned.clear(); overrides.clear(); pendingReassert.clear(); deployments.clear(); revisions.clear(); loads.clear();
     }

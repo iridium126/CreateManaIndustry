@@ -19,6 +19,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Server-thread-only queue for spells handed off by a block-backed Hex cast.
@@ -111,7 +112,7 @@ public final class BlockSpellExecutionManager implements SpellExecutionManager {
             } catch (Throwable failure) {
                 if (failure instanceof TricksterEngineException blunder)
                     job.source().showMessage(blunder.createMessage());
-                else CreateManaIndustry.LOGGER.warn("Failed to continue Trickster spell at {}", job.owner().getBlockPos(), failure);
+                else CreateManaIndustry.LOGGER.warn(CMILog.TRICKSTER + "Failed to continue Trickster spell at {}", job.owner().getBlockPos(), failure);
                 slots.remove(job.slot(), job);
                 release(job);
             }

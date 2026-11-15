@@ -9,6 +9,7 @@ import at.petrak.hexcasting.api.casting.iota.*;
 import at.petrak.hexcasting.api.casting.mishaps.*;
 import com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime;
 import net.minecraft.server.level.ServerPlayer;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 
 /** Restores the target's selection from before the first edit in this session. */
 public final class OpRestoreYsmModel implements SpellAction {
@@ -26,7 +27,8 @@ public final class OpRestoreYsmModel implements SpellAction {
         @Override public void cast(CastingEnvironment env) {
             ServerPlayer player = env.getWorld().getServer().getPlayerList().getPlayer(target);
             if (player != null && YsmServerRuntime.get(env.getWorld().getServer()).overrides().restore(player))
-                player.sendSystemMessage(com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages.modelRestored());
+                player.sendSystemMessage(CMICommandOutput.prefixed(CMICommandOutput.YSM, CMICommandOutput.Outcome.OK,
+                        com.iridium126.createmanaindustry.compat.ysm.YsmChatMessages.modelRestored()));
         }
     }
 }

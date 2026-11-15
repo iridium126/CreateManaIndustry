@@ -34,6 +34,7 @@ import top.leonx.irisveil.accessors.ProgramSourceAccessor;
 
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Compiles the CMI MODEL-particle draw into the active shader pack's ENTITY
@@ -308,7 +309,7 @@ public final class ShaderPackProgramCompiler {
             String fragResolved = overlayExact
                     ? ENTITY_COLOR_UNIFORM.matcher(fragRef).replaceAll("in vec4 entityColor;")
                     : fragRef;
-            CreateManaIndustry.LOGGER.info("[CMI particles] pack entity merge: hurt overlay via {}",
+            CreateManaIndustry.LOGGER.info(CMILog.PARTICLES + "pack entity merge: hurt overlay via {}",
                     overlayExact ? "pack entityColor chain (exact)" : "vertex tint approximation");
 
             var properties = ((ProgramSourceAccessor) refProgram).getShaderProperties();
@@ -376,7 +377,7 @@ public final class ShaderPackProgramCompiler {
             }catch(Exception|LinkageError materialFailure){
                 receiverStatus=receiving.pack()+": "+describeCompileFailure(materialFailure);
                 releaseReceiverPrograms();
-                CreateManaIndustry.LOGGER.warn("[CMI particles] no-receive contract failed; native receiving retained: {}",receiverStatus);
+                CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "no-receive contract failed; native receiving retained: {}",receiverStatus);
             }
 
             // Shadow track: compiled last and fully isolated --
@@ -385,10 +386,10 @@ public final class ShaderPackProgramCompiler {
             FeatherLeafSway.compiled(solidLeafSway,cutoutLeafSway,session);
 
             CreateManaIndustry.LOGGER.info(
-                    "[CMI particles] pack entity merge ready ({}+{}, gtexture {}/{}, inherited alphaTest={})",
+                    CMILog.PARTICLES + "pack entity merge ready ({}+{}, gtexture {}/{}, inherited alphaTest={})",
                     SHADER_NAME, GHOST_SHADER_NAME, this.gtextureUnit, this.ghostGtextureUnit,
                     inheritedAlpha);
-            CreateManaIndustry.LOGGER.info("[CMI particles] model entity context: allayId={}, {}",entityContext.allayId(),blendPlan.report());
+            CreateManaIndustry.LOGGER.info(CMILog.PARTICLES + "model entity context: allayId={}, {}",entityContext.allayId(),blendPlan.report());
             return true;
         } catch (Exception e) {
             if(leafSway!=null&&allowLeafSway){
@@ -536,12 +537,12 @@ public final class ShaderPackProgramCompiler {
     }
 
     static void logTransformFailure(String shaderName, Exception e) {
-        CreateManaIndustry.LOGGER.error("[CMI particles] AST injection failed for {}", shaderName, e);
+        CreateManaIndustry.LOGGER.error(CMILog.PARTICLES + "AST injection failed for {}", shaderName, e);
     }
 
     private boolean fail(String reason) {
         if (!this.failed)
-            CreateManaIndustry.LOGGER.warn("[CMI particles] pack entity merge unavailable: {}; staying on the self-drawn path", reason);
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "pack entity merge unavailable: {}; staying on the self-drawn path", reason);
         this.failed = true;
         this.lastError = reason;
         releasePrograms();this.gtextureUnit=this.ghostGtextureUnit=-1;
@@ -610,7 +611,7 @@ public final class ShaderPackProgramCompiler {
             this.shadowGtextureUnit = findSamplerUnit(this.shadowShader);
             this.shadowReady = true;
             this.shadowLastError = "";
-            CreateManaIndustry.LOGGER.info("[CMI particles] pack entity merge: shadow track ready ({}, gtexture {})",
+            CreateManaIndustry.LOGGER.info(CMILog.PARTICLES + "pack entity merge: shadow track ready ({}, gtexture {})",
                     shadowVariant == ProgramId.ShadowEntities ? "shadow_entities" : "shadow",
                     this.shadowGtextureUnit);
         } catch (Exception e) {
@@ -624,7 +625,7 @@ public final class ShaderPackProgramCompiler {
     private void shadowDown(String reason) {
         this.shadowReady = false;
         this.shadowLastError = reason;
-        CreateManaIndustry.LOGGER.info("[CMI particles] shadow track unavailable (particles cast no shadows): {}", reason);
+        CreateManaIndustry.LOGGER.info(CMILog.PARTICLES + "shadow track unavailable (particles cast no shadows): {}", reason);
     }
 
     /**
@@ -648,7 +649,7 @@ public final class ShaderPackProgramCompiler {
             } else if (!this.blendPinWarned) {
                 this.blendPinWarned = true;
                 CreateManaIndustry.LOGGER.warn(
-                        "[CMI particles] blend-pin mixin inactive; ghost falls back to inherited entity blend");
+                        CMILog.PARTICLES + "blend-pin mixin inactive; ghost falls back to inherited entity blend");
             }
         }
         ShaderInstance shader = accessor.invokeCreateShader(name, source, ProgramId.Entities,
@@ -656,8 +657,8 @@ public final class ShaderPackProgramCompiler {
                 false, false, false, false, false);
         if (shader != null)
             seedDummyModelViewUniform(shader);
-        CreateManaIndustry.LOGGER.info("[CMI particles] invokeCreateShader({}) -> {}",
-                name, shader == null ? "null" : "ShaderInstance#" + shader.getId());
+        CreateManaIndustry.LOGGER.info(CMILog.PARTICLES + "invokeCreateShader({}) -> ShaderInstance#{}",
+                name, shader == null ? "null" : String.valueOf(shader.getId()));
         return shader;
     }
 

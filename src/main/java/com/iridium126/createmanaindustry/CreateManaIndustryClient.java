@@ -45,6 +45,7 @@ import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.event.GameShuttingDownEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 // This class will not load on dedicated servers. Accessing client side code from here is safe.
 @Mod(value = CreateManaIndustry.MODID, dist = Dist.CLIENT)
@@ -267,13 +268,13 @@ public class CreateManaIndustryClient {
         if (!sodium.available()) {
             throw new IllegalStateException("Sodium terrain ABI mismatch: " + sodium.reason());
         }
-        CreateManaIndustry.LOGGER.info("[Allvr] Sodium native terrain bridge enabled: adapter Sodium_0813_1211 ({})",
+        CreateManaIndustry.LOGGER.info(CMILog.ALLVR + "Sodium native terrain bridge enabled: adapter Sodium_0813_1211 ({})",
             sodium.reason());
         event.enqueueWork(() -> {
             try {
                 com.iridium126.createmanaindustry.client.particles.engine.spatial.ParticleRtModules.prepare();
             } catch (java.io.IOException | RuntimeException | LinkageError failure) {
-                CreateManaIndustry.LOGGER.warn("[CMI particles] RT native preparation unavailable: {}",failure.toString());
+                CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "RT native preparation unavailable: {}",failure.toString());
             }
             PonderIndex.addPlugin(new CMIPonderPlugin());
 

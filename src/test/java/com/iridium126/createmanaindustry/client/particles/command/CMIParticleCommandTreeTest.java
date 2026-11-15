@@ -33,7 +33,7 @@ class CMIParticleCommandTreeTest {
         assertNotNull(particle.getChild("emit"));
         assertNotNull(particle.getChild("anim"));
         assertNotNull(particle.getChild("clear"));
-        assertNotNull(particle.getChild("stats"));
+        assertNotNull(particle.getChild("status"));
         assertNotNull(particle.getChild("profile"));
         assertNotNull(particle.getChild("budget"));
         assertNotNull(particle.getChild("shaderpack"));
@@ -41,6 +41,8 @@ class CMIParticleCommandTreeTest {
         assertNull(particle.getChild("stream"));
         assertNull(particle.getChild("spray"));
         assertNull(particle.getChild("bench"));
+        assertNull(particle.getChild("stats"));
+        assertNull(particle.getChild("packagecollision"));
     }
     @Test void profilingSummaryAndOrganizedDetailsParse(){
         var dispatcher=dispatcher();
@@ -61,12 +63,13 @@ class CMIParticleCommandTreeTest {
         var dispatcher=dispatcher();accepts(dispatcher,"cmi particle shaderpack status");
         accepts(dispatcher,"cmi particle shaderpack status details");rejects(dispatcher,"cmi particle shaderpack status details on");
     }
-    @Test void packagePreviewAndCollisionPreparationCommandsParse() {
+    @Test void packagePreviewCommandParses() {
         var dispatcher=dispatcher();
         accepts(dispatcher,"cmi particle packagepreview 0");accepts(dispatcher,"cmi particle packagepreview 131072");
+        accepts(dispatcher,"cmi particle status");
         rejects(dispatcher,"cmi particle packagepreview 131073");
-        accepts(dispatcher,"cmi particle packagecollision");accepts(dispatcher,"cmi particle packagecollision capture");
-        accepts(dispatcher,"cmi particle packagecollision clear");rejects(dispatcher,"cmi particle packagecollision capture 131072");
+        rejects(dispatcher,"cmi particle packagecollision");rejects(dispatcher,"cmi particle packagecollision capture");
+        rejects(dispatcher,"cmi particle packagecollision clear");
     }
 
     @Test void amountLimitsDependOnEmissionSourceAndDuration() {

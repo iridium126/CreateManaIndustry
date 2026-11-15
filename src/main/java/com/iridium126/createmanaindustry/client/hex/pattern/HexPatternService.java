@@ -19,6 +19,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec2;
 import org.joml.Matrix4f;
 import java.util.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Explicit pass ownership. Native cancellation is never inferred from a player's UUID alone. */
 public final class HexPatternService {
@@ -186,5 +187,5 @@ public final class HexPatternService {
     private static void replayUi(UiBatch batch){boolean prior=replay;replay=true;try{for(var call:batch.nativeDraws)call.run();}finally{replay=prior;}}
     public static void endUi(){if(nestedUi>0){nestedUi--;return;}try{flushUi();}finally{ui=null;}}
     public static void close(){HexMetrics.close();if(worldBatch!=null){worldBatch.close();worldBatch=null;}if(backend!=null){backend.close();backend=null;}orbits.clear();owners.clear();shapes.clear();uiCaches.clear();accepted.clear();reload=failed=false;}
-    private static void fail(Throwable error){if(!failed)CreateManaIndustry.LOGGER.warn("[CMI Hex] GPU pass unavailable; preserving native rendering",error);failed=true;}
+    private static void fail(Throwable error){if(!failed)CreateManaIndustry.LOGGER.warn(CMILog.HEX + "GPU pass unavailable; preserving native rendering",error);failed=true;}
 }

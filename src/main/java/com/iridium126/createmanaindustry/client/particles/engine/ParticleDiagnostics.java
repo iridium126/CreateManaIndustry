@@ -5,6 +5,7 @@ import java.util.*;
 import org.lwjgl.opengl.*;
 import com.iridium126.createmanaindustry.client.gpu.profile.GpuBudgetLedger;
 import com.iridium126.createmanaindustry.client.gpu.profile.ProfileReportFormat;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Opt-in CPU submit/allocations and asynchronous timestamp samples. No GL_TIME_ELAPSED ownership. */
 public final class ParticleDiagnostics {
@@ -208,9 +209,9 @@ public final class ParticleDiagnostics {
         return formatReport(frame,true);
     }
     private String formatReport(GpuBudgetLedger.Snapshot frame,boolean details) {
-        String header=enabled?"[CMI profile] collecting; waiting for first frame":"[CMI profile] off; /cmi particle profile on";
+        String header=enabled?CMILog.PROFILE + "collecting; waiting for first frame":CMILog.PROFILE + "off; /cmi particle profile on";
         if(samples==0)return header;
-        header="[CMI profile] "+(enabled?"collecting":"stopped; last capture")+"; frames="+samples+"/"+SAMPLES
+        header=CMILog.PROFILE + ""+(enabled?"collecting":"stopped; last capture")+"; frames="+samples+"/"+SAMPLES
                 +(details?"; details":"; /cmi particle profile details");
         double[] sorted=Arrays.copyOf(cpu,samples);Arrays.sort(sorted);
         double meanAllocation=Arrays.stream(allocations,0,samples).average().orElse(0);

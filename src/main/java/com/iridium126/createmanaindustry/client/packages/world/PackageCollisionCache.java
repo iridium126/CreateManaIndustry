@@ -68,7 +68,7 @@ public final class PackageCollisionCache {
         }
         private static Snapshot empty(long revision) {
             return new Snapshot(revision,EMPTY_OFFSETS,EMPTY_FLAGS,EMPTY_BOXES,EMPTY_FRICTION,
-                    EMPTY_CELLS,EMPTY_GPU_BOXES,0,true,List.of(),false,0);
+                    EMPTY_CELLS,EMPTY_GPU_BOXES,0,true,List.of(),false);
         }
         /** A byte-exact prefix proof; it retains no preceding snapshot. */
         public record GpuPatch(long baseRevision,long baseIdentity,int baseShapes,java.util.List<Integer> cells,int bytes) {
@@ -76,7 +76,6 @@ public final class PackageCollisionCache {
         }
         private final long revision;
         private final long gpuIdentity=SNAPSHOT_IDS.incrementAndGet();
-        private final long bakeNanos;
         private final int[] offsets, flags;
         private final float[] boxes, friction;
         private final java.nio.ByteBuffer gpuCells,gpuBoxes;
@@ -86,18 +85,16 @@ public final class PackageCollisionCache {
         private final java.util.List<GpuPatch> gpuPatches;
         private final boolean localUpdate;
         private Snapshot(long revision, int[] offsets, int[] flags, float[] boxes, float[] friction,
-                         java.nio.ByteBuffer gpuCells,java.nio.ByteBuffer gpuBoxes,int gpuShapeCount,boolean gpuEmpty,java.util.List<GpuPatch> gpuPatches,boolean localUpdate,long bakeNanos) {
+                         java.nio.ByteBuffer gpuCells,java.nio.ByteBuffer gpuBoxes,int gpuShapeCount,boolean gpuEmpty,java.util.List<GpuPatch> gpuPatches,boolean localUpdate) {
             this.revision=revision; this.offsets=offsets; this.flags=flags; this.boxes=boxes; this.friction=friction;
             this.gpuCells=gpuCells;this.gpuBoxes=gpuBoxes;this.gpuShapeCount=gpuShapeCount;
             this.gpuEmpty=gpuEmpty;
             int summary=0;if(!gpuEmpty)for(int value:flags){if((value&0x37)!=0)summary|=2;if((value&0xff0000)!=0)summary|=4;}
             environmentSummary=summary;
             this.gpuPatches=java.util.List.copyOf(gpuPatches);this.localUpdate=localUpdate;
-            this.bakeNanos=bakeNanos;
         }
         public long revision() { return revision; }
         public long gpuIdentity(){return gpuIdentity;}
-        public long bakeNanos(){return bakeNanos;}
         public int shapeStart(int cell) { return offsets[cell]; }
         public int shapeEnd(int cell) { return offsets[cell+1]; }
         public float coordinate(int box, int component) { return boxes[box*6+component]; }
@@ -175,10 +172,6 @@ public final class PackageCollisionCache {
     private long localSpentNanos,localPublications,captureEpoch;
     private String localFailure="none";
     private long revision, lastCaptureNanos, overrunCount,capacityEvictions,capacityRejections;
-    private final long[] captureTimes=new long[128];
-    private final long[] bakeTimes=new long[128];
-    private int captureSamples,captureCursor;
-    private int bakeSamples,bakeCursor;
     private Listener listener=new Listener(){};
 
     public PackageCollisionCache(Executor executor, int maxSections) { this(executor,maxSections,System::nanoTime); }
@@ -376,7 +369,7 @@ public final class PackageCollisionCache {
         boolean empty=total==0;if(empty)for(int flag:flags)if(flag!=0){empty=false;break;}
         int shapes=base.gpuShapeCount+appended.size();var patches=patchLineage(base,java.util.List.copyOf(changes.keySet()),shapes);
         if(clock.getAsLong()>=deadline)return rejectLocal("time-budget");
-        return new Snapshot(version,offsets,flags,boxes,friction,gpuCells,gpuBoxes,shapes,empty,patches,true,0);
+        return new Snapshot(version,offsets,flags,boxes,friction,gpuCells,gpuBoxes,shapes,empty,patches,true);
     }
     private Snapshot rejectLocal(String reason){localFailure=reason;return null;}
     private static boolean boxMatches(java.nio.ByteBuffer data,int p,Box box){
@@ -498,8 +491,6 @@ public final class PackageCollisionCache {
         }else captureQueued(source,start,budgetNanos,null);
         } finally {for(Work work:sections.values())work.rescueCells=null;}
         lastCaptureNanos=clock.getAsLong()-start;
-        captureTimes[captureCursor]=lastCaptureNanos;captureCursor=(captureCursor+1)%captureTimes.length;
-        captureSamples=Math.min(captureSamples+1,captureTimes.length);
         if(lastCaptureNanos>budgetNanos)overrunCount++;
     }
     private void captureQueued(Source source,long start,long allowance,Boolean live) {
@@ -566,8 +557,7 @@ public final class PackageCollisionCache {
         if(result==null){if(work.published!=null){pending.remove(section);work.queued=false;}return;}
         if(result.revision==work.revision&&work.published==null) {
             work.published=result;work.baseline=null;work.dirtyCells=null;pending.remove(section);work.queued=false;
-            bakeTimes[bakeCursor]=result.bakeNanos;bakeCursor=(bakeCursor+1)%bakeTimes.length;
-            bakeSamples=Math.min(bakeSamples+1,bakeTimes.length);listener.published(section,result);
+            listener.published(section,result);
         } else {
             if(result.revision!=work.revision)listener.historical(section,result);
             if(work.published!=null){pending.remove(section);work.queued=false;}
@@ -575,7 +565,6 @@ public final class PackageCollisionCache {
     }
     private void enqueue(Section s,Work w) { if(!w.queued){pending.put(s,w);w.queued=true;} }
     private static Snapshot pack(long revision,Cell[] cells,Snapshot baseline) {
-        long begin=System.nanoTime();
         int[] offsets=new int[BLOCKS+1],flags=new int[BLOCKS]; float[] friction=new float[BLOCKS];
         int count=0,combinedFlags=0;
         for(int i=0;i<BLOCKS;i++){offsets[i]=count;count=Math.addExact(count,cells[i].shapes.size());combinedFlags|=cells[i].flags;}
@@ -629,19 +618,8 @@ public final class PackageCollisionCache {
                 patch=new Snapshot.GpuPatch(baseline.revision,baseline.gpuIdentity,baseline.gpuShapeCount,changed,changed.size()*16+gpuBoxes.remaining()-prefix);
             }
         }
-        return new Snapshot(revision,offsets,flags,boxes,friction,gpuCells,gpuBoxes,oversized?-1:unique.size(),count==0 && combinedFlags==0,patch==null?java.util.List.of():patchLineage(baseline,patch.cells,unique.size()),false,System.nanoTime()-begin);
+        return new Snapshot(revision,offsets,flags,boxes,friction,gpuCells,gpuBoxes,oversized?-1:unique.size(),count==0 && combinedFlags==0,patch==null?java.util.List.of():patchLineage(baseline,patch.cells,unique.size()),false);
     }
     public long lastCaptureNanos(){return lastCaptureNanos;}
     public long overrunCount(){return overrunCount;}
-    /** Diagnostic query only; the capture tick does not allocate or sort timing samples. */
-    public long capturePercentile(double percentile) {
-        return percentile(captureTimes,captureSamples,percentile);
-    }
-    public long bakePercentile(double percentile){return percentile(bakeTimes,bakeSamples,percentile);}
-    private long percentile(long[] values,int count,double percentile) {
-        owner();if(!(percentile>0 && percentile<=1))throw new IllegalArgumentException("Capture percentile");
-        if(count==0)return 0;
-        var sorted=java.util.Arrays.copyOf(values,count);java.util.Arrays.sort(sorted);
-        return sorted[(int)Math.ceil(percentile*count)-1];
-    }
 }

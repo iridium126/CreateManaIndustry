@@ -21,6 +21,7 @@ import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 
 /** Main-thread authority. Sorted X bounds index membership/conflict queries without block enumeration. */
 public final class PartitionManager {
@@ -132,7 +133,8 @@ public final class PartitionManager {
         if(level==null||!valid(level,saved.bounds())||conflict(level,saved.bounds(),chain.id())) {
             chain.partition(null);
             persistStaff(player.getServer(),chain);
-            player.sendSystemMessage(Component.translatable("createmanaindustry.partition.restore_failed"));
+            player.sendSystemMessage(CMICommandOutput.prefixed(CMICommandOutput.TRICKSTER,
+                    CMICommandOutput.Outcome.FAIL, Component.translatable("createmanaindustry.partition.restore_failed")));
             return;
         }
         install(level,chain,saved);

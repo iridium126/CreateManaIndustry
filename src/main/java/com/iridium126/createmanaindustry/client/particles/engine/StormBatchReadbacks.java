@@ -10,6 +10,7 @@ import java.util.ArrayDeque;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL32;
 import org.lwjgl.opengl.GL42;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** A committed attack batch has a single tick and identity, regardless of frame staging pressure. */
 final class StormBatchReadbacks implements AutoCloseable {
@@ -49,7 +50,7 @@ final class StormBatchReadbacks implements AutoCloseable {
             GL32.glDeleteSync(batch.fence);batch.fence=0;
             if(status==GL32.GL_WAIT_FAILED){
                 batch.storage.close();
-                if(waitsFailed++==0)com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("Storm attack batch fence failed at tick {}",batch.tick);
+                if(waitsFailed++==0)com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PARTICLES + "Storm attack batch fence failed at tick {}",batch.tick);
                 continue;
             }
             try{

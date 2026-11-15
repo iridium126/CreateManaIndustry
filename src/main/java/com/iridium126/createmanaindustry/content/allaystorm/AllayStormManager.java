@@ -1029,7 +1029,8 @@ public final class AllayStormManager {
         for(UUID recipient:recipients){var observer=level.getServer().getPlayerList().getPlayer(recipient);var observerTrack=rt.tracks.get(recipient);if(observer!=null&&observer.serverLevel()==level&&observerTrack!=null&&observerTrack.active)PacketDistributor.sendToPlayer(observer,relay);}
     }
 
-    public static String attackStatus(ServerLevel level){var rt=runtime(level);return "major: "+rt.stats+" columns: "+rt.columns.stats;}
+    /** Structured attack telemetry lines for /cmi particle allaystorm status. */
+    public static List<String> attackStatus(ServerLevel level){var rt=runtime(level);return List.of("attack major : "+rt.stats, "attack columns : "+rt.columns.stats);}
 
     // ---- command surface -------------------------------------------------------
 

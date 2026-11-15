@@ -2,11 +2,11 @@ package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 
 import java.util.concurrent.atomic.AtomicLong;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 import net.neoforged.bus.api.IEventBus;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.CommandSourceStack;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import net.minecraft.network.chat.Component;
 import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.OnDatapackSyncEvent;
@@ -49,9 +49,30 @@ public final class HexJitRuntime {
         return Commands.literal("cmi")
                 .then(Commands.literal("hexjit").requires(source -> source.hasPermission(2))
                         .then(Commands.literal("status").executes(context -> {
-                            context.getSource().sendSuccess(() -> Component.literal(status()), false); return 1;
+                            sendStatus(context.getSource()); return 1;
                         }))
-                        .then(Commands.literal("clear").executes(context -> { invalidate("command"); return 1; })));
+                        .then(Commands.literal("clear").executes(context -> {
+                            invalidate("command");
+                            CMICommandOutput.send(context.getSource(), CMICommandOutput.HEXJIT,
+                                    CMICommandOutput.Outcome.OK, "JIT caches cleared; generation advanced.");
+                            return 1;
+                        })));
+    }
+
+    /** Structured command status. The plain status() string stays for gametest assertions. */
+    private static void sendStatus(CommandSourceStack src) {
+        CompilationCache.Stats stats = cache == null ? null : cache.stats();
+        CMICommandOutput.sendReport(src, CMICommandOutput.HEXJIT, "Hex JIT status",
+                "mode", ServerConfig.hexJitMode,
+                "compatibility verified", JitCompatibility.ready(),
+                "server thread", onServerThread(),
+                "epoch", generation(),
+                "invalidation", invalidation,
+                "compiled units", stats == null ? "none" : stats.entries(),
+                "cache calls", stats == null ? "none" : stats.calls(),
+                "cache hits", stats == null ? "none" : stats.compiledHits(),
+                "compile failures", stats == null ? "none" : stats.failures(),
+                "compatibility detail", JitCompatibility.status());
     }
 
     public static boolean enabled() {
@@ -87,9 +108,10 @@ public final class HexJitRuntime {
         return cache.acquire(site, description, ServerConfig.hexJitMode == ServerConfig.HexJitMode.AUTO);
     }
 
+    /** Machine-readable diagnostic string; gametests assert on its Stats fields. */
     public static String status() {
         return "mode=" + ServerConfig.hexJitMode + ", compatibility=" + JitCompatibility.status()
                 + ", epoch=" + generation() + ", invalidation=" + invalidation + ", "
-                + (cache == null ? "no compiled sites" : cache.stats());
+                + (cache == null ? "no compilation cache yet" : cache.stats());
     }
 }

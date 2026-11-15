@@ -18,6 +18,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Reconstructs the true block position and interaction bounds of client →
@@ -151,7 +152,7 @@ public abstract class AllvrServerboundPosMixin {
         // vanilla itself sends BlockPos.ZERO for RELEASE_USE_ITEM / DROP_ITEM
         // (position unused) — out-of-reach positions are normal here, so debug only
         CreateManaIndustry.LOGGER.debug(
-            "[Allvr] client action at wire pos {} has no true Y within ±64 of the player eye (y={}) — using decoded position",
+            CMILog.ALLVR + "client action at wire pos {} has no true Y within ±64 of the player eye (y={}) — using decoded position",
             pos, eyeY);
         return pos;
     }

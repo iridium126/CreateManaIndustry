@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.compat.ysm;
 
 import java.util.Locale;
 import net.minecraft.network.chat.Component;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Localized player-facing messages shared by YSM-backed Hexcasting actions. */
 public final class YsmChatMessages {
@@ -98,7 +99,7 @@ public final class YsmChatMessages {
         if (value.contains("invalid") || value.contains("expected") || value.contains("unsupported"))
             return Component.translatable(PREFIX + "reason.invalid_data");
 
-        LOGGER.warn("Player-model action failed: {}", raw);
+        LOGGER.warn(CMILog.YSM + "Player-model action failed: {}", raw);
         return Component.translatable(PREFIX + "reason.unknown");
     }
 

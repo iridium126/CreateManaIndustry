@@ -4,6 +4,7 @@ import com.iridium126.createmanaindustry.CreateManaIndustry;
 
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Static bake of the vanilla held item (the {@code item/handheld} parent model
@@ -361,7 +362,7 @@ public final class HeldItemGeometry {
         try (java.io.InputStream in = HeldItemGeometry.class.getResourceAsStream(path)) {
             if (in == null) {
                 CreateManaIndustry.LOGGER.warn(
-                        "[CMI particles] held-item silhouette sprite missing: {} — side shells skipped", path);
+                        CMILog.PARTICLES + "held-item silhouette sprite missing: {} — side shells skipped", path);
                 return null;
             }
             com.mojang.blaze3d.platform.NativeImage img =
@@ -381,7 +382,7 @@ public final class HeldItemGeometry {
             }
         } catch (Exception e) {
             CreateManaIndustry.LOGGER.warn(
-                    "[CMI particles] cannot read held-item silhouette {}: side shells skipped", path, e);
+                    CMILog.PARTICLES + "cannot read held-item silhouette {}: side shells skipped", path, e);
             return null;
         }
     }

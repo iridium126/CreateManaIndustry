@@ -78,7 +78,7 @@ Great Trick 的字形、书本及交互 UI 仍有独立 CPU 绘制路径；Hex �
 | 功能 | 当前入口／实际行为 | 建议所有者及必须保留的边界 |
 | --- | --- | --- |
 | 一次发射、持续发射、取消与动画切换 | `spawn`、`stream`、`removeStream`、`setAnimation`，请求延后在渲染线程处理 | `particles/emitter`；取消流不删除已出生粒子，动画切换可影响已有 MODEL |
-| 开发命令与预设 | `/cmi particle`；mana_spark、ember、ash、soul_flame、mana_burst、cherry_leaves、flood、allay_fly／dance／hold；Hex pigment 源；包裹预览／碰撞采集、clear、预算、诊断及 shaderpack 状态 | 命令层只调用各域 API；预览不能与实际包裹权威混为一谈；可选 Hex 未加载时补全和命令不能链接其类型 |
+| 开发命令与预设 | `/cmi particle`；mana_spark、ember、ash、soul_flame、mana_burst、cherry_leaves、flood、allay_fly／dance／hold；Hex pigment 源；包裹预览、clear、status、预算、诊断及 shaderpack 状态 | 命令层只调用各域 API；预览不能与实际包裹权威混为一谈；可选 Hex 未加载时补全和命令不能链接其类型 |
 | 发射与运动规格 | POINT／BOX／SPHERE／CONE／PLANE；速度、寿命、大小／颜色关键帧、重力、阻力、加速度、风、旋转 | 通用规格与 shader hook；保持 20 vec4 头、64 B 粒子 ABI，先引入具名布局编码，减少各业务手工覆写保留槽 |
 | Sprite 与材质 | ADDITIVE、ALPHA、OPAQUE；图集、光照、距离淡出、视锥、透明排序；樱花 flutter／spin／12 精灵与落地消亡 | `particles/render`；lightmap 与 fullbright 明确区分，光照采样时机不可因整理代码改变 |
 | 普通碰撞与类型扩展 | NONE／REST／DIE_ON_GROUND；`CollisionBake`；启动期 `ParticleTypes` spawn／update include | `particles/world` 与类型目录；占据图不能替代包裹精确几何；类型描述中的 feature 元数据不是已实现的自动调度系统 |

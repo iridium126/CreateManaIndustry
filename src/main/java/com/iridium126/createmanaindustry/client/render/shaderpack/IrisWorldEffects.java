@@ -9,6 +9,7 @@ import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.shadows.ShadowRenderingState;
 import top.leonx.irisveil.accessors.IrisRenderingPipelineAccessor;
 import java.util.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Native before-composite and generic after-composite routes share one once-per-frame dispatcher. */
 public final class IrisWorldEffects {
@@ -68,12 +69,12 @@ public final class IrisWorldEffects {
                     entry.drawn=frame;entry.path=path.name();entry.reason=reason;
                     if(entry.failed!=frame&&!reason.startsWith("native window unavailable"))entry.error="";
                     String report=entry.session+"/"+entry.path+"/"+reason+"/"+entry.error;
-                    if(!report.equals(entry.lastReport)){entry.lastReport=report;CreateManaIndustry.LOGGER.info("[CMI effects] {}={} reason={}{}",pass.id(),path,reason,entry.error.isEmpty()?"":"; "+entry.error);}
+                    if(!report.equals(entry.lastReport)){entry.lastReport=report;CreateManaIndustry.LOGGER.info(CMILog.EFFECTS + "{}={} reason={}{}",pass.id(),path,reason,entry.error.isEmpty()?"":"; "+entry.error);}
                 }
                 else {entry.failed=frame;entry.error=WorldEffectRenderer.failure();}
             }catch(RuntimeException|LinkageError failure){
                 entry.failed=frame;entry.error=failure.toString();
-                long now=System.currentTimeMillis();if(now-lastLog>5000){lastLog=now;CreateManaIndustry.LOGGER.warn("[CMI effects] {}",pass.id(),failure);}
+                long now=System.currentTimeMillis();if(now-lastLog>5000){lastLog=now;CreateManaIndustry.LOGGER.warn(CMILog.EFFECTS + "world effect {} failed",pass.id(),failure);}
             }
         }
     }

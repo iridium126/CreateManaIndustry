@@ -5,6 +5,7 @@ import com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient;
 import com.iridium126.createmanaindustry.client.allaystorm.StormFeedback;
 import java.io.IOException;
 import java.util.ArrayList;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Native simulation owner for a client Storm lifetime. Render frames service receipts and display leases. */
 public final class NativeStormSimulation {
@@ -89,7 +90,7 @@ public final class NativeStormSimulation {
                         this::acceptRegional,this::acceptColumn,this::acceptOuter,this::acceptPositions,this::acceptSnapshot,this::acceptFeathers);
             }catch(IOException|RuntimeException|LinkageError failure){
                 inputs.stop(failure.toString());
-                com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn("[CMI particles] Native Storm initialization failed",failure);
+                com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Native Storm initialization failed",failure);
             }
         }
         if(control!=null)try(var timing=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("rt.storm.service")){

@@ -3,6 +3,8 @@ package com.iridium126.createmanaindustry.compat.ysm.internal.algorithms;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 
 
 public class CityHash {
@@ -503,10 +505,9 @@ public class CityHash {
         CityHash ch = new CityHash();
         long result = ch.hash64WithSeed(input, seed);
 
-        if (result == expectedResult) {
-            System.out.println("test passed: " + Long.toHexString(result));
-        } else {
-            System.err.printf("expected: %x, actual: %x\n", expectedResult, result);
+        if (result != expectedResult) {
+            CreateManaIndustry.LOGGER.error(CMILog.YSM + "CityHash self-test failed: expected={}, actual={}",
+                    Long.toHexString(expectedResult), Long.toHexString(result));
         }
     }
 

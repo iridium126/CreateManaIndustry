@@ -26,6 +26,7 @@ import net.minecraft.world.entity.player.Player;
 import org.joml.*;
 import org.lwjgl.opengl.*;
 import java.util.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Iris-only bridge; Hex shadows never require iris-veil or the MODEL shader. */
 public final class HexIrisHook {
@@ -69,7 +70,7 @@ public final class HexIrisHook {
             if(shader==null)throw new IllegalStateException("Missing Hex shadow shader");owner=bridge;
             if(shader.MODEL_VIEW_MATRIX==null)shader.MODEL_VIEW_MATRIX=placeholder=new Uniform("ModelViewMat",10,16,shader);
             tessellation=ref.getTessControlSource().isPresent();return true;
-        }catch(Exception|LinkageError error){status="native fallback: "+error;CreateManaIndustry.LOGGER.warn("[CMI Hex] Native Iris shadow merge unavailable",error);if(shader!=null){HexPatternService.retireProgram(shader.getId());uniforms.retire(shader.getId());bridge.cmi$discardPackageShader(shader);shader=null;}return false;}
+        }catch(Exception|LinkageError error){status="native fallback: "+error;CreateManaIndustry.LOGGER.warn(CMILog.HEX + "Native Iris shadow merge unavailable",error);if(shader!=null){HexPatternService.retireProgram(shader.getId());uniforms.retire(shader.getId());bridge.cmi$discardPackageShader(shader);shader=null;}return false;}
     }
     private static void matrix(int id,String name,Matrix4f value){int l=uniforms.location(id,name);if(l>=0)uniforms.matrix(id,name,value);}
     public static void draw(Camera camera,Frustum frustum,boolean entities,boolean playerOnly){
@@ -107,7 +108,7 @@ public final class HexIrisHook {
                     if(!accepted.isEmpty())accepted.peek().addAll(owners);status="active: current-frame, "+batch.count()+" patterns";
                 }finally{if(applied)GpuPrograms.clearExternal(shader);}
             }
-        }catch(RuntimeException|LinkageError error){if(!accepted.isEmpty())accepted.peek().clear();status="native fallback: "+error;CreateManaIndustry.LOGGER.warn("[CMI Hex] Shadow batch failed",error);}
+        }catch(RuntimeException|LinkageError error){if(!accepted.isEmpty())accepted.peek().clear();status="native fallback: "+error;CreateManaIndustry.LOGGER.warn(CMILog.HEX + "Shadow batch failed",error);}
         finally{CapturedRenderingState.INSTANCE.setCurrentAlphaTest(alpha);ImmediateState.usingTessellation=oldTessellation;}
     }
 }

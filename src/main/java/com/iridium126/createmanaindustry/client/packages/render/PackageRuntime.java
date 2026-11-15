@@ -26,6 +26,8 @@ import static com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.*;
 import org.joml.Matrix4fc;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Owns package preparation, preview, pool integration and render state. */
 public final class PackageRuntime {
@@ -82,7 +84,7 @@ public final class PackageRuntime {
         if(packageShadersDirty) {
             packageShadersDirty=false;
             if(packageParticles!=null)try { packageParticles.rebuild(ParticlePrograms::loadParticlePlain); }
-            catch(RuntimeException failure) { CreateManaIndustry.LOGGER.warn("[CMI packages] shader reload failed; retaining previous programs",failure); }
+            catch(RuntimeException failure) { CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "shader reload failed; retaining previous programs",failure); }
         }
         if(previewRequest!=null && !doClear) {
             com.iridium126.createmanaindustry.client.packages.authority.PackageAuthorityClient.closeAll("Package preview owns the pool",true);
@@ -94,9 +96,10 @@ public final class PackageRuntime {
                 this.packagePreviewStatus="active; requested="+previewRequest.count();
             } catch(RuntimeException | LinkageError failure) {
                 this.packagePreviewStatus="initialization failed: "+failure.getClass().getSimpleName();
-                CreateManaIndustry.LOGGER.error("[CMI packages] preview initialization failed",failure);
-                Minecraft.getInstance().gui.getChat().addMessage(net.minecraft.network.chat.Component.literal(
-                        "[CMI packages] Package preview initialization failed; see latest.log and /cmi particle stats."));
+                CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "preview initialization failed",failure);
+                Minecraft.getInstance().gui.getChat().addMessage(CMICommandOutput.heading(
+                        CMICommandOutput.PACKAGES, CMICommandOutput.Outcome.FAIL,
+                        "Package preview initialization failed; see latest.log and /cmi particle status."));
             }
         }
         if(this.packagePreview.active()) {

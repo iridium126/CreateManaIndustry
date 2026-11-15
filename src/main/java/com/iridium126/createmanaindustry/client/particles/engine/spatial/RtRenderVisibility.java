@@ -10,6 +10,7 @@ import java.util.function.Function;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.lwjgl.opengl.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Independent render queries. Camera and shadow proofs have separate rows and coverage. */
 public final class RtRenderVisibility implements AutoCloseable {
@@ -138,7 +139,7 @@ public final class RtRenderVisibility implements AutoCloseable {
             if(worker.failed()){failed=true;failure=worker.description();stopWorker();return 0;}
             return masks;
         }catch(RuntimeException|LinkageError|java.io.IOException error){
-            failed=true;failure=error.toString();CreateManaIndustry.LOGGER.warn("[CMI particles] RT render queries stopped: {}",failure);
+            failed=true;failure=error.toString();CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "RT render queries stopped: {}",failure);
             stopWorker();return 0;
         }
     }

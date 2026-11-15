@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.content.allaystorm;
 
 import java.io.*;
 import net.minecraft.world.phys.Vec3;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** C2 inverse-arc tables: runtime sampling needs no quadrature or root solve. */
 public final class DomeTemplate {
@@ -21,7 +22,7 @@ public final class DomeTemplate {
     public static int keyCount(){return (int)word(0);}
     public static boolean keysReady(){return keys!=null;}
     public static boolean keysFailed(){return keyLoadFailed;}
-    public static void preloadKeys(){if(available()&&PRELOADING.compareAndSet(false,true))java.util.concurrent.CompletableFuture.runAsync(DomeTemplate::keys).exceptionally(error->{com.mojang.logging.LogUtils.getLogger().error("Dome trajectory preload failed",error);return null;});}
+    public static void preloadKeys(){if(available()&&PRELOADING.compareAndSet(false,true))java.util.concurrent.CompletableFuture.runAsync(DomeTemplate::keys).exceptionally(error->{com.mojang.logging.LogUtils.getLogger().error(CMILog.STORM + "Dome trajectory preload failed",error);return null;});}
     private static int record(int rank){if(rank<0||rank>=COUNT)throw new IndexOutOfBoundsException(rank);return 4+rank*RECORD_WORDS;}
     public static float duration(int rank){return word(record(rank)+2);}
     public static int ringBase(int rank){return (int)word(record(rank)+3);}
@@ -85,5 +86,5 @@ public final class DomeTemplate {
             double normal=result[r+13]*result[r+13]+result[r+14]*result[r+14]+result[r+15]*result[r+15];if(Math.abs(normal-1)>.0001)throw new IOException("Dome exit-plane normal");
             int base=(int)result[r+3],n=(int)result[r+7];if(result[r]<0||(result[r]+result[r+1])*6>keyCount||result[r+1]<2||result[r+1]>4096||result[r+2]<=.5||result[r+2]>60||base<0||base>rank||n<12||n%12!=0||rank>=base+n||base+n>COUNT||Math.abs(result[r+9])<4||Math.abs(result[r+9])>6||result[r+10]<=0||result[r+11]<=3||result[r+12]<2||(result[r+8]+result[r+12])*6>keyCount)throw new IOException("Dome v4 record");
         }return result;
-    }catch(IOException failure){com.mojang.logging.LogUtils.getLogger().error("Dome disabled: invalid C2 template",failure);return new float[0];}}
+    }catch(IOException failure){com.mojang.logging.LogUtils.getLogger().error(CMILog.STORM + "Dome disabled: invalid C2 template",failure);return new float[0];}}
 }

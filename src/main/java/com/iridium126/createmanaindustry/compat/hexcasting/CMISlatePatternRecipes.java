@@ -20,6 +20,7 @@ import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Generates stonecutting recipes for Hexcasting slate patterns at runtime.
@@ -60,7 +61,7 @@ public final class CMISlatePatternRecipes {
         try {
             registry = at.petrak.hexcasting.xplat.IXplatAbstractions.INSTANCE.getActionRegistry();
         } catch (Exception e) {
-            CreateManaIndustry.LOGGER.error("Failed to access Hexcasting action registry", e);
+            CreateManaIndustry.LOGGER.error(CMILog.HEX + "Failed to access Hexcasting action registry", e);
             return result;
         }
 
@@ -89,7 +90,7 @@ public final class CMISlatePatternRecipes {
         }
 
         if (!result.isEmpty())
-            CreateManaIndustry.LOGGER.info("Generated {} slate pattern stonecutting recipes", result.size());
+            CreateManaIndustry.LOGGER.info(CMILog.HEX + "Generated {} slate pattern stonecutting recipes", result.size());
 
         return result;
     }

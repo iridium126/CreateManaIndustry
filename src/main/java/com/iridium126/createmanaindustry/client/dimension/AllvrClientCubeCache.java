@@ -30,6 +30,7 @@ import com.iridium126.createmanaindustry.dimension.net.ClientboundAllvrCubePacke
 import com.iridium126.createmanaindustry.client.dimension.render.sodium.AllvrSodiumBridge;
 import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
 import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Client-side registry of streamed cubes for the allay dimension — the cube
@@ -348,7 +349,7 @@ public final class AllvrClientCubeCache {
         if (stream == null || !stream.canComplete(generation, revision)) return;
         if (failure != null) {
             stream.fail();
-            CreateManaIndustry.LOGGER.warn("[Allvr] malformed cube packet for {} — dropped",
+            CreateManaIndustry.LOGGER.warn(CMILog.ALLVR + "malformed cube packet for {} — dropped",
                 com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(cubePos), failure);
             return;
         }
@@ -370,7 +371,7 @@ public final class AllvrClientCubeCache {
             synchronized (LOCK) { cubes.remove(cubePos); beCubes.remove(cubePos); contentRevision++; residencyRevision++; }
             if (old != null && lightEngine != null) lightEngine.onCubeUnloaded(old);
             stream.fail();
-            CreateManaIndustry.LOGGER.warn("[Allvr] cube BE publication failed; requesting a new snapshot", error);
+            CreateManaIndustry.LOGGER.warn(CMILog.ALLVR + "cube BE publication failed; requesting a new snapshot", error);
             return;
         }
         synchronized (LOCK) { refreshBeCube(cubePos, cube); }

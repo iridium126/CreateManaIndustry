@@ -18,6 +18,7 @@ import dev.enjarai.trickster.spell.fragment.StringFragment;
 import dev.enjarai.trickster.spell.fragment.VoidFragment;
 
 import net.minecraft.world.level.block.entity.BlockEntity;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Synchronizes DisplayLink argument overrides into live Trickster spell executors
@@ -110,7 +111,7 @@ public final class TricksterDisplaySync {
                 field.setAccessible(true);
                 argumentsField = field;
             } catch (ReflectiveOperationException e) {
-                CreateManaIndustry.LOGGER.error("Failed to access ExecutionState.arguments field", e);
+                CreateManaIndustry.LOGGER.error(CMILog.TRICKSTER + "Failed to access ExecutionState.arguments field", e);
                 return;
             }
         }
@@ -118,7 +119,7 @@ public final class TricksterDisplaySync {
             try {
                 field.set(state, new ArrayList<>(merged));
             } catch (ReflectiveOperationException e) {
-                CreateManaIndustry.LOGGER.error("Failed to update spell executor arguments", e);
+                CreateManaIndustry.LOGGER.error(CMILog.TRICKSTER + "Failed to update spell executor arguments", e);
             }
         }
     }

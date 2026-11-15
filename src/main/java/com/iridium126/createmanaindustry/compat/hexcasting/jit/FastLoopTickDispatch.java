@@ -24,6 +24,8 @@ import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Blocks;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 
 /** Executes a cached Tick action from a loop frame without repeating pattern registry dispatch. */
 public final class FastLoopTickDispatch {
@@ -198,7 +200,7 @@ public final class FastLoopTickDispatch {
                                     ((PatternIotaLoopDispatchAccess) pattern).cmi$cachedLoopTickRequiresEnlightenment()) : null))),
                     mishap.resolutionType(env), HexEvalSounds.MISHAP.get());
         } catch (Exception exception) {
-            exception.printStackTrace();
+            CreateManaIndustry.LOGGER.error(CMILog.HEXJIT + "Loop tick dispatch failed", exception);
             scope.loopTickDispatchCompleted(false);
             return new CastResult(pattern, uniformContinuation(source, consumed, parent), null,
                     List.of(new OperatorSideEffect.DoMishap(
@@ -246,7 +248,7 @@ public final class FastLoopTickDispatch {
         try {
             vm.performSideEffects(result.getSideEffects());
         } catch (Exception exception) {
-            exception.printStackTrace();
+            CreateManaIndustry.LOGGER.error(CMILog.HEXJIT + "Loop tick dispatch failed", exception);
             vm.performSideEffects(List.of(new OperatorSideEffect.DoMishap(
                     new at.petrak.hexcasting.api.casting.mishaps.MishapInternalException(exception),
                     new Mishap.Context(null, null))));
@@ -324,7 +326,7 @@ public final class FastLoopTickDispatch {
                 vm.performSideEffects(sideEffects);
             }
         } catch (Exception exception) {
-            exception.printStackTrace();
+            CreateManaIndustry.LOGGER.error(CMILog.HEXJIT + "Loop tick dispatch failed", exception);
             vm.performSideEffects(List.of(new OperatorSideEffect.DoMishap(
                     new at.petrak.hexcasting.api.casting.mishaps.MishapInternalException(exception),
                     new Mishap.Context(null, null))));
@@ -419,7 +421,7 @@ public final class FastLoopTickDispatch {
                     mishap.resolutionType(env), HexEvalSounds.MISHAP.get());
         } catch (Exception exception) {
             // Direct dispatch replaces executeInner, including its non-Mishap failure boundary.
-            exception.printStackTrace();
+            CreateManaIndustry.LOGGER.error(CMILog.HEXJIT + "Loop tick dispatch failed", exception);
             scope.loopTickDispatchCompleted(false);
             return new CastResult(pattern, continuation, null,
                     List.of(new OperatorSideEffect.DoMishap(

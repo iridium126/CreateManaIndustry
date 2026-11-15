@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.client.render.shaderpack;
 
 import java.util.List;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 /** Loading-session backed shadow convention resolver; absence and ambiguity never imply identity distortion. */
 public final class ShadowDistortionRegistry {
     private static final List<ShadowDistortionConvention> CONVENTIONS=List.of(new QuarticShadowDistortion(),new EuclideanShadowDistortion(),new LogShadowDistortion(),new SundialShadowDistortion(),new IterationTShadowDistortion());
@@ -20,7 +21,7 @@ public final class ShadowDistortionRegistry {
             int matches=0;
             for(var c:CONVENTIONS){var p=c.tryResolve(source);if(p!=null){params=p;matches++;}}
             recognized=matches==1;if(!recognized)params=PackShadowParams.NONE;
-        }catch(RuntimeException|LinkageError failure){CreateManaIndustry.LOGGER.warn("[CMI shadow] contract resolution failed",failure);params=PackShadowParams.NONE;}
+        }catch(RuntimeException|LinkageError failure){CreateManaIndustry.LOGGER.warn(CMILog.SHADOW + "contract resolution failed",failure);params=PackShadowParams.NONE;}
         return params;
     }
     public static boolean recognized(){resolveForCurrentPack();return recognized;}

@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 @Mixin(value=IrisRenderingPipeline.class,remap=false)
 public abstract class RiftPipelineMixin implements RiftIrisPipeline {
@@ -49,7 +50,7 @@ public abstract class RiftPipelineMixin implements RiftIrisPipeline {
         } catch(Exception error) {
             if(cmi$targetSky!=null){cmi$targetSky.destroy();cmi$targetSky=null;}
             cmi$skyFailure="native target sky rejected: "+error.getMessage();
-            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI shaderpack] Target sky candidate rejected",error);
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.SHADERPACK + "Target sky candidate rejected",error);
         }
     }
     @Inject(method="destroy",at=@At("HEAD"))

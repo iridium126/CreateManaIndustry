@@ -14,6 +14,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.loading.FMLLoader;
 import net.neoforged.fml.loading.FMLPaths;
 import org.slf4j.Logger;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Process-local switches read before Mixin transforms any game classes. */
 public final class ExperimentalStartup {
@@ -51,7 +52,7 @@ public final class ExperimentalStartup {
         } catch (NoSuchFileException ignored) {
             return null;
         } catch (IOException | ParsingException failure) {
-            LOGGER.warn("Cannot read CMI experimental settings from {}: {}", file, failure.getMessage());
+            LOGGER.warn(CMILog.CONFIG + "Cannot read CMI experimental settings from {}: {}", file, failure.getMessage());
             return null;
         }
     }
@@ -92,7 +93,7 @@ public final class ExperimentalStartup {
     }
 
     private static void invalid(Path file, String key, String expected) {
-        LOGGER.warn("Invalid CMI setting experimental{} in {}: expected {}; feature disabled",
+        LOGGER.warn(CMILog.CONFIG + "Invalid CMI setting experimental{} in {}: expected {}; feature disabled",
                 key.isEmpty() ? "" : "." + key, file, expected);
     }
 }

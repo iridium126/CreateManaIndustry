@@ -24,6 +24,7 @@ import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCube;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Client-only Allay bridge into Voxy's normal ingest service.
@@ -160,7 +161,7 @@ public final class AllvrVoxyClientIngest {
                 rendererRefreshPending = false;
                 prewarmedSlab = wantedSlab;
                 CreateManaIndustry.LOGGER.info(
-                    "[Allvr] refreshed Voxy renderer for Allay Y slab {}", wantedSlab);
+                    CMILog.ALLVR + "refreshed Voxy renderer for Allay Y slab {}", wantedSlab);
             }
             return;
         }
@@ -190,7 +191,7 @@ public final class AllvrVoxyClientIngest {
                         SECTION_QUEUE.addFirst(sectionKey);
                     }
                     if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
-                        CreateManaIndustry.LOGGER.debug("[Allvr] Voxy section ingest deferred", sectionFailure);
+                        CreateManaIndustry.LOGGER.debug(CMILog.ALLVR + "Voxy section ingest deferred", sectionFailure);
                     }
                     break;
                 }
@@ -199,7 +200,7 @@ public final class AllvrVoxyClientIngest {
             // Optional Voxy may disappear during a renderer reload.  Keep the
             // queue intact for the next tick instead of breaking cube handling.
             if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
-                CreateManaIndustry.LOGGER.debug("[Allvr] Voxy cube ingest deferred", t);
+                CreateManaIndustry.LOGGER.debug(CMILog.ALLVR + "Voxy cube ingest deferred", t);
             }
         }
     }
@@ -229,7 +230,7 @@ public final class AllvrVoxyClientIngest {
             } catch (Throwable t) {
                 prewarmedSlab = Long.MIN_VALUE;
                 if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
-                    CreateManaIndustry.LOGGER.debug("[Allvr] Voxy Y slab prewarm failed", t);
+                    CreateManaIndustry.LOGGER.debug(CMILog.ALLVR + "Voxy Y slab prewarm failed", t);
                 }
             }
         });
@@ -244,7 +245,7 @@ public final class AllvrVoxyClientIngest {
             return true;
         } catch (Throwable t) {
             if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
-                CreateManaIndustry.LOGGER.debug("[Allvr] Voxy renderer refresh deferred", t);
+                CreateManaIndustry.LOGGER.debug(CMILog.ALLVR + "Voxy renderer refresh deferred", t);
             }
             return false;
         }
@@ -259,7 +260,7 @@ public final class AllvrVoxyClientIngest {
         if (refreshRenderer()) {
             rendererRefreshPending = false;
             prewarmedSlab = wantedSlab;
-            CreateManaIndustry.LOGGER.info("[Allvr] switched Voxy Y slab to {}", wantedSlab);
+            CreateManaIndustry.LOGGER.info(CMILog.ALLVR + "switched Voxy Y slab to {}", wantedSlab);
         } else {
             slabId = previousSlab;
             prewarmedSlab = Long.MIN_VALUE;

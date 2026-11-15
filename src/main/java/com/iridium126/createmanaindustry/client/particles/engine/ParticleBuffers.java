@@ -20,6 +20,7 @@ import org.lwjgl.opengl.GL31;
 import org.lwjgl.opengl.GL32;
 import org.lwjgl.opengl.GL40;
 import org.lwjgl.opengl.GL43;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Owns all GPU resources of the particle engine: the double-buffered particle
@@ -463,12 +464,12 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     public boolean init(int maxParticles, int maxEmitters) {
         var limits=GpuCapabilities.current();
         if(!limits.supportsCompute(IDENTITY_BB,1,64)) {
-            CreateManaIndustry.LOGGER.warn("[CMI particles] Device does not support the particle compute pipeline; engine disabled");
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Device does not support the particle compute pipeline; engine disabled");
             return false;
         }
         int cap=limits.elementCapacity(maxParticles,BYTES_PER_PARTICLE,64);
         if(cap<1000) {
-            CreateManaIndustry.LOGGER.warn("[CMI particles] Device capacity too small for a usable particle pool; engine disabled");
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Device capacity too small for a usable particle pool; engine disabled");
             return false;
         }
         this.capacity = cap;

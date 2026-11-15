@@ -16,6 +16,7 @@ import com.iridium126.createmanaindustry.client.dimension.AllvrClientCubeCache;
 import com.iridium126.createmanaindustry.client.dimension.render.AllvrRenderYWindow;
 import com.iridium126.createmanaindustry.dimension.AllvrDimensions;
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Main-thread owner of ALLVR's Sodium section residency and revision gates.
@@ -265,7 +266,7 @@ public final class AllvrSodiumBridge {
             SectionPos pos = SectionPos.of(key);
             scheduleDirty(key);
             if (CreateManaIndustry.LOGGER.isDebugEnabled()) {
-                CreateManaIndustry.LOGGER.debug("[Allvr] Sodium resource revision {} dirtied {}",
+                CreateManaIndustry.LOGGER.debug(CMILog.ALLVR + "Sodium resource revision {} dirtied {}",
                     resourceRevision, pos);
             }
         }

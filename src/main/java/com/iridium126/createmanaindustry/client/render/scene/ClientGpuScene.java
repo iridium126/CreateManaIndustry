@@ -20,6 +20,7 @@ import com.iridium126.createmanaindustry.client.particles.interaction.ModelInter
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms;
 import static com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.*;
 import org.joml.Matrix4fc;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Fixed business composition and render-scope lifecycle. No plugin registration. */
 public final class ClientGpuScene {
@@ -168,7 +169,7 @@ public final class ClientGpuScene {
         } catch (RuntimeException | LinkageError failure) {
             frameArmed = false;
             frameCoordinator.abort();
-            CreateManaIndustry.LOGGER.warn("[CMI particles] pre-shadow preparation failed", failure);
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "pre-shadow preparation failed", failure);
         }
         levelFrame.complete(frameArmed);
         // This is a submission entry, not a particle consumer. In particular,
@@ -246,7 +247,7 @@ public final class ClientGpuScene {
             long now = System.currentTimeMillis();
             if (now - this.lastErrorTime > 5000) {
                 this.lastErrorTime = now;
-                CreateManaIndustry.LOGGER.error("[CMI particles] compute phase failed", e);
+                CreateManaIndustry.LOGGER.error(CMILog.PARTICLES + "compute phase failed", e);
             }
         } finally {
             if(timedCompute)this.computeTimer.end(computeSucceeded);

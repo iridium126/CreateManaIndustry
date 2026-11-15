@@ -10,6 +10,7 @@ import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundS
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Render-thread Storm state, scheduling and server feedback policy.
@@ -924,7 +925,7 @@ public final class AllayStormRuntime {
             if(captureStart!=0)capture.stormInputCaptured(tick,(System.nanoTime()-captureStart)*1e-6);
         }catch(RuntimeException|LinkageError failure){
             inputs.stop(failure.toString());
-            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn("Native Storm input timeline stopped",failure);
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn(CMILog.STORM + "Native Storm input timeline stopped",failure);
         }
     }
     ContactAuthority contactAuthority(int id) {var wave=findWaveById(id);return wave==null||wave.packet.abort()?null:wave.feedbackIdentity;}

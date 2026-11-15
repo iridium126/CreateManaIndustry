@@ -18,6 +18,7 @@ import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelChain;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.graph.PlacingCogwheelNode;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.placement.ChainInteractionFailedException;
 import com.kipti.bnb.content.kinetics.cogwheel_chain.placement.CogwheelChainPlacementInteraction;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 
 @Mixin(targets = "com.kipti.bnb.content.kinetics.cogwheel_chain.placement.CogwheelChainPlacementInteraction", remap = false)
 public abstract class CogwheelChainPlacementInteractionMixin {
@@ -63,7 +64,8 @@ public abstract class CogwheelChainPlacementInteractionMixin {
         // matching BnB's native replacement behaviour.
         if (!BnBKineticsCoreNodes.hasAnyKineticsCore(level, pos)) {
             mc.player.displayClientMessage(
-                Component.translatable("createmanaindustry.bnb_chain.no_core"), true);
+                CMICommandOutput.prefixed(CMICommandOutput.KINETICS, CMICommandOutput.Outcome.WARN,
+                        Component.translatable("createmanaindustry.bnb_chain.no_core")), true);
             ci.cancel();
             event.setCanceled(true);
         }

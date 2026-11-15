@@ -21,6 +21,7 @@ import net.neoforged.neoforge.client.ClientHooks;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.phys.Vec3;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Native chain membership bridge. Lookup preparation is budgeted; an unindexed package
  * remains Create-owned. Render admission tests owning conveyors, never individual package bounds. */
@@ -305,23 +306,23 @@ public final class PackageChainClientOwnership implements PackageChainClientHook
             // Only completed work is eligible, including at a resource/GL failure boundary.
             // A wait failure must not prevent restoring the last previously confirmed pose.
             if(checkpoints!=null)try{checkpoints.poll();}
-            catch(RuntimeException error){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] final checkpoint poll failed",error);}
+            catch(RuntimeException error){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "final checkpoint poll failed",error);}
             for(var claim:List.copyOf(claims.values())) {
                 claim.releasing=true;
                 if(claim.box!=null) {
                     try{retainedCheckpoint(claim,claim.box);}
                     catch(RuntimeException error){
-                        com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] native chain checkpoint failed; retaining server baseline",error);
+                        com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "native chain checkpoint failed; retaining server baseline",error);
                         try{checkpoint(claim,claim.box,claim.active.baseline());}
-                        catch(RuntimeException baselineError){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] native chain baseline restore failed",baselineError);}
+                        catch(RuntimeException baselineError){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "native chain baseline restore failed",baselineError);}
                     }
                     try{((PackageChainAccess)claim.index.conveyor).cmi$restorePackage(claim.box);}
-                    catch(RuntimeException error){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] native chain restore failed",error);}
+                    catch(RuntimeException error){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "native chain restore failed",error);}
                 }
                 dirty.add(claim.index.conveyor);
             }
             for(var conveyor:dirty)try{((PackageChainRenderAccess)conveyor).cmi$publishRenderPackages();}
-            catch(RuntimeException error){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] native render restore failed",error);}
+            catch(RuntimeException error){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "native render restore failed",error);}
         }finally{dirty.clear();claims.clear();indices.clear();renderIndices.clear();tracks.clear();work.clear();acquisition=null;checkpoints=null;frames=null;failed=null;ox=oy=oz=0;epoch=0;closing=false;}
     }
 }

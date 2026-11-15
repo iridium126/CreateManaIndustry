@@ -60,7 +60,7 @@ Java 布局与原点验证已增加到 81 套 393 项单元测试；无 Sable/co
 
 客户端 `ChainPackageGpuPickingMixin` 注入实际解析 Create 6.0.10 的 `ChainPackageInteractionHandler.onUse()Z`。它位于原生 package 阶段，保留前面的胶水、链连接、蛙港、工具等优先处理。没有就绪 runtime 或活动可见链包时完整使用 Create。GPU-owned 存在时串行保存一个 use；世界/player、原 vanilla hit、主手组件和栏位只用于未命中后的重放资格，不进入网络。
 
-`PackageChainUseQueue` 只保存一个操作和单调事务号。成功 publication 后，输入在退休 gather 之前取得一次四槽捕获机会；槽满保留同一个 QUEUED 操作，没有每帧扫描活动包裹。结果必须属于原 Use 对象，且只有当前 ACTIVE、已确认可见的完整 ID/generation/body/track 才能构造拾取请求。CPU 处理/查询上限 100ms；未命中或已退休目标，在 client tick 的 GPU pass 外以 bypass 重放 vanilla use。换世界、换 player、屏幕打开或主手上下文变化不重放旧操作。已经发送的请求永不转成原生第二次拾取；ACK 单独使用 5 秒网络确认上限，记录 send→ACK 的往返时间（包括网络、服务端处理及客户端派发，不是纯线路时延）。`/cmi particle` stats 的 world runtime 字符串显示最新该值。
+`PackageChainUseQueue` 只保存一个操作和单调事务号。成功 publication 后，输入在退休 gather 之前取得一次四槽捕获机会；槽满保留同一个 QUEUED 操作，没有每帧扫描活动包裹。结果必须属于原 Use 对象，且只有当前 ACTIVE、已确认可见的完整 ID/generation/body/track 才能构造拾取请求。CPU 处理/查询上限 100ms；未命中或已退休目标，在 client tick 的 GPU pass 外以 bypass 重放 vanilla use。换世界、换 player、屏幕打开或主手上下文变化不重放旧操作。已经发送的请求永不转成原生第二次拾取；ACK 单独使用 5 秒网络确认上限，记录 send→ACK 的往返时间（包括网络、服务端处理及客户端派发，不是纯线路时延）。`/cmi particle` 诊断输出的 world runtime 字符串显示最新该值。
 
 独立可选 `gpu-chain-pickup-1` payload 的上行携带 epoch、完整身份、lease/baseline/track revision、事务号和精确 float 进度，不携带池索引、物品、地址或客户端世界位置。下行确认身份、epoch、事务及结果。缺少任一拾取上下行 channel 时，不预留 chain acquisition 域；旧或未协商客户端继续 Create。
 

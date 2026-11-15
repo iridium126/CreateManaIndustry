@@ -24,6 +24,7 @@ import net.minecraft.server.level.DistanceManager;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.entity.PersistentEntitySectionManager;
 import java.util.function.BooleanSupplier;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Attaches the cube map and its independent persistence to the server level.
@@ -142,7 +143,7 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck, com
             try {
                 map.saveAll(false);
             } catch (Exception e) {
-                CreateManaIndustry.LOGGER.error("[Allvr] queueing allvr cube save failed", e);
+                CreateManaIndustry.LOGGER.error(CMILog.ALLVR + "queueing allvr cube save failed", e);
             }
         }
     }
@@ -178,7 +179,7 @@ public abstract class AllvrServerLevelMixin implements AllvrServerLevelDuck, com
             try {
                 allvr$cubeMap.close();
             } catch (Throwable t) {
-                CreateManaIndustry.LOGGER.error("[Allvr] closing allvr cube persistence failed", t);
+                CreateManaIndustry.LOGGER.error(CMILog.ALLVR + "closing allvr cube persistence failed", t);
             }
         }
     }

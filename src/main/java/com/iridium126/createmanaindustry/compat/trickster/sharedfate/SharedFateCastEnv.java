@@ -13,6 +13,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import java.util.*;
 import java.util.function.Predicate;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 
 /** Complete replay environment, without upstream-caster resources or casting state. */
 final class SharedFateCastEnv extends CastingEnvironment {
@@ -47,6 +48,6 @@ final class SharedFateCastEnv extends CastingEnvironment {
     public FrozenPigment getPigment(){return playerEnv==null?FrozenPigment.DEFAULT.get():playerEnv.getPigment();}
     public FrozenPigment setPigment(FrozenPigment pigment){return playerEnv==null?null:playerEnv.setPigment(pigment);}
     public void produceParticles(ParticleSpray spray,FrozenPigment pigment){spray.sprayParticles(world,pigment);}
-    public void printMessage(Component message){if(target instanceof ServerPlayer player)player.sendSystemMessage(message);}
+    public void printMessage(Component message){if(target instanceof ServerPlayer player)player.sendSystemMessage(CMICommandOutput.prefixed(CMICommandOutput.TRICKSTER, CMICommandOutput.Outcome.INFO, message));}
     protected boolean isCreativeMode(){return target instanceof ServerPlayer player&&player.isCreative();}
 }

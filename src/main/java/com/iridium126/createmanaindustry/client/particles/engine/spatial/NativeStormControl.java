@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.lwjgl.opengl.GL32;
 import org.lwjgl.system.MemoryUtil;
 import static com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Native command lane; spatial and display result buffers have separate ownership. */
 final class NativeStormControl {
@@ -360,7 +361,7 @@ final class NativeStormControl {
         journal.stop();
         if(failure.isEmpty()){
             failure=reason.isEmpty()?"Native Storm control failure":reason;
-            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn("[CMI particles] Native Storm stopped: {}",failure);
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Native Storm stopped: {}",failure);
         }
     }
     String failure(){return failure;}

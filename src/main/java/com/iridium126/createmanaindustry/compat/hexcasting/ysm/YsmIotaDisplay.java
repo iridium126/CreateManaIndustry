@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.compat.hexcasting.ysm;
 import java.lang.reflect.InvocationTargetException;
 import net.minecraft.network.chat.Component;
 import net.neoforged.fml.ModList;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Keeps optional Inline classes out of the YSM Iota's common linkage path. */
 public final class YsmIotaDisplay {
@@ -24,7 +25,7 @@ public final class YsmIotaDisplay {
         } catch (ReflectiveOperationException | LinkageError failure) {
             Throwable cause = failure instanceof InvocationTargetException invocation && invocation.getCause() != null
                     ? invocation.getCause() : failure;
-            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.debug("Unable to create YSM inline display", cause);
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.debug(CMILog.YSM + "Unable to create YSM inline display", cause);
             return fallback;
         }
     }

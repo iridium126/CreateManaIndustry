@@ -51,6 +51,7 @@ import org.lwjgl.opengl.GL30;
 import org.lwjgl.opengl.GL32;
 import org.lwjgl.opengl.GL42;
 import org.lwjgl.opengl.GL43;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 public final class ParticleRuntime implements com.iridium126.createmanaindustry.client.allaystorm.StormParticlePort, com.iridium126.createmanaindustry.client.particles.interaction.ModelParticlePort, com.iridium126.createmanaindustry.client.packages.render.PackageParticlePort, ParticleAppendTarget {
 
@@ -301,7 +302,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             this.stormBatches.close();
             this.gpu.free();
         } catch (RuntimeException | LinkageError e) {
-            CreateManaIndustry.LOGGER.warn("[CMI particles] GPU free failed", e);
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "GPU free failed", e);
         }
         this.hexDirectStorage.close();
         this.directHexEmitter=this.sprayHexEmitter=-1;
@@ -314,7 +315,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             this.collisionBake.free();
             com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.reset();
         } catch (RuntimeException | LinkageError e) {
-            CreateManaIndustry.LOGGER.warn("[CMI particles] atlas/bake free failed", e);
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "atlas/bake free failed", e);
         }
         this.pending.clear();retryInputs.clear();commitFrameInputs();
         this.streams.clear();
@@ -1351,7 +1352,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         if (existing != null)
             return existing;
         if (this.emitterIds.size() >= MAX_EMITTERS) {
-            CreateManaIndustry.LOGGER.warn("[CMI particles] emitter header limit ({}); request dropped", MAX_EMITTERS);
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "emitter header limit ({}); request dropped", MAX_EMITTERS);
             return -1;
         }
         int id = this.emitterIds.size();
@@ -1566,12 +1567,12 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                         AllayModelGeometry.OPAQUE_INDEX_COUNT);
             } catch (RuntimeException | LinkageError e) {
                 this.initialized = false;
-                CreateManaIndustry.LOGGER.error("[CMI particles] GPU init failed", e);
+                CreateManaIndustry.LOGGER.error(CMILog.PARTICLES + "GPU init failed", e);
             }
             if (!this.initialized) {
                 this.disabled = true;
                 CreateManaIndustry.LOGGER.error(
-                        "[CMI particles] GPU particle engine failed to initialise; disabled for this session.");
+                        CMILog.PARTICLES + "GPU particle engine failed to initialise; disabled for this session.");
                 return false;
             }
         }

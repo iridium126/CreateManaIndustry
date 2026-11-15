@@ -17,6 +17,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 
 /** Client-only, session-scoped digest cache and revision-checked reassembler. */
 @EventBusSubscriber(modid = "createmanaindustry", value = Dist.CLIENT)
@@ -95,7 +96,8 @@ public final class YsmClientArchives {
         }));
     }
     private static void message(Component message) {
-        if (Minecraft.getInstance().player != null) Minecraft.getInstance().player.sendSystemMessage(message);
+        if (Minecraft.getInstance().player != null) Minecraft.getInstance().player.sendSystemMessage(
+                CMICommandOutput.prefixed(CMICommandOutput.YSM, CMICommandOutput.Outcome.INFO, message));
     }
     @SubscribeEvent public static void onTick(ClientTickEvent.Post event) {
         long now = System.nanoTime();

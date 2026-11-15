@@ -54,6 +54,7 @@ import com.iridium126.createmanaindustry.dimension.storage.AllvrCubeSnapshot;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrRegionCubeStorage;
 import com.iridium126.createmanaindustry.dimension.storage.AllvrStorageDiagnostics;
 import com.iridium126.createmanaindustry.dimension.light.AllvrLightEngine;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Server-side registry of loaded cubes for one allay-dimension
@@ -300,11 +301,11 @@ public final class AllvrCubeMap {
         } catch (IOException e) {
             // fail closed: a half-broken region3d must never degrade into
             // "keep running but silently drop saves" (plan §7.3)
-            throw new IllegalStateException("[Allvr] failed to initialize region3d persistence for "
+            throw new IllegalStateException(CMILog.ALLVR + "failed to initialize region3d persistence for "
                 + level.dimension().location() + " — refusing to run (fail closed). Repair or remove "
                 + folder, e);
         }
-        CreateManaIndustry.LOGGER.info("[Allvr] cube persistence ready ({} persisted record(s), {})",
+        CreateManaIndustry.LOGGER.info(CMILog.ALLVR + "cube persistence ready ({} persisted record(s), {})",
             this.persistedIndex.size(), folder);
     }
 
@@ -483,7 +484,7 @@ public final class AllvrCubeMap {
         BlockState state = cube.getBlockState(pos);
         if (!state.hasBlockEntity()) {
             CreateManaIndustry.LOGGER.warn(
-                "Trying to set block entity {} at position {}, but state {} does not allow it",
+                CMILog.ALLVR + "Trying to set block entity {} at position {}, but state {} does not allow it",
                 blockEntity, pos, state);
             return;
         }
@@ -492,13 +493,13 @@ public final class AllvrCubeMap {
         if (state != entityState) {
             if (!blockEntity.getType().isValid(state)) {
                 CreateManaIndustry.LOGGER.warn(
-                    "Trying to set block entity {} at position {}, but state {} is not valid for its type",
+                    CMILog.ALLVR + "Trying to set block entity {} at position {}, but state {} is not valid for its type",
                     blockEntity, pos, state);
                 return;
             }
             if (state.getBlock() != entityState.getBlock()) {
                 CreateManaIndustry.LOGGER.warn(
-                    "Block state mismatch on block entity {} in position {}, {} != {}, updating",
+                    CMILog.ALLVR + "Block state mismatch on block entity {} in position {}, {} != {}, updating",
                     blockEntity, pos, entityState, state);
             }
             blockEntity.setBlockState(state);
@@ -779,7 +780,7 @@ public final class AllvrCubeMap {
                 if (completed.failure() instanceof java.util.concurrent.CancellationException) {
                     continue;
                 }
-                CreateManaIndustry.LOGGER.error("[Allvr] async cube generation failed for {}",
+                CreateManaIndustry.LOGGER.error(CMILog.ALLVR + "async cube generation failed for {}",
                     AllvrCubePos.fromLong(completed.key()), completed.failure());
                 continue;
             }
@@ -788,7 +789,7 @@ public final class AllvrCubeMap {
                 installed++;
             } catch (Throwable failure) {
                 retries.failed(completed.key(), level.getGameTime());
-                CreateManaIndustry.LOGGER.error("[Allvr] generated cube publication failed for {}", AllvrCubePos.fromLong(completed.key()), failure);
+                CreateManaIndustry.LOGGER.error(CMILog.ALLVR + "generated cube publication failed for {}", AllvrCubePos.fromLong(completed.key()), failure);
             }
         }
     }
@@ -967,7 +968,7 @@ public final class AllvrCubeMap {
             if (!quarantinePersistedLoad(key, e)) retries.failed(key, level.getGameTime());
             this.diagnostics.noteIoError(e.toString());
             CreateManaIndustry.LOGGER.error(
-                "[Allvr] failed to load persisted cube {} — stays unloaded; regeneration suppressed", pos, e);
+                CMILog.ALLVR + "failed to load persisted cube {} — stays unloaded; regeneration suppressed", pos, e);
             return null;
         }
     }
@@ -1124,7 +1125,7 @@ public final class AllvrCubeMap {
         boolean capReached = cubes.size() >= MAX_LOADED_CUBES;
         if (capReached && !loggedCapWarning) {
             loggedCapWarning = true;
-            CreateManaIndustry.LOGGER.warn("[Allvr] loaded cube cap {} reached, limiting load radius", MAX_LOADED_CUBES);
+            CreateManaIndustry.LOGGER.warn(CMILog.ALLVR + "loaded cube cap {} reached, limiting load radius", MAX_LOADED_CUBES);
         }
 
         for (ServerPlayer player : players) {
@@ -1387,7 +1388,7 @@ public final class AllvrCubeMap {
             this.diagnostics.snapshotNanos.addAndGet(System.nanoTime() - start);
             this.diagnostics.snapshotsFailed.incrementAndGet();
             this.diagnostics.noteIoError(e.toString());
-            CreateManaIndustry.LOGGER.error("[Allvr] snapshot failed for cube {} — cube kept in memory",
+            CreateManaIndustry.LOGGER.error(CMILog.ALLVR + "snapshot failed for cube {} — cube kept in memory",
                 cube.getPos(), e);
             return false;
         }
@@ -1418,7 +1419,7 @@ public final class AllvrCubeMap {
                 boolean quarantined = quarantinePersistedLoad(completed.key(), completed.failure());
                 if (!quarantined) retries.failed(completed.key(), level.getGameTime());
                 diagnostics.noteIoError(completed.failure().toString());
-                CreateManaIndustry.LOGGER.error("[Allvr] async load failed for persisted cube {} — {}",
+                CreateManaIndustry.LOGGER.error(CMILog.ALLVR + "async load failed for persisted cube {} — {}",
                     AllvrCubePos.fromLong(completed.key()),
                     quarantined ? "record quarantined; regeneration suppressed"
                         : "transient failure; retry remains enabled",
@@ -1432,7 +1433,7 @@ public final class AllvrCubeMap {
                 diagnostics.persistedLoadFailures.incrementAndGet();
                 if (!quarantinePersistedLoad(completed.key(), failure)) retries.failed(completed.key(), level.getGameTime());
                 diagnostics.noteIoError(failure.toString());
-                CreateManaIndustry.LOGGER.error("[Allvr] async cube install failed for {} — "
+                CreateManaIndustry.LOGGER.error(CMILog.ALLVR + "async cube install failed for {} — "
                     + "regeneration suppressed", AllvrCubePos.fromLong(completed.key()), failure);
             }
         }
@@ -1508,8 +1509,8 @@ public final class AllvrCubeMap {
                 this.worker.flush();
             } catch (java.io.IOException e) {
                 // never pretend success (§8): /save-all flush must see the failure
-                CreateManaIndustry.LOGGER.error("[Allvr] allvr cube flush failed — pending writes kept for retry", e);
-                throw new RuntimeException("[Allvr] allvr cube flush failed: " + e.getMessage(), e);
+                CreateManaIndustry.LOGGER.error(CMILog.ALLVR + "allvr cube flush failed — pending writes kept for retry", e);
+                throw new RuntimeException(CMILog.ALLVR + "allvr cube flush failed: " + e.getMessage(), e);
             }
         } else {
             for (AllvrCube cube : this.cubes.values()) {
@@ -1538,7 +1539,7 @@ public final class AllvrCubeMap {
         }
         boolean ok = true;
         if (this.level.noSave) {
-            CreateManaIndustry.LOGGER.info("[Allvr] level has noSave set — skipping final allvr save");
+            CreateManaIndustry.LOGGER.info(CMILog.ALLVR + "level has noSave set — skipping final allvr save");
         } else {
             try {
                 ok = this.saveAll(true);
@@ -1567,7 +1568,7 @@ public final class AllvrCubeMap {
         this.worker.close();
         for (var cube : cubes.values()) cube.onUnload();
         cubes.clear(); beCubes.clear(); tickingBeCubeKeys.clear();
-        CreateManaIndustry.LOGGER.info("[Allvr] cube persistence closed ({}): {}",
+        CreateManaIndustry.LOGGER.info(CMILog.ALLVR + "cube persistence closed ({}): {}",
             ok ? "clean" : "with errors", this.diagnostics);
         return ok;
     }

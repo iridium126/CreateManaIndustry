@@ -9,6 +9,7 @@ import java.util.concurrent.Executors;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.PacketDistributor;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Rate-limited CMI archive transport. The native YSM sync still owns model rendering. */
 public final class YsmServerArchives implements AutoCloseable {
@@ -36,13 +37,13 @@ public final class YsmServerArchives implements AutoCloseable {
         for (ServerPlayer viewer : server.getPlayerList().getPlayers()) {
             if (viewer.serverLevel() == target.serverLevel() && viewer.distanceToSqr(target) < 192 * 192)
                 if (!schedule(viewer.getUUID(), target.getUUID(), revision, ClientboundYsmArchivePacket.APPLY, model, archive))
-                    LOGGER.warn("YSM archive queue full while syncing model {} to {}", model, viewer.getUUID());
+                    LOGGER.warn(CMILog.YSM + "YSM archive queue full while syncing model {} to {}", model, viewer.getUUID());
         }
     }
     public void startTracking(ServerPlayer viewer, ServerPlayer target, long revision, String model, YsmResourceArchive archive) {
         cancelApply(target.getUUID(), viewer.getUUID());
         if (archive != null && !schedule(viewer.getUUID(), target.getUUID(), revision, ClientboundYsmArchivePacket.APPLY, model, archive))
-            LOGGER.warn("YSM archive queue full while syncing model {} to new observer {}", model, viewer.getUUID());
+            LOGGER.warn(CMILog.YSM + "YSM archive queue full while syncing model {} to new observer {}", model, viewer.getUUID());
     }
     public void clear(ServerPlayer target, long revision) {
         for (ServerPlayer viewer : server.getPlayerList().getPlayers()) {

@@ -8,6 +8,8 @@ import com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.iridium126.createmanaindustry.client.particles.engine.HexSpecs;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput.Outcome;
 
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.FloatArgumentType;
@@ -19,7 +21,6 @@ import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -40,9 +41,13 @@ import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
  * <pre>
  *   /cmi particle emit &lt;source&gt; &lt;amount&gt; [seconds|forever]
  *   /cmi particle anim &lt;preset&gt; &lt;animation&gt;
- *   /cmi particle clear|stats|profile|budget|shaderpack status
+ *   /cmi particle clear|packagepreview &lt;amount&gt;|status|budget &lt;ms&gt;
+ *   /cmi particle profile [details|hardware status|frames|capture|on|off]
+ *   /cmi particle shaderpack status [details]|stormcloud|probe
  *   /cmi particle allaystorm ... (server command)
  * </pre>
+ * All feedback is rendered through {@link CMICommandOutput}; do not emit
+ * hand-written colour codes or unprefixed literal strings here.
  */
 @EventBusSubscriber(modid = CreateManaIndustry.MODID, value = Dist.CLIENT)
 public final class CMIParticleCommand {
@@ -103,14 +108,14 @@ public final class CMIParticleCommand {
                                     if(!engine(ctx))return 0;
                                     int n=IntegerArgumentType.getInteger(ctx,"amount");
                                     if(n>0 && !ClientConfig.packageGpuAuthority) {
-                                        tell(ctx,"Enable experimental GPU packages in the client config and restart.");return 0;
+                                        fail(ctx,"Enable experimental GPU packages in the client config and restart.");return 0;
                                     }
                                     if(n>0 && dev.engine_room.flywheel.lib.util.ShadersModHelper.isShaderPackInUse()
                                             && (!com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE
                                             || !com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.prepare())) {
-                                        tell(ctx,"Package shaderpack program unavailable: "+com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.status());return 0;
+                                        fail(ctx,CMICommandOutput.SHADERPACK,"Shader pack program unavailable: "+com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.status());return 0;
                                     }
-                                    if(n>ParticleRuntime.INSTANCE.capacity()){tell(ctx,"Preview exceeds the shared particle pool capacity.");return 0;}
+                                    if(n>ParticleRuntime.INSTANCE.capacity()){fail(ctx,"Preview exceeds the shared particle pool capacity.");return 0;}
                                     var camera=net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();
                                     var look=camera.getLookVector();
                                     Vec3 forward=new Vec3(look.x,0,look.z);
@@ -118,50 +123,42 @@ public final class CMIParticleCommand {
                                     forward=forward.normalize();
                                     Vec3 origin=camera.getPosition().add(forward.scale(6)).add(0,1,0);
                                     com.iridium126.createmanaindustry.client.packages.render.PackageRuntime.INSTANCE.previewPackages(n,origin,forward);
-                                    tell(ctx,n==0?"Package preview stop queued.":"Queued "+n+" synthetic chain packages ahead of the camera; Create gameplay takeover is not enabled.");
+                                    ok(ctx,n==0?"Package preview stop queued.":"Queued "+n+" synthetic chain packages ahead of the camera; Create gameplay takeover is not enabled.");
                                     return 1;
-                                })))
-                        .then(Commands.literal("packagecollision")
-                                .executes(ctx->{tell(ctx,com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime.report());return 1;})
-                                .then(Commands.literal("capture").executes(ctx->{
-                                    if (!ClientConfig.packageGpuAuthority) {
-                                        tell(ctx,"Enable experimental GPU packages in the client config and restart.");return 0;
-                                    }
-                                    var mc=net.minecraft.client.Minecraft.getInstance();
-                                    if(mc.level==null || mc.player==null)return 0;
-                                    var runtime=com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime.forLevel(mc.level);
-                                    boolean queued=runtime.request(mc.player.getBoundingBox().inflate(16));
-                                    tell(ctx,queued?"Queued nearby collision sections; capture and GPU upload each use up to "+String.format(java.util.Locale.ROOT,"%.2f",ClientConfig.packageMainThreadBudgetMs)+" ms. Check packagecollision for completed GPU coverage.":"Collision cache capacity unavailable; Create retains ownership.");return queued?1:0;
-                                }))
-                                .then(Commands.literal("clear").executes(ctx->{
-                                    com.iridium126.createmanaindustry.client.packages.world.PackageCollisionRuntime.closeCurrent();
-                                    tell(ctx,"Package collision coverage revoked.");return 1;
                                 })))
                         .then(Commands.literal("profile")
                                 .executes(CMIParticleCommand::profile)
                                 .then(Commands.literal("details").executes(CMIParticleCommand::profileDetails))
                                 .then(Commands.literal("hardware").then(Commands.literal("status").executes(ctx->{
-                                    for(String line:com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.status().split("\n"))tell(ctx,line);return 1;
+                                    CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.PROFILE,
+                                            "Spatial query hardware",
+                                            com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.status().lines().toList());
+                                    return 1;
                                 })))
                                 .then(Commands.literal("frames")
                                         .then(Commands.literal("cancel").executes(ctx -> {
                                             boolean cancelled = com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.cancel();
-                                            tell(ctx, cancelled ? "Frame capture cancelled." : "No frame capture to cancel.");
+                                            if (cancelled) ok(ctx, "Frame capture cancelled.");
+                                            else warn(ctx, "No frame capture to cancel.");
                                             return cancelled ? Command.SINGLE_SUCCESS : 0;
                                         }))
                                         .then(Commands.argument("seconds",IntegerArgumentType.integer(1,900)).executes(ctx->{
                                     boolean queued=com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.request(IntegerArgumentType.getInteger(ctx,"seconds"));
-                                    tell(ctx,queued?"Whole-client frame capture queued; close menus and keep the scene/settings fixed. Results: logs/cmi-particle-frames":"A frame capture is already pending.");return queued?1:0;
+                                    if (queued) ok(ctx,"Whole-client frame capture queued; close menus and keep the scene/settings fixed. Results: logs/cmi-particle-frames");
+                                    else warn(ctx,"A frame capture is already pending.");
+                                    return queued?1:0;
                                 })))
                                 .then(Commands.literal("capture").then(Commands.argument("name",StringArgumentType.word()).executes(ctx->{
                                     String name=StringArgumentType.getString(ctx,"name");
                                     boolean queued=com.iridium126.createmanaindustry.client.particles.engine.ParticleChainCapture.INSTANCE.request(name);
-                                    tell(ctx,queued?"Asynchronous complete GPU command-chain freeze queued for the next frame. Instrumented: exclude from FPS. Output: logs/cmi-particle-captures":"Capture name must match [A-Za-z0-9_-]{1,64}, with no pending capture.");return queued?1:0;
+                                    if (queued) ok(ctx,"Asynchronous complete GPU command-chain freeze queued for the next frame. Instrumented: exclude from FPS. Output: logs/cmi-particle-captures");
+                                    else fail(ctx,"Capture name must match [A-Za-z0-9_-]{1,64}, with no pending capture.");
+                                    return queued?1:0;
                                 })))
-                                .then(Commands.literal("on").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(true); tell(ctx,"Particle profiling enabled"); return 1; }))
-                                .then(Commands.literal("off").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(false); tell(ctx,"Particle profiling disabled"); return 1; })))
-                        .then(Commands.literal("stats")
-                                .executes(CMIParticleCommand::stats))
+                                .then(Commands.literal("on").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(true); ok(ctx,"Particle profiling enabled."); return 1; }))
+                                .then(Commands.literal("off").executes(ctx -> { com.iridium126.createmanaindustry.client.particles.engine.ParticleDiagnostics.INSTANCE.enabled(false); ok(ctx,"Particle profiling disabled."); return 1; })))
+                        .then(Commands.literal("status")
+                                .executes(CMIParticleCommand::status))
                         .then(Commands.literal("budget")
                                 .then(Commands.argument("ms", FloatArgumentType.floatArg(1f, 50f))
                                         .executes(CMIParticleCommand::budget)))
@@ -192,7 +189,7 @@ public final class CMIParticleCommand {
         int amount = IntegerArgumentType.getInteger(ctx, "amount");
         String timeError = durationValidationError(streaming, seconds);
         if (timeError != null) {
-            tell(ctx, timeError);
+            fail(ctx, timeError);
             return 0;
         }
         EmitterSpec spec = EmitterPresets.byName(source);
@@ -206,39 +203,39 @@ public final class CMIParticleCommand {
             }
         }
         if (spec != null && isPigment) {
-            tell(ctx, "Ambiguous particle source; preset and pigment names must be distinct.");
+            fail(ctx, "Ambiguous particle source; preset and pigment names must be distinct.");
             return 0;
         }
         if (spec != null) {
             String error = amountValidationError(false, streaming, amount);
             if (error != null) {
-                tell(ctx, error);
+                fail(ctx, error);
                 return 0;
             }
             if (!engine(ctx)) return 0;
             Vec3 pos = ctx.getSource().getPosition().add(0, 0.2, 0);
             if (streaming) {
                 CMIParticleEngine.INSTANCE.stream(spec, pos, amount, seconds);
-                tell(ctx, "Streaming " + amount + "/s × " + source + " for "
+                ok(ctx, "Streaming " + amount + "/s × " + source + " for "
                         + (seconds <= 0 ? "forever" : seconds + "s") + ".");
             } else {
                 CMIParticleEngine.INSTANCE.spawn(spec, pos, amount);
-                tell(ctx, "Spawning " + amount + " × " + source + " (throttled).");
+                ok(ctx, "Spawning " + amount + " × " + source + " (throttled).");
             }
             return Command.SINGLE_SUCCESS;
         }
         if (isPigment) {
             String error = amountValidationError(true, streaming, amount);
             if (error != null) {
-                tell(ctx, error);
+                fail(ctx, error);
                 return 0;
             }
             return spray(ctx, source, amount);
         }
         if (!CreateManaIndustry.HEX_ACTIVE)
-            tell(ctx, "Unknown particle preset, or Hexcasting is not loaded for pigment sources.");
+            fail(ctx, "Unknown particle preset, or Hexcasting is not loaded for pigment sources.");
         else
-            tell(ctx, "Unknown particle source. Try: " + String.join(", ", EmitterPresets.names())
+            fail(ctx, "Unknown particle source. Try: " + String.join(", ", EmitterPresets.names())
                     + ", amethyst, uuid, rainbow");
         return 0;
     }
@@ -266,7 +263,7 @@ public final class CMIParticleCommand {
         String presetName = StringArgumentType.getString(ctx, "preset");
         EmitterSpec spec = EmitterPresets.byName(presetName);
         if (spec == null || spec.type.material() != ParticleTypes.Material.MODEL) {
-            tell(ctx, "Unknown MODEL preset. Try: allay_fly, allay_dance, allay_hold");
+            fail(ctx, "Unknown MODEL preset. Try: allay_fly, allay_dance, allay_hold");
             return 0;
         }
         String animName = StringArgumentType.getString(ctx, "animation");
@@ -279,14 +276,14 @@ public final class CMIParticleCommand {
         if (anim == null) {
             // the DEATH pose is pool-driven now (HP-death corpse countdown) --
             // a per-emitter header switch to it has no valid meaning
-            tell(ctx, "Unknown animation. Try: fly, dance, hold");
+            fail(ctx, "Unknown animation. Try: fly, dance, hold");
             return 0;
         }
         if (!engine(ctx)) {
             return 0;
         }
         CMIParticleEngine.INSTANCE.setAnimation(spec, anim);
-        tell(ctx, "Animation switch queued: " + presetName + " -> " + animName
+        ok(ctx, "Animation switch queued: " + presetName + " -> " + animName
                 + " (live particles switch next frame).");
         return Command.SINGLE_SUCCESS;
     }
@@ -295,7 +292,7 @@ public final class CMIParticleCommand {
         // Hexcasting is optional: HexSpecs (and the ColorProvider below) link
         // its API types, so the whole handler must return before touching them.
         if (!CreateManaIndustry.HEX_ACTIVE) {
-            tell(ctx, "Conjure sprays require Hexcasting, which is not loaded.");
+            fail(ctx, "Conjure sprays require Hexcasting, which is not loaded.");
             return 0;
         }
         HexSpecs.Pigment pigment = HexSpecs.Pigment.valueOf(name.toUpperCase(java.util.Locale.ROOT));
@@ -308,7 +305,7 @@ public final class CMIParticleCommand {
         // local player comes straight off Minecraft.
         var player = net.minecraft.client.Minecraft.getInstance().player;
         if (player == null) {
-            tell(ctx, "A player is required (the uuid pigment keys off the caster's UUID).");
+            fail(ctx, "A player is required (the uuid pigment keys off the caster's UUID).");
             return 0;
         }
         at.petrak.hexcasting.api.pigment.ColorProvider provider =
@@ -316,32 +313,34 @@ public final class CMIParticleCommand {
         Vec3 pos = player.position();
         CMIParticleEngine.INSTANCE.spawnHexSpray(pos, new Vec3(0.0, 1.5, 0.0),
                 0.4, Math.PI / 3, count, HexSpecs.sampleWheel(provider));
-        tell(ctx, "Hex spray: " + count + " conjure motes, pigment " + pigment.name().toLowerCase(java.util.Locale.ROOT) + ".");
+        ok(ctx, "Hex spray: " + count + " conjure motes, pigment " + pigment.name().toLowerCase(java.util.Locale.ROOT) + ".");
         return Command.SINGLE_SUCCESS;
     }
 
     private static int clear(CommandContext<CommandSourceStack> ctx) {
         if (!engine(ctx)) {
-            tell(ctx, "Particle engine unavailable.");
             return 0;
         }
         CMIParticleEngine.INSTANCE.clear();
         com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.profiler.reset();
-        tell(ctx, "Cleared all particles and streams.");
+        ok(ctx, "Cleared all particles and streams.");
         return Command.SINGLE_SUCCESS;
     }
 
-    private static int stats(CommandContext<CommandSourceStack> ctx) {
+    private static int status(CommandContext<CommandSourceStack> ctx) {
         if (!engine(ctx)) {
-            tell(ctx, "Particle engine unavailable (Veil absent or shaders not ready).");
             return 0;
         }
         var statistics = ParticleRuntime.INSTANCE.statistics();
         var profiler = com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.profiler;
-        tell(ctx, "", "§b[CMI particles]§r live=§e" + statistics.live() + "§r/" + statistics.capacity()
-                + "  streams=" + statistics.streams()
-                + "  emission=" + Math.round(statistics.emissionScale() * 100) + "%"
-                + (ClientConfig.particleAutoThrottle?"  throttle gpu=" + String.format(java.util.Locale.ROOT,"%.2f", profiler.emaMs()) + "ms (budget " + profiler.budget() + "ms)":"  auto throttle=off"));
+        boolean throttle = ClientConfig.particleAutoThrottle;
+        CMICommandOutput.sendReport(ctx.getSource(), CMICommandOutput.PARTICLES, "Particle engine status",
+                "live", statistics.live() + " / " + statistics.capacity(),
+                "streams", statistics.streams(),
+                "emission", Math.round(statistics.emissionScale() * 100) + "%",
+                "auto throttle", throttle ? "on" : "off",
+                "gpu frame", throttle ? String.format(java.util.Locale.ROOT, "%.2f", profiler.emaMs()) + " ms" : "not sampled",
+                "frame budget", profiler.budget() + " ms");
         return Command.SINGLE_SUCCESS;
     }
 
@@ -367,7 +366,8 @@ public final class CMIParticleCommand {
             if(details)appendReport(report,com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.starfallStatus());
         }
         appendReport(report,com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE.report());
-        tell(ctx,report.toString());
+        CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.PROFILE,
+                "Particle profile" + (details ? " (details)" : ""), report.toString().lines().toList());
         return Command.SINGLE_SUCCESS;
     }
 
@@ -378,60 +378,96 @@ public final class CMIParticleCommand {
     private static int budget(CommandContext<CommandSourceStack> ctx) {
         float ms = FloatArgumentType.getFloat(ctx, "ms");
         if (!engine(ctx)) {
-            tell(ctx, "Particle engine unavailable.");
             return 0;
         }
         com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.profiler.setBudget(ms);
-        tell(ctx, "Particle frame budget set to " + ms + " ms.");
+        ok(ctx, "Particle frame budget set to " + ms + " ms.");
         return Command.SINGLE_SUCCESS;
     }
 
     private static int shaderPackStatus(CommandContext<CommandSourceStack> ctx,boolean details) {
         var snapshot=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackStatusSnapshot.capture();
-        for(String line:snapshot.lines(details))tell(ctx,line);
+        CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.SHADERPACK,
+                "Shader pack status" + (details ? " (details)" : ""), snapshot.lines(details));
         return Command.SINGLE_SUCCESS;
     }
     private static int stormCloud(CommandContext<CommandSourceStack> ctx,boolean enabled,boolean profile){
         if(profile){
-            tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.rift.VanillaSkyView.cloudReport());
-            if(CreateManaIndustry.IRIS_ACTIVE){var session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();tell(ctx,session.cloudTimingReport());session.cloudProfiling(enabled);}
+            CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.SHADERPACK,
+                    "Storm cloud density report",
+                    com.iridium126.createmanaindustry.client.allaystorm.rift.VanillaSkyView.cloudReport().lines().toList());
+            if(CreateManaIndustry.IRIS_ACTIVE){
+                var session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();
+                CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.SHADERPACK,
+                        "Native stage GPU timings", session.cloudTimingReport().lines().toList());
+                session.cloudProfiling(enabled);
+            }
             com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudProfiling(enabled);
         }else{
             com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudEnabled(enabled);
             com.iridium126.createmanaindustry.client.allaystorm.rift.AllaySkyProvider.cloudProfiling(false);
-            if(CreateManaIndustry.IRIS_ACTIVE){var session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();tell(ctx,session.cloudTimingReport());session.cloudProfiling(false);}
+            if(CreateManaIndustry.IRIS_ACTIVE){
+                var session=com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();
+                CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.SHADERPACK,
+                        "Native stage GPU timings", session.cloudTimingReport().lines().toList());
+                session.cloudProfiling(false);
+            }
         }
-        tell(ctx,profile?"Native stage GPU profiling: "+enabled:"Storm cloud density: "+(enabled?"on":"bypassed")+"; local only; re-enable profiling after switching A/B");
+        ok(ctx, CMICommandOutput.SHADERPACK,
+                profile?"Native stage GPU profiling: "+enabled:"Storm cloud density: "+(enabled?"on":"bypassed")+"; local only; re-enable profiling after switching A/B");
         return Command.SINGLE_SUCCESS;
     }
     private static int visualProbe(CommandContext<CommandSourceStack> ctx,boolean enabled){
-        if(!CreateManaIndustry.VEIL_ACTIVE){tell(ctx,"Veil unavailable.");return 0;}
+        if(!CreateManaIndustry.VEIL_ACTIVE){
+            fail(ctx, CMICommandOutput.SHADERPACK, "Veil is not loaded; the visual probe requires Veil.");
+            return 0;
+        }
         com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.setEnabled(enabled);
-        tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.status());return Command.SINGLE_SUCCESS;
+        info(ctx, CMICommandOutput.SHADERPACK, com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.status());
+        return Command.SINGLE_SUCCESS;
     }
     private static int visualProbeMode(CommandContext<CommandSourceStack> ctx,boolean baseline){
         com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.baseline(baseline);
-        tell(ctx,com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.status());return Command.SINGLE_SUCCESS;
+        info(ctx, CMICommandOutput.SHADERPACK, com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe.status());
+        return Command.SINGLE_SUCCESS;
     }
 
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 
+    /** Guards on the actual engine state: initialized, not disabled, programs compiled. */
     private static boolean engine(CommandContext<CommandSourceStack> ctx) {
-        // The engine is self-hosted GL — Veil is no longer required to spawn.
+        // The engine is self-hosted GL — Veil is not a prerequisite.
         if (!ParticleRuntime.INSTANCE.available()) {
-            tell(ctx, "§cParticle engine unavailable (GL/GPU too old or shaders not compiled; F3+T to recompile).§r");
+            fail(ctx, "Particle engine unavailable: not initialized, disabled, or shader programs not ready. "
+                    + "Recompile with F3+T if shader compilation failed.");
             return false;
         }
         return true;
     }
 
-    private static void tell(CommandContext<CommandSourceStack> ctx, String message) {
-        tell(ctx, "§7", message);
+    private static void ok(CommandContext<CommandSourceStack> ctx, String message) {
+        ok(ctx, CMICommandOutput.PARTICLES, message);
     }
 
-    private static void tell(CommandContext<CommandSourceStack> ctx, String prefix, String message) {
-        ctx.getSource().sendSuccess(() -> Component.literal(prefix + message), false);
+    private static void ok(CommandContext<CommandSourceStack> ctx, String module, String message) {
+        CMICommandOutput.send(ctx.getSource(), module, Outcome.OK, message);
+    }
+
+    private static void info(CommandContext<CommandSourceStack> ctx, String module, String message) {
+        CMICommandOutput.send(ctx.getSource(), module, Outcome.INFO, message);
+    }
+
+    private static void warn(CommandContext<CommandSourceStack> ctx, String message) {
+        CMICommandOutput.send(ctx.getSource(), CMICommandOutput.PARTICLES, Outcome.WARN, message);
+    }
+
+    private static void fail(CommandContext<CommandSourceStack> ctx, String message) {
+        fail(ctx, CMICommandOutput.PARTICLES, message);
+    }
+
+    private static void fail(CommandContext<CommandSourceStack> ctx, String module, String message) {
+        CMICommandOutput.send(ctx.getSource(), module, Outcome.FAIL, message);
     }
 }

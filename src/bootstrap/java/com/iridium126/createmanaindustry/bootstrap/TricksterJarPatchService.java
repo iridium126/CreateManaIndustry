@@ -37,7 +37,7 @@ import java.util.jar.JarOutputStream;
  * Adapts Trickster's keybinding handlers to NeoForge before Connector scans them.
  */
 public final class TricksterJarPatchService implements ITransformationService {
-    private static final String LOG_PREFIX = "[Create Mana Industry] ";
+    private static final String LOG_PREFIX = "[CMI/bootstrap] ";
     private static final String CONNECTOR_SERVICE = "connector_loader";
     private static final String TRICKSTER_ID = "trickster";
     private static final String EXPECTED_MIXIN_CLASS_SHA256 =
@@ -140,8 +140,7 @@ public final class TricksterJarPatchService implements ITransformationService {
             patchJar(trickster.path());
         } catch (Exception exception) {
             log("WARNING", "Could not patch Trickster at " + trickster.path()
-                    + ". Automatic patching did not complete; check for a .backup file before retrying.");
-            exception.printStackTrace(System.err);
+                    + ". Automatic patching did not complete; check for a .backup file before retrying.", exception);
         }
     }
 
@@ -156,8 +155,7 @@ public final class TricksterJarPatchService implements ITransformationService {
                 inspectTricksterJar(path, result);
             }
         } catch (IOException exception) {
-            log("WARNING", "Could not scan " + modsDirectory + " for Trickster jars.");
-            exception.printStackTrace(System.err);
+            log("WARNING", "Could not scan " + modsDirectory + " for Trickster jars.", exception);
         }
         return result;
     }
@@ -519,8 +517,15 @@ public final class TricksterJarPatchService implements ITransformationService {
         }
     }
 
+    /** Mirrors the main-source layout: [CMI/bootstrap] [LEVEL]  message. */
     private static void log(String level, String message) {
-        System.err.println(LOG_PREFIX + level + ": " + message);
+        System.err.println(LOG_PREFIX + "[" + level + "]  " + message);
+    }
+
+    private static void log(String level, String message, Throwable exception) {
+        log(level, message);
+        System.err.println(LOG_PREFIX + "[" + level + "]  cause: " + exception);
+        exception.printStackTrace(System.err);
     }
 
     private record InstalledJar(Path path, String version, byte[] patchMarker) {}

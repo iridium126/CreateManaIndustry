@@ -25,6 +25,7 @@ import net.minecraft.nbt.CompoundTag;
 
 import com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos;
 import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * The cube I/O worker (plan §7.1/§8, the {@code AsyncBatchingCubeIO}
@@ -173,7 +174,7 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
         } catch (RejectedExecutionException e) {
             this.drainScheduled.set(false);
             // racing close(); the cube map is shutting down anyway
-            LOGGER.debug("[Allvr] drain scheduled after worker close — dropped", e);
+            LOGGER.debug(CMILog.ALLVR + "drain scheduled after worker close — dropped", e);
         }
     }
 
@@ -403,7 +404,7 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
             }
         }
         if (!this.pending.isEmpty()) {
-            IOException failure = new IOException("[Allvr] " + this.pending.size()
+            IOException failure = new IOException(CMILog.ALLVR + this.pending.size()
                 + " cube record(s) still pending after " + MAX_FLUSH_RETRIES
                 + " consecutive drain failures — last failure",
                 this.lastIoException);
@@ -475,23 +476,23 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
                 try {
                     if (writesEnabled) this.drainUntilEmpty();
                 } catch (Throwable t) {
-                    LOGGER.error("[Allvr] final cube drain failed — data may be missing from disk", t);
+                    LOGGER.error(CMILog.ALLVR + "final cube drain failed — data may be missing from disk", t);
                     this.diagnostics.noteIoError(t.toString());
                 } finally {
                     try {
                         this.storage.close();
                     } catch (Throwable t) {
-                        LOGGER.error("[Allvr] closing region3d storage failed", t);
+                        LOGGER.error(CMILog.ALLVR + "closing region3d storage failed", t);
                     }
                     done.complete(null);
                 }
             });
             done.get(60, TimeUnit.SECONDS);
         } catch (RejectedExecutionException e) {
-            LOGGER.error("[Allvr] allvr io worker rejected its own close task", e);
+            LOGGER.error(CMILog.ALLVR + "allvr io worker rejected its own close task", e);
         } catch (Exception e) {
             Thread.currentThread().interrupt();
-            LOGGER.error("[Allvr] waiting for allvr io worker close failed", e);
+            LOGGER.error(CMILog.ALLVR + "waiting for allvr io worker close failed", e);
         }
         this.executor.shutdown();
         try {
@@ -528,7 +529,7 @@ public final class AllvrCubeIoWorker implements AutoCloseable {
         long now = System.currentTimeMillis();
         if (now - this.lastIoLogMs > IO_ERROR_LOG_INTERVAL_MS) {
             this.lastIoLogMs = now;
-            LOGGER.error("[Allvr] region3d write failed — {} pending record(s) kept for retry", this.pending.size(), e);
+            LOGGER.error(CMILog.ALLVR + "region3d write failed — {} pending record(s) kept for retry", this.pending.size(), e);
         }
     }
 }

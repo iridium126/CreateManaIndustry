@@ -16,6 +16,7 @@ import com.iridium126.createmanaindustry.client.particles.engine.StormSurfaceCap
 import com.iridium126.createmanaindustry.client.particles.engine.FeatherSupportGpu;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.RenderTerrain;
 import static com.iridium126.createmanaindustry.client.allaystorm.StormCollisionPages.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Complete active geometry demand; independent capacity and compact GPU storage. */
 @EventBusSubscriber(modid="createmanaindustry",value=Dist.CLIENT)
@@ -147,7 +148,7 @@ public final class StormCollisionRuntime implements AutoCloseable {
             if(surfaceBegin!=0)StormSurfaceCapture.captureRemaining(Math.max(0,1_000_000-(System.nanoTime()-surfaceBegin)));
             long before=current.gpu.uploaded();current.gpu.pump(131072,500_000);surfaceUploadBudget=(int)Math.max(0,131072-(current.gpu.uploaded()-before));current.gpu.bind(program);
         }catch(RuntimeException|LinkageError failure){
-            if(current.error.isEmpty())com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("Storm collision resource unavailable",failure);
+            if(current.error.isEmpty())com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.STORM + "Storm collision resource unavailable",failure);
             current.error=failure.toString();com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionOn"),0);
         }
     }

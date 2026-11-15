@@ -10,6 +10,8 @@ import at.petrak.hexcasting.api.casting.eval.sideeffects.OperatorSideEffect;
 import at.petrak.hexcasting.api.utils.TreeList;
 import at.petrak.hexcasting.common.lib.hex.HexEvalSounds;
 import java.util.List;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
+import com.iridium126.createmanaindustry.CreateManaIndustry;
 
 /** Fold pure quoted vectors, preserving each callback and allocating immutable images. */
 public final class FastQuotedVectors {
@@ -71,7 +73,7 @@ public final class FastQuotedVectors {
     }
 
     private static CastResult internalFailure(Iota vector, SpellContinuation next, Exception exception) {
-        exception.printStackTrace();
+        CreateManaIndustry.LOGGER.error(CMILog.HEXJIT + "Quoted vector specialization failed", exception);
         return new CastResult(vector, next, null,
                 List.of(new OperatorSideEffect.DoMishap(new MishapInternalException(exception), new Mishap.Context(null, null))),
                 ResolvedPatternType.ERRORED, HexEvalSounds.MISHAP.get());

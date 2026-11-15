@@ -21,6 +21,8 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 
 /** One dispatch per original incident; node execution is guarded against recursive interception. */
 public final class SharedFateMishaps {
@@ -73,7 +75,7 @@ public final class SharedFateMishaps {
                 try {
                     replay(target,mishap,error);
                 }catch(RuntimeException|LinkageError failure) {
-                    CreateManaIndustry.LOGGER.warn("Shared-fate mishap replay failed for {}",id,failure);
+                    CreateManaIndustry.LOGGER.warn(CMILog.TRICKSTER + "Shared-fate mishap replay failed for {}",id,failure);
                 }
                 queue.addAll(next);
             }
@@ -119,7 +121,8 @@ public final class SharedFateMishaps {
                 var view=new ExecutionClientView(stack.isEmpty(),mishap.resolutionType(environment),new ArrayList<>(stack),null);
                 IXplatAbstractions.INSTANCE.sendPacketToPlayer(player,new MsgNewSpellPatternS2C(view,-1));
                 var message=mishap.errorMessageWithName(environment,error);
-                if(message!=null)player.sendSystemMessage(message);
+                if(message!=null)player.sendSystemMessage(
+                        CMICommandOutput.prefixed(CMICommandOutput.TRICKSTER, CMICommandOutput.Outcome.FAIL, message));
             }
         }
     }

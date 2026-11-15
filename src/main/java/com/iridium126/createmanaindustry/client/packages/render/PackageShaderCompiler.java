@@ -15,6 +15,7 @@ import net.irisshaders.iris.pipeline.programs.ShaderKey;
 import net.minecraft.client.renderer.ShaderInstance;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL41;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Native SBB material tracks. A failed reload cannot publish half a program bundle. */
 public final class PackageShaderCompiler implements AutoCloseable {
@@ -69,11 +70,11 @@ public final class PackageShaderCompiler implements AutoCloseable {
             Bundle next=new Bundle(bridge,revision,main,shadow),old=live;
             live=next;error="";
             // Cleanup errors cannot revoke a completely compiled new bundle.
-            try{dispose(old);}catch(RuntimeException|LinkageError cleanup){CreateManaIndustry.LOGGER.warn("[CMI packages] Retired Iris bundle cleanup failed",cleanup);}
+            try{dispose(old);}catch(RuntimeException|LinkageError cleanup){CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "Retired Iris bundle cleanup failed",cleanup);}
             return true;
         }catch(Exception|LinkageError failure) {
             discard(bridge,main);discard(bridge,shadow);
-            error=failure.toString();CreateManaIndustry.LOGGER.warn("[CMI packages] Iris program bundle failed",failure);
+            error=failure.toString();CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "Iris program bundle failed",failure);
             // Same-pipeline old resources remain usable. Never use shaders referring
             // to framebuffers and uniforms from a previous Iris pipeline.
             if(live!=null && live.owner!=bridge){dispose(live);live=null;}

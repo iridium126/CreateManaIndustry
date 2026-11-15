@@ -6,6 +6,7 @@ import java.util.regex.Pattern;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 
 import net.irisshaders.iris.shadows.ShadowRenderer;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * iterationT shadow distortion — the classic linear length compression with a
@@ -86,7 +87,7 @@ final class IterationTShadowDistortion implements ShadowDistortionConvention {
         float shippedBias = definedBias != null ? definedBias : DEFAULT_BIAS;
         if (definedBias == null)
             CreateManaIndustry.LOGGER.warn(
-                    "iterationT SHADOW_MAP_BIAS not found; assuming shipped default {}", DEFAULT_BIAS);
+                    CMILog.SHADERPACK + "iterationT SHADOW_MAP_BIAS not found; assuming shipped default {}", DEFAULT_BIAS);
         // The bias is a user-facing slider; the persisted option file carries
         // non-default overrides just like the Bliss DH-shadowmap gate.
         float bias = (float) ActivePackOptions.doubleValue("SHADOW_MAP_BIAS", shippedBias);

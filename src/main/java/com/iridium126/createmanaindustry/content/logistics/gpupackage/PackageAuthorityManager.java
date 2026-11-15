@@ -22,6 +22,7 @@ import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Server-only world adapter. Never links Minecraft client classes; item operations are delegated to PackageLightGameplay. */
 @EventBusSubscriber(modid=CreateManaIndustry.MODID)
@@ -103,13 +104,13 @@ public final class PackageAuthorityManager {
                 var pose=baseline.snapshot().pose();var destination=PackageRegion.at(pose);
                 var assigned=runtime.regions.get(destination);
                 String reason=previous.closed()?"source_region_closed":canContinue(runtime,previous.owner(),pose)?"explicit_release_outside_anchor":assigned!=null&&!assigned.owner().equals(previous.owner())?"destination_owner_changed":"destination_subscription_unavailable";
-                CreateManaIndustry.LOGGER.debug("[CMI packages] free package authority handoff reason={} id={} generation={} lease={} source={} destination={} owner={} pose=({}, {}, {})",
+                CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "free package authority handoff reason={} id={} generation={} lease={} source={} destination={} owner={} pose=({}, {}, {})",
                         reason,identity.id(),identity.generation(),baseline.leaseEpoch(),previous.region(),destination,previous.owner(),pose.x(),pose.y(),pose.z());
             }
             // Pausing leaves the durable record at its latest confirmed state.
             if(light!=null&&runtime.identities.get(identity)==this&&!runtime.unloading)runtime.discovery.put(identity,this);
             try{if(previous!=null&&!runtime.unloading)send(runtime.level,previous,ClientboundPackagePacket.RELEASED,baseline,this);}
-            catch(RuntimeException disconnected){CreateManaIndustry.LOGGER.debug("[CMI packages] pause notification unavailable",disconnected);}
+            catch(RuntimeException disconnected){CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "pause notification unavailable",disconnected);}
         }
     }
     private PackageAuthorityManager() {}
@@ -207,7 +208,7 @@ public final class PackageAuthorityManager {
                 var entry=rt.light.capture(entity,identity,new PackageAuthorityRegion.Snapshot(p,entity.onGround()?PackageAuthorityRegion.GROUNDED:0));
                 // The durable record exists before the native entity is removed from tracking.
                 activate(rt,entry);rt.changed.add(rt.identities.get(identity));rt.nativePackages.remove(uuid);entity.discard();
-            }catch(RuntimeException failure){rt.nativeCapture.add(uuid);CreateManaIndustry.LOGGER.warn("[CMI packages] native capture deferred for {}",uuid,failure);}
+            }catch(RuntimeException failure){rt.nativeCapture.add(uuid);CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "native capture deferred for {}",uuid,failure);}
         }
     }
     // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
@@ -221,8 +222,8 @@ public final class PackageAuthorityManager {
                 var target=rt.identities.get(entry.identity);if(target!=null)release(target,rt.level.getGameTime());
                 var restored=PackageLightRestoration.restore(rt.level,entry);
                 if(restored!=null){consumeLight(rt.level,entry);rt.restorationFailures.remove(entry.identity);continue;}
-                if(rt.restorationFailures.add(entry.identity))CreateManaIndustry.LOGGER.warn("[CMI packages] package restoration deferred (entity admission or UUID conflict): {}",entry.uuid);
-            }catch(RuntimeException failure){if(rt.restorationFailures.add(entry.identity))CreateManaIndustry.LOGGER.warn("[CMI packages] package restoration deferred for {}",entry.uuid,failure);}
+                if(rt.restorationFailures.add(entry.identity))CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "package restoration deferred (entity admission or UUID conflict): {}",entry.uuid);
+            }catch(RuntimeException failure){if(rt.restorationFailures.add(entry.identity))CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "package restoration deferred for {}",entry.uuid,failure);}
             rt.restoration.put(entry.identity,entry);
         }
     }
@@ -252,7 +253,7 @@ public final class PackageAuthorityManager {
             boolean heartbeatExpired=region.expired(tick),peerPresent=rt.peers.containsKey(region.owner());
             boolean inRange=subscribed(authority,level,region.region());
             if(heartbeatExpired || !peerPresent || !inRange){
-                CreateManaIndustry.LOGGER.debug("[CMI packages] pausing region {}: heartbeatExpired={}, peerPresent={}, subscribed={}",
+                CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "pausing region {}: heartbeatExpired={}, peerPresent={}, subscribed={}",
                         region.region(),heartbeatExpired,peerPresent,inRange);
                 pauseRegion(rt,region);it.remove();
             }
@@ -340,7 +341,7 @@ public final class PackageAuthorityManager {
                     region.epoch(),region.revision(),builder.snapshot()));
             builder.clear();return true;
         }catch(RuntimeException failure) {
-            CreateManaIndustry.LOGGER.warn("[CMI packages] ACK enqueue failed; pausing package records",failure);
+            CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "ACK enqueue failed; pausing package records",failure);
             pauseRegion(rt,region);return false;
         }
     }
@@ -434,7 +435,7 @@ public final class PackageAuthorityManager {
                 rt.observers.put(key,observer);
             }catch(RuntimeException failure) {
                 observer.authority.observers().unsubscribe(observer.cursor);
-                CreateManaIndustry.LOGGER.warn("[CMI packages] observer stream failed; retaining Create replication",failure);
+                CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "observer stream failed; retaining Create replication",failure);
                 closeObserver(rt,player,observer);
             }
         }
@@ -443,7 +444,7 @@ public final class PackageAuthorityManager {
         try {PacketDistributor.sendToPlayer(player,new ClientboundPackageObserverPacket(rt.level.dimension().location(),observer.authority.region(),
                 observer.authority.epoch(),observer.authority.revision(),observer.cursor.stream(),0,
                 ClientboundPackageObserverPacket.CLOSE,List.of(),List.of(),rt.level.getGameTime(),PackageObserverTimes.zeros(0)));}
-        catch(RuntimeException failure){CreateManaIndustry.LOGGER.debug("[CMI packages] observer close could not be enqueued",failure);}
+        catch(RuntimeException failure){CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "observer close could not be enqueued",failure);}
     }
     private static boolean supportsWideVelocity(Runtime rt,UUID player) {
         Peer peer=rt.peers.get(player);
@@ -484,7 +485,7 @@ public final class PackageAuthorityManager {
                 if(count==0)pauseRegion(rt,region);
             }
             catch(RuntimeException invalid){
-                CreateManaIndustry.LOGGER.debug("[CMI packages] invalid/failed control batch; pausing package records",invalid);
+                CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "invalid/failed control batch; pausing package records",invalid);
                 // Syntax is validated before callbacks. If a callback/transport fails, revoke
                 // even an already-processed prefix; a lost terminal control cannot stay owned.
                 pauseRegion(rt,region);
@@ -504,7 +505,7 @@ public final class PackageAuthorityManager {
                 try{events=PackageEnvironmentBatchCodec.decode(packet.changesView());}
                 finally{PackageTransactionDiagnostics.end(PackageTransactionDiagnostics.Phase.DECODE,decoding);}
                 for(var event:events)receiveEnvironmentEvent(rt,peer,region,player,event,tick,deadline);
-            }catch(IllegalArgumentException invalid){CreateManaIndustry.LOGGER.debug("[CMI packages] invalid environment event",invalid);}
+            }catch(IllegalArgumentException invalid){CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "invalid environment event",invalid);}
             finally{peer.environmentNanos+=Math.max(0,System.nanoTime()-started);PackageTransactionDiagnostics.end(PackageTransactionDiagnostics.Phase.ENVIRONMENT_PACKET,packetTiming);}
             return;
         }
@@ -525,7 +526,7 @@ public final class PackageAuthorityManager {
                 if(result==PackageAuthorityRegion.Result.ACCEPTED)drainVoid(rt);
             }
             else if(result!=PackageAuthorityRegion.Result.STALE){
-                CreateManaIndustry.LOGGER.debug("[CMI packages] rejected delta result={} reason={} sequence={} region={}; pausing package records",
+                CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "rejected delta result={} reason={} sequence={} region={}; pausing package records",
                         result,region.lastDeltaRejection(),packet.sequence(),region.region());
                 pauseRegion(rt,region);
             }
@@ -620,7 +621,7 @@ public final class PackageAuthorityManager {
                         PackageLightGameplay.environmentRejection(rt.level,target.light,region.region(),sample);
             }finally{PackageTransactionDiagnostics.end(PackageTransactionDiagnostics.Phase.VALIDATE,validating);}
             if(rejection!=null){
-                CreateManaIndustry.LOGGER.debug("[CMI packages] rejected environment reason={} identity={} step={} ticks={} previousStep={} poseStep={} historyTicks={} contact={} block={} pose={},{},{} committed={} dimensions={}x{} region={}",
+                CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "rejected environment reason={} identity={} step={} ticks={} previousStep={} poseStep={} historyTicks={} contact={} block={} pose={},{},{} committed={} dimensions={}x{} region={}",
                         rejection,event.identity(),sample.step(),sample.ticks(),target.environmentSimulationStep,region.confirmedSimulationStep(event.identity()),region.historyTicks(),sample.contact(),sample.block(region.region()),sample.px(),sample.py(),sample.pz(),baseline.snapshot().pose(),target.light.width,target.light.height,region.region());
                 region.release(event.identity());return;
             }
@@ -638,7 +639,7 @@ public final class PackageAuthorityManager {
     }
 
     @SubscribeEvent public static void onStopped(ServerStoppedEvent event){
-        if(Boolean.getBoolean("cmi.profilePackageTransactions"))CreateManaIndustry.LOGGER.info("{}",PackageTransactionDiagnostics.report());
+        if(Boolean.getBoolean("cmi.profilePackageTransactions"))CreateManaIndustry.LOGGER.info(CMILog.PACKAGES + "{}",PackageTransactionDiagnostics.report());
         PackageTransactionDiagnostics.clear();WORLDS.clear();
     }
     private static void activate(Runtime rt,PackageLightStore.Entry entry){if(rt.identities.containsKey(entry.identity))return;var target=new EntityTarget(rt,entry);rt.identities.put(entry.identity,target);rt.discovery.put(entry.identity,target);addLight(rt,target);queueVoid(rt,target);}
@@ -686,7 +687,7 @@ public final class PackageAuthorityManager {
         var target=rt.identities.remove(entry.identity);if(target!=null){release(target,level.getGameTime());removeLight(rt,target);rt.changed.remove(target);}rt.discovery.remove(entry.identity);rt.light.remove(entry);withdrawVisual(rt,entry);return true;
     }
     private static ClientboundLightPackagePacket.Row visual(PackageLightStore.Entry entry){return new ClientboundLightPackagePacket.Row(entry.identity,false,entry.model,entry.width,entry.height,entry.state().pose());}
-    private static void sendLight(ServerPlayer player,List<ClientboundLightPackagePacket.Row> rows){try{for(int i=0;i<rows.size();i+=128)PacketDistributor.sendToPlayer(player,new ClientboundLightPackagePacket(player.serverLevel().dimension().location(),rows.subList(i,Math.min(i+128,rows.size()))));}catch(RuntimeException disconnected){CreateManaIndustry.LOGGER.debug("[CMI packages] lightweight visual delivery unavailable",disconnected);}}
+    private static void sendLight(ServerPlayer player,List<ClientboundLightPackagePacket.Row> rows){try{for(int i=0;i<rows.size();i+=128)PacketDistributor.sendToPlayer(player,new ClientboundLightPackagePacket(player.serverLevel().dimension().location(),rows.subList(i,Math.min(i+128,rows.size()))));}catch(RuntimeException disconnected){CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "lightweight visual delivery unavailable",disconnected);}}
     // Keep the BlockPos overload: Allvr resolves loaded cubes using all three coordinates.
     @SuppressWarnings("deprecation")
     private static void publishLight(Runtime rt){

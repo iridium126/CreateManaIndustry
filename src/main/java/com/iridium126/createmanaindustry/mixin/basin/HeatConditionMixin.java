@@ -18,6 +18,7 @@ import net.createmod.catnip.codecs.stream.CatnipStreamCodecBuilders;
 import net.minecraft.util.StringRepresentable;
 
 import sun.misc.Unsafe;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Injects a new {@code ALLAYHEATED} constant into Create's {@link HeatCondition}
@@ -73,7 +74,7 @@ public abstract class HeatConditionMixin {
             UNSAFE.putObject(hc, UNSAFE.staticFieldOffset(hc.getDeclaredField("STREAM_CODEC")),
                 CatnipStreamCodecBuilders.ofEnum(HeatCondition.class));
         } catch (Exception e) {
-            CreateManaIndustry.LOGGER.warn("Failed to inject ALLAYHEATED into HeatCondition", e);
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Failed to inject ALLAYHEATED into HeatCondition", e);
         }
     }
 

@@ -8,6 +8,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.nio.file.Path;
 import java.util.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** One loading/pipeline generation. All source IO is performed by begin(), never by draw callers. */
 public final class ShaderPackSession {
@@ -92,7 +93,7 @@ public final class ShaderPackSession {
         try {current=new ShaderPackSession(root,ShaderPackInventory.read(root),bypass,omitClouds);}
         catch(Exception failure){current=empty();current.failure="inventory unavailable: "+failure.getMessage();}
         if(bypass||omitClouds)current.failure=cause;
-        CreateManaIndustry.LOGGER.info("[CMI shaderpack] generation {}: {} ({})",current.generation,current.capabilities.family(),current.patch.reason());
+        CreateManaIndustry.LOGGER.info(CMILog.SHADERPACK + "generation {}: {} ({})",current.generation,current.capabilities.family(),current.patch.reason());
     }
     public static void options(ShaderPackOptions options){current.options=options;}
     public long generation(){return generation;}
@@ -208,7 +209,7 @@ public final class ShaderPackSession {
             }else{
                 bypassNext=true;retryCause="candidate pipeline compilation failed; original pack restored; "+failed.failure;
             }
-            try {Iris.reload();}catch(Exception failure){CreateManaIndustry.LOGGER.warn("[CMI shaderpack] unmodified reload failed",failure);}
+            try {Iris.reload();}catch(Exception failure){CreateManaIndustry.LOGGER.warn(CMILog.SHADERPACK + "unmodified reload failed",failure);}
             finally {finishRetry();}
         });
     }

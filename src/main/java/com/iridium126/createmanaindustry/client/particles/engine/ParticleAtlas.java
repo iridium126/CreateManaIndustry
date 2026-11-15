@@ -14,6 +14,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
 import org.lwjgl.opengl.GL30;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Self-hosted sprite atlas for textured (ALPHA/OPAQUE) particles, assembled on
@@ -101,7 +102,7 @@ public final class ParticleAtlas {
                 try (InputStream in = rm.open(id)) {
                     imgs[i] = NativeImage.read(in);
                 } catch (Exception e) {
-                    CreateManaIndustry.LOGGER.warn("[CMI particles] cannot read sprite {}", id, e);
+                    CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "cannot read sprite {}", id, e);
                     for (int j = 0; j <= i; j++)
                         if (imgs[j] != null)
                             imgs[j].close();
@@ -145,7 +146,7 @@ public final class ParticleAtlas {
                     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
                 }
 
-                CreateManaIndustry.LOGGER.info("[CMI particles] sprite atlas {} ready: {}x{}",
+                CreateManaIndustry.LOGGER.info(CMILog.PARTICLES + "sprite atlas {} ready: {}x{}",
                         name, texW, texH);
             } finally {
                 // close on EVERY path — a failure mid-compose/mid-upload must
@@ -160,7 +161,7 @@ public final class ParticleAtlas {
             // textureId: recycle it and reset the id so later frames retry the
             // upload instead of treating a storage-less texture as loaded.
             free();
-            CreateManaIndustry.LOGGER.error("[CMI particles] failed to build sprite atlas " + name, e);
+            CreateManaIndustry.LOGGER.error(CMILog.PARTICLES + "failed to build sprite atlas {}", name, e);
         }
     }
 

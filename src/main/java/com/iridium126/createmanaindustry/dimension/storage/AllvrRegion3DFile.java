@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * One {@code r.<rx>.<ry>.<rz>.3dr} file — 4096 cube slots behind a
@@ -148,7 +149,7 @@ public final class AllvrRegion3DFile implements AutoCloseable {
                     + ") has two invalid headers — refusing to touch it");
         }
         if ((a == null || b == null)) {
-            LOGGER.warn("[Allvr] region {} r.{}.{}.{}: header {} invalid, continuing on header {}",
+            LOGGER.warn(CMILog.ALLVR + "region {} r.{}.{}.{}: header {} invalid, continuing on header {}",
                 path, this.rx, this.ry, this.rz, a == null ? "A" : "B", chosen == a ? "A" : "B");
         }
         this.generation = chosen.generation;

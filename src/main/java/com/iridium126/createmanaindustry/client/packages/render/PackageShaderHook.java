@@ -30,6 +30,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import org.joml.*;
 import org.lwjgl.opengl.*;
 import java.util.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Package-owned Iris draws; main visibility checks only owning conveyors. */
 public final class PackageShaderHook {
@@ -140,7 +141,7 @@ public final class PackageShaderHook {
     private static void fail(Throwable failure) {
         drawError=failure.toString();
         failedPipeline=Iris.getPipelineManager().getPipelineNullable();mainStatus=shadowStatus="draw failed; Create fallback";
-        CreateManaIndustry.LOGGER.warn("[CMI packages] Iris draw failed",failure);
+        CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "Iris draw failed",failure);
         PackageAuthorityClient.closeAll("Iris package draw failed",true);
     }
     private static void timedDraw(GpuPassTelemetry timing,PackagePoolGpu pool,PackagePoolGpu.DrawPass pass,

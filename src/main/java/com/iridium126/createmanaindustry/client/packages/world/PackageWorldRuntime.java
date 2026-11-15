@@ -55,6 +55,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Engine-owned world resources. Network dispatch queues transitions; GL mutations, physics and
  * publication all run inside the engine boundary. Closing never waits for a worker or fence. */
@@ -315,7 +316,7 @@ public final class PackageWorldRuntime {
                 clock.commit(tick);forceCapture.consumed(tick);collision.staticGeometryConsumed(tick);
             }
             if(clock.historyGap()){
-                CreateManaIndustry.LOGGER.info("[CMI packages] input gap next={} available={} worldTime={} rate={} step={} frameMs={} previousWaiting={}",clock.nextTick(),availableInput,level.getGameTime(),rate,clock.step(),clock.lastElapsedNanos()/1_000_000.0,previousWaitingInput);
+                CreateManaIndustry.LOGGER.info(CMILog.PACKAGES + "input gap next={} available={} worldTime={} rate={} step={} frameMs={} previousWaiting={}",clock.nextTick(),availableInput,level.getGameTime(),rate,clock.step(),clock.lastElapsedNanos()/1_000_000.0,previousWaitingInput);
                 // Keep the last confirmed GPU state and its lease. Old collision/force history
                 // cannot be replayed after a render stall, so establish a fresh input baseline
                 // and resume only on a subsequently captured tick. Never revoke every region.
@@ -352,7 +353,7 @@ public final class PackageWorldRuntime {
             }
             return true;
         }catch(RuntimeException | LinkageError error) {
-            CreateManaIndustry.LOGGER.error("[CMI packages] world runtime failed; releasing GPU ownership",error);
+            CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "world runtime failed; releasing GPU ownership",error);
             failure="Package world runtime failed: "+error.getMessage();
             PackageAuthorityClient.closeAll(failure,true);
             // Initialization can fail before the runtime has been attached globally.
@@ -380,7 +381,7 @@ public final class PackageWorldRuntime {
         physics.enableEnvironment(sources);
         physics.climbingBounds(net.neoforged.neoforge.common.NeoForgeConfig.SERVER.fullBoundingBoxLadders.get());
         try{freezeDiagnostics=physics.enableFreezeDiagnostics(sources);}
-        catch(RuntimeException diagnosticFailure){CreateManaIndustry.LOGGER.warn("[CMI packages] freeze diagnostics unavailable; physics continues",diagnosticFailure);}
+        catch(RuntimeException diagnosticFailure){CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "freeze diagnostics unavailable; physics continues",diagnosticFailure);}
         worldPrefetch=new PackageWorldPrefetchGpu(resourceEpochs.incrementAndGet(),sources);
         lightObservers=new PackageLightObserverClient(level,physics,pool,styles,resourceEpochs.incrementAndGet(),ox,oy,oz,reason->failure=reason);
         physics.sampleObservers(0);
@@ -393,13 +394,13 @@ public final class PackageWorldRuntime {
     private void pollFreezeDiagnostics(){
         if(freezeDiagnostics==null)return;
         try{freezeDiagnostics.poll(event->{
-            CreateManaIndustry.LOGGER.debug("[CMI packages] free package frozen reason={} stage={} stillFrozen={} dimension={} id={} generation={} lease={} body={} index={} revision={} step={} center={},{},{} halfHeight={} velocity={},{},{} {}",
+            CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "free package frozen reason={} stage={} stillFrozen={} dimension={} id={} generation={} lease={} body={} index={} revision={} step={} center={},{},{} halfHeight={} velocity={},{},{} {}",
                     event.reason(),event.stage(),event.stillFrozen(),level.dimension().location(),event.id(),event.generation(),event.lease(),event.body(),event.index(),event.revision(),event.step(),
                     event.x()+ox,event.y()+oy,event.z()+oz,event.halfHeight(),event.vx(),event.vy(),event.vz(),event.context()+PackageCollisionRuntime.forLevel(level).freezeCaptureContext(event));
         },summary->{
             long now=System.nanoTime();
             if((summary.frozen()>0&&now>=nextFreezeSummary)||(summary.frozen()==0&&lastFrozen>0)){
-                CreateManaIndustry.LOGGER.debug("[CMI packages] free package freeze summary frozen={} changed={} deferred={} reasons={}",
+                CreateManaIndustry.LOGGER.debug(CMILog.PACKAGES + "free package freeze summary frozen={} changed={} deferred={} reasons={}",
                         summary.frozen(),summary.changed(),summary.deferred(),summary.description());
                 nextFreezeSummary=now+10_000_000_000L;
             }
@@ -412,7 +413,7 @@ public final class PackageWorldRuntime {
         catch(RuntimeException failure){disableFreezeDiagnostics(failure);}
     }
     private void disableFreezeDiagnostics(RuntimeException failure){
-        CreateManaIndustry.LOGGER.warn("[CMI packages] freeze diagnostics stopped; physics continues",failure);
+        CreateManaIndustry.LOGGER.warn(CMILog.PACKAGES + "freeze diagnostics stopped; physics continues",failure);
         physics.disableFreezeDiagnostics();freezeDiagnostics=null;
     }
     private boolean drain(Function<String,String> sources) {

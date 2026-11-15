@@ -13,6 +13,7 @@ import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.gl.shader.StandardMacros;
 import net.minecraft.client.Minecraft;
 import top.leonx.irisveil.accessors.IrisRenderingPipelineAccessor;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** One opt-in capture per active session revision. Never called by status/report queries. */
 public final class ParticleProfileSnapshot {
@@ -59,8 +60,8 @@ public final class ParticleProfileSnapshot {
             Path directory=minecraft.gameDirectory.toPath().resolve("logs/cmi-particle-profiles");Files.createDirectories(directory);
             Path output=directory.resolve("session-"+session.revision()+"-"+UUID.randomUUID()+".json");
             Files.writeString(output,new GsonBuilder().setPrettyPrinting().create().toJson(data)+"\n",StandardCharsets.UTF_8,StandardOpenOption.CREATE_NEW);
-            CreateManaIndustry.LOGGER.info("[CMI profile] replay context: {}",output);
+            CreateManaIndustry.LOGGER.info(CMILog.PROFILE + "replay context: {}",output);
             return output;
-        }catch(Exception failure){CreateManaIndustry.LOGGER.warn("[CMI profile] replay context export failed",failure);return null;}
+        }catch(Exception failure){CreateManaIndustry.LOGGER.warn(CMILog.PROFILE + "replay context export failed",failure);return null;}
     }
 }

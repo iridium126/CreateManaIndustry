@@ -39,6 +39,7 @@ import com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState;
 import com.iridium126.createmanaindustry.client.packages.render.PackageDrawCulling;
 import com.iridium126.createmanaindustry.client.gpu.profile.GpuPassTelemetry;
 import com.iridium126.createmanaindustry.client.packages.render.PackageRenderState;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 
 /**
@@ -188,7 +189,7 @@ public final class CMIPackEntityMergeHook {
             com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackPermStatus = "gbuffer permutation age " + com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.lastFinalPermAgeFrames()
                     + "f (0 = this frame's cull)";
         } catch (RuntimeException | LinkageError e) {
-            CreateManaIndustry.LOGGER.warn("[CMI particles] pack entity merge draw failed", e);
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "pack entity merge draw failed", e);
             com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackErrorStatus = String.valueOf(e);
         }
         }
@@ -272,7 +273,7 @@ public final class CMIPackEntityMergeHook {
                 shadowDrawState.restore();
             }
             } finally {shadowComputeState.restore();}
-        }catch(RuntimeException|LinkageError error){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="draw failed: "+error;CreateManaIndustry.LOGGER.warn("[CMI particles] current-frame model shadow failed",error);}
+        }catch(RuntimeException|LinkageError error){com.iridium126.createmanaindustry.client.render.scene.ParticleRenderer.INSTANCE.shaderPackShadowStatus="draw failed: "+error;CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "current-frame model shadow failed",error);}
     }
 
     /**

@@ -48,8 +48,6 @@ public final class PackageLightCache {
     private final ArrayDeque<PackageCollisionCache.Section> pending=new ArrayDeque<>();
     private Listener listener;
     private long lastNanos,overruns,sourceFailures;
-    private final long[] samples=new long[128];
-    private int sampleCursor,sampleCount;
     private long tick;
     public PackageLightCache(int capacity){this(capacity,System::nanoTime);}
     PackageLightCache(int capacity,LongSupplier clock) {
@@ -98,7 +96,6 @@ public final class PackageLightCache {
             if(entry.cursor==BLOCKS)publish(section,entry,entry.capture);else queue(section,entry);
         }
         lastNanos=clock.getAsLong()-start;if(lastNanos>budgetNanos && budgetNanos>0)overruns++;
-        samples[sampleCursor]=lastNanos;sampleCursor=(sampleCursor+1)%samples.length;sampleCount=Math.min(sampleCount+1,samples.length);
     }
     private void publish(PackageCollisionCache.Section section,Entry entry,byte[] data) {
         entry.ready=new Snapshot(entry.revision,data);entry.capture=null;entry.cursor=0;
@@ -113,6 +110,5 @@ public final class PackageLightCache {
     public long lastNanos(){return lastNanos;}
     public long overruns(){return overruns;}
     public long sourceFailures(){return sourceFailures;}
-    public long capturePercentile(double fraction){owner();if(sampleCount==0)return 0;var sorted=java.util.Arrays.copyOf(samples,sampleCount);java.util.Arrays.sort(sorted);return sorted[Math.clamp((int)Math.ceil(sampleCount*fraction)-1,0,sampleCount-1)];}
     public void clear(){owner();entries.clear();columns.clear();pending.clear();}
 }

@@ -4,6 +4,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Sundial Lite (GeForceLegend) shadow distortion — a logarithmic length
@@ -71,7 +72,7 @@ final class SundialShadowDistortion implements ShadowDistortionConvention {
         float defined = strength != null ? strength : DEFAULT_STRENGTH;
         if (strength == null)
             CreateManaIndustry.LOGGER.warn(
-                    "Sundial SHADOW_DISTORTION_STRENGTH not found; assuming shipped default {}",
+                    CMILog.SHADERPACK + "Sundial SHADOW_DISTORTION_STRENGTH not found; assuming shipped default {}",
                     DEFAULT_STRENGTH);
         float s = (float) (Math.exp(defined) - 1.0);
         return PackShadowParams.radial(glslMode(), s, Z_SCALE);

@@ -19,6 +19,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import org.lwjgl.opengl.GL20;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Self-hosted GLSL programs for the particle engine, compiled with raw LWJGL
@@ -115,19 +116,19 @@ public final class ParticlePrograms {
         Reload(Map<String,String> sources){
             this.sources=sources;
             if(parallel)ARBParallelShaderCompile.glMaxShaderCompilerThreadsARB(2);
-            else LOGGER.warn("[CMI particles] background shader compilation unavailable; compiling one stage per frame synchronously");
+            else LOGGER.warn(CMILog.PARTICLES + "background shader compilation unavailable; compiling one stage per frame synchronously");
         }
         boolean advance(){
             var specification=SPECIFICATIONS.get(index);
             if(current==null){
                 programStarted=progress=System.nanoTime();
-                LOGGER.info("[CMI particles] shader compilation {}/{} started: {} ({})",index+1,SPECIFICATIONS.size(),specification.path(),parallel?"background":"synchronous fallback");
+                LOGGER.info(CMILog.PARTICLES + "shader compilation {}/{} started: {} ({})",index+1,SPECIFICATIONS.size(),specification.path(),parallel?"background":"synchronous fallback");
                 String vertex=VERSION+PRELUDE+sources.get(specification.path());
                 current=specification.fragment==null?GpuShaderCompiler.beginCompute(specification.path(),vertex):GpuShaderCompiler.beginGraphics(specification.path(),vertex,VERSION+PRELUDE+sources.get(GLSL_DIR+specification.fragment));
                 return false;
             }
             if(!current.poll()){
-                long now=System.nanoTime();if(now-progress>=5_000_000_000L){progress=now;LOGGER.info("[CMI particles] shader compilation still pending: {} ({}s); retaining active programs",specification.path(),(now-programStarted)/1_000_000_000L);}return false;
+                long now=System.nanoTime();if(now-progress>=5_000_000_000L){progress=now;LOGGER.info(CMILog.PARTICLES + "shader compilation still pending: {} ({}s); retaining active programs",specification.path(),(now-programStarted)/1_000_000_000L);}return false;
             }
             int linked=current.take();current.close();current=null;
             try{com.iridium126.createmanaindustry.client.gpu.shader.GpuProgramContract.installSamplers(linked);
@@ -136,7 +137,7 @@ public final class ParticlePrograms {
                 if(specification.vertex.equals("update_storm_gl.comp"))updateInterface=UpdateResourceInterface.verify(linked,16);}
             catch(RuntimeException invalid){com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms.delete(linked);throw invalid;}
             completed.put(specification.key(),linked);index++;
-            LOGGER.info("[CMI particles] shader compilation finished: {} ({}ms)",specification.path(),(System.nanoTime()-programStarted)/1_000_000L);
+            LOGGER.info(CMILog.PARTICLES + "shader compilation finished: {} ({}ms)",specification.path(),(System.nanoTime()-programStarted)/1_000_000L);
             return index==SPECIFICATIONS.size();
         }
         int take(String key){Integer id=completed.remove(key);return id==null?0:id;}
@@ -371,7 +372,7 @@ public final class ParticlePrograms {
                 for(var specification:SPECIFICATIONS)if(!sources.containsKey(specification.path())||specification.fragment!=null&&!sources.containsKey(GLSL_DIR+specification.fragment))throw new IllegalStateException("Missing particle shader: "+specification.path());
                 if(pendingReload==null||!pendingReload.sources.equals(sources)){
                     if(pendingReload!=null){pendingReload.close();pendingReload=null;}
-                    if(ready()&&committedSources.equals(sources)){LOGGER.info("[CMI particles] shader sources unchanged; reusing active programs");return false;}
+                    if(ready()&&committedSources.equals(sources)){LOGGER.info(CMILog.PARTICLES + "shader sources unchanged; reusing active programs");return false;}
                     pendingReload=new Reload(Map.copyOf(sources));
                 }
             }
@@ -379,12 +380,12 @@ public final class ParticlePrograms {
             Reload finished=pendingReload;pendingReload=null;
             try {
                 boolean published=rebuildWithCompiler(finished::take,(vertex,fragment)->finished.take(vertex+"|"+fragment));
-                if(published){updateInterface=finished.updateInterface;committedSources=finished.sources;committedDigest=null;LOGGER.info("[CMI particles] shader set published atomically ({}ms)",(System.nanoTime()-finished.started)/1_000_000L);}
+                if(published){updateInterface=finished.updateInterface;committedSources=finished.sources;committedDigest=null;LOGGER.info(CMILog.PARTICLES + "shader set published atomically ({}ms)",(System.nanoTime()-finished.started)/1_000_000L);}
                 return published;
             } finally {finished.close();}
         } catch(RuntimeException failure){
             if(pendingReload!=null){pendingReload.close();pendingReload=null;}
-            LOGGER.error("[CMI particles] shader reload failed; retaining previous program set",failure);return false;
+            LOGGER.error(CMILog.PARTICLES + "shader reload failed; retaining previous program set",failure);return false;
         }
     }
 
@@ -396,7 +397,7 @@ public final class ParticlePrograms {
         try {
             for(var specification:SPECIFICATIONS)specification.install.accept(candidate,specification.fragment==null?compute.applyAsInt(specification.path()):graphics.apply(specification.path(),GLSL_DIR+specification.fragment));
             if (!candidate.ready()) {
-                LOGGER.error("[CMI particles] shader reload failed; retaining previous program set");
+                LOGGER.error(CMILog.PARTICLES + "shader reload failed; retaining previous program set");
                 return false;
             }
             this.delete();
@@ -565,7 +566,7 @@ public final class ParticlePrograms {
                 sb.append(buf, 0, n);
             raw = sb.toString();
         } catch (IOException e) {
-            LOGGER.error("[CMI particles] cannot read shader {}", id, e);
+            LOGGER.error(CMILog.PARTICLES + "cannot read shader {}", id, e);
             return null;
         }
         for (String phase : new String[] {"spawn", "update"})

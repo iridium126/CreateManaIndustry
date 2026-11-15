@@ -16,6 +16,7 @@ import com.iridium126.createmanaindustry.compat.ysm.model.YsmGeometry;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmResourceArchive;
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import net.minecraft.server.level.ServerPlayer;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 
 /** Creates a complete plaintext archive, then sends an approved export job to the caster's client. */
 public final class OpExportYsmModel implements SpellAction {
@@ -57,7 +58,8 @@ public final class OpExportYsmModel implements SpellAction {
             ServerPlayer player = server.getPlayerList().getPlayer(caster);
             if (player != null && !player.hasDisconnected()) {
                 try { YsmServerRuntime.get(server).transfers().export(player, archive); }
-                catch (IllegalStateException failure) { player.sendSystemMessage(YsmChatMessages.exportFailed(failure.getMessage())); }
+                catch (IllegalStateException failure) { player.sendSystemMessage(CMICommandOutput.prefixed(CMICommandOutput.YSM,
+                        CMICommandOutput.Outcome.FAIL, YsmChatMessages.exportFailed(failure.getMessage()))); }
             }
         }
     }

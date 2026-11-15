@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.compat.hexcasting.jit;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.LoggerFactory;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Bootstrap-safe: must not reference Hexcasting classes or initialise registries. */
 public final class JitCompatibility {
@@ -49,43 +50,44 @@ public final class JitCompatibility {
     private static volatile boolean verifierInstalled;
     private static volatile boolean coreReady;
     private static volatile boolean motionReady;
+    private static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger("CMI Hex JIT");
     private JitCompatibility() {}
     public static void verifierInstalled() { verifierInstalled = true; refreshReadiness(); }
     public static void verified(String name) { VERIFIED.add(name); refreshReadiness(); }
     public static void motionTargetVerified() { motionTargetVerified = true; refreshReadiness(); }
     public static void disableMotion(String reason) {
-        if (motionFailure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT Add Motion batching disabled: {}", reason);
+        if (motionFailure == null) LOGGER.warn(CMILog.HEXJIT + "Hex JIT Add Motion batching disabled: {}", reason);
         motionFailure = reason;
         refreshReadiness();
     }
     public static void disableParticleCoalescing(String reason) {
         if (particleCoalescingFailure == null)
-            LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT particle coalescing disabled: {}", reason);
+            LOGGER.warn(CMILog.HEXJIT + "Hex JIT particle coalescing disabled: {}", reason);
         particleCoalescingFailure = reason;
     }
     public static void fastActionTargetVerified() { fastActionTargetVerified = true; }
     public static void disableFastAction(String reason) {
-        if (fastActionFailure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT Add Motion call specialization disabled: {}", reason);
+        if (fastActionFailure == null) LOGGER.warn(CMILog.HEXJIT + "Hex JIT Add Motion call specialization disabled: {}", reason);
         fastActionFailure = reason;
     }
     public static void stackValidationTargetVerified() { stackValidationTargetVerified = true; }
     public static void disableStackValidation(String reason) {
-        if (stackValidationFailure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT stack validation specialization disabled: {}", reason);
+        if (stackValidationFailure == null) LOGGER.warn(CMILog.HEXJIT + "Hex JIT stack validation specialization disabled: {}", reason);
         stackValidationFailure = reason;
     }
     public static void treeListTargetVerified() { treeListTargetVerified = true; }
     public static void disableFrameTailCache(String reason) {
-        if (frameTailFailure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT FrameEvaluate tail reuse disabled: {}", reason);
+        if (frameTailFailure == null) LOGGER.warn(CMILog.HEXJIT + "Hex JIT FrameEvaluate tail reuse disabled: {}", reason);
         frameTailFailure = reason;
     }
     public static void specialHandlerMathTargetVerified() { specialHandlerMathTargetVerified = true; }
     public static void disableSpecialHandlerMath(String reason) {
-        if (specialHandlerMathFailure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT special-handler math fast path disabled: {}", reason);
+        if (specialHandlerMathFailure == null) LOGGER.warn(CMILog.HEXJIT + "Hex JIT special-handler math fast path disabled: {}", reason);
         specialHandlerMathFailure = reason;
     }
     public static void specialHandlerLookupTargetVerified() { specialHandlerLookupTargetVerified = true; }
     public static void disableSpecialHandlerLookup(String reason) {
-        if (specialHandlerLookupFailure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT special-handler lookup fast path disabled: {}", reason);
+        if (specialHandlerLookupFailure == null) LOGGER.warn(CMILog.HEXJIT + "Hex JIT special-handler lookup fast path disabled: {}", reason);
         specialHandlerLookupFailure = reason;
     }
     public static void numberLiteralTargetVerified() { numberLiteralTargetVerified = true; }
@@ -94,17 +96,17 @@ public final class JitCompatibility {
     public static void actionPrecheckTargetVerified() { actionPrecheckTargetVerified = true; }
     public static void disableActionResourceKeyCache(String reason) {
         if (actionResourceKeyCacheFailure == null)
-            LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT action ResourceKey cache disabled: {}", reason);
+            LOGGER.warn(CMILog.HEXJIT + "Hex JIT action ResourceKey cache disabled: {}", reason);
         actionResourceKeyCacheFailure = reason;
     }
     public static void disableActionTagMembership(String reason) {
         if (actionTagMembershipFailure == null)
-            LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT action tag membership cache disabled: {}", reason);
+            LOGGER.warn(CMILog.HEXJIT + "Hex JIT action tag membership cache disabled: {}", reason);
         actionTagMembershipFailure = reason;
     }
     public static void disableActionPrechecks(String reason) {
         if (actionPrecheckFailure == null)
-            LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT action precheck cache disabled: {}", reason);
+            LOGGER.warn(CMILog.HEXJIT + "Hex JIT action precheck cache disabled: {}", reason);
         actionPrecheckFailure = reason;
     }
     public static void mediaPoolTargetVerified() { mediaPoolTargetVerified = true; }
@@ -114,15 +116,15 @@ public final class JitCompatibility {
     public static void directPreflightStaffEnvironmentVerified() { directPreflightStaffEnvironmentVerified = true; }
     public static void disableDirectMediaPreflight(String reason) {
         if (directPreflightFailure == null)
-            LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT direct Tick media preflight disabled: {}", reason);
+            LOGGER.warn(CMILog.HEXJIT + "Hex JIT direct Tick media preflight disabled: {}", reason);
         directPreflightFailure = reason;
     }
     public static void disableNumberLiteral(String reason) {
-        if (numberLiteralFailure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT number-literal fast path disabled: {}", reason);
+        if (numberLiteralFailure == null) LOGGER.warn(CMILog.HEXJIT + "Hex JIT number-literal fast path disabled: {}", reason);
         numberLiteralFailure = reason;
     }
     public static void disable(String reason) {
-        if (failure == null) LoggerFactory.getLogger("CMI Hex JIT").warn("Hex JIT disabled: {}", reason);
+        if (failure == null) LOGGER.warn(CMILog.HEXJIT + "Hex JIT disabled: {}", reason);
         failure = reason;
         refreshReadiness();
     }

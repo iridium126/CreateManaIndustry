@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.compat.ysm;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmCompiledExporter;
 import com.iridium126.createmanaindustry.compat.ysm.model.YsmModelSnapshot;
 import com.iridium126.createmanaindustry.infrastructure.concurrent.CMIThreadFactory;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -149,7 +150,7 @@ public final class YsmServerRuntime implements AutoCloseable {
         try { return mapping.join(); }
         catch (CompletionException exception) {
             failure = "YSM compatibility disabled: " + exception.getCause().getMessage();
-            LOGGER.error(failure, exception.getCause());
+            LOGGER.error(CMILog.YSM + "{}", failure, exception.getCause());
             throw new IllegalStateException(failure, exception);
         }
     }

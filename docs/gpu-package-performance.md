@@ -19,7 +19,7 @@
 
 ## 定位慢帧
 
-游戏中执行 `/cmi particle profile on`，再执行 `/cmi particle stats`。先看 `CAPTURE`、`UPLOAD`、`PREPARE` 和 `SOLVER` 的 P95/P99，再结合 steps、live/indices、moving、downloaded 和 waiting 判断采集、补步、读回或提交成本。
+游戏中执行 `/cmi particle profile on`，再执行 `/cmi particle status`。先看 `CAPTURE`、`UPLOAD`、`PREPARE` 和 `SOLVER` 的 P95/P99，再结合 steps、live/indices、moving、downloaded 和 waiting 判断采集、补步、读回或提交成本。
 
 `PackageCpuDiagnostics` 记录 wall、thread CPU 与分配。phase 为包含子项的累计值，不能相加当总时间；wall 包含驱动及调度等待，thread CPU 不支持时为 unavailable。关闭 profile 时不启用额外诊断采样。
 

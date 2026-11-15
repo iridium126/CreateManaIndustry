@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Opt-in whole-client measurements. No waits, glFinish, elapsed queries or particle budget debit. */
 public final class ClientFrameCapture {
@@ -156,7 +157,7 @@ public final class ClientFrameCapture {
                 &&window.stormTickets.isEmpty())||head-window.stopped>5_000_000_000L))finish();
         var mc=Minecraft.getInstance();
         if(requestedSeconds!=0&&window==null){
-            if(mc.level==null||!mc.isWindowActive()){requestedSeconds=0;CreateManaIndustry.LOGGER.warn("[CMI frames] capture requires an active world window");return;}
+            if(mc.level==null||!mc.isWindowActive()){requestedSeconds=0;CreateManaIndustry.LOGGER.warn(CMILog.FRAMES + "capture requires an active world window");return;}
             window=new Window();window.seconds=requestedSeconds;requestedSeconds=0;
             window.bindingsStart=GpuBindings.submitted();window.bindingsAvoidedStart=GpuBindings.avoided();
             var uniformCounters=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
@@ -428,8 +429,8 @@ public final class ClientFrameCapture {
                     out.write("frame,scene_frame,x,y,z,yaw_degrees,pitch_degrees,vertical_fov_degrees\n");
                     for(int i=0;i<w.size;i++){out.write(w.frames[i]+","+w.sceneFrames[i]);for(var values:w.camera)out.write(","+values[i]);out.write("\n");}
                 }
-                CreateManaIndustry.LOGGER.info("[CMI frames] saved {} ({} samples, invalid={})",directory.resolve(name),w.size,w.invalid);
-            }catch(Exception failure){CreateManaIndustry.LOGGER.error("[CMI frames] export failed",failure);}
+                CreateManaIndustry.LOGGER.info(CMILog.FRAMES + "saved {} ({} samples, invalid={})",directory.resolve(name),w.size,w.invalid);
+            }catch(Exception failure){CreateManaIndustry.LOGGER.error(CMILog.FRAMES + "export failed",failure);}
         });
     }
     static Map<String,Object> statistics(double[] input,int count){

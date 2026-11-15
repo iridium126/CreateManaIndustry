@@ -15,6 +15,7 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 import java.nio.ByteBuffer;
 import java.util.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Parallel curves, ordered reservations and parallel emission into the existing conjure/Iris draw path. */
 public final class SharedFateGpu implements AutoCloseable {
@@ -46,7 +47,7 @@ public final class SharedFateGpu implements AutoCloseable {
         if(disabled)return false;
         try{return prepareFrame(camera,partial);}catch(RuntimeException failure){
             close();disabled=true;
-            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("Shared-fate GPU rendering disabled until reload",failure);
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.TRICKSTER + "Shared-fate GPU rendering disabled until reload",failure);
             return false;
         }
     }

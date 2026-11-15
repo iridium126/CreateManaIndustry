@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.dimension.lod.voxy;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * The one class that touches Voxy internals (voxy integration plan §8.1): a
@@ -52,7 +53,7 @@ public final class VoxyApi_0215_1211 {
             }
             return engine;
         } catch (Throwable t) {
-            CreateManaIndustry.LOGGER.debug("[Allvr] voxy engine probe failed", t);
+            CreateManaIndustry.LOGGER.debug(CMILog.ALLVR + "voxy engine probe failed", t);
             return null;
         }
     }

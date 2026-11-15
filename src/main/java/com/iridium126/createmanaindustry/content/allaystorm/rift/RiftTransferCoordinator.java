@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.content.allaystorm.rift;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.content.allaystorm.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 import net.minecraft.nbt.*;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
@@ -21,6 +22,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.*;
 import java.util.concurrent.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Server-owned coordinator. Requests never originate from client acknowledgements. */
 @EventBusSubscriber(modid=CreateManaIndustry.MODID)
@@ -62,7 +64,7 @@ public final class RiftTransferCoordinator implements StormRiftTransfers.Control
     void lock(UUID entity,UUID transaction){UUID old=locks.putIfAbsent(entity,transaction);if(old!=null&&!old.equals(transaction))throw new IllegalStateException("Transport lock conflict");}
     void unlock(UUID transaction){locks.values().removeIf(transaction::equals);claims.values().removeIf(transaction::equals);}
     void recovered(UUID transaction,Set<UUID> members){unlock(transaction);for(UUID id:members)retry.put(id,(long)server.getTickCount()+40);}
-    void quarantine(UUID transaction,Collection<UUID> ids,Throwable error){for(UUID id:ids){claims.put(id,transaction);locks.put(id,transaction);}LOG.error("Rift transaction {} isolated; journal retained",transaction,error);}
+    void quarantine(UUID transaction,Collection<UUID> ids,Throwable error){for(UUID id:ids){claims.put(id,transaction);locks.put(id,transaction);}LOG.error(CMILog.RIFT + "Rift transaction {} isolated; journal retained",transaction,error);}
     private void initializeRecovery() {
         if(!initialized) {
             if(!recovered.isDone())return;
@@ -70,7 +72,7 @@ public final class RiftTransferCoordinator implements StormRiftTransfers.Control
                 for(CompoundTag tag:recovered.getNow(List.of()))if(!Set.of("RELEASED","ROLLED_BACK_RELEASED").contains(tag.getString("State")))recovery.add(new RiftRecoveryTask(this,server,tag));
                 VehicleTransferAdapters.freezeRecovery(server);
                 initialized=true;
-            } catch(Throwable error){disabled=true;recoveryFault=true;initialized=true;LOG.error("Rift journal cannot be read safely; world ticks held for journal recovery",error);}
+            } catch(Throwable error){disabled=true;recoveryFault=true;initialized=true;LOG.error(CMILog.RIFT + "Rift journal cannot be read safely; world ticks held for journal recovery",error);}
         }
     }
     private void step() {
@@ -82,7 +84,7 @@ public final class RiftTransferCoordinator implements StormRiftTransfers.Control
         for(Operation op:List.copyOf(active.values())) {
             if(!budget.available())return;
             try(var access=RiftWorldAccess.open()){op.machine.tick(server.getTickCount(),budget.deadline());}
-            if(op.machine.terminal()&&op.machine.stage()!=RiftTransaction.Stage.QUARANTINED){active.remove(op.id);for(UUID player:op.players)retry.put(player,(long)server.getTickCount()+40);if(op.machine.failure()!=null)op.fail(op.machine.failure());else if(op.machine.stage()==RiftTransaction.Stage.SUCCEEDED)LOG.info("Rift transfer {} succeeded: adapter={} entities={} structures={} source={} target={}",op.id,op.group.adapter().id(),op.group.members().size(),op.group.adapter().structures().size(),op.request.source.dimension().location(),op.request.target.dimension().location());}
+            if(op.machine.terminal()&&op.machine.stage()!=RiftTransaction.Stage.QUARANTINED){active.remove(op.id);for(UUID player:op.players)retry.put(player,(long)server.getTickCount()+40);if(op.machine.failure()!=null)op.fail(op.machine.failure());else if(op.machine.stage()==RiftTransaction.Stage.SUCCEEDED)LOG.info(CMILog.RIFT + "Rift transfer {} succeeded: adapter={} entities={} structures={} source={} target={}",op.id,op.group.adapter().id(),op.group.members().size(),op.group.adapter().structures().size(),op.request.source.dimension().location(),op.request.target.dimension().location());}
         }
         var cursor=queued.values().iterator();
         while(cursor.hasNext()&&budget.available()) {
@@ -94,7 +96,7 @@ public final class RiftTransferCoordinator implements StormRiftTransfers.Control
                 if(group.members().size()>4096||adapter.structures().size()>4096)throw new IllegalStateException("Arrival manifest exceeds protocol limit");
                 Set<UUID> ids=ids(group);if(ids.stream().anyMatch(claims::containsKey))continue;
                 Operation op=new Operation(request,group);for(UUID id:ids)claims.put(id,op.id);active.put(op.id,op);
-            }catch(Throwable error){retry.put(player.getUUID(),(long)server.getTickCount()+40);player.displayClientMessage(Component.literal("裂口传送暂缓："+error.getMessage()),true);LOG.warn("Rift group collection refused",error);}
+            }catch(Throwable error){retry.put(player.getUUID(),(long)server.getTickCount()+40);player.displayClientMessage(CMICommandOutput.prefixed(CMICommandOutput.RIFT,CMICommandOutput.Outcome.FAIL,Component.literal("Rift transfer deferred: "+error.getMessage())),true);LOG.warn(CMILog.RIFT + "Rift group collection refused",error);}
         }
     }
     static Set<UUID> ids(StormTransferGroup group){var ids=new LinkedHashSet<UUID>(group.adapter().structures());for(Entity entity:group.members())ids.add(entity.getUUID());return ids;}
@@ -225,7 +227,7 @@ public final class RiftTransferCoordinator implements StormRiftTransfers.Control
         }
         public void release(){group.adapter().release(group);group.adapter().freeze(group,false);sourceTickets.close();if(sourceIndex!=null)sourceIndex.close();if(targetIndex!=null)targetIndex.close();if(landing!=null)landing.close();if(preparedLanding!=null)preparedLanding.close();unlock(id);}
         public void quarantine(CompoundTag tag,Throwable error){RiftTransferCoordinator.this.quarantine(id,ids(group),error);fail(error);}
-        void fail(Throwable error){for(UUID uuid:players){ServerPlayer p=server.getPlayerList().getPlayer(uuid);if(p!=null)p.displayClientMessage(Component.literal("裂口传送未完成："+error.getMessage()),true);}LOG.warn("Rift transaction {} ended at {}",id,machine.stage(),error);}
+        void fail(Throwable error){for(UUID uuid:players){ServerPlayer p=server.getPlayerList().getPlayer(uuid);if(p!=null)p.displayClientMessage(CMICommandOutput.prefixed(CMICommandOutput.RIFT,CMICommandOutput.Outcome.FAIL,Component.literal("Rift transfer incomplete: "+error.getMessage())),true);}LOG.warn(CMILog.RIFT + "Rift transaction {} ended at {}",id,machine.stage(),error);}
     }
     static CompoundTag vector(Vec3 p){CompoundTag t=new CompoundTag();t.putDouble("x",p.x);t.putDouble("y",p.y);t.putDouble("z",p.z);return t;}
     static Vec3 position(CompoundTag tag){ListTag p=tag.getList("Pos",Tag.TAG_DOUBLE);return new Vec3(p.getDouble(0),p.getDouble(1),p.getDouble(2));}

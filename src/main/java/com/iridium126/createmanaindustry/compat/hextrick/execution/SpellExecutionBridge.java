@@ -26,6 +26,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.jetbrains.annotations.Nullable;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /**
  * Executes a Trickster {@link SpellPart} from a Hexcasting iota, mirroring
@@ -126,7 +127,7 @@ public final class SpellExecutionBridge {
             env.printMessage(failure.createMessage());
             return new SpellExecutionResult(SpellExecutionStatus.FAILED, null, "trickster_blunder");
         } catch (RuntimeException | LinkageError failure) {
-            CreateManaIndustry.LOGGER.warn("Trickster bridge failed unexpectedly", failure);
+            CreateManaIndustry.LOGGER.warn(CMILog.TRICKSTER + "Trickster bridge failed unexpectedly", failure);
             return SpellExecutionResult.failed(env, "internal_error");
         }
     }

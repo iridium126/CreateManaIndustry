@@ -12,6 +12,7 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
 import java.nio.ByteBuffer;
 import java.util.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** One batch of analytic faces/edges, one shared conjure material, no CPU particles or GPU readback. */
 public final class PartitionGpu implements AutoCloseable {
@@ -55,7 +56,7 @@ public final class PartitionGpu implements AutoCloseable {
                 staging.putFloat((float)anchor.x).putFloat((float)anchor.y).putFloat((float)anchor.z).putInt(committedFields.getOrDefault(f,-1)+1);
             }
             staging.flip();GpuBindings.bind(GL43.GL_SHADER_STORAGE_BUFFER,input);com.iridium126.createmanaindustry.client.gpu.buffer.GpuTransfers.upload(GL43.GL_SHADER_STORAGE_BUFFER,0,staging);return true;
-        }catch(RuntimeException error){close();disabled=true;com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("Partition GPU rendering disabled until reload",error);return false;}
+        }catch(RuntimeException error){close();disabled=true;com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.TRICKSTER + "Partition GPU rendering disabled until reload",error);return false;}
     }
     public void generate(ParticleAppendTarget output,int slot,org.joml.Matrix4fc view,org.joml.Matrix4fc projection,float[] frustum,float throttle) {
         if(fields.isEmpty())return;

@@ -23,6 +23,7 @@ import net.irisshaders.iris.uniforms.builtin.BuiltinReplacementUniforms;
 import net.irisshaders.iris.uniforms.custom.CustomUniforms;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.opengl.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Evaluates only faces referenced by the current frozen feather draw list. */
 public final class FeatherLeafDisplayGpu implements AutoCloseable {
@@ -105,7 +106,7 @@ public final class FeatherLeafDisplayGpu implements AutoCloseable {
             close();
             attempted = plan;
             status = "static feather fallback (" + error.getMessage() + ")";
-            CreateManaIndustry.LOGGER.warn("[CMI particles] Iris leaf attachment unavailable", error);
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Iris leaf attachment unavailable", error);
             return false;
         }
     }

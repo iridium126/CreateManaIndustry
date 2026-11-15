@@ -16,6 +16,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import com.iridium126.createmanaindustry.content.logistics.gpupackage.PackageRegion;
 import java.util.HashMap;
 import java.util.Map;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Client transport boundary. Never advertises readiness before every production GPU prerequisite exists. */
 public final class PackageAuthorityClient {
@@ -160,7 +161,7 @@ public final class PackageAuthorityClient {
             // Do not let a later delta overtake a queued release/activation transition.
             if(controlResult==PackageControlQueue.Result.BLOCKED)return true;
         }catch(RuntimeException failure) {
-            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] acquisition failed",failure);
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "acquisition failed",failure);
             closeAll("Package acquisition failed: "+failure.getMessage(),true);return true;
         }
         // Rebuilt only when ownership changes; failure can close the map during this loop.
@@ -184,7 +185,7 @@ public final class PackageAuthorityClient {
             acquisition.committed(generation);acquisition.captureCommitted(channel,generation);
         }PackageWorldRuntime.committedChain(generation);}
         catch(RuntimeException|LinkageError failure) {
-            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] admission capture failed",failure);
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "admission capture failed",failure);
             closeAll("Package admission capture failed: "+failure.getMessage(),true);
         }
     }
@@ -220,7 +221,7 @@ public final class PackageAuthorityClient {
     public static void closeAll(String reason,boolean notifyServer) {
         if(closing)return;
         if(advertised!=0 || !channels.isEmpty())
-            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("[CMI packages] pausing GPU authority: {}",reason);
+            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info(CMILog.PACKAGES + "pausing GPU authority: {}",reason);
         PackageChainClientOwnership.INSTANCE.close();
         boolean hadClaims=false;
         closing=true;
@@ -231,7 +232,7 @@ public final class PackageAuthorityClient {
             for(var acquisition:preparing)acquisition.close();
             hadClaims=PackageRenderOwnership.clear();
             channels.clear();transports.clear();activeChannels=new PackageDeltaChannel[0];for(var channel:active)channel.close();
-            for(var listener:listeners)try{listener.failed(reason);}catch(RuntimeException failure){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] Package shutdown callback failed",failure);}
+            for(var listener:listeners)try{listener.failed(reason);}catch(RuntimeException failure){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "Package shutdown callback failed",failure);}
             if(notifyServer && (advertised!=0 || !active.isEmpty() || hadClaims))capabilities(0);
         }finally {
             controls.clear();
@@ -290,7 +291,7 @@ public final class PackageAuthorityClient {
             try{if(!table.track(packet.epoch(),packet.track()))return;}
             catch(IllegalStateException failure){
                 table.close(packet.epoch());
-                com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("[CMI packages] chain header receipt failed",failure);
+                com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "chain header receipt failed",failure);
                 closeAll("Chain header receipt failed: "+failure.getMessage(),true);return;
             }
         }else if(packet.action()==ClientboundChainPackagePacket.CLOSE)table.close(packet.epoch());

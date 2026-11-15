@@ -14,6 +14,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** World-scoped immutable content-addressed store for model resources and geometry nodes. */
 public final class YsmReferenceStore implements AutoCloseable {
@@ -811,7 +812,7 @@ public final class YsmReferenceStore implements AutoCloseable {
         try {
             if (!worker.awaitTermination(30, TimeUnit.SECONDS)) {
                 com.mojang.logging.LogUtils.getLogger().warn(
-                    "YSM reference writes did not drain before shutdown; interrupting remaining tasks");
+                    CMILog.YSM + "YSM reference writes did not drain before shutdown; interrupting remaining tasks");
                 worker.shutdownNow();
                 worker.awaitTermination(5, TimeUnit.SECONDS);
             }

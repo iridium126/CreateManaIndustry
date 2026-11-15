@@ -27,6 +27,7 @@ import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
 /** Lazy, client-thread collision preparation. No world access, waits or uploads on workers. */
 @EventBusSubscriber(modid=CreateManaIndustry.MODID,value=Dist.CLIENT)
@@ -53,9 +54,6 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
     private boolean movingAvailable,captureMovingFirst=true,uploadMovingFirst=true;
     private final java.util.HashSet<PackageMovingGeometry.Key> movingSeen=new java.util.HashSet<>(PackageMovingCollisionGpu.MAX_STRUCTURES);
     private final java.util.ArrayList<PackageMovingGeometry.Key> movingMissing=new java.util.ArrayList<>(PackageMovingCollisionGpu.MAX_STRUCTURES);
-    private final long[] discoverySamples=new long[128];
-    private int discoveryCursor,discoveryCount;
-    private long lastDiscoveryNanos,discoveryOverruns;
     private boolean gpuRequested,collisionRequested,lightRequested;
     private String gpuError="";
     private final PackageCollisionHistory geometryHistory=new PackageCollisionHistory();
@@ -261,7 +259,7 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
             if(current.gpu!=null){current.gpu.close();current.gpu=null;}
             if(current.movingGpu!=null){current.movingGpu.close();current.movingGpu=null;}
             if(current.lightGpu!=null){current.lightGpu.close();current.lightGpu=null;}
-            CreateManaIndustry.LOGGER.error("[CMI packages] collision GPU upload failed; coverage revoked",failure);
+            CreateManaIndustry.LOGGER.error(CMILog.PACKAGES + "collision GPU upload failed; coverage revoked",failure);
         }finally{current.frameBudget.nextFrame();PackageCpuDiagnostics.end(PackageCpuDiagnostics.Phase.UPLOAD,profiling);}
         return true;
     }
@@ -301,42 +299,6 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
         if(runtime.lightColumns.contains(column))runtime.dirtyLightColumns.add(column);
     }
     public static void contraptionChanged(com.simibubi.create.content.contraptions.Contraption contraption){if(current!=null&&current.movingSources!=null){owner();current.movingSources.contraptionChanged(contraption);}}
-    public static String report() {
-        owner();if(current==null)return "Package collisions: inactive";
-        String gpuStatus=current.gpu==null?"GPU "+(!current.gpuError.isEmpty()?current.gpuError:!current.collisionRequested?"collision atlas not requested":current.gpuRequested?"queued":"inactive"):
-                gpuReport(current.gpu.stats());
-        return "Package collisions: configured/allocated capacity="+current.configuredSections+"/"+current.allocatedSections+"; "+current.cache.readyCount()+"/"+current.cache.size()+" CPU sections ready, capture "
-                +String.format(java.util.Locale.ROOT,"%.3f",current.cache.lastCaptureNanos()/1_000_000.0)
-                +" ms, p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.capturePercentile(.5)/1_000_000.0,current.cache.capturePercentile(.95)/1_000_000.0)
-                +String.format(java.util.Locale.ROOT," ms (%.3f ms soft budget), overruns ",ClientConfig.packageMainThreadBudgetMs)+current.cache.overrunCount()+", LRU evictions/rejects "+current.cache.capacityEvictions()+"/"+current.cache.capacityRejections()
-                +"; worker bake p50/p95 "+String.format(java.util.Locale.ROOT,"%.3f/%.3f",current.cache.bakePercentile(.5)/1e6,current.cache.bakePercentile(.95)/1e6)+" ms; "+gpuStatus
-                +"; moving="+current.movingCache.entries().size()+", poses="+(current.movingAvailable&&current.movingCache.posesReady())
-                +", capture="+String.format(java.util.Locale.ROOT,"%.3f",current.movingCache.lastCaptureNanos()/1e6)+" ms, overruns="+current.movingCache.overruns()
-                +(current.movingGpu==null?"":", uploads="+current.movingGpu.uploadedBytes()+" B, skipped="+current.movingGpu.skippedViews())
-                +String.format(java.util.Locale.ROOT,", discovery p50/p95=%.3f/%.3f ms, last=%.3f ms, overruns=%d",
-                        current.discoveryPercentile(.5)/1e6,current.discoveryPercentile(.95)/1e6,
-                        current.lastDiscoveryNanos/1e6,current.discoveryOverruns)
-                +(current.movingSources==null?"":" "+current.movingSources.error())
-                +"; light="+(current.lights.size()-current.lights.pending())+"/"+current.lights.size()
-                +String.format(java.util.Locale.ROOT,", capture=%.3f ms, p50/p95=%.3f/%.3f ms, overruns=%d, failures=%d",current.lights.lastNanos()/1e6,current.lights.capturePercentile(.5)/1e6,current.lights.capturePercentile(.95)/1e6,current.lights.overruns(),current.lights.sourceFailures())
-                +(current.lightGpu==null?"":", uploads="+current.lightGpu.uploadedBytes()+" B, skipped="+current.lightGpu.skipped());
-    }
-    private void recordDiscovery(long nanos,long budget) {
-        lastDiscoveryNanos=nanos;discoverySamples[discoveryCursor]=nanos;
-        discoveryCursor=(discoveryCursor+1)%discoverySamples.length;
-        discoveryCount=Math.min(discoveryCount+1,discoverySamples.length);
-        if(nanos>budget)discoveryOverruns++;
-    }
-    private long discoveryPercentile(double q) {
-        if(discoveryCount==0)return 0;
-        long[] sorted=java.util.Arrays.copyOf(discoverySamples,discoveryCount);
-        java.util.Arrays.sort(sorted);
-        return sorted[Math.max(0,(int)Math.ceil(discoveryCount*q)-1)];
-    }
-    private static String gpuReport(PackageCollisionGpu.Stats stats) {
-        return String.format(java.util.Locale.ROOT,"GPU ready=%d dense=%d empty=%d history=%d, pending=%d retired=%d, uploads=%d B; upload p50/p95=%.3f/%.3f ms, overruns=%d; LRU evictions=%d; shape/capacity rejects=%d/%d, skipped views=%d",
-                stats.ready(),stats.residents(),stats.emptyCoverage(),stats.historicalVersions(),stats.pending(),stats.retired(),stats.uploadedBytes(),stats.p50Nanos()/1e6,stats.p95Nanos()/1e6,stats.overruns(),stats.evictions(),stats.shapeRejections(),stats.capacityRejections(),stats.skippedViews());
-    }
     public static void closeCurrent() {
         owner();if(current==null)return;
         if(current.gpu!=null){current.gpu.close();current.gpu=null;}
@@ -400,7 +362,6 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
     @Override public void captureWorld(long budget){owner();cache.tick(source,budget);}
     @Override public void discoverMoving(long deadline) {
         owner();
-        long started=System.nanoTime(),budget=Math.max(0,deadline-started);
         try{var found=movingSources.discover(deadline);movingAvailable=movingSources.error().isEmpty();
             if(movingAvailable) {
                 movingSeen.clear();movingMissing.clear();
@@ -417,7 +378,6 @@ public final class PackageCollisionRuntime implements PackageCollisionCaptureSch
                 }
             }
         }catch(RuntimeException | LinkageError unavailable){movingAvailable=false;}
-        recordDiscovery(System.nanoTime()-started,budget);
     }
     @SubscribeEvent public static void chunkLoaded(ChunkEvent.Load event){chunkChanged(event);}
     @SubscribeEvent public static void chunkUnloaded(ChunkEvent.Unload event){chunkChanged(event);}

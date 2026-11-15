@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.content.allaystorm;
 import java.io.*;
 import java.util.*;
+import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 /** Versioned offline Poisson template. No search, exp or random sampling in the frame loop. */
 public final class HelixTemplate {
  public static final float SPACING=1.4f;
@@ -20,6 +21,6 @@ public final class HelixTemplate {
      double a=x-points[j*3],b=y-points[j*3+1],c=z-points[j*3+2];if(a*a+b*b+c*c<SPACING*SPACING-.00001)throw new IOException("Overlapping helix template");
     }grid.computeIfAbsent(cell,k->new ArrayList<>()).add(i);
    }if(in.read()!=-1)throw new IOException("Trailing helix template data");return points;
-  }catch(IOException failure){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error("Helix disabled: invalid fixed 4096-member template",failure);return new float[0];}
+  }catch(IOException failure){com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.STORM + "Helix disabled: invalid fixed 4096-member template",failure);return new float[0];}
  }
 }
