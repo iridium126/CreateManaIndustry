@@ -4,7 +4,7 @@ gradle.projectsEvaluated {
     p.apply from: p.file('scripts/testing/common.gradle')
     def recovery = p.hasProperty('packageRecoveryGameTest')
     def suite = p.configureCmiGameTests(name: 'packages', sources: 'src/test/gametest/packages/java',
-            structure: 'package_output_test', serverConfig: '[experimental.gpuPackages]\nenabled = true\n')
+            structure: 'package_output_test', serverConfig: '[experimental]\nserverPackages = true\n')
     suite.java.exclude(recovery ? '**/PackageOutputGameTests.java' : '**/PackageRecoveryGameTests.java')
     if (recovery) suite.java.exclude('**/PackageEnvironmentGameTests.java')
     def audit = p.tasks.register('packageEnvironmentAuditFixture', Copy) {

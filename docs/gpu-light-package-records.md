@@ -4,7 +4,7 @@
 
 ## 创建、暂停和保存
 
-玩家丢出、机器输出、锁链脱落和旧存档的 `PackageEntity` 在加入服务端世界时统一捕获。先执行 Create 的初始物品合法性检查，再保存物品、附加 NBT、稳定身份、UUID、尺寸、生命值、火焰及初始姿态。服务端接管启用时，自由包裹从创建起就是 `PackageLightStore` 记录。服务端 `experimental.gpuPackages.enabled=false` 时，普通新包裹使用 Create 原生生命周期。
+玩家丢出、机器输出、锁链脱落和旧存档的 `PackageEntity` 在加入服务端世界时统一捕获。先执行 Create 的初始物品合法性检查，再保存物品、附加 NBT、稳定身份、UUID、尺寸、生命值、火焰及初始姿态。服务端接管启用时，自由包裹从创建起就是 `PackageLightStore` 记录。服务端 `experimental.serverPackages=false` 时，普通新包裹使用 Create 原生生命周期。
 
 存档仍使用各维度 `data/cmi_light_packages.dat` 和全局 `cmi_gpu_packages.dat`。箱内物品及地址保留原 ItemStack/NBT 格式；环境步编号是可选字段，缺失状态字段时默认无燃烧、生命值 5、环境步 0。旧实体与现有记录身份和 UUID 相同时，记录优先，取消重复实体；复制身份的不同 UUID 重新分配身份。
 

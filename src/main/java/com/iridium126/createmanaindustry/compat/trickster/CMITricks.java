@@ -5,7 +5,7 @@ import com.iridium126.createmanaindustry.compat.hextrick.bootstrap.CMITricksterF
 import com.iridium126.createmanaindustry.compat.hextrick.execution.EvalIotaTrick;
 import com.iridium126.createmanaindustry.compat.hextrick.execution.ReadIotaTrick;
 import com.iridium126.createmanaindustry.compat.trickster.trick.ReadPotionEffectsTrick;
-import com.iridium126.createmanaindustry.compat.trickster.trick.TemporaryKineticStressTrick;
+import com.iridium126.createmanaindustry.compat.trickster.trick.TemporaryKineticTrick;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import dev.enjarai.trickster.spell.trick.Trick;
@@ -14,8 +14,8 @@ import net.minecraft.core.Registry;
 
 /** CMI's tricks, declared and registered like Trickster's {@link Tricks}. */
 public final class CMITricks {
-    public static final TemporaryKineticStressTrick TEMPORARY_KINETIC_STRESS =
-            register("temporary_kinetic_stress", new TemporaryKineticStressTrick());
+    public static final TemporaryKineticTrick TEMPORARY_KINETIC_STRESS =
+            register("temporary_kinetic_stress", new TemporaryKineticTrick());
     public static final ReadPotionEffectsTrick READ_POTION_EFFECTS =
             register("read_potion_effects", new ReadPotionEffectsTrick());
 

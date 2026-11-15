@@ -1,10 +1,10 @@
 # Create GPU 包裹：当前实现
 
-服务端接管启用时，自由包裹从创建起保存为轻量记录，由 GPU 模拟。没有就绪 GPU 时保留最后确认状态并暂停。将全局服务端配置的 `experimental.gpuPackages.enabled` 设为 `false` 并重启后，轻量自由包裹随区块自然加载还原为原生实体。锁链包裹继续使用原生容器和保存进度。
+服务端接管启用时，自由包裹从创建起保存为轻量记录，由 GPU 模拟。没有就绪 GPU 时保留最后确认状态并暂停。将全局服务端配置的 `experimental.serverPackages` 设为 `false` 并重启后，轻量自由包裹随区块自然加载还原为原生实体。锁链包裹继续使用原生容器和保存进度。
 
 ## 客户端碰撞容量
 
-`createmanaindustry-client.toml` 的 `[particles] packageCollisionMaxSections = 256` 可设为 1–1024。同服客户端独立配置，重新进入世界时生效；实际分配受显卡 SSBO 上限约束，光照容量不随此配置变化。
+`createmanaindustry-client.toml` 的 `[packages] packageCollisionMaxSections = 256` 可设为 1–1024。同服客户端独立配置，重新进入世界时生效；实际分配受显卡 SSBO 上限约束，光照容量不随此配置变化。
 
 ## 当前契约
 

@@ -17,13 +17,13 @@ import dev.enjarai.trickster.spell.type.Signature;
 import net.minecraft.core.BlockPos;
 
 /** Supplies temporary kinetic stress to a Create kinetic block entity. */
-public final class TemporaryKineticStressTrick extends Trick<TemporaryKineticStressTrick> {
+public final class TemporaryKineticTrick extends Trick<TemporaryKineticTrick> {
     private static final float STRESS_PER_SPEED = 4;
 
-    public TemporaryKineticStressTrick() {
+    public TemporaryKineticTrick() {
         super(Pattern.of(1, 0, 2, 3, 4, 5, 6, 8, 7),
                 Signature.of(FragmentType.VECTOR, FragmentType.NUMBER, FragmentType.NUMBER,
-                        TemporaryKineticStressTrick::run, FragmentType.VECTOR));
+                        TemporaryKineticTrick::run, FragmentType.VECTOR));
     }
 
     public VectorFragment run(SpellContext ctx, VectorFragment target, NumberFragment speed, NumberFragment duration) {

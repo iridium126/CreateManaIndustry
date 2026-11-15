@@ -70,7 +70,7 @@ Sodium 方案见 [allay-dimension-sodium-rendering-parity-plan.md](allay-dimensi
 
 ## 6. 配置、注册与验证
 
-- 客户端总 LOD 开关：`allvr.lod`，定义于 `ClientConfig`。
+- 客户端总 LOD 开关：`rendering.lod`，定义于 `ClientConfig`。
 - 维度/类型：`AllvrDimensions`；维度 JSON：`data/createmanaindustry/dimension/allay_dimension.json`。
 - 服务端保存目录和区域文件由 `AllvrRegionCubeStorage` 决定；不复制 CubicChunks/regionlib 文件格式。
 

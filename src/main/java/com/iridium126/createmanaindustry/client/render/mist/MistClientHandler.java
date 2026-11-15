@@ -277,7 +277,9 @@ public final class MistClientHandler {
     /**
      * Injects all mist uniforms into the given shader program or post pipeline
      * (both implement {@link UniformAccess}). Shared by the vanilla Veil post
-     * path and the iris gbuffer hook.
+     * path and the iris gbuffer hook. The debug visualization only exists in the
+     * iris mist program; the vanilla shader has no shadow sampling, so its
+     * {@code getUniform} returns null and the toggle is ignored there.
      */
     static void applyMistUniforms(UniformAccess shader) {
         var countUniform = shader.getUniform("AtomizerCount");
@@ -317,6 +319,12 @@ public final class MistClientHandler {
                 sunUniform.setVector(-0.7f, 0.5f, 0.3f);
             }
         }
+
+        // Tyndall debug visualization: color the mist by the shadow sample. The branch only
+        // exists in the iris mist program, and the config reloads live.
+        var debugShadowUniform = shader.getUniform("DebugShadowVisualization");
+        if (debugShadowUniform != null)
+            debugShadowUniform.setInt(ClientConfig.mistDebugShadow ? 1 : 0);
     }
 
     /**

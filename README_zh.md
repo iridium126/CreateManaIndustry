@@ -20,7 +20,7 @@
 
 安装咒法学后，可用机械动力自动生产杂件（Cypher）、缀品（Trinket）、造物（Artifact）与媒质之瓶：机械手写入图案，注液器注入液态媒质，动力冲压机完成定型并保留物品数据。媒质之瓶也可通过机械动力流体网络填充和抽取。
 
-其他联动包括：为非卓越法术动态添加石板切石配方；读取置于置物台或置物板上物品中的 Iota；点燃烈焰人和悦灵燃烧室；以及查询法术环内玩家等功能。服务端还提供可配置的 Hex JIT，对频繁执行的调用点进行编译；默认模式为 `AUTO`，可在服务端配置中调整。
+其他联动包括：为非卓越法术动态添加石板切石配方；读取置于置物台或置物板上物品中的 Iota；点燃烈焰人和悦灵燃烧室；以及查询法术环内玩家等功能。服务端还提供可配置的 Hex JIT，对频繁执行的调用点进行编译；默认关闭（`OFF`），可在服务端配置中启用。
 
 游戏内指南以帕秋莉手册提供，包含英文与简体中文文本。
 
@@ -85,9 +85,9 @@ NeoForge 会在配置目录中生成 `createmanaindustry-server.toml` 与 `creat
 
 | `config/` 下的文件 | 实验开关 | 默认值 |
 |---|---|---|
-| `createmanaindustry-server.toml` | `experimental.gpuPackages.enabled` | `false` |
-| `createmanaindustry-server.toml` | `experimental.hexJit.mode` | `OFF` |
-| `createmanaindustry-client.toml` | `experimental.gpuPackages.enabled` | `false` |
+| `createmanaindustry-server.toml` | `experimental.serverPackages` | `false` |
+| `createmanaindustry-server.toml` | `experimental.hexJitMode` | `OFF` |
+| `createmanaindustry-client.toml` | `experimental.clientPackages` | `false` |
 
 Hex JIT 使用 `PROFILE` 采集运行数据，使用 `AUTO` 启用编译。GPU 包裹需要服务端启用，并有已启用且资源就绪的客户端。关闭服务端开关后，存档中的轻量包裹会在区块加载时恢复为 Create 原生包裹。升级后请显式设置新键以重新启用。
 

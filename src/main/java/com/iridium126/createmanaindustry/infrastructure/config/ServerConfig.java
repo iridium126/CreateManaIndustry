@@ -36,6 +36,15 @@ public final class ServerConfig {
 
     public enum HexJitMode { OFF, PROFILE, AUTO }
 
+    // ---- defaults (single source for the spec and the runtime fields) ------
+
+    public static final long DEFAULT_CYPHER_MAX_MEDIA = 6_400_000L;
+    public static final long DEFAULT_TRINKET_MAX_MEDIA = 76_800_000L;
+    public static final long DEFAULT_ARTIFACT_MAX_MEDIA = 921_600_000L;
+    public static final long DEFAULT_BATTERY_MAX_MEDIA = 921_600_000L;
+    public static final double DEFAULT_BATTERY_ANIMA_CAPACITY_RATIO = 0.125;
+    public static final double DEFAULT_PACKAGE_MAIN_THREAD_BUDGET_MS = 10.0;
+
     public static volatile HexJitMode hexJitMode = HexJitMode.OFF;
     public static volatile int hexTrickMaxDepth = 32;
     private static ModConfigSpec.IntValue HEX_TRICK_MAX_DEPTH;
@@ -96,10 +105,7 @@ public final class ServerConfig {
 
     private static ModConfigSpec.IntValue MANA_PER_BUCKET;
     private static ModConfigSpec.IntValue MEDIA_PER_BUCKET;
-    private static ModConfigSpec.ConfigValue<List<? extends String>> PARTITION_MOVEMENT_EXEMPT;
-    public static volatile List<? extends String> partitionMovementExemptEntities=List.of("create:contraption","create:stationary_contraption","create:gantry_contraption","create:carriage_contraption");
     private static ModConfigSpec.IntValue ANIMA_PER_BUCKET;
-    private static ModConfigSpec.DoubleValue BATTERY_ANIMA_CAPACITY_RATIO;
     private static ModConfigSpec.IntValue SOURCE_PER_BUCKET;
 
     // ---- kinetics ----------------------------------------------------------
@@ -114,32 +120,39 @@ public final class ServerConfig {
     private static ModConfigSpec.DoubleValue MIST_BASE_CONCENTRATION;
     private static ModConfigSpec.DoubleValue CONDENSE_EFFICIENCY;
 
-    // ---- allay_burner ------------------------------------------------------
+    // ---- allayBurner -------------------------------------------------------
 
     private static ModConfigSpec.IntValue MEDIA_CONSUMED_PER_TICK;
     private static ModConfigSpec.IntValue ALLAY_BURNER_MIST_RADIUS;
     private static ModConfigSpec.IntValue ALLAY_BURNER_MIST_PER_TICK;
 
-    // ---- allay storm -------------------------------------------------------
+    // ---- allayStorm --------------------------------------------------------
 
     private static ModConfigSpec.DoubleValue STORM_CORRECTION_HZ;
     private static ModConfigSpec.IntValue STORM_MAX_COUNT;
     private static ModConfigSpec.IntValue STORM_LOD_MAX_DISTANCE;
     private static ModConfigSpec.DoubleValue STORM_GROWTH_PER_SECOND;
-    private static ModConfigSpec.DoubleValue STORM_STARFALL_INTERVAL, STORM_STARFALL_CHANCE;
-    private static ModConfigSpec.IntValue STORM_STARFALL_ACTIVE, STORM_STARFALL_COLUMN_MEMBERS;
-    private static ModConfigSpec.DoubleValue STORM_DOME_CHANCE;
     private static ModConfigSpec.DoubleValue STORM_HELIX_CHANCE;
+    private static ModConfigSpec.DoubleValue STORM_HELIX_INTERVAL_MIN;
+    private static ModConfigSpec.DoubleValue STORM_HELIX_INTERVAL_MAX;
+    private static ModConfigSpec.DoubleValue STORM_DOME_CHANCE;
+    private static ModConfigSpec.DoubleValue STORM_DOME_INTERVAL_MIN;
+    private static ModConfigSpec.DoubleValue STORM_DOME_INTERVAL_MAX;
+    private static ModConfigSpec.DoubleValue STORM_STARFALL_INTERVAL;
+    private static ModConfigSpec.DoubleValue STORM_STARFALL_CHANCE;
+    private static ModConfigSpec.IntValue STORM_STARFALL_ACTIVE;
     private static ModConfigSpec.DoubleValue STORM_WAVE_DAMAGE;
     private static ModConfigSpec.DoubleValue STORM_WAVE_RANGE;
     private static ModConfigSpec.IntValue STORM_CHASE_Y;
 
-    // ---- hexcasting --------------------------------------------------------
+    // ---- hexIntegration ----------------------------------------------------
 
     private static ModConfigSpec.LongValue CYPHER_MAX_MEDIA;
     private static ModConfigSpec.LongValue TRINKET_MAX_MEDIA;
     private static ModConfigSpec.LongValue ARTIFACT_MAX_MEDIA;
     private static ModConfigSpec.LongValue BATTERY_MAX_MEDIA;
+    private static ModConfigSpec.DoubleValue BATTERY_ANIMA_CAPACITY_RATIO;
+    private static ModConfigSpec.ConfigValue<List<? extends String>> PARTITION_MOVEMENT_EXEMPT;
     private static ModConfigSpec.IntValue YSM_APPLY_CRYSTALS;
     private static ModConfigSpec.IntValue YSM_EXPORT_CRYSTALS;
     private static ModConfigSpec.IntValue HEX_JIT_THRESHOLD;
@@ -191,27 +204,19 @@ public final class ServerConfig {
     private static ModConfigSpec.BooleanValue HEX_JIT_CACHE_PER_WORLD_PATTERN_LOOKUP;
 
     static {
-        BUILDER.comment("Experimental features. Set these switches in the instance config directory and restart the game or server.").push("experimental");
-        BUILDER.push("gpuPackages");
+        BUILDER.comment("Startup switches read before any config is loaded, plus the server package processing budget. Changing a switch requires a full process restart.").push("experimental");
         BUILDER.comment("Enable server-side GPU package authority and its Mixins. Requires a full process restart.")
-                .worldRestart().define("enabled", false);
-        BUILDER.pop();
-        BUILDER.push("hexJit");
+                .worldRestart().define("serverPackages", false);
         BUILDER.comment("OFF skips the Hex JIT Mixins; PROFILE collects hot calls; AUTO enables tiered compilation. Requires a full process restart.")
-                .worldRestart().defineEnum("mode", HexJitMode.OFF);
-        BUILDER.pop(2);
-
-        BUILDER.comment("Server-side GPU package tuning.").push("gpuPackages");
+                .worldRestart().defineEnum("hexJitMode", HexJitMode.OFF);
         PACKAGE_MAIN_THREAD_BUDGET_MS=BUILDER
-                .comment("Maximum server main-thread time per tick for each GPU package processing pass, in milliseconds.")
-                .defineInRange("mainThreadBudgetMs",10.0,0.25,50.0);
+                .comment("Maximum server main-thread time spent on each bounded GPU package processing pass per tick, in milliseconds.")
+                .defineInRange("mainThreadBudgetMs",DEFAULT_PACKAGE_MAIN_THREAD_BUDGET_MS,0.25,50.0);
         BUILDER.pop();
-        BUILDER.comment("Fluid conversion ratios — how much mana/media/source one bucket holds.").push("fluid");
-        PARTITION_MOVEMENT_EXEMPT = BUILDER.comment("Entity IDs exempt from Partition movement barriers only. Their passengers travel with them.").defineListAllowEmpty("partitionMovementExemptEntities", List.of("create:contraption","create:stationary_contraption","create:gantry_contraption","create:carriage_contraption"), () -> "minecraft:boat", value -> value instanceof String text && ResourceLocation.tryParse(text)!=null);
+
+        BUILDER.comment("Fluid conversion ratios — how much mana/media/source/anima one bucket holds.").push("fluid");
         ANIMA_PER_BUCKET = BUILDER.comment("Anima contained in 1000 mB of Liquid Soul. 每桶液态灵魂所含的 Anima。")
                 .defineInRange("animaPerBucket", 32, 1, 1000000);
-        BATTERY_ANIMA_CAPACITY_RATIO = BUILDER.comment("Battery Anima capacity per dust-equivalent of its actual maximum media. 电池每份紫水晶粉等价容量可储存的 Anima。")
-                .defineInRange("batteryAnimaCapacityRatio", 0.1, 0.0, 1000.0);
         MANA_PER_BUCKET = BUILDER
                 .comment("The amount of mana contained in one bucket (1000mB) of Liquid Mana.")
                 .defineInRange("manaPerBucket", 2048, 2048, 81920);
@@ -247,9 +252,9 @@ public final class ServerConfig {
                 .defineInRange("condenseEfficiency", 5.0, 0.0, 1000.0);
         BUILDER.pop();
 
-        BUILDER.comment("Allay Burner fuel consumption and its Liquid Soul mist.").push("allay_burner");
+        BUILDER.comment("Allay Burner fuel consumption and the Liquid Soul mist it emits.").push("allayBurner");
         MEDIA_CONSUMED_PER_TICK = BUILDER
-                .comment("Media consumed per tick while the Allay Burner is burning. Drives the burn duration of all fuels: an item worth N media burns N / mediaConsumedPerTick ticks, and 1 mB of Liquid Media burns (mediaPerBucket / 1000) / mediaConsumedPerTick ticks.")
+                .comment("Media consumed per tick while the Allay Burner is burning. Drives the burn duration of every fuel: an item worth N media burns N / mediaConsumedPerTick ticks, and 1 mB of Liquid Media burns (mediaPerBucket / 1000) / mediaConsumedPerTick ticks.")
                 .defineInRange("mediaConsumedPerTick", 50, 1, 10000);
         ALLAY_BURNER_MIST_RADIUS = BUILDER
                 .comment("Radius (in blocks) of the Liquid Soul mist field emitted while the Allay Burner is burning.")
@@ -259,9 +264,9 @@ public final class ServerConfig {
                 .defineInRange("allayBurnerMistPerTick", 1, 1, 1000);
         BUILDER.pop();
 
-        BUILDER.comment("Allay Storm — the GPU-driven boss swarm (persistence + network sync).").push("allay_storm");
+        BUILDER.comment("Allay Storm — the GPU-driven boss swarm (population, persistence and network sync).").push("storm");
         STORM_CORRECTION_HZ = BUILDER
-                .comment("Authoritative-client position correction snapshots per second for storm members near players. Higher = tighter cross-player position agreement, more bandwidth (~4 KB/s per snapshot at the 256-member cap). Delivered to the authority client with its assignment; changes apply from the next snapshot.")
+                .comment("Authoritative-client position correction snapshots per second for storm members near players. Higher values tighten cross-player position agreement at the cost of bandwidth. Delivered to the authority client with its assignment; changes apply from the next snapshot.")
                 .defineInRange("stormCorrectionHz", 5.0, 0.5, 20.0);
         STORM_LOD_MAX_DISTANCE = BUILDER.comment("Maximum storm visual-only LOD subscription distance. 0 disables LOD synchronization.").defineInRange("stormLodMaxDistance",4096,0,8192);
         STORM_MAX_COUNT = BUILDER
@@ -278,8 +283,7 @@ public final class ServerConfig {
         STORM_DOME_CHANCE = BUILDER.comment("Independent storm-level dome probability. 天穹独立发动概率。").defineInRange("stormDomeChance", .5, 0, 1);
         STORM_STARFALL_INTERVAL=BUILDER.comment("Independent regional star rain opportunity interval in seconds per eligible player.").defineInRange("stormStarfallInterval",.5,.05,60);
         STORM_STARFALL_CHANCE=BUILDER.comment("Independent probability per eligible player and opportunity.").defineInRange("stormStarfallChance",.5,0,1);
-        STORM_STARFALL_ACTIVE=BUILDER.comment("Maximum concurrent independent columns, including their return flight.").defineInRange("stormStarfallMaxActiveColumns",64,1,64);
-        STORM_STARFALL_COLUMN_MEMBERS=BUILDER.comment("Exactly 64 living unreserved members form each column; fixed formation topology.").defineInRange("stormStarfallColumnMembers",64,64,64);
+        STORM_STARFALL_ACTIVE=BUILDER.comment("Maximum concurrent independent starfall columns, including their return flight. Engine ceiling is 64.").defineInRange("stormStarfallMaxActiveColumns",64,1,64);
         STORM_WAVE_DAMAGE = BUILDER
                 .comment("Damage per starfall contact. Fixed (no variance). Routed through player.hurt with the createmanaindustry:storm_peck damage type, so vanilla invulnerability frames, armor, absorption and totems all apply — concurrent divers cannot burst through the 10-tick i-frame window.")
                 .defineInRange("stormWaveDamage", 7.0, 0.0, 40.0);
@@ -291,28 +295,32 @@ public final class ServerConfig {
                 .defineInRange("stormChaseY", 128, 40, 300);
         BUILDER.pop();
 
-        BUILDER.comment("Hexcasting integration settings.").push("hexcasting");
-        HEX_TRICK_MAX_DEPTH = BUILDER.comment("Maximum synchronous Hexcasting/Trickster language crossings.")
+        BUILDER.comment("Hexcasting / Trickster integration: casting item capacities, cross-language bridge depth, battery Anima, Partition movement exemption, YSM model costs and the server-side Hex JIT.").push("hexIntegration");
+        HEX_TRICK_MAX_DEPTH = BUILDER.comment("Maximum synchronous Hexcasting/Trickster language crossings (bridge depth).")
                 .defineInRange("bridgeMaxDepth", 32, 1, 64);
         CYPHER_MAX_MEDIA = BUILDER
-                .comment("Maximum media capacity for incomplete cyphers.")
-                .defineInRange("cypherMaxMedia", 6400000L, 10000L, Long.MAX_VALUE);
+                .comment("Media an incomplete cypher can hold before pressing, in raw media units (1 amethyst dust = 10,000 media). The finished item keeps only the media actually poured in.")
+                .defineInRange("cypherMaxMedia", DEFAULT_CYPHER_MAX_MEDIA, 10000L, Long.MAX_VALUE);
         TRINKET_MAX_MEDIA = BUILDER
-                .comment("Maximum media capacity for incomplete trinkets.")
-                .defineInRange("trinketMaxMedia", 64000000L, 10000L, Long.MAX_VALUE);
+                .comment("Media an incomplete trinket can hold before pressing, in raw media units (1 amethyst dust = 10,000 media). The finished item keeps only the media actually poured in.")
+                .defineInRange("trinketMaxMedia", DEFAULT_TRINKET_MAX_MEDIA, 10000L, Long.MAX_VALUE);
         ARTIFACT_MAX_MEDIA = BUILDER
-                .comment("Maximum media capacity for incomplete artifacts.")
-                .defineInRange("artifactMaxMedia", 640000000L, 10000L, Long.MAX_VALUE);
+                .comment("Media an incomplete artifact can hold before pressing, in raw media units (1 amethyst dust = 10,000 media). The finished item keeps only the media actually poured in.")
+                .defineInRange("artifactMaxMedia", DEFAULT_ARTIFACT_MAX_MEDIA, 10000L, Long.MAX_VALUE);
         BATTERY_MAX_MEDIA = BUILDER
-                .comment("Maximum media capacity for incomplete media batteries.")
-                .defineInRange("batteryMaxMedia", 640000000L, 10000L, Long.MAX_VALUE);
+                .comment("Media an incomplete media battery can hold before pressing, in raw media units (1 amethyst dust = 10,000 media). The finished battery keeps only the media actually poured in.")
+                .defineInRange("batteryMaxMedia", DEFAULT_BATTERY_MAX_MEDIA, 10000L, Long.MAX_VALUE);
+        BATTERY_ANIMA_CAPACITY_RATIO = BUILDER
+                .comment("Anima a media battery can store per amethyst-dust-equivalent of its actual maximum media (maxMedia / 10,000). 电池每份紫水晶粉等价容量可储存的 Anima。")
+                .defineInRange("batteryAnimaCapacityRatio", DEFAULT_BATTERY_ANIMA_CAPACITY_RATIO, 0.0, 1000.0);
+        PARTITION_MOVEMENT_EXEMPT = BUILDER.comment("Entity IDs exempt from Partition movement barriers only; their passengers travel with them. Casting range and cost are unaffected. 分域移动豁免实体。").defineListAllowEmpty("partitionMovementExemptEntities", List.of("create:contraption","create:stationary_contraption","create:gantry_contraption","create:carriage_contraption"), () -> "minecraft:boat", value -> value instanceof String text && ResourceLocation.tryParse(text)!=null);
         YSM_APPLY_CRYSTALS = BUILDER
-                .comment("Charged amethyst units consumed when applying a temporary YSM model edit.")
+                .comment("Media cost of applying a temporary YSM model edit, expressed in charged-amethyst units and multiplied by Hexcasting's charged crystal media value.")
                 .defineInRange("ysmApplyCrystalUnits", 1, 0, 64);
         YSM_EXPORT_CRYSTALS = BUILDER
-                .comment("Charged amethyst units consumed when exporting a YSM model.")
+                .comment("Media cost of exporting a YSM model, expressed in charged-amethyst units and multiplied by Hexcasting's charged crystal media value.")
                 .defineInRange("ysmExportCrystalUnits", 1, 0, 64);
-        BUILDER.comment("Server-side Hex JIT controls. These tune execution only; compiled calls preserve Hexcasting action semantics.").push("jit");
+        BUILDER.comment("Server-side Hex JIT controls. These tune execution only; compiled calls preserve Hexcasting action semantics.").push("hexJit");
         HEX_JIT_THRESHOLD = BUILDER
                 .comment("Valid executions at a shared call site before compilation is requested.")
                 .defineInRange("hotThreshold", 64, 1, 1000000);
@@ -496,36 +504,35 @@ public final class ServerConfig {
     public static int manaPerBucket = 2048;
     public static int mediaPerBucket = 400000;
     public static int animaPerBucket = 32;
-    public static double batteryAnimaCapacityRatio = 0.1;
-    public static int mediaConsumedPerTick = 50;
     public static int sourcePerBucket = 1000;
     public static double kineticStressTrickManaMultiplier = 2.0;
     public static int mistMaxRadius = 16;
     public static int mistFluidPerTick = 8;
     public static double mistBaseConcentration = 1.0;
     public static double condenseEfficiency = 5.0;
+    public static int mediaConsumedPerTick = 50;
     public static int allayBurnerMistRadius = 4;
     public static int allayBurnerMistPerTick = 1;
     public static double stormCorrectionHz = 5.0;
     public static int stormMaxCount = 65536;
     public static int stormLodMaxDistance=4096;
     public static double stormGrowthPerSecond = 20.0;
-    public static double stormHelixIntervalMin=30,stormHelixIntervalMax=60,stormDomeIntervalMin=60,stormDomeIntervalMax=90;
-    private static final ModConfigSpec.DoubleValue STORM_HELIX_INTERVAL_MIN,STORM_HELIX_INTERVAL_MAX,STORM_DOME_INTERVAL_MIN,STORM_DOME_INTERVAL_MAX;
     public static double stormHelixChance=.5;
     public static double stormDomeChance=.5;
+    public static double stormHelixIntervalMin=30,stormHelixIntervalMax=60,stormDomeIntervalMin=60,stormDomeIntervalMax=90;
     public static double stormStarfallInterval=.5, stormStarfallChance=.5;
-    public static int stormStarfallMaxActiveColumns=64, stormStarfallColumnMembers=64;
+    public static int stormStarfallMaxActiveColumns=64;
     public static double stormWaveDamage = 7.0;
     public static double stormWaveRange = 96.0;
     public static int stormChaseY = 128;
-    public static long cypherMaxMedia = 6400000L;
-    public static long trinketMaxMedia = 64000000L;
-    public static long artifactMaxMedia = 640000000L;
-    public static long batteryMaxMedia = 640000000L;
+    public static long cypherMaxMedia = DEFAULT_CYPHER_MAX_MEDIA;
+    public static long trinketMaxMedia = DEFAULT_TRINKET_MAX_MEDIA;
+    public static long artifactMaxMedia = DEFAULT_ARTIFACT_MAX_MEDIA;
+    public static long batteryMaxMedia = DEFAULT_BATTERY_MAX_MEDIA;
+    public static double batteryAnimaCapacityRatio = DEFAULT_BATTERY_ANIMA_CAPACITY_RATIO;
+    public static volatile List<? extends String> partitionMovementExemptEntities = List.of("create:contraption","create:stationary_contraption","create:gantry_contraption","create:carriage_contraption");
     public static int ysmApplyCrystalUnits = 1;
     public static int ysmExportCrystalUnits = 1;
-    /** Tick spell cost in media; config values are expressed in dust units like Hexal. */
 
     // ---- stress accessors (BlockStressValues providers) --------------------
 
@@ -586,16 +593,14 @@ public final class ServerConfig {
             manaPerStress = MANA_PER_STRESS.get();
             manaPerBucket = MANA_PER_BUCKET.get();
             mediaPerBucket = MEDIA_PER_BUCKET.get();
-            partitionMovementExemptEntities = List.copyOf(PARTITION_MOVEMENT_EXEMPT.get());
             animaPerBucket = ANIMA_PER_BUCKET.get();
-            batteryAnimaCapacityRatio = BATTERY_ANIMA_CAPACITY_RATIO.get();
-            mediaConsumedPerTick = MEDIA_CONSUMED_PER_TICK.get();
             sourcePerBucket = SOURCE_PER_BUCKET.get();
             kineticStressTrickManaMultiplier = KINETIC_STRESS_TRICK_MANA_MULTIPLIER.get();
             mistMaxRadius = MIST_MAX_RADIUS.get();
             mistFluidPerTick = MIST_FLUID_PER_TICK.get();
             mistBaseConcentration = MIST_BASE_CONCENTRATION.get();
             condenseEfficiency = CONDENSE_EFFICIENCY.get();
+            mediaConsumedPerTick = MEDIA_CONSUMED_PER_TICK.get();
             allayBurnerMistRadius = ALLAY_BURNER_MIST_RADIUS.get();
             allayBurnerMistPerTick = ALLAY_BURNER_MIST_PER_TICK.get();
             stormCorrectionHz = STORM_CORRECTION_HZ.get();
@@ -609,7 +614,7 @@ public final class ServerConfig {
             stormHelixChance=STORM_HELIX_CHANCE.get();
             stormDomeChance=STORM_DOME_CHANCE.get();
             stormStarfallInterval=STORM_STARFALL_INTERVAL.get();stormStarfallChance=STORM_STARFALL_CHANCE.get();
-            stormStarfallMaxActiveColumns=STORM_STARFALL_ACTIVE.get();stormStarfallColumnMembers=STORM_STARFALL_COLUMN_MEMBERS.get();
+            stormStarfallMaxActiveColumns=STORM_STARFALL_ACTIVE.get();
             stormWaveDamage = STORM_WAVE_DAMAGE.get();
             stormWaveRange = STORM_WAVE_RANGE.get();
             stormChaseY = STORM_CHASE_Y.get();
@@ -617,6 +622,8 @@ public final class ServerConfig {
             trinketMaxMedia = TRINKET_MAX_MEDIA.get();
             artifactMaxMedia = ARTIFACT_MAX_MEDIA.get();
             batteryMaxMedia = BATTERY_MAX_MEDIA.get();
+            batteryAnimaCapacityRatio = BATTERY_ANIMA_CAPACITY_RATIO.get();
+            partitionMovementExemptEntities = List.copyOf(PARTITION_MOVEMENT_EXEMPT.get());
             ysmApplyCrystalUnits = YSM_APPLY_CRYSTALS.get();
             ysmExportCrystalUnits = YSM_EXPORT_CRYSTALS.get();
             refreshHexJitSettings();

@@ -29,8 +29,8 @@ gradle.projectsEvaluated {
             def client=new File(runtime,'config/createmanaindustry-client.toml')
             def server=new File(runtime,'config/createmanaindustry-server.toml')
             client.parentFile.mkdirs();server.parentFile.mkdirs()
-            if(!client.exists())client.text='[experimental.gpuPackages]\nenabled = true\n\n[particles]\nautoThrottle = false\n'
-            if(!server.exists())server.text='[experimental.gpuPackages]\nenabled = true\n'
+            if(!client.exists())client.text='[experimental]\nclientPackages = true\n\n[particles]\nautoThrottle = false\n'
+            if(!server.exists())server.text='[experimental]\nserverPackages = true\n'
             logger.lifecycle('GPU client check directory: '+runtime)
         }
     }

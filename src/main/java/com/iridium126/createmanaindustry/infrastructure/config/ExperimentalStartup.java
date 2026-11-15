@@ -16,7 +16,13 @@ import net.neoforged.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 
-/** Process-local switches read before Mixin transforms any game classes. */
+/**
+ * Process-local switches read before Mixin transforms any game classes.
+ * <p>
+ * All three are flat entries of the {@code [experimental]} table: the server switch
+ * {@code serverPackages}, the client switch {@code clientPackages} (client file only) and the
+ * JIT mode {@code hexJitMode}. Missing or invalid values disable the feature.
+ */
 public final class ExperimentalStartup {
     public static final String SERVER_FILE = "createmanaindustry-server.toml";
     public static final String CLIENT_FILE = "createmanaindustry-client.toml";
@@ -42,8 +48,9 @@ public final class ExperimentalStartup {
         Path server = directory.resolve(SERVER_FILE);
         Path local = directory.resolve(CLIENT_FILE);
         Config serverConfig = readFile(server);
-        return new Settings(packagesEnabled(serverConfig, server),
-                client && packagesEnabled(readFile(local), local), hexJitMode(serverConfig, server));
+        Config clientConfig = client ? readFile(local) : null;
+        return new Settings(packagesEnabled(serverConfig, server, "serverPackages"),
+                packagesEnabled(clientConfig, local, "clientPackages"), hexJitMode(serverConfig, server));
     }
 
     private static Config readFile(Path file) {
@@ -57,15 +64,15 @@ public final class ExperimentalStartup {
         }
     }
 
-    private static boolean packagesEnabled(Config config, Path file) {
-        Object value = setting(config, file, "gpuPackages", "enabled");
+    private static boolean packagesEnabled(Config config, Path file, String key) {
+        Object value = setting(config, file, key);
         if (value instanceof Boolean enabled) return enabled;
-        if (value != null) invalid(file, "gpuPackages.enabled", "a boolean");
+        if (value != null) invalid(file, key, "a boolean");
         return false;
     }
 
     private static HexJitMode hexJitMode(Config config, Path file) {
-        Object value = setting(config, file, "hexJit", "mode");
+        Object value = setting(config, file, "hexJitMode");
         if (value instanceof String mode) {
             try {
                 return HexJitMode.valueOf(mode.toUpperCase(Locale.ROOT));
@@ -73,23 +80,20 @@ public final class ExperimentalStartup {
                 // Invalid modes stay off.
             }
         }
-        if (value != null) invalid(file, "hexJit.mode", "OFF, PROFILE or AUTO");
+        if (value != null) invalid(file, "hexJitMode", "OFF, PROFILE or AUTO");
         return HexJitMode.OFF;
     }
 
-    private static Object setting(Config config, Path file, String section, String key) {
+    /** Reads one entry of the {@code [experimental]} table from the raw TOML tree. */
+    private static Object setting(Config config, Path file, String key) {
         if (config == null) return null;
         Object experimental = config.get("experimental");
         if (experimental == null) return null;
-        if (!(experimental instanceof Config experiments)) {
+        if (!(experimental instanceof Config table)) {
             invalid(file, "", "a TOML table");
             return null;
         }
-        Object group = experiments.get(section);
-        if (group == null) return null;
-        if (group instanceof Config settings) return settings.get(key);
-        invalid(file, section, "a TOML table");
-        return null;
+        return table.get(key);
     }
 
     private static void invalid(Path file, String key, String expected) {

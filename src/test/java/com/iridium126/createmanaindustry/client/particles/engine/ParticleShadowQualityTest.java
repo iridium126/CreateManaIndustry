@@ -20,11 +20,14 @@ class ParticleShadowQualityTest {
     }
     @Test void movedKeysHaveNoLegacyAliases(){
         for(String key:new String[]{"partitionMaxParticles","sameFateMaxParticles"}){
-            assertNotNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("greatTricks."+key));
-            assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("particles."+key));
+            assertNotNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("particles."+key));
+            assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("greatTricks."+key));
         }
+        assertNotNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("rendering.lod"));
+        assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("allvr.lod"));
         assertNotNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("hexcasting.hexPatternGpuBudgetMiB"));
-        assertEquals(false, ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("experimental.gpuPackages.enabled").getDefault());
+        assertEquals(false, ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("experimental.clientPackages").getDefault());
+        assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("experimental.gpuPackages.enabled"));
         assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("packages.packageGpuAuthority"));
         assertNull(ClientConfig.SPEC.getValues().<net.neoforged.neoforge.common.ModConfigSpec.ConfigValue<?>>get("particles.packageGpuAuthority"));
     }

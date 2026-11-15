@@ -5,7 +5,7 @@ gradle.projectsEvaluated {
     p.dependencies.add('localRuntime', p.cmiCoordinates.hexparse)
     p.dependencies.add('compileOnly', p.cmiCoordinates.kotlinStdlib)
     p.configureCmiGameTests(name: 'hexal-jit', sources: 'src/test/gametest/hexjit/java', structure: 'hex_jit_test',
-            serverConfig: '[experimental.hexJit]\nmode = "AUTO"\n')
+            serverConfig: '[experimental]\nhexJitMode = "AUTO"\n')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.verbose', 'true')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.export', 'true')
     p.neoForge.runs.gameTestServer.systemProperty('mixin.debug.export.filter', 'at.petrak.hexcasting.*')

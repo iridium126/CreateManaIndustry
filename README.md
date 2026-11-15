@@ -42,7 +42,7 @@ fluid networks.
 Other integrations include slate stonecutting recipes for non-great-spell patterns, actions for
 reading an Iota from an item on a Depot or Placard and lighting Blaze Burners or Allay Burners, plus
 querying players in spell circles. A configurable server-side Hex JIT compiles hot call
-sites; its default mode is `AUTO` and can be changed in the server config.
+sites; it is off by default (`OFF`) and is enabled in the server config.
 
 The in-game guide content is packaged as Patchouli entries with English and Simplified Chinese
 localization.
@@ -124,9 +124,9 @@ can still override tuning such as budgets and thresholds.
 
 | File in `config/` | Setting | Default |
 |---|---|---|
-| `createmanaindustry-server.toml` | `experimental.gpuPackages.enabled` | `false` |
-| `createmanaindustry-server.toml` | `experimental.hexJit.mode` | `OFF` |
-| `createmanaindustry-client.toml` | `experimental.gpuPackages.enabled` | `false` |
+| `createmanaindustry-server.toml` | `experimental.serverPackages` | `false` |
+| `createmanaindustry-server.toml` | `experimental.hexJitMode` | `OFF` |
+| `createmanaindustry-client.toml` | `experimental.clientPackages` | `false` |
 
 Use `PROFILE` for Hex JIT profiling or `AUTO` for compilation. GPU package authority needs the
 server opt-in and a ready client that opted in. When the server switch is off, saved lightweight

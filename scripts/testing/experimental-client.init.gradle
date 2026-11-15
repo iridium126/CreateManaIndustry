@@ -45,8 +45,9 @@ gradle.projectsEvaluated {
             }
             new File(runDir, 'config').mkdirs()
             ['client', 'server'].each { key ->
+                def flag = key == 'client' ? 'clientPackages' : 'serverPackages'
                 new File(runDir, "config/createmanaindustry-${key}.toml").text =
-                    "[experimental.gpuPackages]\nenabled = ${key == side}\n"
+                    "[experimental]\n${flag} = ${key == side}\n"
             }
             new File(runDir, 'options.txt').text =
                     'onboardAccessibility:false\nrenderDistance:2\nsimulationDistance:5\npauseOnLostFocus:false\nmaxFps:30\n'

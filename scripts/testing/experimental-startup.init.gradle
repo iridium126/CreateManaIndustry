@@ -4,11 +4,11 @@ gradle.projectsEvaluated {
     def phase = (p.findProperty('experimentPhase') ?: 'default').toString()
     def cases = [
         'default': null,
-        'off': '[experimental.gpuPackages]\nenabled = false\n[experimental.hexJit]\nmode = "OFF"\n[gpuPackages]\nmainThreadBudgetMs = 17.0\n',
-        'profile': '[experimental.hexJit]\nmode = "PROFILE"\n',
-        'auto': '[experimental.hexJit]\nmode = "AUTO"\n',
-        'save': '[experimental.gpuPackages]\nenabled = true\n',
-        'restore': '[experimental.gpuPackages]\nenabled = false\n'
+        'off': '[experimental]\nserverPackages = false\nhexJitMode = "OFF"\nmainThreadBudgetMs = 17.0\n',
+        'profile': '[experimental]\nhexJitMode = "PROFILE"\n',
+        'auto': '[experimental]\nhexJitMode = "AUTO"\n',
+        'save': '[experimental]\nserverPackages = true\n',
+        'restore': '[experimental]\nserverPackages = false\n'
     ]
     if (!cases.containsKey(phase)) throw new GradleException("Unknown experimentPhase: ${phase}")
     def absent = p.findProperty('experimentAbsent')
@@ -30,10 +30,10 @@ gradle.projectsEvaluated {
             def override = new File(runDir, 'world/serverconfig/createmanaindustry-server.toml')
             override.parentFile.mkdirs()
             if (phase == 'off') java.nio.file.Files.deleteIfExists(override.toPath())
-            else override.setText('[experimental.gpuPackages]\nenabled = true\n[experimental.hexJit]\nmode = "AUTO"\n[gpuPackages]\nmainThreadBudgetMs = 17.0\n', 'UTF-8')
+            else override.setText('[experimental]\nserverPackages = true\nhexJitMode = "AUTO"\nmainThreadBudgetMs = 17.0\n', 'UTF-8')
             def client = new File(runDir, 'config/createmanaindustry-client.toml')
             client.parentFile.mkdirs()
-            client.setText('[experimental.gpuPackages]\nenabled = true\n', 'UTF-8')
+            client.setText('[experimental]\nclientPackages = true\n', 'UTF-8')
             if (phase == 'default') {
                 java.nio.file.Files.deleteIfExists(new File(runDir, 'config/createmanaindustry-server.toml').toPath())
             }
