@@ -1,119 +1,138 @@
 package com.iridium126.createmanaindustry.mixin.kinetics;
 
-import java.util.List;
-
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.iridium126.createmanaindustry.content.kinetics.temporarykinetics.TemporaryKinetics;
+import com.iridium126.createmanaindustry.content.kinetics.temporarykinetics.TemporaryKineticsAccess;
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.server.level.ServerLevel;
 
-/**
- * Temporary kinetics support for kinetic block entities:
- * <ul>
- *   <li>Adds temporary speed / stress capacity and source tracking.</li>
- *   <li>Syncs temporary kinetics state in client packets (write/read).</li>
- *   <li>Drops the client-mirrored state when the block entity is removed.</li>
- * </ul>
- * <p>
- * Field accessors live in {@link KineticBlockEntityAccessor} — applied mixin
- * classes cannot be loaded as regular classes at runtime, so external code
- * must go through the interface.
- * <p>
- * Priority 1100 (default 1000): mixins apply in ascending priority order and
- * injection callbacks run in application order, so this mixin's cancellable
- * RETURN hooks on {@code getGeneratedSpeed} / {@code calculateAddedStressCapacity}
- * are evaluated last and a temporary override deterministically wins over
- * same-point modifications from other addons instead of depending on mod load
- * order.
- */
-@Mixin(value = KineticBlockEntity.class, remap = false, priority = 1100)
-public class KineticBlockEntityMixin {
+@Mixin(value = KineticBlockEntity.class, remap = false)
+public abstract class KineticBlockEntityMixin implements TemporaryKineticsAccess {
+    @Shadow protected boolean wasMoved;
+    @Shadow protected float capacity;
 
-    @Inject(method = "getGeneratedSpeed", at = @At("RETURN"), cancellable = true)
-    private void createmanaindustry$addTemporaryGeneratedSpeed(CallbackInfoReturnable<Float> cir) {
-        KineticBlockEntity be = (KineticBlockEntity) (Object) this;
-        float speed = TemporaryKinetics.getSpeed(be);
-        if (speed != 0)
-            cir.setReturnValue(speed);
+    @Unique private volatile Effect createmanaindustry$temporaryEffect;
+    @Unique private boolean createmanaindustry$restoringTemporaryEffect;
+    @Unique private boolean createmanaindustry$temporarySourcePending;
+    @Unique private float createmanaindustry$nativeCapacitySnapshot = Float.NaN;
+
+    @Override
+    public Effect createmanaindustry$getTemporaryEffect() {
+        return createmanaindustry$temporaryEffect;
     }
 
-    // Note: no isSource hook needed — Create's implementation derives it from
-    // getGeneratedSpeed(), which the hook above already overrides.
+    @Override
+    public void createmanaindustry$setTemporaryEffect(Effect effect) {
+        createmanaindustry$temporaryEffect = effect;
+    }
 
-    @Inject(method = "calculateAddedStressCapacity", at = @At("RETURN"), cancellable = true)
-    private void createmanaindustry$addTemporaryKineticsCapacity(CallbackInfoReturnable<Float> cir) {
-        KineticBlockEntity be = (KineticBlockEntity) (Object) this;
-        cir.setReturnValue(cir.getReturnValueF() + TemporaryKinetics.getStress(be));
+    @Override
+    public boolean createmanaindustry$isRestoringTemporaryEffect() {
+        return createmanaindustry$restoringTemporaryEffect;
+    }
+
+    @Override
+    public boolean createmanaindustry$isTemporarySourcePending() {
+        return createmanaindustry$temporarySourcePending;
+    }
+
+    @Override
+    public void createmanaindustry$setTemporarySourcePending(boolean pending) {
+        createmanaindustry$temporarySourcePending = pending;
+    }
+
+    @Override
+    public float createmanaindustry$getNativeCapacitySnapshot() {
+        return createmanaindustry$nativeCapacitySnapshot;
+    }
+
+    @Override
+    public void createmanaindustry$setNativeCapacitySnapshot(float capacity) {
+        createmanaindustry$nativeCapacitySnapshot = capacity;
+    }
+
+    @Inject(method = "updateFromNetwork", at = @At("HEAD"))
+    private void createmanaindustry$recordDirectNetworkUpdate(float capacity, float stress, int size, CallbackInfo ci) {
+        createmanaindustry$nativeCapacitySnapshot = capacity;
+    }
+
+    @ModifyReturnValue(method = "isSource", at = @At("RETURN"))
+    private boolean createmanaindustry$recognizeTemporarySource(boolean nativeSource) {
+        return nativeSource || TemporaryKinetics.isActive((KineticBlockEntity) (Object) this);
+    }
+
+    @WrapOperation(method = "validateKinetics", at = @At(value = "INVOKE",
+            target = "Lcom/simibubi/create/content/kinetics/base/KineticBlockEntity;getGeneratedSpeed()F"))
+    private float createmanaindustry$validateEffectiveSpeed(KineticBlockEntity be, Operation<Float> original) {
+        float temporary = TemporaryKinetics.getSpeed(be);
+        return temporary == 0 ? original.call(be) : temporary;
     }
 
     @Inject(method = "removeSource", at = @At("HEAD"))
     private void createmanaindustry$rememberTemporarySource(CallbackInfo ci) {
-        KineticBlockEntity be = (KineticBlockEntity) (Object) this;
-        TemporaryKinetics.removeSource(be);
+        TemporaryKinetics.rememberLostSource((KineticBlockEntity) (Object) this);
     }
 
-    @Inject(method = "setSource", at = @At("RETURN"))
-    private void createmanaindustry$updateTemporaryReactivation(BlockPos source, CallbackInfo ci) {
-        KineticBlockEntity be = (KineticBlockEntity) (Object) this;
-        if (source == null || be.getLevel() == null)
-            return;
-        BlockEntity sourceBE = be.getLevel()
-            .getBlockEntity(source);
-        TemporaryKinetics.setSource(be, sourceBE);
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void createmanaindustry$expireTemporarySource(CallbackInfo ci) {
+        if (createmanaindustry$temporaryEffect != null)
+            TemporaryKinetics.beforeTick((KineticBlockEntity) (Object) this);
     }
 
     @Inject(method = "tick", at = @At("RETURN"))
-    private void createmanaindustry$tickTemporarySource(CallbackInfo ci) {
-        TemporaryKinetics.tickBlockEntity((KineticBlockEntity) (Object) this);
+    private void createmanaindustry$reactivateTemporarySource(CallbackInfo ci) {
+        if (createmanaindustry$temporarySourcePending)
+            TemporaryKinetics.reactivateSource((KineticBlockEntity) (Object) this);
     }
 
-    @Inject(method = "addToGoggleTooltip", at = @At("RETURN"), cancellable = true)
-    private void createmanaindustry$addTemporaryGeneratorStats(List<Component> tooltip, boolean isPlayerSneaking,
-            CallbackInfoReturnable<Boolean> cir) {
+    @Inject(method = "attachKinetics", at = @At("HEAD"), cancellable = true)
+    private void createmanaindustry$waitForRestoration(CallbackInfo ci) {
+        if (createmanaindustry$restoringTemporaryEffect)
+            ci.cancel();
+    }
+
+    @Inject(method = "initialize", at = @At(value = "INVOKE",
+            target = "Lcom/simibubi/create/foundation/blockEntity/SmartBlockEntity;initialize()V"))
+    private void createmanaindustry$restoreAfterNetworkRegistration(CallbackInfo ci) {
+        if (!createmanaindustry$restoringTemporaryEffect)
+            return;
+
+        createmanaindustry$restoringTemporaryEffect = false;
         KineticBlockEntity be = (KineticBlockEntity) (Object) this;
-        if (TemporaryKinetics.addToGoggleTooltip(be, tooltip))
-            cir.setReturnValue(true);
+        if (be.getLevel() instanceof ServerLevel)
+            TemporaryKinetics.finishRestoring(be);
     }
 
     @Inject(method = "write", at = @At("RETURN"))
-    private void createmanaindustry$writeTemporaryKinetics(CompoundTag compound, HolderLookup.Provider registries,
+    private void createmanaindustry$writeTemporaryKinetics(CompoundTag tag, HolderLookup.Provider registries,
             boolean clientPacket, CallbackInfo ci) {
-        if (clientPacket)
-            TemporaryKinetics.writeClient((KineticBlockEntity) (Object) this, compound);
+        TemporaryKinetics.write((KineticBlockEntity) (Object) this, tag, clientPacket);
     }
 
     @Inject(method = "read", at = @At("RETURN"))
-    private void createmanaindustry$readTemporaryKinetics(CompoundTag compound, HolderLookup.Provider registries,
+    private void createmanaindustry$readTemporaryKinetics(CompoundTag tag, HolderLookup.Provider registries,
             boolean clientPacket, CallbackInfo ci) {
-        if (clientPacket)
-            TemporaryKinetics.readClient((KineticBlockEntity) (Object) this, compound);
-    }
-
-    /**
-     * Client mirror cleanup: the mirrored store entry must die together with
-     * the block entity. Without this, a block broken mid-effect leaves its
-     * client-side state behind until the position is re-synced or the
-     * dimension changes — server expiry packets only cover blocks that
-     * outlive their effect. The server entry is intentionally kept: it is a
-     * harmless countdown, and eager removal would break temporary states on
-     * contraptions (assembly removes and later recreates the block entity).
-     */
-    @Inject(method = "remove", at = @At("HEAD"))
-    private void createmanaindustry$clearTemporaryKineticsOnRemove(CallbackInfo ci) {
-        KineticBlockEntity be = (KineticBlockEntity) (Object) this;
-        Level level = be.getLevel();
-        if (level != null && level.isClientSide)
-            TemporaryKinetics.clearClient(be);
+        if (clientPacket) {
+            var effect = TemporaryKinetics.readEffect(tag, true);
+            if (effect != null || createmanaindustry$temporaryEffect != null)
+                TemporaryKinetics.readClient((KineticBlockEntity) (Object) this, effect);
+        } else {
+            createmanaindustry$temporaryEffect = wasMoved ? null : TemporaryKinetics.readEffect(tag, false);
+            createmanaindustry$restoringTemporaryEffect = createmanaindustry$temporaryEffect != null;
+            createmanaindustry$temporarySourcePending = false;
+            createmanaindustry$nativeCapacitySnapshot = capacity;
+        }
     }
 }

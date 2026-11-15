@@ -28,3 +28,5 @@ Inputs are **position, speed, duration in Ticks**, in that order. A negative spe
 The default cost is **0.008 × absolute speed × duration in Ticks G**. A speed of 32 for 20 Ticks costs 5.12 G. The server can adjust the stress conversion rate and cost multiplier.
 
 When the duration expires, the temporary source is removed and ordinary kinetic connections take over again. The target must be a loaded kinetic block.
+
+Unloading the target pauses its temporary stress supply while the duration keeps counting down. Assembly into a moving contraption ends the effect.

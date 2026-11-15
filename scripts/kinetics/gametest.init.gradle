@@ -1,0 +1,6 @@
+gradle.projectsEvaluated {
+    def project = gradle.rootProject
+    project.apply from: project.file('scripts/testing/common.gradle')
+    project.configureCmiGameTests(name: 'temporary-kinetics', sources: 'scripts/kinetics/gametest',
+            structure: 'temporary_kinetics_test', size: 19, trickster: false)
+}

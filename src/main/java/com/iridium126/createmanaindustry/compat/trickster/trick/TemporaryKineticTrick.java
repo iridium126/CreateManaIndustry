@@ -30,7 +30,7 @@ public final class TemporaryKineticStressTrick extends Trick<TemporaryKineticStr
         double speedInput = speed.number();
         float stressMagnitude = (float) Math.abs(speedInput) * STRESS_PER_SPEED;
         int durationTicks = (int) Math.floor(duration.number());
-        if (stressMagnitude <= 0 || durationTicks <= 0) {
+        if (!Float.isFinite(stressMagnitude) || stressMagnitude <= 0 || durationTicks <= 0) {
             throw new InvalidKineticStressBlunder(stressMagnitude, durationTicks);
         }
 
