@@ -14,7 +14,7 @@ class ParticleDiagnosticsReportTest {
     }
     @Test void anUnstartedProfileOnlyShowsOneHint(){
         var diagnostics=new ParticleDiagnostics();var frame=new GpuBudgetLedger().snapshot();
-        assertEquals("[CMI profile] off; /cmi particle profile on",diagnostics.summary(frame));
+        assertEquals("[CMI/profile] off; /cmi particle profile on",diagnostics.summary(frame));
         assertEquals(diagnostics.summary(frame),diagnostics.report(frame));
     }
     @Test @SuppressWarnings("unchecked") void reportsHaveBoundedSummariesAndOrganizedDetails()throws Exception{
