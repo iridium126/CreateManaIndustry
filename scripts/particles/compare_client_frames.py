@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import statistics
 from collections import Counter
+from storm_capture_backend import storm_backend, validate_storm_backend
 
 
 def yaw_delta(a,b):
@@ -31,6 +32,10 @@ def load(path, production_builds=False, particle_engine=False):
     if meta['engine_source_sha256']=='unavailable' or (not production_builds and not particle_engine and meta['diagnostic_receipt_sha256'] in ('none','unavailable')):raise ValueError('unqualified/missing diagnostic source receipt')
     if meta.get('invalid_reason') or len(rows)<1000 or meta.get('measured_seconds',0)<30:
         raise ValueError(f'{path}: invalid/short capture; requires 30 seconds and 1000 frames')
+    if particle_engine:
+        if meta.get('spatial_unretired_at_export', 0) or meta.get('storm_unconsumed_at_export', 0):
+            raise ValueError(f'{path}: native lifecycle receipts did not drain')
+        validate_storm_backend(meta.get('backend'), path)
     values=[float(row['interval_ms']) for row in rows]
     if not all(math.isfinite(v) and v>0 for v in values):raise ValueError('nonfinite/nonpositive frame interval')
     if abs(sum(values)/1000-meta['measured_seconds'])>1.e-5:raise ValueError('frame CSV duration does not match committed metadata')
@@ -111,17 +116,16 @@ def compare_particle_engine(manifest):
         baseline,candidate=pairs['ab']
         def config(c):
             m=c['metadata']
-            match=re.search(r'\bactive=(gl|rt)\b(?!-)',m.get('backend',''))
-            if not match or type(m.get('rt_camera_requested')) is not bool or type(m.get('receiving_requested')) is not bool:
+            _,state,api=storm_backend(m.get('backend'))
+            if state!='running' or api not in ('opengl','optix','dxr') or type(m.get('rt_camera_requested')) is not bool or type(m.get('receiving_requested')) is not bool:
                 raise ValueError('missing actual simulation or camera/receiver configuration')
-            return dict(build=m.get('build_sha256'),simulation=match[1],camera=m['rt_camera_requested'],
+            return dict(build=m.get('build_sha256'),simulation=api,camera=m['rt_camera_requested'],
                         casting=m.get('shadow_quality'),receiving=m['receiving_requested'])
         a,b=config(baseline),config(candidate)
         if {key for key in a if a[key]!=b[key]}!={changed}:raise ValueError('expected exactly one changed factor')
         if any(not re.fullmatch('[0-9a-f]{64}',str(conf['build'])) for conf in (a,b)):raise ValueError('missing distribution build identity')
         if configurations is None:configurations=(a,b)
         if configurations!=(a,b):raise ValueError('factor configurations differ across rounds')
-        if factor=='simulation' and (a['simulation'],b['simulation'])!=('gl','rt'):raise ValueError('simulation pair must be GL to RT')
         if factor=='camera' and (a['camera'],b['camera'])!=(False,True):raise ValueError('camera pair must enable RT')
         if factor=='light' and (a['casting'],b['casting'])!=('FULL','RT'):raise ValueError('shadow pair must be FULL to RT')
         for side,captures,expected in (('baseline',pairs['aa']+[baseline],a),('candidate',pairs['candidate_aa']+[candidate],b)):

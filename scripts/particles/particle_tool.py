@@ -9,6 +9,7 @@ import subprocess
 import time
 import zipfile
 from pathlib import Path
+from storm_capture_backend import validate_storm_backend
 
 ROOT = Path(__file__).resolve().parents[2]
 INIT = ROOT / "scripts/particles/gpu.init.gradle"
@@ -91,14 +92,9 @@ def frame_window(path):
         raise ValueError(f"Invalid frame window: {path}: {metadata['invalid_reason']}")
     if metadata.get('spatial_unretired_at_export', 0):
         raise ValueError(f'Spatial lifecycle receipts did not drain: {path}')
-    backend = str(metadata.get('backend') or '')
-    if 'active=rt-' in backend or ('requested=rt' in backend and 'active=rt ' not in backend):
-        raise ValueError(f'RT backend was not active for qualification: {backend}')
-    if 'active=rt ' in backend:
-        from spatial_audit import audit
-        spatial = path.with_name(path.stem + '-spatial.csv')
-        if not spatial.is_file() or not audit(spatial, True)['passed']:
-            raise ValueError(f'Incomplete RT lifecycle evidence: {path}')
+    if metadata.get('storm_unconsumed_at_export', 0):
+        raise ValueError(f'Storm lifecycle receipts did not drain: {path}')
+    validate_storm_backend(metadata.get('backend'), path)
     with path.open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
     # The schema is selected explicitly; missing samples are never replaced by zero.

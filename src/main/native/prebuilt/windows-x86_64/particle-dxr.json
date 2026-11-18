@@ -1,0 +1,8 @@
+{
+  "dll": "CmiParticleDxr.dll",
+  "platform": "windows-x86_64",
+  "version": "13.3.2.0",
+  "abi": 13,
+  "dll_sha256": "d6adc0d09637fb9921d55d64dc0651344a4a90c5665b72377c10ad5f8c7d0cef",
+  "embedded_device_programs": true
+}

@@ -7,6 +7,7 @@ import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime;
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
 import com.iridium126.createmanaindustry.client.particles.engine.HexSpecs;
+import com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput;
 import com.iridium126.createmanaindustry.infrastructure.output.CMICommandOutput.Outcome;
@@ -129,12 +130,8 @@ public final class CMIParticleCommand {
                         .then(Commands.literal("profile")
                                 .executes(CMIParticleCommand::profile)
                                 .then(Commands.literal("details").executes(CMIParticleCommand::profileDetails))
-                                .then(Commands.literal("hardware").then(Commands.literal("status").executes(ctx->{
-                                    CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.PROFILE,
-                                            "Spatial query hardware",
-                                            com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.status().lines().toList());
-                                    return 1;
-                                })))
+                                .then(Commands.literal("hardware").then(Commands.literal("status")
+                                        .executes(CMIParticleCommand::hardwareStatus)))
                                 .then(Commands.literal("frames")
                                         .then(Commands.literal("cancel").executes(ctx -> {
                                             boolean cancelled = com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture.INSTANCE.cancel();
@@ -183,6 +180,12 @@ public final class CMIParticleCommand {
     // ------------------------------------------------------------------
     // Handlers
     // ------------------------------------------------------------------
+
+    private static int hardwareStatus(CommandContext<CommandSourceStack> ctx) {
+        CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.PROFILE, "Storm hardware",
+                SpatialQueryRuntime.INSTANCE.status().lines().toList());
+        return Command.SINGLE_SUCCESS;
+    }
 
     private static int emit(CommandContext<CommandSourceStack> ctx, boolean streaming, float seconds) {
         String source = StringArgumentType.getString(ctx, "source");

@@ -1,0 +1,47 @@
+// SDK-free builds embed developer-built modules with a verified resource ABI.
+def nativeRoot = file('src/main/native')
+def release = new File(nativeRoot, 'prebuilt/windows-x86_64')
+def resourceContract = file('src/main/gpu/particle-resources.json')
+def generated = layout.buildDirectory.dir('generated/particleNativeResources')
+def modules = [
+    optix: [dll: 'CmiParticleOptix.dll', header: 'Version.h', macro: 'CMI_OPTIX_VERSION'],
+    dxr: [dll: 'CmiParticleDxr.dll', header: 'StormDxrVersion.h', macro: 'CMI_DXR_VERSION']
+]
+
+def prepareParticleNativeResources = tasks.register('prepareParticleNativeResources') {
+    inputs.files(fileTree(nativeRoot) { include 'particle_common/**', 'particle_optix/**', 'particle_dxr/**' })
+    inputs.file(file('src/main/resources/assets/createmanaindustry/shaders/particles/chunks/storm_home.glsl'))
+    inputs.file(resourceContract)
+    inputs.dir(release)
+    outputs.dir(generated)
+    doLast {
+        def contract = new groovy.json.JsonSlurper().parse(resourceContract)
+        def header = '#pragma once\n// Generated from src/main/gpu/particle-resources.json.\n' +
+                contract.constants.collect { key, value -> "#define CMI_RESOURCE_${key} ${value}\n" }.join('')
+        if (new File(nativeRoot, 'particle_common/ResourceLayout.h').getText('UTF-8').replace('\r', '') != header)
+            throw new GradleException('Native resource layout is stale. Regenerate and rebuild the native modules.')
+
+        def output = generated.get().dir('native/particles/windows-x86_64').asFile
+        output.mkdirs()
+        def properties = new StringBuilder()
+        modules.each { backend, module ->
+            def metadata = new groovy.json.JsonSlurper().parse(new File(release, "particle-${backend}.json"))
+            def dll = new File(release, module.dll)
+            def sha256 = java.security.MessageDigest.getInstance('SHA-256').digest(dll.bytes).encodeHex().toString()
+            def versionHeader = new File(nativeRoot, "particle_${backend}/${module.header}").getText('UTF-8')
+            def version = (versionHeader =~ /#define ${module.macro} "([0-9.]+)"/)[0][1]
+            if (metadata.dll != module.dll || metadata.platform != 'windows-x86_64' || metadata.version != version ||
+                    metadata.abi != contract.constants.ABI || metadata.dll_sha256 != sha256 || !metadata.embedded_device_programs)
+                throw new GradleException("Invalid prebuilt ${backend} release. Rebuild and publish ${module.dll}.")
+            java.nio.file.Files.copy(dll.toPath(), new File(output, module.dll).toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            properties.append(backend).append('Version=').append(version).append('\n')
+        }
+        new File(output, 'release.properties').setText(properties.toString(), 'UTF-8')
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn(prepareParticleNativeResources)
+    from(generated)
+}

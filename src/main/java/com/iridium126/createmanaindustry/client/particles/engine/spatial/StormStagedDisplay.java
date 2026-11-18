@@ -5,7 +5,7 @@ import java.nio.ByteBuffer;
 import org.lwjgl.opengl.GL45;
 import static com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.*;
 
-/** Render-side staging for a CUDA device other than the current GL adapter. */
+/** Persistent OpenGL upload slots for native Storm display snapshots. */
 final class StormStagedDisplay implements AutoCloseable {
     private static final int COLUMN_BYTES = STORM_COLUMN_MEMBERS * STORM_DISPLAY_COLUMN_BYTES;
     private static final int MAP = GL45.GL_MAP_WRITE_BIT | GL45.GL_MAP_PERSISTENT_BIT;

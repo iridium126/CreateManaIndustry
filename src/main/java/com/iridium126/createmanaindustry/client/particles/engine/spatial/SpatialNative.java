@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 import java.nio.file.Path;
 import static com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.*;
 
-/** Loading this class never loads CUDA; GL remains a complete backend. */
+/** Entry points for OptiX and CUDA. The library loads on demand. */
 public final class SpatialNative {
     private static Path loaded;
     private static String loadedVersion="unloaded";
@@ -12,11 +12,11 @@ public final class SpatialNative {
     private SpatialNative() {}
     public static synchronized void load(Path modules){
         Path path=modules.toAbsolutePath().normalize();
-        if(java.nio.file.Files.isDirectory(path))path=path.resolve("CmiParticleRt.dll");
-        if(loaded!=null){if(!loaded.equals(path))throw new IllegalStateException("Restart before replacing the RT module");return;}
+        if(java.nio.file.Files.isDirectory(path))path=path.resolve("CmiParticleOptix.dll");
+        if(loaded!=null){if(!loaded.equals(path))throw new IllegalStateException("Restart before replacing the OptiX module");return;}
         org.lwjgl.system.Library.loadSystem(System::load,System::loadLibrary,SpatialNative.class,"createmanaindustry",path.toString());
         String version=version();
-        if(!ParticleRtModules.VERSION.equals(version))throw new IllegalStateException("Particle RT native version mismatch");
+        if(!ParticleNativeModules.OPTIX_VERSION.equals(version))throw new IllegalStateException("Particle OptiX native version mismatch");
         verifyCapabilities(capabilities());
         loadedVersion=version;
         loaded=path;
@@ -25,7 +25,7 @@ public final class SpatialNative {
         try{var r=com.google.gson.JsonParser.parseString(receipt).getAsJsonObject();
             boolean probes=false;var modes=new java.util.HashSet<Integer>();for(var p:r.getAsJsonArray("probes"))modes.add(p.getAsInt());probes=modes.equals(java.util.Set.of(2,4));
             if(r.get("packet_header_bytes").getAsInt()!=SPATIAL_HEADER_BYTES||r.get("input_stride").getAsInt()!=SPATIAL_RECORD_BYTES||r.get("output_stride").getAsInt()!=SPATIAL_RECORD_BYTES||!probes||Math.abs(r.get("horizon").getAsDouble()-.1)>1e-8||!r.get("primitive").getAsString().equals("opaque-triangle-box")||!r.get("precompiled").getAsBoolean()||r.get("cpu_envelope_readback").getAsBoolean())throw new IllegalArgumentException("incompatible layout or execution contract");
-        }catch(RuntimeException failure){throw new IllegalStateException("Particle RT capability receipt rejected",failure);}
+        }catch(RuntimeException failure){throw new IllegalStateException("Particle OptiX capability receipt rejected",failure);}
     }
     public static native String version();
     public static native long ownedBytes();
@@ -39,6 +39,7 @@ public final class SpatialNative {
     public static native long createReference(long bridge,int capacity,int terrainCapacity,int probes,long epoch,String modules);
     public static native boolean submit(long worker,int slot,long nonce,long sourceTick,long scene,int kind);
     public static native boolean submitRange(long worker,int slot,long nonce,long sourceTick,long scene,int kind,int members,int terrain);
+    static native boolean submitRangeUntimed(long worker,int slot,long nonce,long sourceTick,long scene,int kind,int members,int terrain);
     public static native int poll(long worker,int slot,long nonce);
     public static native int consume(long worker,int slot,long nonce);
     public static native boolean recycle(long worker,int slot,long nonce,long fence);

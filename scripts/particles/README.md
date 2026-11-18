@@ -12,7 +12,8 @@ python scripts/particles/particle_tool.py analyze --a <三份CSV> --aa <三份CS
 python scripts/particles/particle_tool.py package
 python scripts/particles/particle_tool.py topology --seconds 900 --members 65536
 python scripts/particles/particle_tool.py lifecycle --capture <spatial.csv> --require-drained
-powershell -File scripts/particles/build_rt.ps1
+powershell -File scripts/particles/build_optix.ps1
+powershell -File scripts/particles/build_dxr.ps1 -Publish
 ```
 
 GPU 夹具使用隐藏 GLFW 窗口，不启动 Minecraft；顺序运行，避免相互干扰计时。`GpuValidationSupport.java` 统一创建和销毁隐藏 OpenGL 4.5 上下文，由 `validation.init.gradle` 编译并注入全部验证任务的 classpath；`gpu.init.gradle` 按当前入口编译共享夹具，`validation.init.gradle` 提供物流、Hex、阴影和光影适配任务。普通构建不需要原生 SDK。

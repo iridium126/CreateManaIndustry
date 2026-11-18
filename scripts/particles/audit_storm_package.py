@@ -33,18 +33,26 @@ def main():
             classes.append(base/"com/iridium126/createmanaindustry/CreateManaIndustry.class")
             for path in classes:
                 require(path.relative_to(base).as_posix())
-            metadata = json.loads(Path("src/main/native/prebuilt/windows-x86_64/manifest.json").read_text(encoding="utf-8"))
-            module = "native/particle-rt/windows-x86_64/"
-            bundled = mod.read(module + "CmiParticleRt.dll") if module + "CmiParticleRt.dll" in names else b""
-            require(module + "CmiParticleRt.dll")
-            if digest(bundled) != metadata["dll_sha256"]:
-                mismatches.append(module + "CmiParticleRt.dll")
-            properties = dict(line.split("=", 1) for line in mod.read(module + "release.properties").decode("utf-8").splitlines() if "=" in line) if module + "release.properties" in names else {}
-            if properties.get("version") != metadata["version"]:
-                mismatches.append(module + "release.properties")
-            if not metadata.get("embedded_device_programs"):
-                mismatches.append("native release manifest")
-            native = dict(version=properties.get("version"), embedded_device_programs=metadata.get("embedded_device_programs"), bytes=len(bundled))
+            release = Path("src/main/native/prebuilt/windows-x86_64")
+            module = "native/particles/windows-x86_64/"
+            properties_path = module + "release.properties"
+            require(properties_path)
+            properties = dict(line.split("=", 1) for line in mod.read(properties_path).decode("utf-8").splitlines()
+                              if "=" in line) if properties_path in names else {}
+            abi = json.loads(Path("src/main/gpu/particle-resources.json").read_text(encoding="utf-8"))["constants"]["ABI"]
+            for backend, dll in (("optix", "CmiParticleOptix.dll"), ("dxr", "CmiParticleDxr.dll")):
+                manifest = release / f"particle-{backend}.json"
+                metadata = json.loads(manifest.read_text(encoding="utf-8"))
+                path = module + dll
+                bundled = mod.read(path) if path in names else b""
+                require(path)
+                if (metadata["dll"] != dll or metadata["platform"] != "windows-x86_64" or metadata["abi"] != abi
+                        or not metadata["embedded_device_programs"] or digest(bundled) != metadata["dll_sha256"]):
+                    mismatches.append(path)
+                if properties.get(backend + "Version") != metadata["version"]:
+                    mismatches.append(properties_path + " " + backend)
+                native[backend] = dict(version=metadata["version"], abi=abi, sha256=digest(bundled), bytes=len(bundled))
+            mismatches.extend(sorted(name for name in names if name.startswith("native/particle-rt/")))
             for template in ("dome-template-v4.bin", "helix-template-v1.bin", "quadratic-c050.bin", "quadratic-c050-fit.json"):
                 require("data/createmanaindustry/" + template)
             fixtures = [name for name in names if re.search(r"GameTests|GpuValidation|/gametest/|\.validation\.json$|dome-v4-source|allaystorm/.*certificate", name)]

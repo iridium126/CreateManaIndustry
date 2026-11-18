@@ -51,7 +51,7 @@ public final class RtTopologyReplayGpu {
         report.put("scope","fixed-input spatial queries only; no game simulation, shading, pose caching or full-frame qualification");
         report.put("complete_plan_replay",false);report.put("execution","serial AB/BA; no overlapping strategy queries");report.put("gpu",GL11.glGetString(GL11.GL_RENDERER));report.put("driver",GL11.glGetString(GL11.GL_VERSION));
         try(var csv=Files.newBufferedWriter(out.resolve("topology.csv"))){
-            Path modules=Path.of(".gradle/particle-rt/build");SpatialNative.load(modules);program=GpuShaderCompiler.compute("fixed topology workload",PACKER);
+            Path modules=Path.of(".gradle/particle-optix/build");SpatialNative.load(modules);program=GpuShaderCompiler.compute("fixed topology workload",PACKER);
             int[][][] buffers=new int[2][3][];
             for(int b=0;b<2;b++){
                 bridges[b]=SpatialNative.createBuffers(128L+(members+terrain)*64L,3);

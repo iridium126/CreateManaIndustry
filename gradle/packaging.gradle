@@ -6,7 +6,8 @@
 def identityDirectory = layout.buildDirectory.dir('generated/performanceIdentity')
 def identityRoot = layout.projectDirectory.asFile
 def performanceInputs = files('build.gradle', 'settings.gradle', 'gradle.properties',
-        'src/main/gpu/particle-resources.json', 'src/main/native/prebuilt/windows-x86_64/manifest.json')
+        'src/main/gpu/particle-resources.json', 'src/main/native/prebuilt/windows-x86_64/particle-optix.json',
+        'src/main/native/prebuilt/windows-x86_64/particle-dxr.json')
 def gitText = { List<String> command ->
     def process = new ProcessBuilder(command).directory(identityRoot).redirectErrorStream(true).start()
     def output = process.inputStream.getText('UTF-8').trim()

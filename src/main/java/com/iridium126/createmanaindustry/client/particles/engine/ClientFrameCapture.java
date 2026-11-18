@@ -18,6 +18,7 @@ public final class ClientFrameCapture {
     private static final int CAPACITY=300_000;
     private volatile int requestedSeconds;
     private Window window;
+    private long captureGeneration;
     private GpuTimestampRing timer;
     private long start,previousHead,head,frameId;
     private int active=-1;
@@ -90,6 +91,7 @@ public final class ClientFrameCapture {
         requestedSeconds=seconds;return true;
     }
     public boolean collecting(){return window!=null&&window.collecting;}
+    public long collectingGeneration(){return collecting()?captureGeneration:0;}
     public boolean busy(){return window!=null||requestedSeconds!=0;}
     public boolean tracksSpatial(long worker,int kind,long scene,long nonce){return window!=null&&window.spatialTickets.contains(new SpatialKey(worker,kind,scene,nonce));}
     public void stormSubmitted(long worker,long sequence,long identity,long tick,int slot,int members,int terrain,
@@ -160,7 +162,7 @@ public final class ClientFrameCapture {
         var mc=Minecraft.getInstance();
         if(requestedSeconds!=0&&window==null){
             if(mc.level==null||!mc.isWindowActive()){requestedSeconds=0;CreateManaIndustry.LOGGER.warn(CMILog.FRAMES + "capture requires an active world window");return;}
-            window=new Window();window.seconds=requestedSeconds;requestedSeconds=0;
+            window=new Window();captureGeneration++;window.seconds=requestedSeconds;requestedSeconds=0;
             window.bindingsStart=GpuBindings.submitted();window.bindingsAvoidedStart=GpuBindings.avoided();
             var uniformCounters=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
             window.uniformsStart=uniformCounters.submissions();window.uniformsAvoidedStart=uniformCounters.avoided();
@@ -400,7 +402,7 @@ public final class ClientFrameCapture {
         w.metadata.put("stage_records",w.stageEntries);
         w.metadata.put("spatial_unretired_at_export",w.spatialTickets.size());
         w.metadata.put("storm_unconsumed_at_export",w.stormTickets.size());
-        w.metadata.put("storm_gpu_scope","CUDA tick segments may overlap OpenGL and frame intervals");
+        w.metadata.put("storm_gpu_scope","Native Storm tick segments may overlap OpenGL and frame intervals");
         w.metadata.put("rt_native_owned_bytes",com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialNative.bytes());
         w.metadata.put("rt_visibility_end",com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.particleVisibilityStatus());
         w.metadata.put("spatial_scope","submissions created during this window; lifecycle receipts drain after stop");

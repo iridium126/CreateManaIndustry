@@ -392,8 +392,8 @@ public final class ParticleEngineGpuValidation {
         if(nativeEnabled){n=65536;var data=packet(n,0,1,7,0);var result=nativeBatch(data,n,0,2);check(result.getLong(8)==1&&result.getInt(44)==0&&result.getInt(72)==1,"65,536-member native IAS completion");check(result.getInt(128+(n-1)*64+28)==1,"last stable member published");cases.add(Map.of("case","RT 65,536 members","passed",true));}
     }
     static ByteBuffer nativeBatch(ByteBuffer data,int n,int terrain,int probes)throws Exception{
-        SpatialNative.load(Path.of(".gradle/particle-rt/build"));long bridge=SpatialNative.createBuffers(data.capacity(),3),worker=0;boolean done=false;
-        try{worker=SpatialNative.create(bridge,n,terrain,probes,91,Path.of(".gradle/particle-rt/build").toAbsolutePath().toString());int[] buffers=SpatialNative.buffers(bridge,0);GL45.glNamedBufferSubData(buffers[0],0,data);check(SpatialNative.submit(worker,0,1,7,91,data.getInt(80)),"native geometry submit");long end=System.nanoTime()+15_000_000_000L;while(SpatialNative.poll(worker,0,1)==1){check(System.nanoTime()<end,"native geometry timeout");Thread.sleep(1);}check(SpatialNative.poll(worker,0,1)==2,SpatialNative.diagnostics(worker));SpatialNative.consume(worker,0,1);var result=read(buffers[1],data.capacity());long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);while(!SpatialNative.recycle(worker,0,1,fence)){check(System.nanoTime()<end,"native geometry consumer retirement");Thread.sleep(1);}GL32.glDeleteSync(fence);done=true;return result;
+        SpatialNative.load(Path.of(".gradle/particle-optix/build"));long bridge=SpatialNative.createBuffers(data.capacity(),3),worker=0;boolean done=false;
+        try{worker=SpatialNative.create(bridge,n,terrain,probes,91,Path.of(".gradle/particle-optix/build").toAbsolutePath().toString());int[] buffers=SpatialNative.buffers(bridge,0);GL45.glNamedBufferSubData(buffers[0],0,data);check(SpatialNative.submit(worker,0,1,7,91,data.getInt(80)),"native geometry submit");long end=System.nanoTime()+15_000_000_000L;while(SpatialNative.poll(worker,0,1)==1){check(System.nanoTime()<end,"native geometry timeout");Thread.sleep(1);}check(SpatialNative.poll(worker,0,1)==2,SpatialNative.diagnostics(worker));SpatialNative.consume(worker,0,1);var result=read(buffers[1],data.capacity());long fence=GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0);while(!SpatialNative.recycle(worker,0,1,fence)){check(System.nanoTime()<end,"native geometry consumer retirement");Thread.sleep(1);}GL32.glDeleteSync(fence);done=true;return result;
         }finally{if(worker!=0){long end=System.nanoTime()+15_000_000_000L;while(!SpatialNative.close(worker)){if(System.nanoTime()>=end)throw new IllegalStateException("Native geometry worker did not retire; bridge retained");Thread.sleep(1);}}SpatialNative.closeBuffers(bridge);check(SpatialNative.ownedBytes()==0,"geometry worker allocations retired");}
     }
     static void localCorrection(List<Object> cases){
@@ -420,7 +420,7 @@ public final class ParticleEngineGpuValidation {
         }finally{GL11.glDeleteTextures(rowTexture);GL11.glDeleteTextures(metaTexture);for(int b:new int[]{rows,pool,meta,scratch,grid,counter})GL15.glDeleteBuffers(b);GL20.glDeleteProgram(p);}
     }
     static void nativeQueries(List<Object> cases)throws Exception{
-        Path modules=Path.of(".gradle/particle-rt/build");SpatialNative.load(modules);long bridge=0,worker=0;int n=257;long[] tickets=new long[3];
+        Path modules=Path.of(".gradle/particle-optix/build");SpatialNative.load(modules);long bridge=0,worker=0;int n=257;long[] tickets=new long[3];
         try{
             bridge=SpatialNative.createBuffers(128+n*64,3);worker=SpatialNative.create(bridge,n,0,2,91,modules.toAbsolutePath().toString());
             for(int frame=0;frame<8;frame++){
@@ -441,16 +441,16 @@ public final class ParticleEngineGpuValidation {
         check(SpatialNative.ownedBytes()==0,"all native allocations retired");
     }
     static void nativeWorkerQueue(List<Object> cases)throws Exception{
-        Path modules=Path.of(".gradle/particle-rt/build");int n=65;long until=System.nanoTime()+15_000_000_000L;
-        var worker=new RtQueryWorker(n,0,2,91,modules);
+        Path modules=Path.of(".gradle/particle-optix/build");int n=65;long until=System.nanoTime()+15_000_000_000L;
+        var worker=new OptixQueryWorker(n,0,2,91,modules);
         try{
-            var field=RtQueryWorker.class.getDeclaredField("worker");field.setAccessible(true);SpatialNative.delay(field.getLong(worker),500);
+            var field=OptixQueryWorker.class.getDeclaredField("worker");field.setAccessible(true);SpatialNative.delay(field.getLong(worker),500);
             for(int i=0;i<3;i++){
                 var slot=worker.acquire(7+i,91,0);check(slot!=null,"worker export slot");GL45.glNamedBufferSubData(slot.input,0,packet(n,0,slot.nonce,7+i,0));check(worker.submit(slot,7+i,91,0),"worker submit");
             }
             check(worker.acquire(10,91,0)==null,"worker backpressure preserves all three slots");
             for(int i=0;i<3;i++){
-                RtQueryWorker.Slot slot;
+                OptixQueryWorker.Slot slot;
                 while((slot=worker.take(1000,91,0))==null){check(System.nanoTime()<until,"late worker completion");Thread.sleep(1);}
                 check(slot.nonce==i+1,"oldest result consumed even 990 ticks late");worker.finishConsumers();
             }
@@ -463,12 +463,12 @@ public final class ParticleEngineGpuValidation {
             while(worker.counts().consumed()<5){check(worker.take(1002,92,0)==null,"invalid output cannot publish");check(System.nanoTime()<until,"error receipt");Thread.sleep(1);}
             check(worker.failed()&&worker.acquire(13,92,0)==null,"RT error stops submissions");
             check(worker.counts().submitted()==5&&worker.counts().consumed()==5,"every worker submission consumed exactly once");
-        }finally{worker.close();while(RtQueryWorker.resourcesRetiring()){check(System.nanoTime()<until,"worker close retirement");RtQueryWorker.retire();Thread.sleep(1);}}
+        }finally{worker.close();while(OptixQueryWorker.resourcesRetiring()){check(System.nanoTime()<until,"worker close retirement");OptixQueryWorker.retire();Thread.sleep(1);}}
         check(worker.counts().retired()==5&&SpatialNative.ownedBytes()==0,"worker slots retired without GL recomputation or reuse");
         cases.add(Map.of("case","production worker FIFO, 500ms delay, destroyed identity and error consumption","passed",true));
     }
     static void nativeRing(List<Object> cases)throws Exception{
-        int n=65;Path modules=Path.of(".gradle/particle-rt/build");long bridge=SpatialNative.createBuffers(128+n*64,3),worker=0;
+        int n=65;Path modules=Path.of(".gradle/particle-optix/build");long bridge=SpatialNative.createBuffers(128+n*64,3),worker=0;
         try{worker=SpatialNative.create(bridge,n,0,2,91,modules.toAbsolutePath().toString());SpatialNative.delay(worker,500);
             for(int i=0;i<3;i++){var b=SpatialNative.buffers(bridge,i);GL45.glNamedBufferSubData(b[0],0,packet(n,0,i+1,i,0));check(SpatialNative.submit(worker,i,i+1,i,91,0),"ring slot submit");}
             long start=System.nanoTime();check(!SpatialNative.submit(worker,0,99,3,91,0),"full ring refuses reuse");check(!SpatialNative.close(worker),"reload retains pending resource ownership");check((System.nanoTime()-start)/1e6<50,"pending shutdown never waits for 500ms work");
@@ -501,7 +501,7 @@ public final class ParticleEngineGpuValidation {
         return data;
     }
     static void nativeStormTimeline(List<Object> cases)throws Exception{
-        SpatialNative.load(Path.of(".gradle/particle-rt/build"));
+        SpatialNative.load(Path.of(".gradle/particle-optix/build"));
         var createBridge=stormMethod("createStormDisplayBuffers",long.class,int.class);
         var create=stormMethod("createStormControl",int.class,long.class,int.class);
         var delay=stormMethod("delayStormControl",long.class,int.class);
@@ -578,7 +578,7 @@ public final class ParticleEngineGpuValidation {
         return at+32;
     }
     static void nativeDomePartialTerrain(List<Object> cases)throws Exception{
-        SpatialNative.load(Path.of(".gradle/particle-rt/build"));
+        SpatialNative.load(Path.of(".gradle/particle-optix/build"));
         var createBridge=stormMethod("createStormDisplayBuffers",long.class,int.class);
         var create=stormMethod("createStormControl",int.class,long.class,int.class);
         var install=stormMethod("installStormDome",long.class,float[].class,int[].class,int[].class);
@@ -644,7 +644,7 @@ public final class ParticleEngineGpuValidation {
         cases.add(Map.of("case","Native Dome shares a paused flow between blocked and ready ranks","passed",true));
     }
     static void nativeFeatherImpact(List<Object> cases)throws Exception{
-        SpatialNative.load(Path.of(".gradle/particle-rt/build"));
+        SpatialNative.load(Path.of(".gradle/particle-optix/build"));
         var createBridge=stormMethod("createStormDisplayBuffers",long.class,int.class);
         var create=stormMethod("createStormControl",int.class,long.class,int.class);
         var submit=stormMethod("submitStormTick",long.class,ByteBuffer.class,int.class,int.class,boolean.class);
@@ -716,7 +716,7 @@ public final class ParticleEngineGpuValidation {
         cases.add(Map.of("case","Native Storm downward impact, first Starfall bloom and disabled feedback","passed",true));
     }
     static void nativeHelixLaunch(List<Object> cases)throws Exception{
-        SpatialNative.load(Path.of(".gradle/particle-rt/build"));
+        SpatialNative.load(Path.of(".gradle/particle-optix/build"));
         var createBridge=stormMethod("createStormDisplayBuffers",long.class,int.class);
         var create=stormMethod("createStormControl",int.class,long.class,int.class);
         var submit=stormMethod("submitStormTick",long.class,ByteBuffer.class,int.class,int.class,boolean.class);
@@ -853,7 +853,8 @@ public final class ParticleEngineGpuValidation {
         try{
             GL45.glTextureBuffer(texture,GL30.GL_RGBA32UI,animation);
             GL45.glBindTextureUnit(SAMPLER_ANIMATION_DRAW,texture);
-            bind(0,pool);bind(1,commands);bind(2,items);bind(3,live);bind(4,dispatch);bind(5,emitters);bind(POSE_OUTPUT_BINDING,output);
+            bind(0,pool);bind(1,commands);bind(2,items);bind(3,live);bind(4,dispatch);bind(5,emitters);
+            bind(GpuShaderCompiler.storageBinding(p,POSE_OUTPUT_BINDING),output);
             GL15.glBindBuffer(GL43.GL_DISPATCH_INDIRECT_BUFFER,dispatch);
             GL20.glUseProgram(p);ui(p,"poseStamp",71);
             GL41.glProgramUniform1i(p,GL20.glGetUniformLocation(p,"uMeasurePose"),1);

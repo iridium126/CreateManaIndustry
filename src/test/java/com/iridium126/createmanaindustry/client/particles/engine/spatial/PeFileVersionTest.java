@@ -34,10 +34,15 @@ class PeFileVersionTest {
         assertEquals("12.1.0.0",PeFileVersion.read(module("12.1.0.0",true)));
         assertEquals("65535.2.30.4",PeFileVersion.read(module("65535.2.30.4",false)));
     }
-    @Test void bundledModuleMatchesReleaseVersion() throws IOException {
-        try(var dll=PeFileVersionTest.class.getResourceAsStream("/native/particle-rt/windows-x86_64/CmiParticleRt.dll")){
+    @Test void bundledModulesMatchReleaseVersions() throws IOException {
+        assertModuleVersion("CmiParticleOptix.dll", ParticleNativeModules.OPTIX_VERSION);
+        assertModuleVersion("CmiParticleDxr.dll", ParticleNativeModules.DXR_VERSION);
+    }
+
+    private static void assertModuleVersion(String name, String version) throws IOException {
+        try(var dll=PeFileVersionTest.class.getResourceAsStream("/native/particles/windows-x86_64/"+name)){
             assertNotNull(dll);
-            assertEquals(ParticleRtModules.VERSION,PeFileVersion.read(dll.readAllBytes()));
+            assertEquals(version,PeFileVersion.read(dll.readAllBytes()));
         }
     }
     @Test void rejectsTruncatedOrMalformedResources(){
@@ -50,17 +55,17 @@ class PeFileVersionTest {
     }
     @Test void matchingVersionDoesNotOpenTheBundledDllAgain() throws IOException {
         var opens=new AtomicInteger();
-        ParticleRtModules.Resource source=()->{opens.incrementAndGet();return new ByteArrayInputStream(module(ParticleRtModules.VERSION,true));};
-        Path first=ParticleRtModules.install(directory,source);long time=Files.getLastModifiedTime(first).toMillis();
-        assertEquals(first,ParticleRtModules.install(directory,()->{throw new AssertionError("Matching native module was extracted again");}));
+        ParticleNativeModules.Resource source=()->{opens.incrementAndGet();return new ByteArrayInputStream(module(ParticleNativeModules.OPTIX_VERSION,true));};
+        Path first=ParticleNativeModules.install(directory,source);long time=Files.getLastModifiedTime(first).toMillis();
+        assertEquals(first,ParticleNativeModules.install(directory,()->{throw new AssertionError("Matching native module was extracted again");}));
         assertEquals(1,opens.get());assertEquals(time,Files.getLastModifiedTime(first).toMillis());
     }
     @Test void replacementUsesVersionAndRejectsAnIncompatibleBundledDll() throws IOException {
-        Path target=directory.resolve(ParticleRtModules.FILE);Files.write(target,module("11.0.0.0",true));
-        assertThrows(IOException.class,()->ParticleRtModules.install(directory,()->new ByteArrayInputStream(module("11.0.0.0",true))));
+        Path target=directory.resolve(ParticleNativeModules.OPTIX_FILE);Files.write(target,module("11.0.0.0",true));
+        assertThrows(IOException.class,()->ParticleNativeModules.install(directory,()->new ByteArrayInputStream(module("11.0.0.0",true))));
         assertEquals("11.0.0.0",PeFileVersion.read(target));
-        ParticleRtModules.install(directory,()->new ByteArrayInputStream(module(ParticleRtModules.VERSION,true)));
-        assertEquals(ParticleRtModules.VERSION,PeFileVersion.read(target));
+        ParticleNativeModules.install(directory,()->new ByteArrayInputStream(module(ParticleNativeModules.OPTIX_VERSION,true)));
+        assertEquals(ParticleNativeModules.OPTIX_VERSION,PeFileVersion.read(target));
         try(var files=Files.list(directory)){assertFalse(files.anyMatch(p->p.getFileName().toString().endsWith(".tmp")));}
     }
 }

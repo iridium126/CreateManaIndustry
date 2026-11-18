@@ -304,7 +304,7 @@ public class ModelShadowGpuValidation {
         Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-index-probe.csv"),rows);Files.write(Path.of(System.getProperty("cmi.benchmark.output", "build/benchmarks/current")+"/model-index-probe-samples.csv"),raw);
     }
     public static void main(String[] args)throws Exception {
-        var callback=long window=GpuValidationSupport.open("Model shadow validation");check(window!=0,"GL context");
+        long window=GpuValidationSupport.open("Model shadow validation");check(window!=0,"GL context");
         try{System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));validation();sizeBoundaries();qualityGroups();stateBoundary();if(Arrays.asList(args).contains("--iris-transform"))mergedVertices();if(Arrays.asList(args).contains("--benchmark"))benchmark();if(Arrays.asList(args).contains("--index-probe"))indexProbe();check(GL11.glGetError()==GL11.GL_NO_ERROR,"shadow GL error");System.out.println("MODEL shadow GPU: "+checks+" assertions passed");}
         finally{GpuValidationSupport.close(window);}
     }

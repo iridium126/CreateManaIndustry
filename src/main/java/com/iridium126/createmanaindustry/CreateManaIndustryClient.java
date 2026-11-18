@@ -272,7 +272,7 @@ public class CreateManaIndustryClient {
             sodium.reason());
         event.enqueueWork(() -> {
             try {
-                com.iridium126.createmanaindustry.client.particles.engine.spatial.ParticleRtModules.prepare();
+                com.iridium126.createmanaindustry.client.particles.engine.spatial.ParticleNativeModules.prepareOptix();
             } catch (java.io.IOException | RuntimeException | LinkageError failure) {
                 CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "RT native preparation unavailable: {}",failure.toString());
             }

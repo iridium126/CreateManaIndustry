@@ -118,9 +118,9 @@ public final class ClientConfig {
         BUILDER.pop();
 
         BUILDER.comment("Allay Storm visuals and client simulation.").push("allayStorm");
-        STORM_BACKEND = BUILDER.comment("AUTO uses RT and falls back to GL on failure. RT freezes on failure.")
+        STORM_BACKEND = BUILDER.comment("AUTO prefers OptiX, then DXR, with OpenGL fallback. DXR and OPTIX retain the last frame on failure.")
                 .defineEnum("simulationBackend", StormSimulationBackend.AUTO);
-        STORM_GPU = BUILDER.comment("RT device: minecraft or a CUDA GPU UUID with an optional |model label. GL follows Minecraft.")
+        STORM_GPU = BUILDER.comment("Use minecraft or a PnP device ID with an optional |model label. OPENGL follows Minecraft.")
                 .define("simulationGpu", StormSimulationGpu.DEFAULT_VALUE, StormSimulationGpu::valid);
         STORM_SHADOW_QUALITY = BUILDER.comment("FULL uses Iris casting. COARSE can reject the whole Storm body.",
                 "RT uses qualified light occlusion. OFF disables particle shadow casting.")

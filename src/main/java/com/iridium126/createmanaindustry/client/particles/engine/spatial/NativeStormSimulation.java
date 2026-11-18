@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 import com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient;
 import com.iridium126.createmanaindustry.client.allaystorm.StormFeedback;
-import com.iridium126.createmanaindustry.infrastructure.config.StormSimulationGpu;
+import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import java.io.IOException;
 import java.util.ArrayList;
 import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
@@ -26,15 +26,15 @@ public final class NativeStormSimulation {
     private static final ArrayList<NativeStormSimulation> RETIRING=new ArrayList<>();
     private static NativeStormSimulation selected;
     private final AllayStormRuntime storm;
-    private final StormSimulationGpu gpu;
+    private final ClientConfig.StormSimulation selection;
     private final StormNativeInputs inputs=new StormNativeInputs();
     private NativeStormControl control;
     private boolean retired;
 
-    NativeStormSimulation(AllayStormRuntime storm,StormSimulationGpu gpu){
+    NativeStormSimulation(AllayStormRuntime storm,ClientConfig.StormSimulation selection){
         if(selected!=null)throw new IllegalStateException("A native Storm already owns simulation");
         this.storm=storm;
-        this.gpu=gpu;
+        this.selection=selection;
         storm.attachNativeInputs(inputs);
         selected=this;
     }
@@ -89,14 +89,14 @@ public final class NativeStormSimulation {
     private void service(){
         if(control==null&&inputs.failure().isEmpty()&&inputs.journal().retained()>0){
             try{
-                control=new NativeStormControl(ParticleRtModules.prepare(),SpatialScene.CAPACITY,gpu,inputs.journal(),
+                control=new NativeStormControl(OpenGlStormScene.CAPACITY,StormGpuDevices.resolve(selection),inputs.journal(),
                         this::acceptRegional,this::acceptColumn,this::acceptOuter,this::acceptPositions,this::acceptSnapshot,this::acceptFeathers);
             }catch(IOException|RuntimeException|LinkageError failure){
                 inputs.stop(failure.toString());
                 com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Native Storm initialization failed",failure);
             }
         }
-        if(control!=null)try(var timing=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("rt.storm.service")){
+        if(control!=null)try(var timing=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("native.storm.service")){
             control.service(inputs.generation());
         }
     }
@@ -104,15 +104,16 @@ public final class NativeStormSimulation {
     public FrozenDisplay display(){return retired||control==null?null:control.display(inputs.generation());}
     public void drainDisplays(java.util.function.Consumer<FrozenDisplay> sink){
         if(retired||control==null)return;
-        // The early service starts CUDA work before GL simulation. Poll again at
+        // The early service starts native work before OpenGL simulation. Poll again at
         // the display deadline to pick up work completed during that simulation.
         service();
         control.drainDisplays(inputs.generation(),sink);
     }
     public void displayCommitted(long identity,long sequence){inputs.displayCommitted(identity,sequence);}
     public String failure(){return inputs.failure().isEmpty()&&control!=null?control.failure():inputs.failure();}
-    boolean running(){return control!=null&&failure().isEmpty();}
+    boolean running(){return control!=null&&failure().isEmpty()&&!control.simulationGpu().isEmpty();}
     String simulationGpu(){return control==null?"":control.simulationGpu();}
+    String simulationApi(){return control==null?"none":control.simulationApi();}
     String displayTransport(){return control==null?"none":control.displayTransport();}
     boolean readyToDetach(boolean explicitSwitch){
         return !storm.active()&&(!inputs.hasPendingWork()||explicitSwitch&&!failure().isEmpty());

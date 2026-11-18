@@ -48,12 +48,12 @@ public final class ModelRenderPublication implements AutoCloseable {
     private final ModelPosePublication poses;
     private final com.iridium126.createmanaindustry.client.particles.engine.spatial.RenderTerrain visibilityTerrain=
             new com.iridium126.createmanaindustry.client.particles.engine.spatial.RenderTerrain();
-    private final com.iridium126.createmanaindustry.client.particles.engine.spatial.RtRenderVisibility visibility,lightVisibility;
+    private final com.iridium126.createmanaindustry.client.particles.engine.spatial.OptixRenderVisibility visibility,lightVisibility;
     public ModelRenderPublication(){this(ParticlePrograms::loadParticlePlain);}
     public ModelRenderPublication(java.util.function.Function<String,String> sources){
         this.sources=sources;poses=new ModelPosePublication(sources);
-        visibility=new com.iridium126.createmanaindustry.client.particles.engine.spatial.RtRenderVisibility(sources,visibilityTerrain,false);
-        lightVisibility=new com.iridium126.createmanaindustry.client.particles.engine.spatial.RtRenderVisibility(sources,visibilityTerrain,true);
+        visibility=new com.iridium126.createmanaindustry.client.particles.engine.spatial.OptixRenderVisibility(sources,visibilityTerrain,false);
+        lightVisibility=new com.iridium126.createmanaindustry.client.particles.engine.spatial.OptixRenderVisibility(sources,visibilityTerrain,true);
     }
     public record Frame(long id,int pool,int commands,int counter,int permutation,float alpha,float timeSec) {}
 

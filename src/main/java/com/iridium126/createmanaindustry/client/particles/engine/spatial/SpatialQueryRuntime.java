@@ -13,17 +13,20 @@ public final class SpatialQueryRuntime implements AutoCloseable {
     private ClientConfig.StormSimulation selected=new ClientConfig.StormSimulation(
             StormSimulationBackend.AUTO,StormSimulationGpu.FOLLOW_MINECRAFT);
     private String fallbackReason="";
-    private boolean resetGl;
-    private SpatialScene scene;
-    public enum GlWork { STORM_STEP, COLUMN_RECOVERY, DOME_CONTACT, DEPENETRATION, NAVIGATION, ATTACK_BATCH }
-    private final long[] glWork=new long[GlWork.values().length];
+    private boolean resetOpenGl;
+    private OpenGlStormScene scene;
+    public enum HardwarePhase {
+        IDLE, STARTING, RUNNING, FAILED
+    }
+    public record HardwareStatus(HardwarePhase phase, ClientConfig.StormSimulation requested, String renderer,
+                                 String simulationGpu, String api, String transport, boolean pending, String failure,
+                                 String diagnostics) {}
     private SpatialQueryRuntime(){}
-    private boolean nativeSelected(){return selected.backend()==StormSimulationBackend.RT
-            || selected.backend()==StormSimulationBackend.AUTO&&fallbackReason.isEmpty();}
-    public void invalidate(){resetGl=true;}
+    private boolean nativeSelected(){return selected.backend()!=StormSimulationBackend.OPENGL && fallbackReason.isEmpty();}
+    public void invalidate(){resetOpenGl=true;}
     public void beforeStormActivation(AllayStormRuntime storm){
         applyChange(storm);
-        if(!storm.active()&&nativeSelected()&&NativeStormSimulation.selected()==null)new NativeStormSimulation(storm,selected.gpu());
+        if(!storm.active()&&nativeSelected()&&NativeStormSimulation.selected()==null)new NativeStormSimulation(storm,selected);
     }
     public void poll(){
         NativeStormSimulation.serviceFrame();
@@ -31,16 +34,16 @@ public final class SpatialQueryRuntime implements AutoCloseable {
         var owner=NativeStormSimulation.selected();
         if(selected.backend()==StormSimulationBackend.AUTO&&owner!=null&&!owner.failure().isEmpty()){
             fallbackReason=owner.failure();
-            storm.recoverGlSimulation();
+            storm.recoverOpenGlSimulation();
             com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime.INSTANCE.invalidateStormTargetEdge();
             com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.breakStormDisplayHistory();
             owner.retire();
-            resetGl=true;
-            ClientFrameCapture.INSTANCE.invalidate("AUTO switched Storm simulation to GL");
+            resetOpenGl=true;
+            ClientFrameCapture.INSTANCE.invalidate("AUTO switched Storm simulation to OpenGL");
         }
         applyChange(storm);
-        if(resetGl){closeGl();resetGl=false;}
-        RtQueryWorker.retire();
+        if(resetOpenGl){closeOpenGl();resetOpenGl=false;}
+        OptixQueryWorker.retire();
     }
     private void applyChange(AllayStormRuntime storm){
         if(storm.active())return;
@@ -54,44 +57,60 @@ public final class SpatialQueryRuntime implements AutoCloseable {
         if(!changed)return;
         selected=requested;
         fallbackReason="";
-        java.util.Arrays.fill(glWork,0L);
-        resetGl=true;
+        resetOpenGl=true;
         ClientFrameCapture.INSTANCE.invalidate("Storm simulation backend or GPU changed");
     }
-    public SpatialScene begin(long tick,float time,long resourceEpoch){
+    public OpenGlStormScene begin(long tick,float time,long resourceEpoch){
         if(nativeSelected())return null;
-        if(scene==null)scene=new SpatialScene();
+        if(scene==null)scene=new OpenGlStormScene();
         scene.begin(tick,time,resourceEpoch);return scene;
     }
     public String identity(){
         var owner=NativeStormSimulation.selected();
-        String active=!nativeSelected()?"gl":owner==null?"rt-idle":!owner.failure().isEmpty()?"rt-failed":
-                owner.running()?"rt":"rt-waiting";
         var requested=ClientConfig.stormSimulation;
-        return "requested="+requested.backend().name().toLowerCase(Locale.ROOT)+" active="+active+" abi=13"
-                +(!selected.equals(requested)?" switch=pending":"");
+        return identity(requested,phase(owner),simulationApi(owner),!selected.equals(requested));
     }
-    public SpatialScene scene(){return scene;}
-    /** Actual GL work submission sites. LBVH query counts alone do not measure fallback. */
-    public void submitted(GlWork stage){glWork[stage.ordinal()]++;}
-    public String status(){
-        var counts=new StringBuilder("GL Storm submissions:");
-        for(var stage:GlWork.values())counts.append(' ').append(stage.name().toLowerCase(java.util.Locale.ROOT)).append('=').append(glWork[stage.ordinal()]);
+    private HardwarePhase phase(NativeStormSimulation owner){
+        if(!nativeSelected())return HardwarePhase.RUNNING;
+        if(owner==null)return HardwarePhase.IDLE;
+        if(!owner.failure().isEmpty())return HardwarePhase.FAILED;
+        return owner.running()?HardwarePhase.RUNNING:HardwarePhase.STARTING;
+    }
+    private String simulationApi(NativeStormSimulation owner){
+        return !nativeSelected()?"opengl":owner==null?"none":owner.simulationApi();
+    }
+    private static String identity(ClientConfig.StormSimulation requested,HardwarePhase phase,String api,boolean pending){
+        return "requested="+requested.backend().name().toLowerCase(Locale.ROOT)
+                +" active="+phase.name().toLowerCase(Locale.ROOT)
+                +" abi="+com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.ABI
+                +" simulation_api="+api
+                +(pending?" switch=pending":"");
+    }
+    public OpenGlStormScene scene(){return scene;}
+    public String status(){return hardwareStatus().diagnostics();}
+    public HardwareStatus hardwareStatus(){
         var owner=NativeStormSimulation.selected();
-        String failure=owner==null&&selected.backend()==StormSimulationBackend.AUTO?fallbackReason:owner==null?"":owner.failure();
+        var phase=phase(owner);
+        var requested=ClientConfig.stormSimulation;
+        boolean pending=!selected.equals(requested);
+        String api=simulationApi(owner);
+        String failure=owner==null?fallbackReason:owner.failure();
         String renderer=StormGpuDevices.renderer();
-        var choice=ClientConfig.stormSimulation.gpu();
+        var choice=requested.gpu();
         String requestedGpu=choice.followsMinecraft()?renderer+" (Minecraft)":
                 (choice.label().isEmpty()?choice.uuid():choice.label()+" ("+choice.uuid()+")");
-        String actualGpu=!nativeSelected()?renderer:owner==null||owner.simulationGpu().isEmpty()?"none":owner.simulationGpu();
-        String transport=!nativeSelected()?"gl-local":owner==null?"none":owner.displayTransport();
-        return identity()+"\nrender_gpu="+renderer+" requested_gpu="+requestedGpu+" simulation_gpu="+actualGpu+
-                " display_transport="+transport+"\n"+(scene==null?"gl_queries=0":scene.description())+"\n"+counts+
+        boolean openGl=api.equals("opengl");
+        String actualGpu=openGl?renderer:owner==null?"":owner.simulationGpu();
+        if(actualGpu.isEmpty()&&!openGl)actualGpu="none";
+        String transport=openGl?"opengl-local":owner==null?"none":owner.displayTransport();
+        String diagnostics=identity(requested,phase,api,pending)+"\nrender_gpu="+renderer+" requested_gpu="+requestedGpu+" simulation_gpu="+actualGpu+
+                " display_transport="+transport+(scene==null?"":"\n"+scene.description())+
                 (failure.isEmpty()?"":"\nfailure="+failure);
+        return new HardwareStatus(phase,requested,renderer,actualGpu,api,transport,pending,failure,diagnostics);
     }
-    private void closeGl(){if(scene!=null)scene.close();scene=null;}
+    private void closeOpenGl(){if(scene!=null)scene.close();scene=null;}
     @Override public void close(){
-        closeGl();
+        closeOpenGl();
         fallbackReason="";
         var owner=NativeStormSimulation.selected();
         if(owner!=null)owner.retire();

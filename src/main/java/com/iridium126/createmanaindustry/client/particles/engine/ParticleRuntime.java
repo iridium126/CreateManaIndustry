@@ -4,7 +4,6 @@ import com.iridium126.createmanaindustry.client.particles.engine.spatial.NativeS
 
 import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime;
-import com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.GlWork;
 import com.iridium126.createmanaindustry.client.particles.interaction.CombatSpecs;
 
 import java.nio.ByteBuffer;
@@ -397,7 +396,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         private com.iridium126.createmanaindustry.client.gpu.frame.GpuFrameCoordinator frameCoordinator;
         private boolean hasWork,committed;private int step;private long simulationTick;
         public boolean committed(){return committed;}
-        private com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialScene spatial;
+        private com.iridium126.createmanaindustry.client.particles.engine.spatial.OpenGlStormScene spatial;
         private int slot;
         private int cap;
         private float dt;
@@ -791,8 +790,6 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 if(pass==1)ClientFrameCapture.INSTANCE.simulationInput(updateFrame,AllayStormRuntime.INSTANCE.timeSec(),dt);
                 if(pass==3&&spatial!=null)spatial.bindUpdate(updateProgram,simulationTick);else setIntUniform(updateProgram,"uSpatialEnabled",0);
                 ParticleRuntime.this.gpu.dispatch(pass==0?0:pass==1?ParticleBuffers.ORDINARY_DISPATCH:pass==2?ParticleBuffers.MODEL_DISPATCH:ParticleBuffers.STORM_DISPATCH);
-                if(pass==0)SpatialQueryRuntime.INSTANCE.submitted(GlWork.COLUMN_RECOVERY);
-                if(pass==3&&AllayStormRuntime.INSTANCE.needsGridPass())SpatialQueryRuntime.INSTANCE.submitted(GlWork.STORM_STEP);
                 AllayAnimationGpu.barrier();
                 firstDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(firstDone);}
             }
@@ -808,21 +805,18 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 DomeBodyContacts.run(programs.grid(),domeProgram,gpu.particleReadBufferId(),gpu.counterBufferId(lastGoodSlot),
                         gpu.particleWriteBufferId(),gpu.counterBufferId(slot),gpu.gridBufferId(),AllayStormRuntime.INSTANCE.timeSec(),dt,
                         playerCount,StarfallGpuBuffers.INSTANCE,gpu.candidatePopulationBuffer(),gpu.dispatchBufferId());
-                SpatialQueryRuntime.INSTANCE.submitted(GlWork.DOME_CONTACT);
                 ParticleRuntime.this.gpu.bindParticleRead(0);ParticleRuntime.this.gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,ParticleRuntime.this.lastGoodSlot);domeDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(domeDone);}
             }
             ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.DEPENETRATION,updateFrame,updateGeneration);boolean depenDone=false;try{
             if(StarfallGpuBuffers.INSTANCE.navigationReady()){
                 StormDepenetration.run(programs.depenetrationPrepare(),programs.depenetrationSchedule(),programs.depenetration(),
                     AllayStormRuntime.INSTANCE.timeSec(),StarfallGpuBuffers.INSTANCE,gpu.dispatchBufferId(),gpu.dispatchBufferId());
-                SpatialQueryRuntime.INSTANCE.submitted(GlWork.DEPENETRATION);
             }
             depenDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(depenDone);}
             if(StarfallGpuBuffers.INSTANCE.navigationReady()&&StarfallGpuBuffers.INSTANCE.navigationWork()){
                 ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.NAVIGATION,updateFrame,updateGeneration);boolean navDone=false;try{
                 com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(ParticleRuntime.this.programs.domePath());
                 DomeGatherNavigation.run(ParticleRuntime.this.programs.domePath(),AllayStormRuntime.INSTANCE.timeSec(),StarfallGpuBuffers.INSTANCE,ParticleRuntime.this.gpu.dispatchBufferId());
-                SpatialQueryRuntime.INSTANCE.submitted(GlWork.NAVIGATION);
                 navDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(navDone);}
             }
             // uKillEmit is retired at the SUCCESS TAIL (after the pool swap), not
@@ -1547,7 +1541,6 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         state.uploadUniforms(program);
         if(localMask==0){ParticleDiagnostics.INSTANCE.call();com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);}
         else {pool.bindDispatch();pool.dispatch(ParticleBuffers.STORM_DISPATCH);}
-        SpatialQueryRuntime.INSTANCE.submitted(GlWork.ATTACK_BATCH);
         feedbackBarrier();
         completed=true;return true;
         }finally{ParticleDiagnostics.INSTANCE.endUpdate(completed);}

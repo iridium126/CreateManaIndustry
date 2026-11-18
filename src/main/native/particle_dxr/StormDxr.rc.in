@@ -1,0 +1,25 @@
+#include <windows.h>
+#include "StormDxrVersion.h"
+1 VERSIONINFO
+ FILEVERSION CMI_DXR_FILE_VERSION
+ PRODUCTVERSION CMI_DXR_FILE_VERSION
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+BEGIN
+ BLOCK "StringFileInfo"
+ BEGIN
+  BLOCK "040904b0"
+  BEGIN
+   VALUE "FileDescription", "Create Mana Industry Storm DXR\0"
+   VALUE "FileVersion", CMI_DXR_VERSION "\0"
+   VALUE "ProductVersion", CMI_DXR_VERSION "\0"
+   VALUE "OriginalFilename", "CmiParticleDxr.dll\0"
+  END
+ END
+ BLOCK "VarFileInfo"
+ BEGIN
+  VALUE "Translation", 0x0409, 1200
+ END
+END
+@DXIL_RESOURCES@

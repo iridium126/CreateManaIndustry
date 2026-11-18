@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.mixin;
 
 import com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleChainCapture;
-import com.iridium126.createmanaindustry.client.particles.engine.spatial.RtQueryWorker;
+import com.iridium126.createmanaindustry.client.particles.engine.spatial.OptixQueryWorker;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.client.Minecraft;
@@ -15,7 +15,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ParticleClientFrameMixin {
     @WrapMethod(method = "runTick(Z)V")
     private void cmi$fullFrame(boolean render, Operation<Void> original) {
-        if (RtQueryWorker.resourcesRetiring()) RtQueryWorker.retire();
+        if (OptixQueryWorker.resourcesRetiring()) OptixQueryWorker.retire();
         ParticleChainCapture.INSTANCE.poll();
         var capture = ClientFrameCapture.INSTANCE;
         if (!capture.busy()) {

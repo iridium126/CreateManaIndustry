@@ -59,5 +59,23 @@ class ClientEvidenceTest(unittest.TestCase):
         data['spatial_unretired_at_export']=0;data['backend']='requested=rt active=rt-waiting abi=12';metadata_path.write_text(json.dumps(data))
         with self.assertRaisesRegex(ValueError,'not active'):tool.frame_window(path)
 
+    def test_current_and_legacy_native_captures_require_lifecycle_evidence(self):
+        path=self.groups['b'][0]
+        metadata_path=path.with_suffix('.json')
+        data=json.loads(metadata_path.read_text())
+        for backend in ('requested=rt active=rt abi=12 simulation_api=cuda',
+                        'requested=dxr active=running abi=13 simulation_api=dxr'):
+            with self.subTest(backend=backend):
+                data['backend']=backend
+                metadata_path.write_text(json.dumps(data))
+                spatial=path.with_name(path.stem+'-spatial.csv')
+                spatial.unlink(missing_ok=True)
+                with self.assertRaisesRegex(ValueError,'lifecycle evidence'):tool.frame_window(path)
+                spatial.write_text('scene_epoch,nonce,slot,event,native_abi\n'
+                                   '1,1,0,submitted,13\n1,1,0,consumed,13\n1,1,0,retired,13\n')
+                if 'active=running' in backend:
+                    path.with_name(path.stem+'-storm.csv').write_text('worker,sequence,applied\n1,1,true\n')
+                tool.frame_window(path)
+
 
 if __name__=='__main__':unittest.main()

@@ -13,7 +13,7 @@ def native_header(contract):
 
 if __name__ == "__main__":
     contract = json.loads((ROOT / "src/main/gpu/particle-resources.json").read_text(encoding="utf-8"))
-    path = ROOT / "src/main/native/particle_rt/ResourceLayout.h"
+    path = ROOT / "src/main/native/particle_common/ResourceLayout.h"
     header = native_header(contract)
     if not path.is_file() or path.read_text(encoding="utf-8") != header:
         path.write_text(header, encoding="utf-8", newline="\n")

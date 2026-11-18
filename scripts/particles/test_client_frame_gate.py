@@ -48,6 +48,10 @@ class ClientGateTests(unittest.TestCase):
                                 process_id=number*6+index)
                     data.pop('diagnostic_receipt_sha256')
                     p.write_text(json.dumps(data))
+                    if index >= 2:
+                        p.with_name(p.stem+'-spatial.csv').write_text(
+                            'scene_epoch,nonce,slot,event,native_abi\n'
+                            '1,1,0,submitted,12\n1,1,0,consumed,12\n1,1,0,retired,12\n')
                 for index,source in enumerate(round['ab']):
                     p=Path(source)
                     dest=p.with_name(p.stem+'-ab.json')
@@ -56,6 +60,8 @@ class ClientGateTests(unittest.TestCase):
                     dest.write_text(json.dumps(data))
                     shutil.copyfile(p.with_suffix('.csv'),dest.with_suffix('.csv'))
                     shutil.copyfile(p.with_name(p.stem+'-camera.csv'),dest.with_name(dest.stem+'-camera.csv'))
+                    if index:
+                        shutil.copyfile(p.with_name(p.stem+'-spatial.csv'),dest.with_name(dest.stem+'-spatial.csv'))
                     round['ab'][index]=str(dest)
             self.assertTrue(compare(manifest)['frame_gate_pass'])
             manifest['rounds'][0]['ab'][0]=manifest['rounds'][0]['aa'][0]

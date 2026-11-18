@@ -76,6 +76,7 @@ allprojects {
             javaLauncher = tasks.named('runClient').get().javaLauncher
             classpath = files(layout.buildDirectory.dir('storm-display-transfer-harness')) + validationClasspath
             mainClass = 'com.iridium126.createmanaindustry.client.particles.engine.spatial.StormDisplayTransferGpuValidation'
+            if (project.hasProperty('stormDxr')) args '--dxr'
         }
         tasks.register('validateSimulationReadbackGpu',JavaExec){
             dependsOn simulationSnapshotHarness

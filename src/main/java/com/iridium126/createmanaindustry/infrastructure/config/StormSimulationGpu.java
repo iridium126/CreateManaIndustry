@@ -3,23 +3,25 @@ package com.iridium126.createmanaindustry.infrastructure.config;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-/** The label is retained for display when the UUID can no longer be resolved. */
+/** The label is retained for display when the device can no longer be resolved. */
 public record StormSimulationGpu(String uuid, String label) {
     public static final String DEFAULT_VALUE = "minecraft";
     public static final StormSimulationGpu FOLLOW_MINECRAFT = new StormSimulationGpu("", "");
-    private static final Pattern UUID = Pattern.compile("GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}",
-            Pattern.CASE_INSENSITIVE);
+    private static final Pattern PNP_ID = Pattern.compile("PNP-[0-9a-f]{64}", Pattern.CASE_INSENSITIVE);
 
     public static boolean valid(Object value) {
-        return value instanceof String text && (text.equals(DEFAULT_VALUE)
-                || text.length() <= 192 && UUID.matcher(text.split("\\|", 2)[0]).matches());
+        if (!(value instanceof String text) || text.length() > 192) return false;
+        if (text.equals(DEFAULT_VALUE)) return true;
+        String id = text.split("\\|", 2)[0];
+        return PNP_ID.matcher(id).matches();
     }
 
     public static StormSimulationGpu parse(String value) {
         if (value.equals(DEFAULT_VALUE)) return FOLLOW_MINECRAFT;
-        if (!valid(value)) throw new IllegalArgumentException("Invalid Storm CUDA device: " + value);
+        if (!valid(value)) throw new IllegalArgumentException("Invalid Storm simulation device: " + value);
         String[] fields = value.split("\\|", 2);
-        return new StormSimulationGpu("GPU-" + fields[0].substring(4).toLowerCase(Locale.ROOT),
+        String id = fields[0];
+        return new StormSimulationGpu(id.substring(0, 4).toUpperCase(Locale.ROOT) + id.substring(4).toLowerCase(Locale.ROOT),
                 fields.length == 2 ? fields[1].strip() : "");
     }
 

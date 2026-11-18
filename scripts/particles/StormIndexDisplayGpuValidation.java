@@ -108,7 +108,7 @@ public class StormIndexDisplayGpuValidation extends StormCollisionGpuValidation 
         }finally{((AutoCloseable)projection).close();GL15.glDeleteBuffers(shared);}
     }
     static void nativeIndex(Map<Section,Page> initial)throws Exception{
-        SpatialNative.load(Path.of(".gradle/particle-rt/build"));
+        SpatialNative.load(Path.of(".gradle/particle-optix/build"));
         var createBridge=ParticleEngineGpuValidation.stormMethod("createStormDisplayBuffers",long.class,int.class);
         var create=ParticleEngineGpuValidation.stormMethod("createStormControl",int.class,long.class,int.class);
         var submit=ParticleEngineGpuValidation.stormMethod("submitStormTick",long.class,ByteBuffer.class,int.class,int.class,boolean.class);
@@ -205,7 +205,7 @@ public class StormIndexDisplayGpuValidation extends StormCollisionGpuValidation 
         var type=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.spatial.NativeStormControl");
         var constructor=type.getDeclaredConstructors()[0];constructor.setAccessible(true);
         java.util.function.Consumer<Object> sink=x->{};
-        Object control=constructor.newInstance(Path.of(".gradle/particle-rt/build"),128,journal,sink,sink,sink,sink,sink,sink);
+        Object control=constructor.newInstance(Path.of(".gradle/particle-optix/build"),128,journal,sink,sink,sink,sink,sink,sink);
         var service=type.getDeclaredMethod("service");service.setAccessible(true);
         var drain=type.getDeclaredMethod("drainDisplays",long.class,java.util.function.Consumer.class);drain.setAccessible(true);
         var retire=type.getDeclaredMethod("retire");retire.setAccessible(true);

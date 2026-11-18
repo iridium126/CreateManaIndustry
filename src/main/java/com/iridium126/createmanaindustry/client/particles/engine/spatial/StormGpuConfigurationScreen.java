@@ -3,7 +3,6 @@ package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.StormSimulationGpu;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -72,15 +71,13 @@ public final class StormGpuConfigurationScreen {
             String renderer = StormGpuDevices.renderer();
             choices.put(StormSimulationGpu.DEFAULT_VALUE, new Choice(model(renderer),
                     Component.translatable(TRANSLATION + ".minecraft")));
-            try {
-                for (var device : StormGpuDevices.discover()) {
-                    var gpu = device.selection();
-                    String value = gpu.uuid().equals(selected.uuid()) ? current : gpu.value();
-                    choices.put(value, new Choice(model(gpu.label()),
-                            Component.translatable(TRANSLATION + ".pci", device.pci())));
-                }
-            } catch (IOException | RuntimeException | LinkageError unavailable) {
-                // The default and any saved device stay editable without the CUDA driver.
+            long renderLuid = StormGpuDevices.renderAdapter().luid();
+            for (var device : StormGpuDevices.discover()) {
+                if (!device.visible(renderLuid, selected.uuid())) continue;
+                var gpu = device.selection();
+                String value = gpu.uuid().equals(selected.uuid()) ? current : gpu.value();
+                choices.put(value, new Choice(model(gpu.label()),
+                        Component.translatable(TRANSLATION + ".pci", device.backends(), device.pci())));
             }
             choices.putIfAbsent(current, new Choice(model(selected.label()),
                     Component.translatable(TRANSLATION + ".unavailable", selected.uuid())));

@@ -874,7 +874,7 @@ public final class AllayStormRuntime {
     }
     public boolean nativeInputOwned(){return nativeInputs!=null;}
     public boolean glRecovery(){return glRecovery;}
-    public void recoverGlSimulation(){
+    public void recoverOpenGlSimulation(){
         if(!stormActive)return;
         glRecovery=true;
         stormSpawnCursor=0;
