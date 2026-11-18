@@ -27,7 +27,7 @@ public final class RtRenderVisibility implements AutoCloseable {
     private Vec3 submittedCamera;
     private final Vector3f submittedLight=new Vector3f();
     private boolean submittedShadow;
-    private boolean failed;
+    private boolean failed, unsupportedAdapter;
     private GpuReadbackBuffer queryCount;
     private final java.nio.ByteBuffer countBytes=org.lwjgl.BufferUtils.createByteBuffer(4);
     private RtQueryWorker.Slot preparedCamera;
@@ -42,7 +42,14 @@ public final class RtRenderVisibility implements AutoCloseable {
     private void allocate() throws java.io.IOException {
         if(worker==null){
             if(RtQueryWorker.resourcesRetiring())return;
-            worker=new RtQueryWorker(ROWS,SpatialTerrain.CAPACITY,2,epoch,ParticleRtModules.prepare(),lightView?"light":"camera");
+            var modules=ParticleRtModules.prepare();
+            SpatialNative.load(modules);
+            if(SpatialNative.stormOpenGlCudaUuid()==null){
+                unsupportedAdapter=true;
+                failure="no CUDA device matches the OpenGL adapter";
+                return;
+            }
+            worker=new RtQueryWorker(ROWS,SpatialTerrain.CAPACITY,2,epoch,modules,lightView?"light":"camera");
         }
         if(program!=0)return;
         program=GpuShaderCompiler.compute("RT render candidates","#version 450 core\n"+ParticlePrograms.commonPrelude()+sources.apply("spatial/visibility.comp"));
@@ -77,7 +84,7 @@ public final class RtRenderVisibility implements AutoCloseable {
                        Vec3 camera,boolean enabled,Vector3f ray,float[] planes){
         RtQueryWorker.retire();
         if(!enabled){stopWorker();return 0;}
-        if(failed)return 0;
+        if(failed||unsupportedAdapter)return 0;
         try{
             if(!coverage.prepare(camera)){stopWorker();return 0;}
             var terrain=coverage.terrain();long scene=coverage.scene();long tick=++frame;
@@ -143,12 +150,12 @@ public final class RtRenderVisibility implements AutoCloseable {
             stopWorker();return 0;
         }
     }
-    public String status(){return "render="+(failed?"rt-failed":worker==null?"uninitialized":"rt")+" "+failure+(worker==null?"":" "+worker.description());}
+    public String status(){return "render="+(unsupportedAdapter?"gl-fallback":failed?"rt-failed":worker==null?"uninitialized":"rt")+" "+failure+(worker==null?"":" "+worker.description());}
     public void stopWorker(){
         if(preparedFence!=0)GL32.glDeleteSync(preparedFence);
         preparedFence=0;preparedCamera=null;
         if(worker!=null)worker.close();worker=null;
         historyScene=historyTerrain=submittedGeneration=submittedScene=submittedTerrain=Long.MIN_VALUE;submittedCamera=null;
     }
-    @Override public void close(){stopWorker();if(queryCount!=null)queryCount.close();queryCount=null;for(int id:new int[]{bounds,masks,historyInput,historyOutput})GpuBufferNames.delete(id);GpuPrograms.delete(program);program=bounds=masks=historyInput=historyOutput=0;failed=false;failure="";}
+    @Override public void close(){stopWorker();if(queryCount!=null)queryCount.close();queryCount=null;for(int id:new int[]{bounds,masks,historyInput,historyOutput})GpuBufferNames.delete(id);GpuPrograms.delete(program);program=bounds=masks=historyInput=historyOutput=0;failed=unsupportedAdapter=false;failure="";}
 }

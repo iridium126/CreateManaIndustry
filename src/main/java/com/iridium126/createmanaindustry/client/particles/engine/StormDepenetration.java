@@ -12,7 +12,7 @@ public final class StormDepenetration {
     private StormDepenetration() {}
     public static void run(int prepare,int schedule,int search,float time,StarfallGpuBuffers stars){
         if(!stars.navigationReady())return;
-        run(prepare,schedule,search,time,stars,GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,29),
+        run(prepare,schedule,search,time,stars,GpuBindings.storageBuffer(29),
             GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING));
     }
     public static void run(int prepare,int schedule,int search,float time,StarfallGpuBuffers stars,int storage,int indirect){
@@ -27,7 +27,7 @@ public final class StormDepenetration {
     }
     /** Standalone real-driver fixtures supply the same immutable collision publication. */
     public static void dispatch(int prepare,int schedule,int search,StarfallGpuBuffers stars){
-        dispatch(prepare,schedule,search,stars,GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,29),
+        dispatch(prepare,schedule,search,stars,GpuBindings.storageBuffer(29),
             GL11.glGetInteger(GL43.GL_DISPATCH_INDIRECT_BUFFER_BINDING));
     }
     private static void dispatch(int prepare,int schedule,int search,StarfallGpuBuffers stars,int previousStorage,int previous){

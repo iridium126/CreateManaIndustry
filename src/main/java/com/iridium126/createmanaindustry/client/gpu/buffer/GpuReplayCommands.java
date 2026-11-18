@@ -24,7 +24,7 @@ public final class GpuReplayCommands {
     public static void upload(int target,long offset,int[] data){if(sink!=null){var bytes=ByteBuffer.allocate(data.length*4).order(ByteOrder.nativeOrder());for(int v:data)bytes.putInt(v);bytes.flip();before("upload",new long[]{target,offset,0},bytes);}}
     public static void allocation(int target,long bytes,int usage){if(sink!=null)before("allocate",new long[]{target,bytes,usage},null);}
     public static void texture3d(int target,int level,int x,int y,int z,int width,int height,int depth,int format,int type,ByteBuffer data){if(sink!=null)before("texture-upload",new long[]{target,level,x,y,z,width,height,depth,format,type},data);}
-    public static void dispatchCompute(int x,int y,int z){if(sink!=null)before("dispatch",new long[]{x,y,z},null);GL43.glDispatchCompute(x,y,z);}
+    public static void dispatchCompute(int x,int y,int z){GpuBindings.prepareStorage();if(sink!=null)before("dispatch",new long[]{x,y,z},null);GL43.glDispatchCompute(x,y,z);}
     public static void memoryBarrier(int bits){if(sink!=null)before("barrier",new long[]{Integer.toUnsignedLong(bits)},null);GL42.glMemoryBarrier(bits);}
     public static void copyNamedBufferSubData(int read,int write,long from,long to,long size){
         if(sink!=null){int oldRead=GL11.glGetInteger(GL31.GL_COPY_READ_BUFFER),oldWrite=GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,read);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,write);before("copy",new long[]{GL31.GL_COPY_READ_BUFFER,GL31.GL_COPY_WRITE_BUFFER,from,to,size},null);GpuBindings.bind(GL31.GL_COPY_READ_BUFFER,oldRead);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,oldWrite);}
@@ -38,7 +38,7 @@ public final class GpuReplayCommands {
         if(sink!=null){int old=GL11.glGetInteger(GL31.GL_COPY_WRITE_BUFFER);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,buffer);upload(GL31.GL_COPY_WRITE_BUFFER,offset,data,false,0);GpuBindings.bind(GL31.GL_COPY_WRITE_BUFFER,old);}
         GL45.glNamedBufferSubData(buffer,offset,data);
     }
-    public static void dispatchComputeIndirect(long offset){if(sink!=null)before("dispatch-indirect",new long[]{offset},null);GL43.glDispatchComputeIndirect(offset);}
+    public static void dispatchComputeIndirect(long offset){GpuBindings.prepareStorage();if(sink!=null)before("dispatch-indirect",new long[]{offset},null);GL43.glDispatchComputeIndirect(offset);}
     public static void copyBufferSubData(int read,int write,long from,long to,long bytes){if(sink!=null)before("copy",new long[]{read,write,from,to,bytes},null);GL31.glCopyBufferSubData(read,write,from,to,bytes);}
     public static void clearBufferData(int target,int internal,int format,int type,IntBuffer data){if(sink!=null)before("clear",new long[]{target,internal,format,type},bytes(data));GL43.glClearBufferData(target,internal,format,type,data);}
     public static void clearBufferSubData(int target,int internal,long offset,long length,int format,int type,IntBuffer data){if(sink!=null)before("clear-range",new long[]{target,internal,offset,length,format,type},bytes(data));GL43.glClearBufferSubData(target,internal,offset,length,format,type,data);}

@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.client.gpu.shader;
 
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
 import org.lwjgl.opengl.ARBParallelShaderCompile;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL20;
@@ -9,13 +10,32 @@ import org.lwjgl.opengl.GL43;
 public final class GpuShaderCompiler {
     private GpuShaderCompiler() {}
     private static final java.util.Map<Integer,String> COMPUTE_SOURCES=new java.util.HashMap<>();
+    private static final java.util.Map<Integer,int[]> STORAGE_LAYOUTS=new java.util.HashMap<>();
     public static String computeSource(int program){return COMPUTE_SOURCES.get(program);}
-    public static void forget(int program){COMPUTE_SOURCES.remove(program);}
+    public static int[] storageLayout(int program){return STORAGE_LAYOUTS.get(program);}
+    public static int storageBinding(int program,int logical){
+        int[] layout=storageLayout(program);
+        if(layout!=null)for(int slot=0;slot<layout.length;slot++)if(layout[slot]==logical)return slot;
+        return logical;
+    }
+    public static void forget(int program){COMPUTE_SOURCES.remove(program);STORAGE_LAYOUTS.remove(program);}
+
+    private static GpuStorageLayout compactLayout(){
+        int limit=GpuCapabilities.current().storageBindings();
+        return limit>0&&limit<32?new GpuStorageLayout(limit):null;
+    }
+
+    private static void install(int program,String label,GpuStorageLayout layout,String computeSource){
+        int[] mapping=layout==null?null:layout.install(program,label);
+        if(mapping!=null)STORAGE_LAYOUTS.put(program,mapping);
+        if(computeSource!=null)COMPUTE_SOURCES.put(program,mapping==null?computeSource:layout.replay(computeSource,mapping));
+    }
 
 
     public static final class Compilation implements AutoCloseable {
         private final String label;
         private final String[] sources;
+        private final GpuStorageLayout storage;
         private final int[] types, shaders;
         private final boolean parallel;
         private int index, program;
@@ -24,6 +44,7 @@ public final class GpuShaderCompiler {
         private Compilation(String label, String[] sources, int[] types) {
             this.label = label;
             this.sources = sources;
+            storage=compactLayout();
             this.types = types;
             this.shaders = new int[sources.length];
             parallel = GL.getCapabilities().GL_ARB_parallel_shader_compile;
@@ -36,7 +57,7 @@ public final class GpuShaderCompiler {
                     int shader = GL20.glCreateShader(types[index]);
                     if (shader == 0) throw new IllegalStateException(label + ": cannot allocate shader");
                     shaders[index] = shader;
-                    GL20.glShaderSource(shader, sources[index]);
+                    GL20.glShaderSource(shader, storage==null?sources[index]:storage.stage(sources[index]));
                     GL20.glCompileShader(shader);
                     submitted = true;
                     return false;
@@ -65,7 +86,7 @@ public final class GpuShaderCompiler {
         }
         public int take() {
             if (closed || !complete || program == 0) throw new IllegalStateException("Shader compilation is incomplete: " + label);
-            if(types.length==1&&types[0]==GL43.GL_COMPUTE_SHADER)COMPUTE_SOURCES.put(program,sources[0]);
+            install(program,label,storage,types.length==1&&types[0]==GL43.GL_COMPUTE_SHADER?sources[0]:null);
             int result = program;
             program = 0;
             return result;
@@ -92,24 +113,32 @@ public final class GpuShaderCompiler {
     }
 
     public static int compute(String label, String source) {
-        int shader = stage(label, GL43.GL_COMPUTE_SHADER, source);
+        var storage=compactLayout();
+        int shader = stage(label, GL43.GL_COMPUTE_SHADER, storage==null?source:storage.stage(source));
         try {
-            int program=link(label,shader,0);COMPUTE_SOURCES.put(program,source);return program;
+            return finish(label,shader,0,storage,source);
         } finally {
             GL20.glDeleteShader(shader);
         }
     }
 
     public static int graphics(String label, String vertex, String fragment) {
+        var storage=compactLayout();
         int vsh = 0, fsh = 0;
         try {
-            vsh = stage(label + " vertex", GL20.GL_VERTEX_SHADER, vertex);
-            fsh = stage(label + " fragment", GL20.GL_FRAGMENT_SHADER, fragment);
-            return link(label, vsh, fsh);
+            vsh = stage(label + " vertex", GL20.GL_VERTEX_SHADER, storage==null?vertex:storage.stage(vertex));
+            fsh = stage(label + " fragment", GL20.GL_FRAGMENT_SHADER, storage==null?fragment:storage.stage(fragment));
+            return finish(label,vsh,fsh,storage,null);
         } finally {
             if (vsh != 0) GL20.glDeleteShader(vsh);
             if (fsh != 0) GL20.glDeleteShader(fsh);
         }
+    }
+
+    private static int finish(String label,int first,int second,GpuStorageLayout layout,String computeSource){
+        int program=link(label,first,second);
+        try{install(program,label,layout,computeSource);return program;}
+        catch(RuntimeException|Error failure){GpuPrograms.delete(program);throw failure;}
     }
 
     private static int stage(String label, int type, String source) {

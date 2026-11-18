@@ -199,6 +199,95 @@ public final class ParticleEngineGpuValidation {
             gpu.clearDisplayResources();cases.add(Map.of("case","display complete publication","passed",true));
         }finally{shaders.delete();gpu.free();}
     }
+    static void modelEmission(List<Object> cases)throws Exception{
+        var gpu=new ParticleBuffers();
+        var shaders=new ParticlePrograms();
+        var state=new com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState();
+        state.capture();
+        try{
+            check(gpu.init(1024,4),"MODEL emission arena");
+            for(var entry:Map.of("emit","emit.comp","modelPrepare","model_prepare.comp","prepareDispatch","prepare_dispatch.comp","reset","reset.comp").entrySet()){
+                var field=ParticlePrograms.class.getDeclaredField(entry.getKey());field.setAccessible(true);field.setInt(shaders,program(entry.getValue()));
+            }
+            var header=com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec.builder()
+                    .type(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.standard(com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes.Material.MODEL))
+                    .size(.1).life(100,100).build().packed();
+            gpu.setEmitterHeader(1,header);gpu.uploadDirtyEmitters();
+            gpu.beginComputeFrame(.05f);
+            gpu.allayAnimation().prepareAllocator(shaders.modelPrepare());
+            int prepare=shaders.prepareDispatch();
+            ui(prepare,"uCapacity",gpu.capacity());
+            gpu.bindDispatchInputs(0,1);gpu.bindPopulationRead(prepare);gpu.bindPopulationWrite(prepare,1);
+            var dispatchClass=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.ParticleDispatch");
+            var preparePhase=dispatchClass.getDeclaredMethod("prepare",ParticlePrograms.class,int.class);preparePhase.setAccessible(true);
+            preparePhase.invoke(null,shaders,0);
+            int reset=shaders.reset();
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(reset);
+            gpu.bindPopulationWrite(reset,1);gpu.bindIndirect(2);gpu.bindCounter(3,0);gpu.bindHit();
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(1,1,1);
+            AllayAnimationGpu.barrier();
+            int counter=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,3);
+            int emitBuffer=gpu.nextEmitBuffer();
+            gpu.bindEmitBuffer(4,emitBuffer);
+            GL45.glNamedBufferSubData(emitBuffer,0,new float[]{0,0,-1,65,1,17,0,0,0,0,0,0});
+            int emit=shaders.emit();
+            com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(emit);
+            gpu.bindIdentities(emit);gpu.bindParticleWrite(1);gpu.bindParticleRead(0);gpu.bindEmitters(5);
+            ui(emit,"uCapacity",gpu.capacity());ui(emit,"uTotalSpawn",65);ui(emit,"uEmitCount",1);
+            com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(2,1,1);
+            AllayAnimationGpu.barrier();
+            var counters=read(counter,16);
+            check(counters.getInt(0)==65&&counters.getInt(8)==65,"MODEL emission live="+counters.getInt(0)+" append="+counters.getInt(8)+" / glError="+GL11.glGetError());
+            projectNativeStorm(gpu);
+            counters=read(counter,16);
+            check(counters.getInt(0)==67&&counters.getInt(8)==67&&counters.getInt(12)==2,
+                    "Native projection live="+counters.getInt(0)+" MODEL="+counters.getInt(8)+" Storm="+counters.getInt(12)+" / glError="+GL11.glGetError());
+            gpu.bindDispatchInputs(0,1);gpu.bindPopulationWrite(prepare,1);gpu.bindModelMembers(prepare);gpu.bindPopulationRead(prepare,true,1);
+            var method=dispatchClass.getDeclaredMethod("prepareModelPublication",ParticlePrograms.class,boolean.class,boolean.class);
+            method.setAccessible(true);method.invoke(null,shaders,false,true);
+            check(read(gpu.dispatchBufferId(),ParticleBuffers.DISPATCH_BYTES*(ParticleBuffers.CANDIDATE_MODEL_DISPATCH+1))
+                    .getInt(ParticleBuffers.CANDIDATE_MODEL_DISPATCH*ParticleBuffers.DISPATCH_BYTES)==2,"Published MODEL animation dispatch");
+            method.invoke(null,shaders,true,false);
+            gpu.swap();gpu.commitPopulation(1);
+            var population=read(gpu.populationBufferId(1),32);
+            check(population.getInt(0)==67&&population.getInt(4)==2,"MODEL roster count="+population.getInt(0)+" Storm="+population.getInt(4));
+            check(population.getInt(8)==67&&population.getInt(12)==3&&population.getLong(16)==1,
+                    "MODEL roster live="+population.getInt(8)+" generation="+population.getLong(16)+" valid="+population.getInt(12));
+            gpu.bindDispatchInputs(1,0);gpu.bindPopulationRead(prepare,false,1);
+            preparePhase.invoke(null,shaders,0);
+            var nextDispatch=read(gpu.dispatchBufferId(),ParticleBuffers.DISPATCH_BYTES*(ParticleBuffers.STORM_DISPATCH+1));
+            check(nextDispatch.getInt(ParticleBuffers.MODEL_DISPATCH*ParticleBuffers.DISPATCH_BYTES)==2,"Next tick uses published MODEL roster");
+            check(nextDispatch.getInt(ParticleBuffers.STORM_DISPATCH*ParticleBuffers.DISPATCH_BYTES)==1,"Next tick uses two Storm members instead of the whole pool");
+            cases.add(Map.of("case","MODEL emission, roster publication and next-tick dispatch","passed",true));
+        }finally{shaders.delete();gpu.free();state.restore();}
+    }
+    static void projectNativeStorm(ParticleBuffers gpu)throws Exception{
+        int capacity=16, members=2;
+        int length=STORM_DISPLAY_HEADER_BYTES+capacity*STORM_DISPLAY_RECORD_BYTES+STORM_COLUMN_SLOTS*STORM_COLUMN_MEMBERS*STORM_DISPLAY_COLUMN_BYTES;
+        int nativeBuffer=GL45.glCreateBuffers();
+        var packet=bytes(STORM_DISPLAY_HEADER_BYTES+members*STORM_DISPLAY_RECORD_BYTES)
+                .putInt(0,STORM_DISPLAY_MAGIC).putInt(4,ABI).putInt(8,members).putInt(12,capacity)
+                .putLong(STORM_DISPLAY_SEQUENCE_OFFSET,1).putLong(24,1).putLong(32,1).putInt(STORM_DISPLAY_READY_OFFSET,1);
+        for(int i=0;i<members;i++){
+            int record=STORM_DISPLAY_HEADER_BYTES+i*STORM_DISPLAY_RECORD_BYTES;
+            packet.putFloat(record+8,-1).putFloat(record+STORM_DISPLAY_APPEARANCE_OFFSET,20)
+                    .putFloat(record+STORM_DISPLAY_APPEARANCE_OFFSET+8,1).putInt(record+STORM_DISPLAY_KEY_OFFSET,i);
+        }
+        GL45.glNamedBufferStorage(nativeBuffer,length,GL44.GL_DYNAMIC_STORAGE_BIT);
+        GL45.glNamedBufferSubData(nativeBuffer,0,packet);
+        var lease=new NativeStormSimulation.FrozenDisplay(){
+            public int buffer(){return nativeBuffer;}public long sequence(){return 1;}public long tick(){return 1;}
+            public long gameTime(){return 1;}public long identity(){return 1;}public void close(){}
+        };
+        var type=Class.forName("com.iridium126.createmanaindustry.client.particles.engine.StormProjectionGpu");
+        var ctor=type.getDeclaredConstructor(String.class);ctor.setAccessible(true);
+        var stage=type.getDeclaredMethod("stage",ParticleBuffers.class,int.class,int.class,int.class,NativeStormSimulation.FrozenDisplay.class);stage.setAccessible(true);
+        try(var projection=(AutoCloseable)ctor.newInstance(source("storm_projection.comp"))){
+            gpu.ensureStormIdentities();
+            GL45.glNamedBufferSubData(gpu.dispatchBufferId(),ParticleBuffers.STORM_DISPATCH*12L,new int[]{1,1,1});
+            stage.invoke(projection,gpu,0,1,1,lease);
+        }finally{GL15.glDeleteBuffers(nativeBuffer);}
+    }
     static void featherPixels(List<Object> cases)throws Exception{
         int p=GpuShaderCompiler.graphics("feather pixels","#version 450 core\n"+ParticlePrograms.commonPrelude()+source("feather.vsh"),"#version 450 core\n"+ParticlePrograms.commonPrelude()+source("textured.fsh"));
         int pool=buffer(bytes(64)),list=buffer(bytes(com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.BYTES));
@@ -819,14 +908,27 @@ public final class ParticleEngineGpuValidation {
     }
     public static void main(String[] args)throws Exception{
         Path out=Path.of(ParticleFixtureOptions.parse(args).getOrDefault("output","build/particle-engine/verify"));Files.createDirectories(out);var result=new LinkedHashMap<String,Object>();var cases=new ArrayList<Object>();result.put("passed",false);
-        check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,6);long window=GLFW.glfwCreateWindow(32,32,"particle engine driver checks",0,0);GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
+        var options=Arrays.asList(args);
+        check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,0);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,6);
+        if(options.contains("--model-display-only")){
+            GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_CORE_PROFILE);
+            GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_FORWARD_COMPAT,GLFW.GLFW_TRUE);
+        }
+        long window=GLFW.glfwCreateWindow(32,32,"particle engine driver checks",0,0);check(window!=0,"GL context");GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();
         try{
+            if(options.contains("--model-display-only")){
+                com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
+                System.out.println(GL11.glGetString(GL11.GL_RENDERER)+" / "+GL11.glGetString(GL11.GL_VERSION));
+                modelEmission(cases);
+                displayPublication(cases);
+            }else{
             compactPoses(cases);
-            if(Arrays.asList(args).contains("--native-helix-only"))nativeHelixLaunch(cases);
+            if(options.contains("--native-helix-only"))nativeHelixLaunch(cases);
             else if(Arrays.asList(args).contains("--storm-timeline-only")){nativeStormTimeline(cases);nativeDomePartialTerrain(cases);nativeFeatherImpact(cases);}
             else{localCorrection(cases);contacts(cases);interpolation(cases);displayPublication(cases);featherPixels(cases);conservativeVisibility(cases,!Arrays.asList(args).contains("--gl-only"));glQueries(cases);geometry(cases,!Arrays.asList(args).contains("--gl-only"));for(String shader:List.of("spatial/motion.comp","update.comp","wavecontact.comp","dome_contacts.comp","dome_contact_control.comp","dome_contact_apply.comp","dome_contact_audit.comp","storm_projection.comp"))GL20.glDeleteProgram(program(shader));if(!Arrays.asList(args).contains("--gl-only")){nativeQueries(cases);nativeRing(cases);nativeWorkerQueue(cases);nativeStormTimeline(cases);nativeHelixLaunch(cases);}}
             if(!Arrays.asList(args).contains("--storm-timeline-only")&&!Arrays.asList(args).contains("--native-helix-only")
                     &&!Arrays.asList(args).contains("--gl-only")){nativeDomePartialTerrain(cases);nativeFeatherImpact(cases);}
+            }
             check(GL11.glGetError()==0,"GL state");result.put("passed",true);
         }finally{result.put("checks",checks);result.put("cases",cases);result.put("gpu",GL11.glGetString(GL11.GL_RENDERER));result.put("driver",GL11.glGetString(GL11.GL_VERSION));Files.writeString(out.resolve("gpu.json"),new GsonBuilder().setPrettyPrinting().create().toJson(result));GpuValidationSupport.close(window);}
     }

@@ -1,6 +1,6 @@
 # 粒子引擎重构状态
 
-普通构建使用原生预编译模块 `13.0.0.0`；GPU/原生共享布局由 `particle-resources.json` 的 `ABI` 常量单一来源生成。Storm 模拟默认为 AUTO，主视图 RT 遮挡独立启用。模拟、投影与接收设置见[客户端配置](particle-engine-install.md)。
+普通构建使用原生预编译模块 `13.1.0.0`；GPU/原生共享布局由 `particle-resources.json` 的 `ABI` 常量单一来源生成。Storm 模拟默认为 AUTO 并跟随 Minecraft 的 GPU，主视图 RT 遮挡独立启用。模拟、投影与接收设置见[客户端配置](particle-engine-install.md)。
 
 当前代码中：
 

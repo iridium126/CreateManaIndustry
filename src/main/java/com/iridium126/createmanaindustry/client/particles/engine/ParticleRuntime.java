@@ -1567,12 +1567,10 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                         AllayModelGeometry.OPAQUE_INDEX_COUNT);
             } catch (RuntimeException | LinkageError e) {
                 this.initialized = false;
-                CreateManaIndustry.LOGGER.error(CMILog.PARTICLES + "GPU init failed", e);
+                CreateManaIndustry.LOGGER.error(CMILog.PARTICLES + "GPU particle engine initialization failed; disabled for this session", e);
             }
             if (!this.initialized) {
                 this.disabled = true;
-                CreateManaIndustry.LOGGER.error(
-                        CMILog.PARTICLES + "GPU particle engine failed to initialise; disabled for this session.");
                 return false;
             }
         }

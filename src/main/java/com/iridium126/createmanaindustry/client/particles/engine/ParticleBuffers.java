@@ -463,8 +463,8 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
      */
     public boolean init(int maxParticles, int maxEmitters) {
         var limits=GpuCapabilities.current();
-        if(!limits.supportsCompute(IDENTITY_BB,1,64)) {
-            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Device does not support the particle compute pipeline; engine disabled");
+        if(!limits.supportsCompute(15,16,64)) {
+            CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Particle engine disabled: requires OpenGL 4.5, 16 SSBO slots/compute blocks and 64-thread compute groups (device: {})",limits);
             return false;
         }
         int cap=limits.elementCapacity(maxParticles,BYTES_PER_PARTICLE,64);
@@ -1171,8 +1171,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     public void unbindShaders() {
         endBindings();
         ParticleDiagnostics.INSTANCE.call();
-        org.lwjgl.opengl.GL44.nglBindBuffersBase(GL43.GL_SHADER_STORAGE_BUFFER, 0,
-                IDENTITY_BB + 1, 0L);
+        GpuBindings.clearStorage(IDENTITY_BB + 1);
         GpuBindings.bind(GL43.GL_DISPATCH_INDIRECT_BUFFER, 0);
     }
 
@@ -1272,6 +1271,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     /** Draws draw-command {@code cmd} (offset in the indirect buffer). */
     public void drawIndirect(int cmd) {
         ParticleDiagnostics.INSTANCE.drawCall();
+        GpuBindings.prepareStorage();
         GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES, cmd * (long) INDIRECT_STRIDE);
     }
 
@@ -1285,6 +1285,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
      */
     public void drawModelSegments() {
         ParticleDiagnostics.INSTANCE.drawCall();
+        GpuBindings.prepareStorage();
         if(com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.active()){
             ParticleDiagnostics.INSTANCE.drawCall();ParticleDiagnostics.INSTANCE.drawCall();
             ParticleFrameStages.draw("native.model.body",()->GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES,GL11.GL_UNSIGNED_INT,2L*INDIRECT_STRIDE,1,INDIRECT_STRIDE));
@@ -1298,6 +1299,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     /** Draws ONLY the CUTOUT MODEL body segment (command 2) -- shader-pack early path. */
     public void drawModelCutout() {
         ParticleDiagnostics.INSTANCE.drawCall();
+        GpuBindings.prepareStorage();
         GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES, GL11.GL_UNSIGNED_INT,
                 2L * INDIRECT_STRIDE, 1, INDIRECT_STRIDE);
     }
@@ -1305,6 +1307,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     /** Draws ONLY the held-item CARRIER segment (command 3) -- shader-pack early path. */
     public void drawModelCarrier() {
         ParticleDiagnostics.INSTANCE.drawCall();
+        GpuBindings.prepareStorage();
         GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES, GL11.GL_UNSIGNED_INT,
                 3L * INDIRECT_STRIDE, 1, INDIRECT_STRIDE);
     }
@@ -1312,6 +1315,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     /** Draws ONLY the GHOST MODEL segment (command 4) -- shader-pack early path. */
     public void drawModelGhost() {
         ParticleDiagnostics.INSTANCE.drawCall();
+        GpuBindings.prepareStorage();
         GL43.glMultiDrawElementsIndirect(GL11.GL_TRIANGLES, GL11.GL_UNSIGNED_INT,
                 4L * INDIRECT_STRIDE, 1, INDIRECT_STRIDE);
     }

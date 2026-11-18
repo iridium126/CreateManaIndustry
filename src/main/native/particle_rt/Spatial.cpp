@@ -33,9 +33,9 @@ struct Engine {
     CUdeviceptr vertices{},indices{},unitGas{},instances{},gas{},scratch{},params{},records{},temporary{},stormHints{};size_t owned{},gasBytes{},scratchBytes{};
     OptixTraversableHandle unitHandle{},handle{};unsigned capacity{},terrainCapacity{},probes{};bool built{},referenceRefit{},borrowedStream{};unsigned builtInstances{};SpatialParams* host{};unsigned* receipts{};
     void alloc(CUdeviceptr& p,size_t bytes){bytes=std::max<size_t>(bytes,16);reserveBytes(bytes);try{checked(cuMemAlloc(&p,bytes));}catch(...){particleRtOwnedBytes-=bytes;throw;}owned+=bytes;}
-    Engine(unsigned cap,unsigned terrain,unsigned rays,bool reference,CUstream shared=nullptr):
+    Engine(unsigned cap,unsigned terrain,unsigned rays,bool reference,CUstream shared=nullptr,CUcontext owner=nullptr):
         capacity(cap),terrainCapacity(terrain),probes(rays),referenceRefit(reference),borrowedStream(shared!=nullptr){
-        try{context=acquireContext();if(shared)stream=shared;else checked(cuStreamCreate(&stream,CU_STREAM_NON_BLOCKING));rt(optixInit());OptixDeviceContextOptions opts{};rt(optixDeviceContextCreate(context,&opts,&optix));
+        try{context=owner?owner:acquireContext();checked(cuCtxSetCurrent(context));if(shared)stream=shared;else checked(cuStreamCreate(&stream,CU_STREAM_NON_BLOCKING));rt(optixInit());OptixDeviceContextOptions opts{};rt(optixDeviceContextCreate(context,&opts,&optix));
         if(!shared){
             auto fatbin=embeddedDevice(101);checked(cuModuleLoadData(&grid,fatbin.data()));checked(cuModuleGetFunction(&validate,grid,"validateSpatial"));checked(cuModuleGetFunction(&prepare,grid,"prepareSpatial"));checked(cuModuleGetFunction(&seal,grid,"sealSpatial"));
         }else alloc(stormHints,cap*sizeof(float4));
@@ -92,7 +92,7 @@ struct Engine {
         CUDA_EXTERNAL_SEMAPHORE_SIGNAL_PARAMS done{};done.params.fence.value=ticket.value;checked(cuSignalExternalSemaphoresAsync(&ticket.outputReady,&done,1,stream));checked(cuEventRecord(marks[5],stream));
     }
     ~Engine(){release();}
-    void release(){if(context)cuCtxSetCurrent(context);if(stream)cuStreamSynchronize(stream);terrainCache.reset();if(pipeline)optixPipelineDestroy(pipeline);for(auto g:groups)if(g)optixProgramGroupDestroy(g);if(module)optixModuleDestroy(module);if(grid)cuModuleUnload(grid);if(optix)optixDeviceContextDestroy(optix);for(auto p:{vertices,indices,unitGas,instances,gas,scratch,params,records,temporary,stormHints})if(p)cuMemFree(p);particleRtOwnedBytes-=owned;if(host)cuMemFreeHost(host);if(receipts)cuMemFreeHost(receipts);if(stream&&!borrowedStream)cuStreamDestroy(stream);if(context)releaseContext();}
+    void release(){if(context)cuCtxSetCurrent(context);if(stream)cuStreamSynchronize(stream);terrainCache.reset();if(pipeline)optixPipelineDestroy(pipeline);for(auto g:groups)if(g)optixProgramGroupDestroy(g);if(module)optixModuleDestroy(module);if(grid)cuModuleUnload(grid);if(optix)optixDeviceContextDestroy(optix);for(auto p:{vertices,indices,unitGas,instances,gas,scratch,params,records,temporary,stormHints})if(p)cuMemFree(p);particleRtOwnedBytes-=owned;if(host)cuMemFreeHost(host);if(receipts)cuMemFreeHost(receipts);if(stream&&!borrowedStream)cuStreamDestroy(stream);if(context&&!borrowedStream)releaseContext();}
 };
 struct Job {std::shared_ptr<const TerrainSnapshot> terrain;int state{};bool launched{},drainRecorded{};BridgeTicket ticket{};uint64_t nonce{},generation{},scene{};unsigned kind{},members{},terrainCount{};CUevent marks[6]{},drain{};std::string error;};
 struct Session {
@@ -153,11 +153,11 @@ struct Session {
 }
 struct StormSpatial {
     Engine pipeline;
-    StormSpatial(unsigned capacity,unsigned probes,CUstream stream):
-        pipeline(capacity,CMI_RESOURCE_STORM_SPATIAL_TERRAIN_LIMIT,probes,false,stream){}
+    StormSpatial(unsigned capacity,unsigned probes,CUcontext context,CUstream stream):
+        pipeline(capacity,CMI_RESOURCE_STORM_SPATIAL_TERRAIN_LIMIT,probes,false,stream,context){}
 };
-StormSpatial* createStormSpatial(unsigned capacity,unsigned probes,CUstream stream){
-    return new StormSpatial(capacity,probes,stream);
+StormSpatial* createStormSpatial(unsigned capacity,unsigned probes,CUcontext context,CUstream stream){
+    return new StormSpatial(capacity,probes,context,stream);
 }
 void destroyStormSpatial(StormSpatial* spatial){delete spatial;}
 CUdeviceptr queryStormSpatial(StormSpatial& spatial,unsigned slot,CUfunction prepare,

@@ -1,5 +1,5 @@
 {
-  "version": "13.0.0.0",
+  "version": "13.1.0.0",
   "platform": "windows-x86_64",
   "layout": {
     "ABI": 13,
@@ -61,6 +61,7 @@
     "STORM_DISPLAY_HEADER_BYTES": 64,
     "STORM_DISPLAY_SEQUENCE_OFFSET": 16,
     "STORM_DISPLAY_READY_OFFSET": 40,
+    "STORM_DISPLAY_COLUMN_MASK_OFFSET": 44,
     "STORM_DISPLAY_RECORD_BYTES": 80,
     "STORM_DISPLAY_APPEARANCE_OFFSET": 48,
     "STORM_DISPLAY_KEY_OFFSET": 64,
@@ -101,6 +102,6 @@
     "STORM_HELIX_REFERENCE_OFFSET": 13520,
     "STORM_HELIX_REFERENCE_BYTES": 16
   },
-  "dll_sha256": "e1b2c20a3c19156a9411fba03ba6a8d8fb36a2ab0d398352be4651a832d8c412",
+  "dll_sha256": "704a6f9a9f09855f2877d9632a26fed0ee2eeec6dc878ad47c8c5af3c378259c",
   "embedded_device_programs": true
 }

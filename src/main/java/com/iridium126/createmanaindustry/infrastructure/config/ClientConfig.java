@@ -56,6 +56,7 @@ public final class ClientConfig {
     private static ModConfigSpec.IntValue PARTITION_MAX_PARTICLES, SAME_FATE_MAX_PARTICLES;
     private static ModConfigSpec.EnumValue<ParticleShadowQuality> STORM_SHADOW_QUALITY;
     private static ModConfigSpec.EnumValue<StormSimulationBackend> STORM_BACKEND;
+    private static ModConfigSpec.ConfigValue<String> STORM_GPU;
     private static ModConfigSpec.BooleanValue RT_CAMERA_OCCLUSION, PARTICLE_RECEIVE_SHADOWS;
     private static ModConfigSpec.IntValue ALLAY_FEATHER_RATE, ALLAY_GOLD_RATE, STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT, PARTICLE_HEX_PATTERN_REDIRECT;
@@ -116,9 +117,11 @@ public final class ClientConfig {
                 .defineInRange("sameFateMaxParticles", DEFAULT_SAME_FATE_MAX_PARTICLES, 256, 1048576);
         BUILDER.pop();
 
-        BUILDER.comment("Allay Storm visuals; these options do not change combat or simulation.").push("allayStorm");
+        BUILDER.comment("Allay Storm visuals and client simulation.").push("allayStorm");
         STORM_BACKEND = BUILDER.comment("AUTO uses RT and falls back to GL on failure. RT freezes on failure.")
                 .defineEnum("simulationBackend", StormSimulationBackend.AUTO);
+        STORM_GPU = BUILDER.comment("RT device: minecraft or a CUDA GPU UUID with an optional |model label. GL follows Minecraft.")
+                .define("simulationGpu", StormSimulationGpu.DEFAULT_VALUE, StormSimulationGpu::valid);
         STORM_SHADOW_QUALITY = BUILDER.comment("FULL uses Iris casting. COARSE can reject the whole Storm body.",
                 "RT uses qualified light occlusion. OFF disables particle shadow casting.")
                 .defineEnum("shaderPackShadowQuality", ParticleShadowQuality.FULL);
@@ -169,7 +172,9 @@ public final class ClientConfig {
     public static int particleFadeDistance = DEFAULT_PARTICLE_FADE_DISTANCE;
     public static boolean shaderPackIntegration = DEFAULT_SHADER_PACK_INTEGRATION;
     public static ParticleShadowQuality shaderPackShadowQuality = ParticleShadowQuality.FULL;
-    public static volatile StormSimulationBackend stormSimulationBackend = StormSimulationBackend.AUTO;
+    public record StormSimulation(StormSimulationBackend backend, StormSimulationGpu gpu) {}
+    public static volatile StormSimulation stormSimulation = new StormSimulation(
+            StormSimulationBackend.AUTO, StormSimulationGpu.FOLLOW_MINECRAFT);
     public static volatile boolean rtCameraOcclusion = DEFAULT_RT_CAMERA_OCCLUSION, particleReceiveShadows = DEFAULT_PARTICLE_RECEIVE_SHADOWS;
     public static int allayFeatherMaxSpawnPerSecond = DEFAULT_ALLAY_FEATHER_RATE, allayGoldMaxSpawnPerSecond = DEFAULT_ALLAY_GOLD_RATE;
     public static int stormLod1Distance = DEFAULT_STORM_LOD_1_DISTANCE, stormLodDistance = DEFAULT_STORM_LOD_DISTANCE;
@@ -201,7 +206,7 @@ public final class ClientConfig {
             partitionMaxParticles = PARTITION_MAX_PARTICLES.get();
             sameFateMaxParticles = SAME_FATE_MAX_PARTICLES.get();
             shaderPackShadowQuality = STORM_SHADOW_QUALITY.get();
-            stormSimulationBackend = STORM_BACKEND.get();
+            stormSimulation = new StormSimulation(STORM_BACKEND.get(), StormSimulationGpu.parse(STORM_GPU.get()));
             rtCameraOcclusion = RT_CAMERA_OCCLUSION.get();
             particleReceiveShadows = PARTICLE_RECEIVE_SHADOWS.get();
             allayFeatherMaxSpawnPerSecond = ALLAY_FEATHER_RATE.get();

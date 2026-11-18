@@ -2,6 +2,7 @@
 #include "ParticleDevice.h"
 #include "StormStep.h"
 #include "StormSpatial.h"
+#include "StormDisplayTransfer.h"
 #include "StormTerrain.h"
 #include "Interop.h"
 #include <array>
@@ -19,6 +20,34 @@
 namespace {
 constexpr unsigned slots=CMI_RESOURCE_RT_SLOTS, block=256;
 constexpr int idle=0, pending=1, complete=2, failed=4, undrained=5, queued=6, reserved=7;
+std::string deviceUuid(CUdevice device){
+    CUuuid uuid{};
+    checked(cuDeviceGetUuid(&uuid,device));
+    constexpr char hex[]="0123456789abcdef";
+    std::string text="GPU-";
+    for(unsigned i=0;i<sizeof(uuid.bytes);++i){
+        if(i==4||i==6||i==8||i==10)text+='-';
+        auto value=static_cast<unsigned char>(uuid.bytes[i]);
+        text+=hex[value>>4];text+=hex[value&15];
+    }
+    return text;
+}
+int cudaDeviceCount(){
+    auto result=cuInit(0);
+    if(result==CUDA_ERROR_NO_DEVICE)return 0;
+    checked(result);
+    int count{};
+    checked(cuDeviceGetCount(&count));
+    return count;
+}
+CUdevice findCudaDevice(const std::string& uuid){
+    int count=cudaDeviceCount();
+    for(int i=0;i<count;++i){
+        CUdevice device{};checked(cuDeviceGet(&device,i));
+        if(deviceUuid(device)==uuid)return device;
+    }
+    throw std::runtime_error("Selected Storm CUDA device is unavailable: "+uuid);
+}
 void CUDA_CB injectedDelay(void* value){Sleep(DWORD(reinterpret_cast<uintptr_t>(value)));}
 struct DomeUpload {
     std::vector<unsigned char> bytes;
@@ -82,6 +111,8 @@ class StormControlSession {
     std::array<TickSlot,slots> ring{};
     std::array<DisplaySlot,slots> displayRing{};
     void* displayBridge{};
+    std::unique_ptr<StormDisplayTransfer> transfer;
+    bool ownsContext{};
     StormSpatial* spatial{};
     std::shared_ptr<const TerrainSnapshot> geometry;
     uint64_t submitted{},consumed{},tick{},identity{};
@@ -435,7 +466,8 @@ class StormControlSession {
         }
     }
 public:
-    StormControlSession(unsigned cap,void* bridge,unsigned probes):capacity(cap) {
+    StormControlSession(unsigned cap,void* bridge,unsigned probes,const std::string& uuid={},
+            const std::array<unsigned char*,slots>& mappings={}):capacity(cap),ownsContext(!uuid.empty()) {
         if(!capacity||capacity>131072||(probes!=2&&probes!=4))
             throw std::runtime_error("Invalid native Storm capacity or probe count");
         memberMarks.resize(capacity);
@@ -445,9 +477,13 @@ public:
                     +columnSlots*columnMembers*sizeof(StormColumnDisplay),slots);
                 acquireBridgeLease(bridge);displayBridge=bridge;
             }
-            context=acquireContext();
+            if(ownsContext){
+                auto device=findCudaDevice(uuid);
+                checked(cuCtxCreate(&context,0,device));
+                transfer=std::make_unique<StormDisplayTransfer>(context,capacity,mappings);
+            }else context=acquireContext();
             checked(cuStreamCreate(&stream,CU_STREAM_NON_BLOCKING));
-            spatial=createStormSpatial(capacity,probes,stream);
+            spatial=createStormSpatial(capacity,probes,context,stream);
             auto bytes=embeddedDevice(103);
             checked(cuModuleLoadData(&module,bytes.data()));
             checked(cuModuleGetFunction(&control,module,"applyStormControl"));
@@ -488,6 +524,7 @@ public:
             worker.join();
         }
         if(context)cuCtxSetCurrent(context);
+        transfer.reset();
         destroyStormSpatial(spatial);
         for(auto& s:ring){
             if(s.deviceReceipt)cuMemFree(s.deviceReceipt);
@@ -513,7 +550,7 @@ public:
         particleRtOwnedBytes-=owned;
         if(module)cuModuleUnload(module);
         if(stream)cuStreamDestroy(stream);
-        if(context)releaseContext();
+        if(context){if(ownsContext)cuCtxDestroy(context);else releaseContext();}
         if(displayBridge)releaseBridgeLease(displayBridge);
     }
     void installTerrain(uint64_t revision,const SpatialParticle* rows,int count,size_t bytes){
@@ -568,8 +605,10 @@ public:
         checked(cuEventRecord(domeUploadDone,stream));
     }
     bool prepareDisplay(unsigned index){
-        if(!displayBridge||stopped)return false;
+        if(stopped)return false;
         auto& display=displayRing.at(index);
+        if(transfer)return display.state==idle;
+        if(!displayBridge)return false;
         if(display.state==idle){
             display.ticket=releaseQueryInput(displayBridge,index);
             display.state=reserved;
@@ -582,7 +621,7 @@ public:
         StormTick input;std::memcpy(&input,source,sizeof(input));
         auto commands=static_cast<const unsigned char*>(source)+sizeof(input);
         validateHeader(input,bytes);
-        if(displayIndex< -1||displayIndex>=int(slots)||(displayIndex>=0&&!displayBridge))
+        if(displayIndex< -1||displayIndex>=int(slots)||(displayIndex>=0&&!displayBridge&&!transfer))
             throw std::runtime_error("Invalid native display slot");
         if(displayIndex>=0){
             const auto& display=displayRing[displayIndex];
@@ -596,7 +635,8 @@ public:
         s.error.clear();
         if(displayIndex>=0){
             auto& display=displayRing[displayIndex];
-            if(display.state==idle)display.ticket=releaseQueryInput(displayBridge,unsigned(displayIndex));
+            if(transfer)transfer->reserve(unsigned(displayIndex),input,timed);
+            else if(display.state==idle)display.ticket=releaseQueryInput(displayBridge,unsigned(displayIndex));
             display.sequence=input.sequence;
             display.state=pending;
             s.ticket=display.ticket;
@@ -730,20 +770,24 @@ public:
             mark(6);
             stage="Storm display and receipt";
             CUdeviceptr output{};
-            const auto* ticket=s.display<0?nullptr:&s.ticket;
+            const auto* ticket=s.display>=0&&displayBridge?&s.ticket:nullptr;
+            unsigned staged=s.display>=0&&transfer;
             if(ticket){
                 CUDA_EXTERNAL_SEMAPHORE_WAIT_PARAMS wait{};
                 wait.params.fence.value=ticket->value;
                 checked(cuWaitExternalSemaphoresAsync(&ticket->inputReady,&wait,1,stream));
                 output=ticket->output;
+            }else if(staged)output=transfer->output(s.display);
+            if(output){
                 void* prepareArgs[]={&output,&input,&capacity};
                 checked(cuLaunchKernel(displayPrepare,1,1,1,1,1,1,0,stream,prepareArgs,nullptr));
                 if(active&&input.population){
-                    void* publishArgs[]={&output,&members,&input,&view};
+                    void* publishArgs[]={&output,&members,&input,&view,&staged};
                     launch(displayPublish,input.population,publishArgs);
                 }
                 void* sealArgs[]={&output};
                 checked(cuLaunchKernel(displaySeal,1,1,1,1,1,1,0,stream,sealArgs,nullptr));
+                if(staged)transfer->seal(s.display,stream);
             }
             void* args[]={&s.deviceReceipt,&input,&output};
             checked(cuLaunchKernel(seal,1,1,1,1,1,1,0,stream,args,nullptr));
@@ -755,8 +799,10 @@ public:
             checked(cuMemcpyDtoHAsync(s.receipt,s.deviceReceipt,sizeof(StormStepReceipt),stream));
             mark(7);
             checked(cuEventRecord(s.done,stream));
+            if(staged)transfer->enqueue(s.display);
             s.state=pending;
         } catch(const std::exception& e) {
+            if(transfer&&s.display>=0)transfer->cancel(s.display);
             s.error=std::string(stage)+": "+e.what();
             workerFailed=true;
             s.state=cuEventRecord(s.done,stream)==CUDA_SUCCESS?failed:undrained;
@@ -800,8 +846,10 @@ public:
         auto& s=ring[consumed%slots];
         if(s.display>=0){
             auto& display=displayRing[s.display];
-            if(result==complete)consumeQueryOutput(displayBridge,s.display,display.ticket.value);
-            else if(s.state!=undrained)retireQueryWithoutOutput(displayBridge,s.display,display.ticket.value);
+            if(displayBridge){
+                if(result==complete)consumeQueryOutput(displayBridge,s.display,display.ticket.value);
+                else if(s.state!=undrained)retireQueryWithoutOutput(displayBridge,s.display,display.ticket.value);
+            }
             display.state=s.state==undrained?undrained:complete;
         }
         if(s.state!=undrained)s.state=idle;
@@ -813,6 +861,7 @@ public:
         auto& display=displayRing.at(index);
         if(display.sequence!=sequence||!fence)throw std::runtime_error("Invalid native display retirement");
         if(display.state!=complete)return false;
+        if(transfer&&transfer->pending(index))return false;
         for(const auto& earlier:displayRing)if(earlier.sequence&&earlier.sequence<sequence)return false;
         using Wait=unsigned(APIENTRY*)(void*,unsigned,unsigned long long);
         auto wait=reinterpret_cast<Wait>(wglGetProcAddress("glClientWaitSync"));
@@ -823,6 +872,12 @@ public:
         display={};
         if(!stopped)prepareDisplay(index);
         return true;
+    }
+    jlong stagedDisplayTime(unsigned index,uint64_t sequence,jlongArray metadata,JNIEnv* env){
+        const auto& display=displayRing.at(index);
+        if(!transfer||display.sequence!=sequence||display.state!=complete||!metadata||env->GetArrayLength(metadata)<2)
+            throw std::runtime_error("Invalid staged Storm display request");
+        return transfer->copyTime(index,metadata,env);
     }
     bool copyDomeBatch(uint64_t sequence,void* destination,size_t bytes){
         if(poll(sequence)!=complete)throw std::runtime_error("Dome result is not ready");
@@ -879,7 +934,7 @@ public:
         bind();
         // Without a trustworthy fence, keep the allocations quarantined
         // rather than allowing them to alias another session.
-        if(cuStreamQuery(stream)!=CUDA_SUCCESS)return false;
+        if(cuStreamQuery(stream)!=CUDA_SUCCESS||(transfer&&!transfer->drained()))return false;
         release();
         return true;
     }
@@ -893,6 +948,62 @@ StormControlSession& session(jlong handle) {
 extern "C" JNIEXPORT jlong JNICALL JNI_NAME(createStormControl)(JNIEnv* env,jclass,jint capacity,jlong displayBridge,jint probes) {
     try { return reinterpret_cast<jlong>(new StormControlSession(unsigned(capacity),reinterpret_cast<void*>(displayBridge),unsigned(probes))); }
     catch(const std::exception& e){fail(env,e);return 0;}
+}
+extern "C" JNIEXPORT jobjectArray JNICALL JNI_NAME(stormCudaDevices)(JNIEnv* env,jclass){
+    try{
+        int count=cudaDeviceCount();
+        auto result=env->NewObjectArray(count*3,env->FindClass("java/lang/String"),nullptr);
+        if(!result)return nullptr;
+        for(int i=0;i<count;++i){
+            CUdevice device{};checked(cuDeviceGet(&device,i));
+            char name[256]{},pci[32]{};
+            checked(cuDeviceGetName(name,sizeof(name),device));
+            checked(cuDeviceGetPCIBusId(pci,sizeof(pci),device));
+            auto uuid=deviceUuid(device);
+            const char* fields[]={uuid.c_str(),name,pci};
+            for(int field=0;field<3;++field){
+                auto value=env->NewStringUTF(fields[field]);
+                if(!value)return nullptr;
+                env->SetObjectArrayElement(result,i*3+field,value);
+                env->DeleteLocalRef(value);
+            }
+        }
+        return result;
+    }catch(const std::exception& error){if(!env->ExceptionCheck())fail(env,error);return nullptr;}
+}
+extern "C" JNIEXPORT jstring JNICALL JNI_NAME(stormOpenGlCudaUuid)(JNIEnv* env,jclass){
+    try{
+        if(!cudaDeviceCount())return nullptr;
+        unsigned count=0;CUdevice device{};
+        if(cuGLGetDevices(&count,&device,1,CU_GL_DEVICE_LIST_CURRENT_FRAME)!=CUDA_SUCCESS||count!=1)return nullptr;
+        return env->NewStringUTF(deviceUuid(device).c_str());
+    }catch(const std::exception& error){fail(env,error);return nullptr;}
+}
+extern "C" JNIEXPORT jlong JNICALL JNI_NAME(createStagedStormControl)(JNIEnv* env,jclass,jint capacity,
+        jstring uuid,jobjectArray mapped,jint probes){
+    try{
+        if(!uuid||!mapped||env->GetArrayLength(mapped)!=slots||capacity<=0||capacity>131072)
+            throw std::runtime_error("Invalid staged Storm session");
+        auto device=utf(env,uuid);
+        if(device.empty())throw std::runtime_error("A staged Storm session requires a CUDA device");
+        constexpr size_t columnBytes=CMI_RESOURCE_STORM_COLUMN_SLOTS*CMI_RESOURCE_STORM_COLUMN_MEMBERS*sizeof(StormColumnDisplay);
+        jlong bytes=sizeof(StormDisplayHeader)+size_t(capacity)*sizeof(StormDisplayRecord)+columnBytes;
+        std::array<unsigned char*,slots> pointers{};
+        for(unsigned i=0;i<slots;++i){
+            auto buffer=env->GetObjectArrayElement(mapped,i);
+            auto pointer=static_cast<unsigned char*>(env->GetDirectBufferAddress(buffer));
+            auto size=env->GetDirectBufferCapacity(buffer);
+            env->DeleteLocalRef(buffer);
+            if(!pointer||size<bytes)throw std::runtime_error("Staged Storm mapping is too small");
+            pointers[i]=pointer;
+        }
+        return reinterpret_cast<jlong>(new StormControlSession(unsigned(capacity),nullptr,unsigned(probes),device,pointers));
+    }catch(const std::exception& error){if(!env->ExceptionCheck())fail(env,error);return 0;}
+}
+extern "C" JNIEXPORT jlong JNICALL JNI_NAME(stagedStormDisplayTime)(JNIEnv* env,jclass,jlong handle,
+        jint index,jlong sequence,jlongArray metadata){
+    try{return session(handle).stagedDisplayTime(unsigned(index),uint64_t(sequence),metadata,env);}
+    catch(const std::exception& error){if(!env->ExceptionCheck())fail(env,error);return -1;}
 }
 extern "C" JNIEXPORT void JNICALL JNI_NAME(installStormTerrain)(JNIEnv* env,jclass,jlong handle,jlong revision,
         jobject rows,jint count){

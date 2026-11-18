@@ -1,10 +1,9 @@
 package com.iridium126.createmanaindustry.client.gpu.state;
 
-import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
-
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.iridium126.createmanaindustry.client.gpu.GpuCapabilities;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferRetirement;
 
 /** Compute/initialization boundary. No framebuffer, viewport or blend/depth writes. */
@@ -18,6 +17,8 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
     private final int[] targets,bindings;
     private final int[] ssbo=new int[BINDINGS],renderTextures=new int[UNITS];
     private final long[] offsets=new long[BINDINGS],sizes=new long[BINDINGS];
+    private int storageSlots;
+    private GpuBindings.StorageSnapshot logicalStorage;
     private final int[][] textures;
     private static final int[] IMAGE_STATE={GL42.GL_IMAGE_BINDING_NAME,GL42.GL_IMAGE_BINDING_LEVEL,GL42.GL_IMAGE_BINDING_LAYERED,GL42.GL_IMAGE_BINDING_LAYER,GL42.GL_IMAGE_BINDING_ACCESS,GL42.GL_IMAGE_BINDING_FORMAT};
     private final int[][] images;
@@ -58,7 +59,9 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
         if(samplerObjects!=null)for(int i=0;i<units;i++)samplerObjects[i]=GL30.glGetIntegeri(GL33.GL_SAMPLER_BINDING,i);
         for(int unit=0;unit<images.length;unit++)for(int i=0;i<6;i++)images[unit][i]=GL30.glGetIntegeri(IMAGE_STATE[i],unit);
         unpackBuffer=GL11.glGetInteger(GL21.GL_PIXEL_UNPACK_BUFFER_BINDING);for(int i=0;i<UNPACK.length;i++)unpack[i]=GL11.glGetInteger(UNPACK[i]);
-        for(int i=0;i<BINDINGS;i++){ssbo[i]=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,i);offsets[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,i);sizes[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,i);}
+        storageSlots=Math.min(BINDINGS,GpuCapabilities.current().storageBindings());
+        logicalStorage=GpuBindings.snapshotStorage(logicalStorage);
+        for(int i=0;i<storageSlots;i++){ssbo[i]=GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING,i);offsets[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START,i);sizes[i]=ssbo[i]==0?0:GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_SIZE,i);}
         for(int i=0;i<units;i++){if(i<UNITS)renderTextures[i]=RenderSystem.getShaderTexture(i);GL13.glActiveTexture(GL13.GL_TEXTURE0+i);for(int j=0;j<bindings.length;j++)textures[i][j]=GL11.glGetInteger(bindings[j]);}
         // Lazy atlas/TBO initialization binds on the active unit. Confine it to
         // our saved unit 0 even when Iris entered on a higher pack sampler unit.
@@ -71,7 +74,8 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
     private static int liveBuffer(int id){return id==0||GL15.glIsBuffer(id)?id:0;}
     private static int liveTexture(int id){return id==0||GL11.glIsTexture(id)?id:0;}
     @Override public void forgetBuffer(int id){
-        for(int i=0;i<BINDINGS;i++)if(ssbo[i]==id){ssbo[i]=0;offsets[i]=sizes[i]=0;}
+        for(int i=0;i<storageSlots;i++)if(ssbo[i]==id){ssbo[i]=0;offsets[i]=sizes[i]=0;}
+        if(logicalStorage!=null)logicalStorage.forget(id);
         if(array==id)array=0;if(element==id)element=0;if(storage==id)storage=0;if(draw==id)draw=0;
         if(uniformBuffer==id)uniformBuffer=0;
         for(int i=0;i<parameterBuffers.length;i++)if(parameterBuffers[i]==id){parameterBuffers[i]=0;parameterOffsets[i]=parameterSizes[i]=0;}
@@ -86,7 +90,8 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
     @Override public void forgetVertexArray(int id){if(vao==id){vao=0;element=0;}}
     private void forgetDeletedResources(){
         for(int[] image:images)image[0]=liveTexture(image[0]);
-        for(int i=0;i<BINDINGS;i++)ssbo[i]=liveBuffer(ssbo[i]);
+        for(int i=0;i<storageSlots;i++)ssbo[i]=liveBuffer(ssbo[i]);
+        if(logicalStorage!=null)for(int id:logicalStorage.ids)if(id>0&&liveBuffer(id)==0)logicalStorage.forget(id);
         array=liveBuffer(array);element=liveBuffer(element);storage=liveBuffer(storage);draw=liveBuffer(draw);
         dispatch=liveBuffer(dispatch);read=liveBuffer(read);write=liveBuffer(write);textureBuffer=liveBuffer(textureBuffer);unpackBuffer=liveBuffer(unpackBuffer);
         uniformBuffer=liveBuffer(uniformBuffer);for(int i=0;i<parameterBuffers.length;i++)parameterBuffers[i]=liveBuffer(parameterBuffers[i]);
@@ -103,9 +108,13 @@ public final class GpuComputeState implements GpuBufferRetirement.Snapshot {
         parent=null;
         for(int unit=0;unit<images.length;unit++){int[] image=images[unit];GL42.glBindImageTexture(unit,image[0],image[1],image[2]!=0,image[3],image[4],image[5]);}
         if(samplerObjects!=null)for(int i=0;i<units;i++)GL33.glBindSampler(i,samplerObjects[i]);
-        try(var stack=MemoryStack.stackPush()){GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,stack.ints(ssbo));}
+        try(var stack=MemoryStack.stackPush()){
+            var buffers=stack.mallocInt(storageSlots).put(ssbo,0,storageSlots).flip();
+            GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,buffers);
+        }
         GpuBindings.invalidate();
-        for(int i=0;i<BINDINGS;i++)if(ssbo[i]!=0&&sizes[i]>0)GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER,i,ssbo[i],offsets[i],sizes[i]);
+        for(int i=0;i<storageSlots;i++)if(ssbo[i]!=0&&sizes[i]>0)GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER,i,ssbo[i],offsets[i],sizes[i]);
+        GpuBindings.restoreStorage(logicalStorage);
         for(int i=0;i<parameterBuffers.length;i++){
             if(parameterBuffers[i]!=0&&parameterSizes[i]>0)GpuBindings.bindRange(GL31.GL_UNIFORM_BUFFER,i,parameterBuffers[i],parameterOffsets[i],parameterSizes[i]);
             else GpuBindings.bindBase(GL31.GL_UNIFORM_BUFFER,i,parameterBuffers[i]);

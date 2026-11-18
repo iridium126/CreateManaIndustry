@@ -29,7 +29,7 @@ struct StormStepReceipt { uint64_t sequence, tick, identity; uint32_t displayRec
 struct StormDisplayHeader {
     uint32_t magic, abi, count, capacity;
     uint64_t sequence, tick, identity;
-    uint32_t ready, reserved[5];
+    uint32_t ready, columnMask[2], reserved[3];
 };
 struct StormDisplayRecord {
     float4 position, previous, velocity, appearance;
@@ -197,6 +197,7 @@ static_assert(sizeof(float4)==CMI_RESOURCE_STORM_PLAYER_BYTES);
 static_assert(sizeof(StormDisplayHeader)==CMI_RESOURCE_STORM_DISPLAY_HEADER_BYTES);
 static_assert(offsetof(StormDisplayHeader,sequence)==CMI_RESOURCE_STORM_DISPLAY_SEQUENCE_OFFSET);
 static_assert(offsetof(StormDisplayHeader,ready)==CMI_RESOURCE_STORM_DISPLAY_READY_OFFSET);
+static_assert(offsetof(StormDisplayHeader,columnMask)==CMI_RESOURCE_STORM_DISPLAY_COLUMN_MASK_OFFSET);
 static_assert(sizeof(StormDisplayRecord)==CMI_RESOURCE_STORM_DISPLAY_RECORD_BYTES);
 static_assert(offsetof(StormDisplayRecord,appearance)==CMI_RESOURCE_STORM_DISPLAY_APPEARANCE_OFFSET);
 static_assert(offsetof(StormDisplayRecord,key)==CMI_RESOURCE_STORM_DISPLAY_KEY_OFFSET);

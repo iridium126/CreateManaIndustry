@@ -5,6 +5,8 @@ import com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate;
 import com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnSnapshot;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest;
 import com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture;
+import com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages;
+import com.iridium126.createmanaindustry.infrastructure.config.StormSimulationGpu;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Path;
@@ -72,6 +74,10 @@ final class NativeStormControl {
     private final DisplaySlot[] displaySlots=new DisplaySlot[RT_SLOTS];
     private DisplaySlot published;
     private final java.util.ArrayDeque<DisplaySlot> playbackQueue=new java.util.ArrayDeque<>(RT_SLOTS);
+    private final java.util.ArrayDeque<DisplaySlot> uploadQueue=new java.util.ArrayDeque<>(RT_SLOTS);
+    private final long[] uploadMetadata = new long[2];
+    private final StormStagedDisplay stagedDisplay;
+    private final String simulationGpu;
     private static final class InputPacket {
         ByteBuffer buffer;
         StormControlJournal.Tick tick;
@@ -100,7 +106,7 @@ final class NativeStormControl {
     private boolean retiring,domeInstalled;
     private String failure="";
 
-    NativeStormControl(Path modules,int capacity,StormControlJournal journal,Consumer<RegionalFeedback> feedback,
+    NativeStormControl(Path modules,int capacity,StormSimulationGpu selection,StormControlJournal journal,Consumer<RegionalFeedback> feedback,
                        Consumer<ColumnFeedback> columnFeedback,Consumer<OuterFeedback> outerFeedback,
                        Consumer<PositionFeedback> positionFeedback,Consumer<SnapshotFeedback> snapshotFeedback,
                        Consumer<FeatherFeedback> featherFeedback){
@@ -114,19 +120,27 @@ final class NativeStormControl {
         SpatialNative.load(modules);
         for(int i=0;i<packets.length;i++)packets[i]=new InputPacket();
         ByteBuffer result=null;
+        StormStagedDisplay staged=null;
         try{
             result=MemoryUtil.memAlloc(STORM_DOME_BATCH_BYTES).order(ByteOrder.LITTLE_ENDIAN);
-            displayBridge=SpatialNative.createStormDisplayBuffers(STORM_DISPLAY_HEADER_BYTES+
-                    (long)capacity*STORM_DISPLAY_RECORD_BYTES+(long)STORM_COLUMN_SLOTS*STORM_COLUMN_MEMBERS*STORM_DISPLAY_COLUMN_BYTES,RT_SLOTS);
-            for(int slot=0;slot<RT_SLOTS;slot++){
-                int buffer=SpatialNative.buffers(displayBridge,slot)[1];
-                displaySlots[slot]=new DisplaySlot(slot,buffer);
-            }
             int probes=2;
-            worker=SpatialNative.createStormControl(capacity,displayBridge,probes);
+            if(selection.followsMinecraft() || selection.uuid().equals(SpatialNative.stormOpenGlCudaUuid())){
+                simulationGpu=StormGpuDevices.renderer();
+                displayBridge=SpatialNative.createStormDisplayBuffers(STORM_DISPLAY_HEADER_BYTES+
+                        (long)capacity*STORM_DISPLAY_RECORD_BYTES+(long)STORM_COLUMN_SLOTS*STORM_COLUMN_MEMBERS*STORM_DISPLAY_COLUMN_BYTES,RT_SLOTS);
+                for(int slot=0;slot<RT_SLOTS;slot++)displaySlots[slot]=new DisplaySlot(slot,SpatialNative.buffers(displayBridge,slot)[1]);
+                worker=SpatialNative.createStormControl(capacity,displayBridge,probes);
+            }else{
+                simulationGpu=StormGpuDevices.cudaDevice(selection.uuid()).label();
+                staged=new StormStagedDisplay(capacity);
+                for(int slot=0;slot<RT_SLOTS;slot++)displaySlots[slot]=new DisplaySlot(slot,staged.buffer(slot));
+                worker=SpatialNative.createStagedStormControl(capacity,selection.uuid(),staged.mappings,probes);
+            }
+            stagedDisplay=staged;
             domeResult=result;
         }catch(RuntimeException|LinkageError error){
             if(displayBridge!=0)SpatialNative.closeBuffers(displayBridge);
+            if(staged!=null)staged.close();
             if(result!=null)MemoryUtil.memFree(result);
             throw error;
         }
@@ -246,6 +260,40 @@ final class NativeStormControl {
         for(var slot:displaySlots)if(slot.sequence==0&&SpatialNative.prepareStormDisplaySlot(worker,slot.index))return slot;
         return null;
     }
+    private void publish(DisplaySlot slot){
+        published=slot;
+        slot.completedNanos=System.nanoTime();
+        slot.playbackPending=true;
+        playbackQueue.addLast(slot);
+    }
+    private void uploadDisplays(long identity){
+        if(stagedDisplay==null || uploadQueue.isEmpty())return;
+        var capture=ClientFrameCapture.INSTANCE;
+        capture.stormDisplayBacklog(uploadQueue.size());
+        while(!uploadQueue.isEmpty()){
+            var slot=uploadQueue.peekFirst();
+            if(slot.identity!=identity){
+                uploadQueue.removeFirst();
+                slot.playbackPending=false;
+                continue;
+            }
+            long copyNanos=SpatialNative.stagedStormDisplayTime(worker,slot.index,slot.sequence,uploadMetadata);
+            if(copyNanos<0)return;
+            boolean timed=capture.collecting();
+            long start=timed?System.nanoTime():0;
+            int bytes;
+            try(var timing=ParticleFrameStages.begin("rt.storm.staged_gl_upload")){
+                bytes=stagedDisplay.upload(slot.index,(int)uploadMetadata[0],uploadMetadata[1]);
+            }
+            uploadQueue.removeFirst();
+            publish(slot);
+            if(timed)capture.stormDisplayTransferred(bytes,copyNanos,System.nanoTime()-start);
+        }
+    }
+    private void discardUploads(){
+        for(var slot:uploadQueue)slot.playbackPending=false;
+        uploadQueue.clear();
+    }
     private void drain(){
         for(var tick=journal.awaitingReceipt();tick!=null;tick=journal.awaitingReceipt()){
             int status=SpatialNative.pollStormTick(worker,tick.sequence());
@@ -281,7 +329,8 @@ final class NativeStormControl {
             for(var slot:displaySlots)if(slot.sequence==tick.sequence()){
                 slot.complete=true;
                 if(status==COMPLETE&&!retiring&&failure.isEmpty()&&journal.committed()==tick.sequence()){
-                    published=slot;slot.completedNanos=System.nanoTime();slot.playbackPending=true;playbackQueue.addLast(slot);
+                    if(stagedDisplay==null)publish(slot);
+                    else {slot.playbackPending=true;uploadQueue.addLast(slot);}
                 }
                 break;
             }
@@ -315,10 +364,12 @@ final class NativeStormControl {
         }
     }
 
-    void service(){
+    void service(long identity){
         if(worker==0)return;
         try{
             drain();
+            if(retiring||!failure.isEmpty())discardUploads();
+            else uploadDisplays(identity);
             reapDisplays();
             if(retiring||!failure.isEmpty())return;
             prepareInputs();
@@ -359,23 +410,27 @@ final class NativeStormControl {
     }
     private void stop(String reason){
         journal.stop();
+        discardUploads();
         if(failure.isEmpty()){
             failure=reason.isEmpty()?"Native Storm control failure":reason;
             com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.warn(CMILog.PARTICLES + "Native Storm stopped: {}",failure);
         }
     }
     String failure(){return failure;}
+    String simulationGpu(){return simulationGpu;}
+    String displayTransport(){return stagedDisplay==null?"d3d12-shared":"cross-adapter-staged";}
     /** Call at render boundaries until all accepted work has retired. */
     boolean retire(){
         if(worker==0&&displayBridge==0)return true;
-        retiring=true;inputWorker.shutdown();published=null;for(var slot:playbackQueue)slot.playbackPending=false;playbackQueue.clear();service();
+        retiring=true;inputWorker.shutdown();published=null;for(var slot:playbackQueue)slot.playbackPending=false;playbackQueue.clear();service(0);
         try{
             for(var packet:packets)if(packet.ready!=null&&!packet.ready.isDone())return false;
             if(worker!=0){
                 if(!SpatialNative.closeStormControl(worker))return false;
                 worker=0;
             }
-            SpatialNative.closeBuffers(displayBridge);displayBridge=0;
+            if(displayBridge!=0){SpatialNative.closeBuffers(displayBridge);displayBridge=0;}
+            if(stagedDisplay!=null)stagedDisplay.close();
             for(var packet:packets)MemoryUtil.memFree(packet.buffer);
             MemoryUtil.memFree(domeResult);
             if(terrainUpload!=null){MemoryUtil.memFree(terrainUpload);terrainUpload=null;}

@@ -2,6 +2,12 @@ import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticlePrograms;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
+import com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms;
+import com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands;
+import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+import com.iridium126.createmanaindustry.client.gpu.state.GpuComputeState;
+import com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers;
+import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.*;
 import java.util.function.Function;
 import java.nio.file.*;
@@ -26,7 +32,8 @@ public final class ParticleShaderStartupGpuValidation extends StarfallGpuValidat
    if(System.nanoTime()-logged>5_000_000_000L){System.out.println(label+" responsive frames="+frames+" maxAdvanceMs="+maximum);logged=System.nanoTime();}
    check(System.nanoTime()-begin<900_000_000_000L,"Compilation did not complete within fifteen minutes");Thread.sleep(2);
   }
-  System.out.println(label+" finished frames="+frames+" swaps="+swaps+" wallMs="+(System.nanoTime()-begin)/1e6+" maxAdvanceMs="+maximum);check(maximum<500,"A shader readiness poll blocked the render thread for half a second");
+  System.out.println(label+" finished frames="+frames+" swaps="+swaps+" wallMs="+(System.nanoTime()-begin)/1e6+" maxAdvanceMs="+maximum);
+  if(GL.getCapabilities().GL_ARB_parallel_shader_compile)check(maximum<500,"A shader readiness poll blocked the render thread for half a second");
   return swaps;
  }
  static Object field(Object owner,String name)throws Exception{var field=owner.getClass().getDeclaredField(name);field.setAccessible(true);return field.get(owner);}
@@ -73,7 +80,75 @@ public final class ParticleShaderStartupGpuValidation extends StarfallGpuValidat
   while(true){long tick=System.nanoTime();boolean complete=program?GL20.glGetProgrami(object,ARBParallelShaderCompile.GL_COMPLETION_STATUS_ARB)!=0:GL20.glGetShaderi(object,ARBParallelShaderCompile.GL_COMPLETION_STATUS_ARB)!=0;GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);GLFW.glfwPollEvents();maximum=Math.max(maximum,(System.nanoTime()-tick)/1e6);frames++;if(complete)break;if(System.nanoTime()-logged>5_000_000_000L){System.out.println("still compiling; responsive frames="+frames+" maxPollMs="+maximum);logged=System.nanoTime();}Thread.sleep(2);}
   System.out.println("COMPLETE waitMs="+(System.nanoTime()-begin)/1e6+" frames="+frames+" maxPollMs="+maximum);
  }
+ static void compactStorage() throws Exception {
+  RenderSystem.initRenderThread();
+  var owner = new ParticlePrograms();
+  var pool = ParticleBuffers.INSTANCE;
+  var startup = new GpuComputeState();
+  startup.capture();
+  try {
+   check(pool.init(4096, 32), "Particle allocation on 16-slot hardware");
+   check(finish(owner, loader("compact", false), Set.of(), "compact startup", new ArrayList<>()) == 1 && owner.ready(),
+     "The production reload must publish all programs on a 16-slot device");
+   programs(owner);
+   pool.unbindShaders();
+  } finally {
+   owner.delete();
+   pool.free();
+   startup.restore();
+  }
+  check(GL11.glGetError() == GL11.GL_NO_ERROR, "Initial allocation or cleanup accessed an invalid GL binding");
+
+  String source = """
+    #version 450 core
+    #define INPUT_SLOT %d
+    layout(local_size_x=1) in;
+    layout(std430,binding=INPUT_SLOT) readonly buffer Input { uint inputValue; };
+    layout(std430,binding=1) writeonly buffer Output { uint outputValue; };
+    void main(){outputValue=inputValue;}
+    """;
+  int high = GpuShaderCompiler.compute("compact high slot", source.formatted(31));
+  int low = GpuShaderCompiler.compute("compact low slot", source.formatted(0));
+  int lowBuffer = GL45.glCreateBuffers(), highBuffer = GL45.glCreateBuffers(), output = GL45.glCreateBuffers();
+  int alignment = GL11.glGetInteger(GL43.GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
+  GL45.glNamedBufferData(lowBuffer, alignment + 4L, GL15.GL_DYNAMIC_COPY);
+  GL45.glNamedBufferSubData(lowBuffer, alignment, new int[]{13});
+  GL45.glNamedBufferData(highBuffer, new int[]{29}, GL15.GL_DYNAMIC_COPY);
+  GL45.glNamedBufferData(output, 4, GL15.GL_DYNAMIC_COPY);
+  GL30.glBindBufferRange(GL43.GL_SHADER_STORAGE_BUFFER, 0, lowBuffer, alignment, 4);
+  var outer = new GpuComputeState();
+  outer.capture();
+  try {
+   GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER, 31, highBuffer);
+   GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER, 1, output);
+   assertDispatch(high, output, 29);
+   var nested = new GpuComputeState();
+   nested.capture();
+   try {
+    GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER, 31, lowBuffer, alignment, 4);
+    assertDispatch(high, output, 13);
+   } finally { nested.restore(); }
+   assertDispatch(high, output, 29);
+   assertDispatch(low, output, 13);
+  } finally {
+   outer.restore();
+   check(GL30.glGetIntegeri(GL43.GL_SHADER_STORAGE_BUFFER_BINDING, 0) == lowBuffer, "Foreign GL binding was not restored");
+   check(GL32.glGetInteger64i(GL43.GL_SHADER_STORAGE_BUFFER_START, 0) == alignment, "Foreign GL range was not restored");
+   GL15.glDeleteBuffers(new int[]{lowBuffer, highBuffer, output});
+   GpuPrograms.delete(high);
+   GpuPrograms.delete(low);
+  }
+  check(GL11.glGetError() == GL11.GL_NO_ERROR, "Compact storage dispatch or restore generated a GL error");
+ }
+ static void assertDispatch(int program, int output, int expected) {
+  GpuBindings.program(program);
+  GpuReplayCommands.dispatchCompute(1, 1, 1);
+  GL42.glMemoryBarrier(GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+  int[] actual = new int[1];
+  GL45.glGetNamedBufferSubData(output, 0, actual);
+  check(actual[0] == expected, "Unexpected SSBO content read back: " + actual[0]);
+ }
  public static void main(String[] args)throws Exception{
-  long window=GpuValidationSupport.open("Shader startup probe");try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));System.out.println("parallel="+GL.getCapabilities().GL_ARB_parallel_shader_compile);check(GL.getCapabilities().GL_ARB_parallel_shader_compile,"Parallel shader compile unavailable");if(Arrays.asList(args).contains("--probe")){ARBParallelShaderCompile.glMaxShaderCompilerThreadsARB(2);for(String name:new String[]{"update.comp","dome_contacts.comp","dome_path.comp"})probe(name);}else lifecycle(Arrays.asList(args).contains("--cold"));System.out.println("Particle startup GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(window);}
+  long window=GpuValidationSupport.open("Shader startup probe");try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));boolean parallel=GL.getCapabilities().GL_ARB_parallel_shader_compile;System.out.println("parallel="+parallel);int slots=GL11.glGetInteger(GL43.GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS);System.out.println("SSBO bindings="+slots);if(Arrays.asList(args).contains("--probe")){check(parallel,"Parallel shader compile unavailable");ARBParallelShaderCompile.glMaxShaderCompilerThreadsARB(2);for(String name:new String[]{"update.comp","dome_contacts.comp","dome_path.comp"})probe(name);}else if(slots>=16&&slots<32)compactStorage();else{check(parallel,"Parallel shader compile unavailable");lifecycle(Arrays.asList(args).contains("--cold"));}System.out.println("Particle startup GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(window);}
  }
 }

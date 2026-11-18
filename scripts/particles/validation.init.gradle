@@ -64,6 +64,19 @@ allprojects {
             destinationDirectory=layout.buildDirectory.dir('simulation-readback-harness')
             options.encoding='UTF-8'
         }
+        def stormDisplayHarness = tasks.register('compileStormDisplayTransferHarness', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = files('scripts/particles/StormDisplayTransferGpuValidation.java')
+            classpath = validationClasspath
+            destinationDirectory = layout.buildDirectory.dir('storm-display-transfer-harness')
+            options.encoding = 'UTF-8'
+        }
+        tasks.register('validateStormDisplayTransferGpu', JavaExec) {
+            dependsOn stormDisplayHarness
+            javaLauncher = tasks.named('runClient').get().javaLauncher
+            classpath = files(layout.buildDirectory.dir('storm-display-transfer-harness')) + validationClasspath
+            mainClass = 'com.iridium126.createmanaindustry.client.particles.engine.spatial.StormDisplayTransferGpuValidation'
+        }
         tasks.register('validateSimulationReadbackGpu',JavaExec){
             dependsOn simulationSnapshotHarness
             classpath=files(layout.buildDirectory.dir('simulation-readback-harness'))+validationClasspath

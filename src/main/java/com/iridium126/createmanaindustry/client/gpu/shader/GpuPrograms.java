@@ -8,6 +8,7 @@ import org.lwjgl.opengl.GL20;
 public final class GpuPrograms {
     private GpuPrograms() {}
     public static void applyExternal(ShaderInstance shader) {
+        GpuBindings.prepareExternalStorage();
         GpuBindings.invalidateProgram();
         shader.apply();
         GpuBindings.externalProgramApplied(shader.getId());

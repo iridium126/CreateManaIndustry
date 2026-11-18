@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 import com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient;
 import com.iridium126.createmanaindustry.client.allaystorm.StormFeedback;
+import com.iridium126.createmanaindustry.infrastructure.config.StormSimulationGpu;
 import java.io.IOException;
 import java.util.ArrayList;
 import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
@@ -25,13 +26,15 @@ public final class NativeStormSimulation {
     private static final ArrayList<NativeStormSimulation> RETIRING=new ArrayList<>();
     private static NativeStormSimulation selected;
     private final AllayStormRuntime storm;
+    private final StormSimulationGpu gpu;
     private final StormNativeInputs inputs=new StormNativeInputs();
     private NativeStormControl control;
     private boolean retired;
 
-    NativeStormSimulation(AllayStormRuntime storm){
+    NativeStormSimulation(AllayStormRuntime storm,StormSimulationGpu gpu){
         if(selected!=null)throw new IllegalStateException("A native Storm already owns simulation");
         this.storm=storm;
+        this.gpu=gpu;
         storm.attachNativeInputs(inputs);
         selected=this;
     }
@@ -86,7 +89,7 @@ public final class NativeStormSimulation {
     private void service(){
         if(control==null&&inputs.failure().isEmpty()&&inputs.journal().retained()>0){
             try{
-                control=new NativeStormControl(ParticleRtModules.prepare(),SpatialScene.CAPACITY,inputs.journal(),
+                control=new NativeStormControl(ParticleRtModules.prepare(),SpatialScene.CAPACITY,gpu,inputs.journal(),
                         this::acceptRegional,this::acceptColumn,this::acceptOuter,this::acceptPositions,this::acceptSnapshot,this::acceptFeathers);
             }catch(IOException|RuntimeException|LinkageError failure){
                 inputs.stop(failure.toString());
@@ -94,7 +97,7 @@ public final class NativeStormSimulation {
             }
         }
         if(control!=null)try(var timing=com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages.begin("rt.storm.service")){
-            control.service();
+            control.service(inputs.generation());
         }
     }
     public double displayTick(float partialTick){return inputs.displayTick(partialTick);}
@@ -109,6 +112,8 @@ public final class NativeStormSimulation {
     public void displayCommitted(long identity,long sequence){inputs.displayCommitted(identity,sequence);}
     public String failure(){return inputs.failure().isEmpty()&&control!=null?control.failure():inputs.failure();}
     boolean running(){return control!=null&&failure().isEmpty();}
+    String simulationGpu(){return control==null?"":control.simulationGpu();}
+    String displayTransport(){return control==null?"none":control.displayTransport();}
     boolean readyToDetach(boolean explicitSwitch){
         return !storm.active()&&(!inputs.hasPendingWork()||explicitSwitch&&!failure().isEmpty());
     }

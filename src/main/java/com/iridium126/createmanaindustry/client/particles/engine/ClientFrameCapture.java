@@ -77,6 +77,8 @@ public final class ClientFrameCapture {
         boolean collecting=true;
         long stopped,bindingsStart,bindingsAvoidedStart,uniformsStart,uniformsAvoidedStart;
         long copiedStateStart,nativeDisplayGaps,emptyCameraQueries;
+        long stagedDisplayBytes,stagedDisplaySamples,stagedDisplayCopyNanos,stagedDisplayUploadNanos;
+        int stagedDisplayBacklog;
         String invalid="";
         final Map<String,Object> metadata=new LinkedHashMap<>();
         Window(){Arrays.fill(gpu,Double.NaN);Arrays.fill(cpu,Double.NaN);Arrays.fill(live,-1);Arrays.fill(models,-1);Arrays.fill(body,-1);Arrays.fill(carrier,-1);Arrays.fill(ghost,-1);Arrays.fill(sceneFrames,-1);Arrays.fill(generations,-1);Arrays.fill(shadowGenerations,-1);Arrays.fill(shadowDisplays,-1);Arrays.fill(displayGenerations,-1);Arrays.fill(displaySources,-1);for(var counts:submissions)Arrays.fill(counts,-1);for(var values:camera)Arrays.fill(values,Double.NaN);}
@@ -250,10 +252,23 @@ public final class ClientFrameCapture {
         window.metadata.put("native_display_buffer_exhausted_frames",window.displayExhausted);
         window.metadata.put("native_display_hold_events",window.displayHoldEvents);
         window.metadata.put("native_display_slot_unavailable",window.displaySlotsUnavailable);
+        window.metadata.put("storm_staged_display_bytes",window.stagedDisplayBytes);
+        window.metadata.put("storm_staged_display_samples",window.stagedDisplaySamples);
+        window.metadata.put("storm_staged_display_dtoh_ms",window.stagedDisplayCopyNanos*1e-6);
+        window.metadata.put("storm_staged_display_gl_submit_ms",window.stagedDisplayUploadNanos*1e-6);
+        window.metadata.put("storm_staged_display_peak_pending",window.stagedDisplayBacklog);
     }
     public void emptyCameraQuery(){if(collecting())window.emptyCameraQueries++;}
     void nativeDisplayGap(long count){if(collecting())window.nativeDisplayGaps+=count;}
     public void nativeDisplaySlotUnavailable(){if(collecting())window.displaySlotsUnavailable++;}
+    public void stormDisplayBacklog(int slots){if(collecting())window.stagedDisplayBacklog=Math.max(window.stagedDisplayBacklog,slots);}
+    public void stormDisplayTransferred(int bytes,long copyNanos,long glNanos){
+        if(!collecting())return;
+        window.stagedDisplaySamples++;
+        window.stagedDisplayBytes+=bytes;
+        window.stagedDisplayCopyNanos+=copyNanos;
+        window.stagedDisplayUploadNanos+=glNanos;
+    }
     public void stormInputCaptured(long tick,double ms){if(collecting()&&window.stormInputs.size()<100_000)window.stormInputs.add(frameId+","+tick+","+ms);}
     void nativeDisplayReceived(long sequence,long tick,long completedNanos){
         if(!collecting())return;var w=window;

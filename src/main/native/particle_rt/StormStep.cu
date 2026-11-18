@@ -774,10 +774,10 @@ extern "C" __global__ void sealStormTick(StormStepReceipt* result,StormTick tick
 }
 
 extern "C" __global__ void prepareStormDisplay(StormDisplayHeader* header,StormTick tick,unsigned capacity) {
-    *header={CMI_RESOURCE_STORM_DISPLAY_MAGIC,CMI_RESOURCE_ABI,0u,capacity,tick.sequence,tick.tick,tick.identity,0u,{}};
+    *header={CMI_RESOURCE_STORM_DISPLAY_MAGIC,CMI_RESOURCE_ABI,0u,capacity,tick.sequence,tick.tick,tick.identity,0u,{},{}};
 }
 extern "C" __global__ void publishStormDisplay(StormDisplayHeader* header,const StormStepMember* members,
-        StormTick tick,StormDomeView view) {
+        StormTick tick,StormDomeView view,unsigned staged) {
     unsigned index=blockIdx.x*blockDim.x+threadIdx.x;
     bool active=false,poof=false;
     if(index<tick.population&&members[index].identity==tick.identity){
@@ -805,6 +805,7 @@ extern "C" __global__ void publishStormDisplay(StormDisplayHeader* header,const 
                 |(assignment.kind<<CMI_RESOURCE_STORM_DISPLAY_KIND_SHIFT)
                 |(assignment.slot<<CMI_RESOURCE_STORM_DISPLAY_SLOT_SHIFT);
             if(assignment.kind==RegionalColumn){
+                if(staged)atomicOr(header->columnMask+(assignment.slot>>5),1u<<(assignment.slot&31u));
                 unsigned columnRank=assignment.slot*columnMembers+assignment.rank;
                 auto& state=view.columnStates[columnRank];
                 auto* columns=reinterpret_cast<StormColumnDisplay*>(reinterpret_cast<StormDisplayRecord*>(header+1)+header->capacity);

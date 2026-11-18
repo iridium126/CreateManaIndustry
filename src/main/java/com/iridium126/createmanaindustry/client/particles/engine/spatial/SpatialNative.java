@@ -48,6 +48,10 @@ public final class SpatialNative {
     public static native void delay(long worker,int milliseconds);
     static native long createStormDisplayBuffers(long bytes,int slots);
     static native long createStormControl(int capacity,long displayBridge,int probes);
+    static native String[] stormCudaDevices();
+    static native String stormOpenGlCudaUuid();
+    static native long createStagedStormControl(int capacity,String uuid,java.nio.ByteBuffer[] mapped,int probes);
+    static native long stagedStormDisplayTime(long worker,int slot,long sequence,long[] metadata);
     static native void installStormTerrain(long worker,long revision,java.nio.ByteBuffer rows,int count);
     static native boolean submitStormTick(long worker,java.nio.ByteBuffer packet,int bytes,int displaySlot,boolean timed);
     static native boolean prepareStormDisplaySlot(long worker,int slot);

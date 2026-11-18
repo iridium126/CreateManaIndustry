@@ -288,7 +288,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
         setMat4Uniform(p,"ModelViewMat",view);setMat4Uniform(p,"ProjMat",projection);var pos=camera.getPosition();setFloatUniform(p,"uCamPos",(float)pos.x,(float)pos.y,(float)pos.z);camera(p,camera);
         ParticleAtlas.ALLAY.bind(1);setIntUniform(p,"uSprite",1);setIntUniform(p,"uMode",1);setFloatUniform(p,"uFadeDist",ClientConfig.particleFadeDistance);
         com.mojang.blaze3d.systems.RenderSystem.enableDepthTest();com.mojang.blaze3d.systems.RenderSystem.depthMask(true);com.mojang.blaze3d.systems.RenderSystem.disableBlend();GL11.glDisable(GL11.GL_CULL_FACE);
-        ParticleBuffers.INSTANCE.bindVao();GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,drawBuffer());GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,drawOffset()+11L*4);GL11.glEnable(GL11.GL_CULL_FACE);
+        ParticleBuffers.INSTANCE.bindVao();GpuBindings.bind(GL40.GL_DRAW_INDIRECT_BUFFER,drawBuffer());GpuBindings.prepareStorage();GL40.glDrawArraysIndirect(GL11.GL_TRIANGLES,drawOffset()+11L*4);GL11.glEnable(GL11.GL_CULL_FACE);
     }
     public void reset(){clearDisplay();StormCollisionRuntime.releaseFeathers();surface.reset();FeatherSupportGpu.INSTANCE.reset();mayFeathers=mayGold=manual=manualGold=enabled=candidateBirth=candidateGoldBirth=nativeDrawn=false;spawn=goldSpawn=0;remainder=candidateRemainder=goldRemainder=candidateGoldRemainder=0;lastCreationGeneration=lastGoldCreationGeneration=generation=0;warmRadius=-1;prewarmTick=Long.MIN_VALUE;frames=0;world=null;warmX=warmY=warmZ=warmLow=Integer.MAX_VALUE;prewarmKeys.clear();requests.clear();nativeImpacts.clear();nativeImpactIdentity=null;stagedNativeImpacts=0;}
     @Override public void close(){

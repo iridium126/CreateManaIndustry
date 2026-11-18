@@ -53,7 +53,9 @@ public final class GpuProgramContract {
             if(index==GL43.GL_INVALID_INDEX)throw new IllegalStateException(name+": missing resource "+entry.getKey());
             int[] info=new int[2];GL43.glGetProgramResourceiv(program,api,index,new int[]{GL43.GL_BUFFER_BINDING,GL43.GL_BUFFER_DATA_SIZE},null,info);
             int bindingLimit=GL11.glGetInteger(uniform?GL31.GL_MAX_UNIFORM_BUFFER_BINDINGS:GL43.GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS);
-            if(info[0]!=resource.get("binding").getAsInt()||info[0]>=bindingLimit)
+            int binding=resource.get("binding").getAsInt();
+            if(!uniform)binding=GpuShaderCompiler.storageBinding(program,binding);
+            if(info[0]!=binding||info[0]>=bindingLimit)
                 throw new IllegalStateException(name+": resource binding changed: "+entry.getKey());
             if(uniform&&resource.has("layout")){
                 int size=CONTRACT.getAsJsonObject("layouts").getAsJsonObject(resource.get("layout").getAsString()).get("stride").getAsInt();
