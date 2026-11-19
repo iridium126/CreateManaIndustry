@@ -20,6 +20,8 @@ DXGI 默认使用 Minecraft 窗口客户区里的子呈现表面，原 GLFW 窗�
 
 NVIDIA 渲染、Arc A750 生成并使用 RGB24 时，启动日志中的 `Arc shared inputs=true` 表示 Arc 直接从共享缓冲读取输入并生成本地纹理。两张颜色图中相同的 RGB 像素由 Arc 复用。在深度与输出等尺寸、无扭曲、且抖动在允许范围内的帧上，RTX 只传输原始深度，Arc 用同一组相机矩阵在全分辨率重建运动矢量。包内缩放、屏幕扭曲或抖动超出范围时，继续传输 OpenGL 生成的深度和运动矢量。2560×1600 下，深度重建帧的跨卡写入由 57.344 MB 降至 41.088 MB，每帧的 `cross_geometry_bytes` 可用于确认是否命中。
 
+共享缓冲路径最多允许两张颜色尚未完成的 OpenGL 帧。开始下一帧前，渲染线程可在最早未完成的生产 fence 上等待，并继续处理窗口事件。Arc 收到几何组后立即准备深度和运动矢量，可与 RTX 后续颜色渲染重叠。两组输入就绪后才发布整帧并回收传输槽。
+
 原生呈现线程拥有呈现窗口和代理交换链，按提交顺序呈现真实帧。代理执行一张帧时最多允许另一张帧等待呈现。跨卡颜色格式可在 XeSS-FG 设置中选择，重启客户端后生效。默认 `rgb24` 在 Arc 上逐位恢复不透明 RGBA8 颜色。`rgba8` 搬运四通道颜色，`ycbcr422` 通过横向共享色度减少流量。
 
 ### 独立翻转对照
@@ -52,6 +54,7 @@ NVIDIA 渲染、Arc A750 生成并使用 RGB24 时，启动日志中的 `Arc sha
 - 格式 7 使用 Arc 准备队列的时钟校准输入时间戳，新增 `arc_input_prepare_start_qpc`。合并时间线的 `dma_to_prepare_ms` 测量颜色搬运完成后到解包或上传开始的等待，`prepare_to_inputs_ms` 测量准备阶段。跨卡 RGB24 和 4:2:2 的几何纹理上传计入 `arc_geometry_dma_gpu_ns`，`arc_texture_upload_gpu_ns` 留空，Arc 输入就绪时间取自颜色解包完成时间。`slots_in_use` 和 `slot_wait_ns` 对应独立的传输槽。复测无损 RGB24 时，同场景比较这几列、真实帧 P95、实显 FPS 和生成帧上屏率。
 - 格式 8 增加 `presenter_thread_id` 和 `proxy_present_thread_cpu_ns`，分别记录呈现线程 ID 及代理调用前后累计线程 CPU 时间的差值。合并时间线用 `proxy_to_first_dxgi_ms` 标出代理入口到本轮首个底层调用的间隔，`proxy_dxgi_overlap_ms` 与 `proxy_outside_dxgi_ms` 按同一底层交换链的 API 区间并集划分代理耗时。底层调用可能属于前一呈现 ID。代理内未被底层调用覆盖的时间还需结合 CPU 等待栈和 Arc GPU 队列归因。
 - 格式 9 增加 `proxy_top_level`，记录每帧使用子窗口（0）或顶层窗口（1）。合并脚本按实际显示的真实帧与生成帧统计各自的 `pm_present_mode`。
+- 格式 10 增加 `producer_wait_ns`，记录渲染线程在帧开始等待先前 OpenGL 颜色完成的时间。`slot_wait_ns` 继续记录传输槽等待。
 - Arc 直接读取共享输入时，Arc DMA 字段留空。`arc_color_unpack_gpu_ns` 记录颜色重建，`arc_texture_upload_gpu_ns` 记录几何纹理写入及运动矢量重建，`arc_inputs_ready_qpc` 对应两组输出就绪。
 
 ## PresentMon 联合采集

@@ -25,6 +25,7 @@ using Microsoft::WRL::ComPtr;
 constexpr unsigned SlotCount = 4;
 constexpr unsigned InputCount = 4;
 constexpr unsigned BackBufferCount = 3;
+constexpr int NoTransferSlot = -1, ProducerBackpressure = -2;
 constexpr UINT64 DrainValue = UINT64_MAX - 1;
 TRACELOGGING_DEFINE_PROVIDER(presentTrace, "CreateManaIndustry.XeSSFG",
     (0x2dd7d232, 0xe6b6, 0x45d9, 0x9c, 0x9c, 0xb6, 0x1a, 0xe7, 0x67, 0x1b, 0xc1));
@@ -179,7 +180,7 @@ struct Transfer {
 
 struct Slot {
     std::array<Transfer, GroupCount> groups;
-    Commands prepare;
+    Commands prepare, prepareGeometry;
     UINT64 reuseAfter = 0;
     UINT64 profileSequence = 0;
     int64_t captureFrame = 0, profileFrame = 0;
@@ -493,6 +494,14 @@ void main(uint3 pixel : SV_DispatchThreadID, uint2 localPixel : SV_GroupThreadID
             cpu.ptr += stride;
         }
     }
+
+    void bind(ID3D12GraphicsCommandList* cmd, const PreparedInput& input) {
+        ID3D12DescriptorHeap* heaps[]{views.Get()};
+        cmd->SetDescriptorHeaps(1, heaps);
+        cmd->SetPipelineState(pipeline.Get());
+        cmd->SetComputeRootSignature(root.Get());
+        cmd->SetComputeRootDescriptorTable(2, input.colorUavs);
+    }
 };
 
 struct PresentJob {
@@ -557,6 +566,7 @@ HWND createPresentationSurface(HWND owner, bool topLevel) {
 struct Session {
     UINT width = 0, height = 0;
     UINT64 sequence = 0, slotWaitSequence = 0;
+    UINT64 oldestProducerColor = 0, latestProducerColor = 0, producerWaitToken = 0;
     std::array<UINT64, GroupCount> groupBytes{};
     Transport transport = Rgba8;
     UINT colorStride = 0;
@@ -579,7 +589,7 @@ struct Session {
     ComPtr<IDXGISwapChain4> swap;
     std::unique_ptr<TimestampProbes> profileProbes;
     std::array<ComPtr<ID3D12Resource>, BackBufferCount> backBuffers;
-    Handle slotReady, presentAllocatorReady;
+    Handle slotReady, producerReady, presentAllocatorReady;
     Handle workReady, queueSpace, initialized, stopped;
     std::thread presenter;
     std::mutex workMutex, xellMutex;
@@ -822,6 +832,10 @@ struct Session {
         sharedInputs = allowSharedInputs && cross && transport == Rgb24 && renderAdapter.VendorId == 0x10de
             && generationAdapter.VendorId == 0x8086 && generationAdapter.DeviceId == 0x56a1
             && supportsUavStore(Formats[Depth]) && supportsUavStore(Formats[Motion]);
+        if (sharedInputs) {
+            producerReady.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            if (!producerReady.value) throw std::runtime_error("Creating XeSS-FG producer fence event");
+        }
         directGeometry = cross && copyGeometryToTextures && !sharedInputs;
         presentQueue = queue(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
         prepareQueue = queue(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
@@ -918,6 +932,7 @@ struct Session {
     void allocate(Slot& slot) {
         auto memory = defaultMemory();
         slot.prepare.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
+        if (sharedInputs) slot.prepareGeometry.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
         for (unsigned i = 0; i < GroupCount; ++i) {
             auto& transfer = slot.groups[i];
             auto storage = buffer(groupBytes[i]);
@@ -981,6 +996,7 @@ struct Session {
         if (failure) std::rethrow_exception(failure);
         if (activeSlot >= 0 || next <= sequence) throw std::logic_error("XeSS-FG frame acquisition out of order");
         const auto finished = preparedSequence();
+        if (producerBehind()) return ProducerBackpressure;
         for (unsigned i = 0; i < SlotCount; ++i) {
             const unsigned index = (cursor + i) % SlotCount;
             auto& slot = slots[index];
@@ -995,7 +1011,28 @@ struct Session {
             sequence = next;
             return activeSlot = static_cast<int>(index);
         }
-        return -1;
+        return NoTransferSlot;
+    }
+
+    bool producerBehind() {
+        if (!oldestProducerColor) return false;
+        const UINT64 finished = glWritten->GetCompletedValue();
+        if (finished == UINT64_MAX) throw std::runtime_error("XeSS-FG OpenGL producer device removed");
+        return finished < oldestProducerColor;
+    }
+
+    void waitForProducer() {
+        checkPresenter();
+        if (!producerBehind()) return;
+        if (producerWaitToken != oldestProducerColor) {
+            if (!ResetEvent(producerReady.value)) throw std::runtime_error("Resetting XeSS-FG producer fence event");
+            check(glWritten->SetEventOnCompletion(oldestProducerColor, producerReady.value),
+                  "Waiting for a prior OpenGL color publication");
+            producerWaitToken = oldestProducerColor;
+        }
+        if (MsgWaitForMultipleObjectsEx(1, &producerReady.value, 4, QS_ALLINPUT, MWMO_INPUTAVAILABLE) == WAIT_FAILED)
+            throw std::runtime_error("Waiting for XeSS-FG producer or window event");
+        check(renderGpu->GetDeviceRemovedReason(), "Checking XeSS-FG producer during frame admission");
     }
 
     Slot& active(unsigned index, UINT64 next) {
@@ -1090,7 +1127,7 @@ struct Session {
             const auto unpackNs = mask & ColorUnpack ? profileProbes->unpack.read(i, &unpackEnd, &unpackStart) : Unavailable;
             *output++ = mask & LocalTextures ? profileProbes->local.read(i, &inputsEnd, &copyStart) : Unavailable;
             *output++ = dmaEnd;
-            *output++ = inputsEnd == Unavailable ? unpackEnd : inputsEnd;
+            *output++ = std::max(inputsEnd, unpackEnd);
             *output++ = rtxStart;
             *output++ = rtxEnd;
             *output++ = dmaStart;
@@ -1099,7 +1136,8 @@ struct Session {
             *output++ = arcGeometryStart;
             *output++ = arcGeometryEnd;
             *output++ = unpackNs;
-            *output++ = unpackStart == Unavailable ? copyStart : unpackStart;
+            *output++ = unpackStart == Unavailable || (copyStart != Unavailable && copyStart < unpackStart)
+                ? copyStart : unpackStart;
             slot.pendingQueries = 0;
             ++rows;
         }
@@ -1185,6 +1223,7 @@ struct Session {
         submitTransfer(index, slot, Geometry, bytes);
         slot.geometryBytes = cross ? bytes : 0;
         slot.geometrySubmitted = true;
+        if (sharedInputs) prepareSharedGeometry(index, slot, next);
     }
 
     void submitColor(unsigned index, UINT64 next, bool full) {
@@ -1196,6 +1235,12 @@ struct Session {
             slot.glFenceAtSubmit = glWritten->GetCompletedValue();
         }
         submitTransfer(index, slot, Color, full ? groupBytes[Color] : colorPlaneBytes);
+        if (sharedInputs) {
+            // Admit another frame after the older of the two published OpenGL colors completes.
+            // Geometry-only discards have no color token and must not enter this history.
+            oldestProducerColor = latestProducerColor;
+            latestProducerColor = transferToken(next, Color);
+        }
         prepareInputs(index, slot, next, full);
         slot.colorSubmitted = true;
         slot.fullColor = full;
@@ -1225,13 +1270,9 @@ struct Session {
         constexpr UINT PairedRgb24 = 4;
         const UINT layout[]{width, height, colorStride, static_cast<UINT>(colorPlaneBytes),
                             paired ? PairedRgb24 : static_cast<UINT>(transport)};
-        ID3D12DescriptorHeap* heaps[]{decoder.views.Get()};
-        cmd->SetDescriptorHeaps(1, heaps);
-        cmd->SetPipelineState(decoder.pipeline.Get());
-        cmd->SetComputeRootSignature(decoder.root.Get());
+        decoder.bind(cmd, input);
         cmd->SetComputeRoot32BitConstants(0, 5, layout, 0);
         cmd->SetComputeRootShaderResourceView(1, sourceFor(slot, Final)->GetGPUVirtualAddress());
-        cmd->SetComputeRootDescriptorTable(2, input.colorUavs);
         const UINT groupWidth = paired ? 64 : 16;
         cmd->Dispatch((width + groupWidth - 1) / groupWidth, (height + 7) / 8, full && !paired ? 2 : 1);
         transition(cmd, finalImage, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -1246,7 +1287,7 @@ struct Session {
         constexpr UINT PackedGeometry = 5, DepthReprojection = 6;
         const UINT layout[]{width, height, footprints[Depth].Footprint.RowPitch,
                             static_cast<UINT>(footprints[Motion].Offset), slot.reprojection ? DepthReprojection : PackedGeometry};
-        // Reuse the descriptor table and pipeline bound by unpackColor.
+        decoder.bind(cmd, input);
         cmd->SetComputeRoot32BitConstants(0, 5, layout, 0);
         if (slot.reprojection) cmd->SetComputeRoot32BitConstants(0, ReprojectionWords, slot.reprojection->data(), 8);
         cmd->SetComputeRootShaderResourceView(1, sourceFor(slot, Depth)->GetGPUVirtualAddress());
@@ -1282,12 +1323,32 @@ struct Session {
 
     PreparedInput& inputsFor(UINT64 next) { return inputs[(next - 1) % InputCount]; }
 
+    void waitForInputReuse(const PreparedInput& input) {
+        if (input.preparedAfter && completed->GetCompletedValue() < input.preparedAfter)
+            check(prepareQueue->Wait(completed.Get(), input.preparedAfter), "Waiting for previous XeSS-FG texture use");
+    }
+
+    void prepareSharedGeometry(unsigned index, Slot& slot, UINT64 next) {
+        auto& input = inputsFor(next);
+        waitForTransfer(transferToken(next, Geometry));
+        waitForInputReuse(input);
+        auto* cmd = slot.prepareGeometry.begin();
+        const bool timed = slot.captureFrame > 0 && (profileProbes->mask & LocalTextures);
+        if (timed) profileProbes->local.begin(cmd, index);
+        unpackGeometry(cmd, slot, input);
+        if (timed) {
+            profileProbes->local.end(cmd, index);
+            slot.recordedQueries |= LocalTextures;
+        }
+        slot.prepareGeometry.submit(prepareQueue.Get());
+    }
+
     void prepareInputs(unsigned index, Slot& slot, UINT64 next, bool full) {
         auto& input = inputsFor(next);
         const auto token = transferToken(next, Color);
         waitForTransfer(token);
-        if (input.preparedAfter && completed->GetCompletedValue() < input.preparedAfter)
-            check(prepareQueue->Wait(completed.Get(), input.preparedAfter), "Waiting for previous XeSS-FG texture use");
+        // Shared geometry already waited on this input slot on the same prepare queue.
+        if (!sharedInputs || !slot.geometrySubmitted) waitForInputReuse(input);
         auto* cmd = slot.prepare.begin();
         const unsigned timing = slot.captureFrame > 0 ? profileProbes->mask : 0;
         if (transport != Rgba8) {
@@ -1298,10 +1359,8 @@ struct Session {
         const unsigned fullPlaneCount = directGeometry || sharedInputs ? Depth : PlaneCount;
         const unsigned count = full ? fullPlaneCount : 1;
         const unsigned first = transport == Rgba8 ? Final : Depth;
-        const bool decodeGeometry = sharedInputs && full;
-        const bool copyTimed = (first < count || decodeGeometry) && (timing & LocalTextures);
+        const bool copyTimed = first < count && (timing & LocalTextures);
         if (copyTimed) profileProbes->local.begin(cmd, index);
-        if (decodeGeometry) unpackGeometry(cmd, slot, input);
         for (unsigned i = first; i < count; ++i) {
             const auto plane = static_cast<Plane>(i);
             copyPlane(cmd, sourceFor(slot, plane), input.planes[i].Get(), plane, inputState(plane));
@@ -1562,6 +1621,11 @@ JNIEXPORT jint JNICALL JAVA(slotsInUse)(JNIEnv* env, jclass, jlong ptr) {
 
 JNIEXPORT void JNICALL JAVA(waitForSlot)(JNIEnv* env, jclass, jlong ptr) {
     try { session(ptr).waitForSlot(); }
+    catch (const std::exception& error) { report(env, error); }
+}
+
+JNIEXPORT void JNICALL JAVA(waitForProducer)(JNIEnv* env, jclass, jlong ptr) {
+    try { session(ptr).waitForProducer(); }
     catch (const std::exception& error) { report(env, error); }
 }
 

@@ -15,6 +15,7 @@ import org.lwjgl.system.Platform;
 
 final class XessFgNative {
     static final int SLOT_COUNT = 4;
+    static final int PRODUCER_BACKPRESSURE = -2;
     static final int GEOMETRY = 0, COLOR = 1;
     static final int GPU_PROFILE_FIELDS = 17, CLOCK_PROFILE_FIELDS = 10, PRESENT_RESULT_CAPACITY = SLOT_COUNT * 4;
     static final int CONSTANT_BYTES = 152;
@@ -73,6 +74,7 @@ final class XessFgNative {
     static native int acquire(long session, long sequence, long captureFrame);
     static native int slotsInUse(long session);
     static native void waitForSlot(long session);
+    static native void waitForProducer(long session);
     static native void submitGeometry(long session, int slot, long sequence, ByteBuffer reprojection);
     static native void submitColor(long session, int slot, long sequence, boolean full);
     static native boolean discard(long session, int slot, long sequence);

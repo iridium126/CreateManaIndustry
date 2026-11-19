@@ -197,7 +197,7 @@ def merge(metadata_path, presentmon_path):
               "arc_wait_before_geometry_ms", "arc_wait_overlapping_geometry_ms", "arc_wait_after_geometry_ms",
               "arc_wait_after_observed_fence_ms",
               "transport", "cross_bytes", "cross_geometry_bytes", "cross_color_bytes",
-              "pending_present_at_enqueue", "present_enqueue_ns", "present_backpressure_ns",
+              "pending_present_at_enqueue", "present_enqueue_ns", "present_backpressure_ns", "producer_wait_ns",
               "present_queue_delay_ns", "worker_present_duration_ns", "arc_color_unpack_gpu_ns",
               "presenter_thread_id", "proxy_present_thread_cpu_ns", "proxy_top_level", "proxy_to_first_dxgi_ms",
               "proxy_dxgi_overlap_ms", "proxy_outside_dxgi_ms",

@@ -37,7 +37,7 @@ public final class XessFgFrameStats implements AutoCloseable {
 
     enum Stage {
         SESSION_OPEN, XELL_SLEEP, EARLY_SLOT, SLOT_WAIT, DEPTH_MOTION, HUDLESS, FINAL_COLOR, GL_PUBLISH,
-        NATIVE_PRESENT, WGL_SWAP, GEOMETRY_PUBLISH, COLOR_SUBMIT, PRESENT_ENQUEUE, PRESENT_BACKPRESSURE
+        NATIVE_PRESENT, WGL_SWAP, GEOMETRY_PUBLISH, COLOR_SUBMIT, PRESENT_ENQUEUE, PRESENT_BACKPRESSURE, PRODUCER_WAIT
     }
 
     public static final class Frame {
@@ -78,6 +78,12 @@ public final class XessFgFrameStats implements AutoCloseable {
 
         void complete(Stage stage, long start) {
             cpu[stage.ordinal()] = System.nanoTime() - start;
+        }
+
+        void accumulate(Stage stage, long start) {
+            int index = stage.ordinal();
+            long elapsed = System.nanoTime() - start;
+            cpu[index] = cpu[index] == UNAVAILABLE ? elapsed : cpu[index] + elapsed;
         }
 
         boolean startGpu(Stage stage) {
@@ -213,7 +219,7 @@ public final class XessFgFrameStats implements AutoCloseable {
         out.write("frame,route,next_tick_interval_ns,present_id,sequence,render_luid,generation_luid,sleep_status,early_slot,slots_in_use,"
                 + "disabled_checks,interpolate,reset_history,queued,session_open_ns,xell_sleep_ns,early_slot_ns,slot_wait_ns,"
                 + "depth_motion_cpu_ns,hudless_cpu_ns,final_color_cpu_ns,gl_publish_ns,native_present_ns,wgl_swap_ns,geometry_publish_ns,color_submit_ns,"
-                + "present_enqueue_ns,present_backpressure_ns,"
+                + "present_enqueue_ns,present_backpressure_ns,producer_wait_ns,"
                 + "depth_motion_gl_ns,hudless_gl_ns,final_color_gl_ns," + NATIVE_COLUMNS
                 + ",producer_geometry_gpu_ns,producer_color_gpu_ns,arc_geometry_dma_gpu_ns,arc_color_dma_gpu_ns,"
                 + "arc_texture_upload_gpu_ns,arc_dma_ready_gpu_tick,arc_inputs_ready_gpu_tick,"

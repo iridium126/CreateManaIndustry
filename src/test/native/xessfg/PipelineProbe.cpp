@@ -270,8 +270,6 @@ void verifySharedGeometry(Session& session, bool reconstruct) {
                                     1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, dx, dy, 0, 1, 0.25f, -0.25f};
     session.submitGeometry(index, sequence, reconstruct ? &reprojection : nullptr);
     require(slot.geometryBytes == bytes, "Incorrect cross-adapter geometry byte count");
-    verifyPackedColor(session, index);
-
     const auto total = session.groupBytes[Geometry];
     auto readback = hostBuffer(session.generationGpu.Get(), total, D3D12_HEAP_TYPE_READBACK);
     Commands read;
@@ -307,7 +305,9 @@ void verifySharedGeometry(Session& session, bool reconstruct) {
         }
     }
     readback->Unmap(0, &empty);
-    require(matches, "Shared geometry did not preserve depth, dilated motion or reprojection direction");
+    require(matches, "Shared geometry was incorrect before color publication");
+    require(session.prepared->GetCompletedValue() < sequence, "Geometry made the entire frame ready without color");
+    verifyPackedColor(session, index);
     queueDiscard(session, index, sequence);
     require(waitForFence(session.completed.Get(), sequence), "Shared-input frame did not retire");
 }
@@ -379,6 +379,36 @@ void verifyInputReuse(Session& session) {
     check(presenter.fence->Signal(1), "Releasing presentation fence test");
     require(waitForFence(session.prepared.Get(), wrapped), "Prepared input did not wake on presentation completion");
     queueDiscard(session, index, wrapped);
+}
+
+void verifyProducerBackpressure(Session& session) {
+    const auto first = session.sequence + 1;
+    const auto secondColor = first + 2;
+    const auto blocked = secondColor + 1;
+    struct ReleaseProducer {
+        Session& session;
+        UINT64 token;
+        ~ReleaseProducer() { session.glWritten->Signal(token); }
+    } release{session, transferToken(secondColor, Color)};
+
+    for (auto frame : {first, first + 1, secondColor}) {
+        const int slot = session.acquire(frame, 0);
+        require(slot >= 0, "Acquiring producer test frame");
+        if (frame == first + 1) session.submitGeometry(slot, frame);
+        else session.submitColor(slot, frame, false);
+        queueDiscard(session, slot, frame);
+    }
+    require(session.slotsInUse() == 3 && session.acquire(blocked, 0) == ProducerBackpressure,
+            "Third OpenGL color was admitted before either of the first two completed");
+    session.waitForProducer();
+    require(session.producerWaitToken == transferToken(first, Color), "Wait targeted a discarded frame or the newest color");
+    check(session.glWritten->Signal(transferToken(first, Color)), "Completing the oldest OpenGL color");
+    require(WaitForSingleObject(session.producerReady.value, 2000) == WAIT_OBJECT_0, "Producer event did not wake");
+    const int slot = session.acquire(blocked, 0);
+    require(slot >= 0, "Frame was not admitted after the oldest OpenGL color completed");
+    queueDiscard(session, slot, blocked);
+    check(session.glWritten->Signal(release.token), "Completing remaining OpenGL color work");
+    require(waitForFence(session.prepared.Get(), blocked), "Producer test transfer slots did not retire");
 }
 
 void verifyPopup(jlong render, jlong arc) {
@@ -482,6 +512,12 @@ int main() {
             shared.submitGeometry(slot, frame);
             queueDiscard(shared, slot, frame);
             require(waitForFence(shared.prepared.Get(), frame), "Partial shared input did not retire");
+        }
+        {
+            Session paced;
+            paced.start(window, render, arc, 129, 73, Rgb24, false, true, true);
+            require(paced.sharedInputs, "Producer test requires shared inputs");
+            verifyProducerBackpressure(paced);
         }
         for (bool sharedInputs : {false, true}) {
             ComPtr<ID3D12Fence> staged;
