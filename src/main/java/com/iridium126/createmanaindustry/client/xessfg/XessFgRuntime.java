@@ -3,6 +3,8 @@ package com.iridium126.createmanaindustry.client.xessfg;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.StormGpuDevices;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
+import com.iridium126.createmanaindustry.infrastructure.config.XessFgSurfaceMode;
+import com.iridium126.createmanaindustry.infrastructure.config.XessFgTransportMode;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.Window;
 import java.io.IOException;
@@ -25,12 +27,14 @@ public final class XessFgRuntime {
     private static final int SIMULATION_START = 0, SIMULATION_END = 1, RENDER_START = 2;
     private static final float MAX_CONTIGUOUS_FRAME_MS = 120;
     private final XessFgTransport[] slots = new XessFgTransport[XessFgNative.SLOT_COUNT];
-    private ByteBuffer constants;
+    private ByteBuffer constants, reprojectionConstants;
     private long session, sessionId, window, sequence, frameStart, previousFrameStart;
     private int frame, width, height, slot = -1, cameraMode, previousCameraMode;
     private long irisGeneration, previousIrisGeneration;
     private boolean failed, eligible, depthReady, hudReady, reset, iris, interpolate;
     private boolean reportedSleepRejection;
+    private boolean servicingWindow, windowInterrupted;
+    private boolean topLevel;
     private XessFgCapture capture;
     private XessFgView current, previous;
     private ClientLevel level, previousLevel;
@@ -40,15 +44,21 @@ public final class XessFgRuntime {
     private XessFgRuntime() {}
 
     public static boolean requested() {
-        return ClientConfig.xessFg().enabled() && Platform.get() == Platform.WINDOWS && !INSTANCE.failed;
+        return ClientConfig.xessFg().enabled() && Platform.get() == Platform.WINDOWS
+                && !INSTANCE.failed && !INSTANCE.servicingWindow;
     }
 
     public static void begin(Minecraft minecraft, boolean render) {
         if (!ClientConfig.xessFg().enabled()) return;
+        if (INSTANCE.servicingWindow) {
+            INSTANCE.windowInterrupted = true;
+            return;
+        }
         INSTANCE.beginFrame(minecraft, render);
     }
 
     public static void pollProfile(XessFgFrameStats profile, boolean finishing) {
+        if (INSTANCE.servicingWindow) return;
         profile.poll(INSTANCE.session, INSTANCE.sessionId, finishing);
     }
 
@@ -61,12 +71,14 @@ public final class XessFgRuntime {
         var target = minecraft.getWindow();
         long handle = target.getWindow();
         int w = target.getWidth(), h = target.getHeight();
-        if (w <= 0 || h <= 0 || GLFW.glfwGetWindowAttrib(handle, GLFW.GLFW_ICONIFIED) != GLFW.GLFW_FALSE
-                || target.isFullscreen()) {
+        if (minecraft.level == null || w <= 0 || h <= 0
+                || GLFW.glfwGetWindowAttrib(handle, GLFW.GLFW_ICONIFIED) != GLFW.GLFW_FALSE
+                || exclusiveFullscreen(target)) {
             close();
+            level = null;
             return;
         }
-        if (window != handle || width != w || height != h) close();
+        if (window != handle || width != w || height != h || topLevel != usePopup(target)) close();
         level = minecraft.level;
         cameraMode = minecraft.options.getCameraType().ordinal();
         eligible = render && level != null && minecraft.screen == null && minecraft.getOverlay() == null
@@ -76,15 +88,20 @@ public final class XessFgRuntime {
         try {
             if (session == 0) {
                 long start = XessFgFrameStats.Frame.start(profile);
-                open(minecraft, handle, w, h);
+                if (!open(minecraft, handle, w, h, usePopup(target))) return;
                 if (profile != null) profile.complete(SESSION_OPEN, start);
             }
             if (slot >= 0) {
-                XessFgNative.discard(session, slot, sequence);
+                while (!XessFgNative.discard(session, slot, sequence)) {
+                    if (!waitForWindow(minecraft, false)) {
+                        close();
+                        return;
+                    }
+                }
                 slot = -1;
                 previous = null;
             }
-            if (!acquireSlot(target, profile)) {
+            if (!acquireSlot(minecraft, profile)) {
                 close();
                 return;
             }
@@ -111,7 +128,7 @@ public final class XessFgRuntime {
         }
     }
 
-    private boolean acquireSlot(Window target, XessFgFrameStats.Frame profile) {
+    private boolean acquireSlot(Minecraft minecraft, XessFgFrameStats.Frame profile) {
         long start = XessFgFrameStats.Frame.start(profile);
         long next = sequence + 1;
         long captureFrame = profile == null ? 0 : profile.id();
@@ -120,9 +137,7 @@ public final class XessFgRuntime {
         if (slot < 0) {
             long waitStart = XessFgFrameStats.Frame.start(profile);
             do {
-                XessFgNative.waitForSlot(session);
-                GLFW.glfwPollEvents();
-                if (!surfaceMatches(target)) {
+                if (!waitForWindow(minecraft, true)) {
                     if (profile != null) profile.complete(SLOT_WAIT, waitStart);
                     return false;
                 }
@@ -142,13 +157,21 @@ public final class XessFgRuntime {
     }
 
     private boolean surfaceMatches(Window target) {
-        return target.getWindow() == window && !target.isFullscreen()
+        return target.getWindow() == window && !exclusiveFullscreen(target) && topLevel == usePopup(target)
                 && target.getWidth() == width && target.getHeight() == height
                 && !GLFW.glfwWindowShouldClose(window)
                 && GLFW.glfwGetWindowAttrib(window, GLFW.GLFW_ICONIFIED) == GLFW.GLFW_FALSE;
     }
 
-    private void open(Minecraft minecraft, long handle, int w, int h) throws IOException {
+    private static boolean exclusiveFullscreen(Window target) {
+        return target.isFullscreen() && GLFW.glfwGetWindowMonitor(target.getWindow()) != 0;
+    }
+
+    private static boolean usePopup(Window target) {
+        return target.isFullscreen() && ClientConfig.xessFg().surface() == XessFgSurfaceMode.BORDERLESS_POPUP;
+    }
+
+    private boolean open(Minecraft minecraft, long handle, int w, int h, boolean popup) throws IOException {
         if (!XessFgTransport.supported()) throw new IOException("Win32 OpenGL memory and semaphore sharing are unavailable");
         var renderAdapter = StormGpuDevices.renderAdapter();
         if (renderAdapter.luid() == 0 || renderAdapter.nodes() != 1) {
@@ -157,25 +180,43 @@ public final class XessFgRuntime {
         var adapter = XessFgAdapters.select(XessFgAdapters.discover(minecraft.gameDirectory.toPath()), ClientConfig.xessFg().gpu());
         renderLuid = renderAdapter.luid();
         generationLuid = adapter.luid();
+        boolean crossAdapter = renderLuid != generationLuid;
+        var transport = crossAdapter ? ClientConfig.xessFg().transport() : XessFgTransportMode.RGBA8;
         capture = new XessFgCapture(w, h);
-        session = XessFgNative.create(GLFWNativeWin32.glfwGetWin32Window(handle), renderAdapter.luid(), adapter.luid(), w, h);
-        ++sessionId;
-        for (int i = 0; i < slots.length; i++) slots[i] = new XessFgTransport(session, i);
+        windowInterrupted = false;
+        servicingWindow = true;
+        try {
+            session = XessFgNative.create(GLFWNativeWin32.glfwGetWin32Window(handle), renderAdapter.luid(), adapter.luid(), w, h,
+                    transport.nativeId(), popup);
+        } finally {
+            servicingWindow = false;
+        }
         window = handle;
         width = w;
         height = h;
+        topLevel = popup;
+        if (windowInterrupted || minecraft.level != level || !surfaceMatches(minecraft.getWindow())) {
+            close();
+            return false;
+        }
+        ++sessionId;
+        for (int i = 0; i < slots.length; i++) slots[i] = new XessFgTransport(session, i);
         constants = ByteBuffer.allocateDirect(XessFgNative.CONSTANT_BYTES).order(ByteOrder.nativeOrder());
+        if (slots[0].geometry.sharedInputs) {
+            reprojectionConstants = ByteBuffer.allocateDirect(XessFgNative.REPROJECTION_BYTES).order(ByteOrder.nativeOrder());
+        }
         reportedSleepRejection = false;
-        CreateManaIndustry.LOGGER.info("[CMI/XeSS-FG] render={} (LUID {}), generation={} (PCI {}, LUID {}), transport={}, XMX-capable Arc={}",
+        CreateManaIndustry.LOGGER.info("[CMI/XeSS-FG] render={} (LUID {}), generation={} (PCI {}, LUID {}), transport={} ({}), surface={}, Arc shared inputs={}, XMX-capable Arc={}",
                 StormGpuDevices.renderer(), Long.toUnsignedString(renderAdapter.luid(), 16), adapter.selection().label(),
                 String.format(Locale.ROOT, "%04x:%04x", adapter.vendor(), adapter.device()),
-                Long.toUnsignedString(adapter.luid(), 16), renderAdapter.luid() == adapter.luid() ? "same-adapter" : "cross-adapter",
-                adapter.xmxArc());
+                Long.toUnsignedString(adapter.luid(), 16), transport.value(), crossAdapter ? "cross-adapter" : "same-adapter",
+                popup ? "borderless_popup" : "child", slots[0].geometry.sharedInputs, adapter.xmxArc());
+        return true;
     }
 
     public static void renderStart() {
         var owner = INSTANCE;
-        if (owner.session == 0) return;
+        if (owner.servicingWindow || owner.session == 0 || owner.slot < 0) return;
         try {
             XessFgNative.marker(owner.session, owner.frame, SIMULATION_END);
             XessFgNative.marker(owner.session, owner.frame, RENDER_START);
@@ -221,6 +262,7 @@ public final class XessFgRuntime {
         long start = XessFgFrameStats.Frame.start(profile);
         boolean exported = false;
         boolean gpu = profile != null && profile.startGpu(DEPTH_MOTION);
+        ByteBuffer reprojection = null;
         try {
             float elapsed = (frameStart - previousFrameStart) / 1_000_000f;
             reset = previous == null || previousLevel != level || previousCameraMode != cameraMode
@@ -231,7 +273,9 @@ public final class XessFgRuntime {
                         + current.modelView().m12() * previous.modelView().m12()
                         + current.modelView().m22() * previous.modelView().m22() < 0.5f;
             slots[slot].geometry.acquire();
-            capture.depthAndMotion(slots[slot], texture, w, h, current, reset ? current : previous);
+            var priorView = reset ? current : previous;
+            if (capture.canReproject(slots[slot], w, h, current, priorView)) reprojection = reprojectionConstants;
+            capture.depthAndMotion(slots[slot], texture, w, h, current, priorView, reprojection);
             exported = true;
         } catch (RuntimeException | LinkageError failure) {
             fail(failure);
@@ -245,7 +289,7 @@ public final class XessFgRuntime {
         start = XessFgFrameStats.Frame.start(profile);
         try {
             slots[slot].geometry.publish(sequence);
-            XessFgNative.submitGeometry(session, slot, sequence);
+            XessFgNative.submitGeometry(session, slot, sequence, reprojection);
             depthReady = true;
         } catch (RuntimeException | LinkageError failure) {
             fail(failure);
@@ -255,7 +299,7 @@ public final class XessFgRuntime {
     }
 
     private boolean canCapture() {
-        return session != 0 && slot >= 0 && eligible;
+        return !servicingWindow && session != 0 && slot >= 0 && eligible;
     }
 
     public static void hudless(RenderTarget target) {
@@ -275,7 +319,7 @@ public final class XessFgRuntime {
         boolean gpu = profile != null && profile.startGpu(stage);
         boolean success = false;
         try {
-            capture.color(slots[slot], target.getColorTextureId(), target.viewWidth, target.viewHeight, plane);
+            capture.color(slots[slot], target.getColorTextureId(), target.viewWidth, target.viewHeight, plane, interpolate);
             success = true;
         } finally {
             if (profile != null) {
@@ -290,12 +334,12 @@ public final class XessFgRuntime {
     }
 
     private boolean exportFrame(RenderTarget target, int w, int h) {
-        if (session == 0) return false;
-        if (width != w || height != h) {
+        if (servicingWindow || session == 0) return false;
+        var client = Minecraft.getInstance();
+        if (slot < 0 || client.level == null || width != w || height != h) {
             close();
             return false;
         }
-        var client = Minecraft.getInstance();
         boolean gameplay = client.level == level && client.screen == null && client.getOverlay() == null && !client.isPaused();
         interpolate = canCapture() && depthReady && hudReady && gameplay;
         var profile = XessFgFrameStats.current();
@@ -323,6 +367,10 @@ public final class XessFgRuntime {
 
     public static boolean present(long handle) {
         var owner = INSTANCE;
+        if (owner.servicingWindow) {
+            owner.windowInterrupted = true;
+            return false;
+        }
         if (owner.session == 0 || owner.window != handle) return false;
         if (owner.deferredBlit == null) {
             owner.close();
@@ -333,29 +381,35 @@ public final class XessFgRuntime {
         var minecraft = Minecraft.getInstance();
         if (owner.presentFrame(minecraft)) return true;
         var window = minecraft.getWindow();
-        fallback.blitToScreen(window.getWidth(), window.getHeight());
+        if (fallback == minecraft.getMainRenderTarget()) fallback.blitToScreen(window.getWidth(), window.getHeight());
         return false;
     }
 
     private boolean presentFrame(Minecraft minecraft) {
         var target = minecraft.getWindow();
-        if (!surfaceMatches(target)) {
+        if (minecraft.level != level || !surfaceMatches(target)) {
             close();
             return false;
         }
         try {
             var profile = XessFgFrameStats.current();
             boolean vsync = minecraft.options.enableVsync().get();
-            int queued;
-            if (profile == null) {
-                queued = XessFgNative.present(session, slot, frame, sequence, interpolate, vsync, constants);
-            } else {
-                profile.resetHistory = interpolate && reset;
-                queued = profile.present(session, slot, frame, sequence, interpolate, vsync, constants);
-                profile.route = queued == 0 ? "dxgi_no_queued_frames" : "dxgi";
+            long captureFrame = profile == null ? 0 : profile.id();
+            long start = XessFgFrameStats.Frame.start(profile);
+            long wait = 0;
+            while (!XessFgNative.enqueuePresent(session, slot, frame, sequence, interpolate, vsync, constants, captureFrame)) {
+                if (profile != null && wait == 0) wait = System.nanoTime();
+                if (!waitForWindow(minecraft, false)) {
+                    close();
+                    return false;
+                }
+            }
+            if (profile != null) {
+                profile.complete(PRESENT_ENQUEUE, start);
+                if (wait != 0) profile.complete(PRESENT_BACKPRESSURE, wait);
+                profile.enqueued(sessionId, interpolate, slots[slot].color.transportMode, wait != 0);
             }
             slot = -1;
-            if (queued == 0) interpolate = false;
             previous = interpolate ? current : null;
             previousLevel = interpolate ? level : null;
             previousCameraMode = cameraMode;
@@ -366,6 +420,20 @@ public final class XessFgRuntime {
             fail(failure);
             return false;
         }
+    }
+
+    private boolean waitForWindow(Minecraft minecraft, boolean transferSlot) {
+        // GLFW can run a nested display tick while handling a world or window transition.
+        windowInterrupted = false;
+        servicingWindow = true;
+        try {
+            if (transferSlot) XessFgNative.waitForSlot(session);
+            else XessFgNative.waitForPresentSpace(session);
+            GLFW.glfwPollEvents();
+        } finally {
+            servicingWindow = false;
+        }
+        return !windowInterrupted && minecraft.level == level && surfaceMatches(minecraft.getWindow());
     }
 
     private void writeConstants() {
@@ -390,13 +458,23 @@ public final class XessFgRuntime {
 
     public static void shutdown() {
         INSTANCE.close();
-        INSTANCE.level = null;
+        if (!INSTANCE.servicingWindow) INSTANCE.level = null;
     }
 
     private void close() {
+        if (servicingWindow) {
+            windowInterrupted = true;
+            return;
+        }
         if (session != 0) {
-            XessFgNative.destroy(session);
+            long closing = session;
             session = 0;
+            servicingWindow = true;
+            try {
+                XessFgNative.destroy(closing);
+            } finally {
+                servicingWindow = false;
+            }
         }
         for (int i = 0; i < slots.length; i++) {
             if (slots[i] != null) slots[i].close();
@@ -405,10 +483,12 @@ public final class XessFgRuntime {
         if (capture != null) capture.close();
         capture = null;
         constants = null;
+        reprojectionConstants = null;
         previous = current = null;
         previousLevel = null;
         deferredBlit = null;
         window = sequence = 0;
+        topLevel = false;
         slot = -1;
     }
 }

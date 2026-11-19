@@ -44,7 +44,8 @@ final class XessFgTransport implements AutoCloseable {
 
     static final class Group implements AutoCloseable {
         private int memory, produced, released;
-        final int phase, rowWords, secondOffset;
+        final int phase, rowWords, secondOffset, transportMode;
+        final boolean sharedInputs;
         int buffer;
         private long lastToken;
 
@@ -64,6 +65,8 @@ final class XessFgTransport implements AutoCloseable {
                 checkError("Importing XeSS-FG shared storage");
                 rowWords = Math.toIntExact(handles[5] / Integer.BYTES);
                 secondOffset = Math.toIntExact(handles[6] / Integer.BYTES);
+                transportMode = Math.toIntExact(handles[7]);
+                sharedInputs = handles[8] != 0;
             } catch (RuntimeException | LinkageError failure) {
                 close();
                 throw failure;

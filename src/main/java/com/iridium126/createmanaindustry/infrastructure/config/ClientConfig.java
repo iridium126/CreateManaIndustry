@@ -59,6 +59,8 @@ public final class ClientConfig {
     private static ModConfigSpec.ConfigValue<String> STORM_GPU;
     private static final ModConfigSpec.BooleanValue XESS_FG_ENABLED;
     private static final ModConfigSpec.ConfigValue<String> XESS_FG_GPU;
+    private static final ModConfigSpec.ConfigValue<String> XESS_FG_TRANSPORT;
+    private static final ModConfigSpec.ConfigValue<String> XESS_FG_SURFACE;
     private static ModConfigSpec.BooleanValue RT_CAMERA_OCCLUSION, PARTICLE_RECEIVE_SHADOWS;
     private static ModConfigSpec.IntValue ALLAY_FEATHER_RATE, ALLAY_GOLD_RATE, STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT, PARTICLE_HEX_PATTERN_REDIRECT;
@@ -97,6 +99,12 @@ public final class ClientConfig {
         XESS_FG_GPU = BUILDER.comment("Use auto or a PnP device ID with an optional |model label.")
                 .translation("createmanaindustry.configuration.xessFg.gpu")
                 .gameRestart().define("gpu", XessFgGpu.AUTO, XessFgGpu::valid);
+        XESS_FG_TRANSPORT = BUILDER.comment("Cross-adapter color transport: rgba8, rgb24, or ycbcr422.")
+                .translation("createmanaindustry.configuration.xessFg.transport")
+                .gameRestart().define("transport", XessFgTransportMode.RGB24.value(), XessFgTransportMode::valid);
+        XESS_FG_SURFACE = BUILDER.comment("Presentation surface: child, borderless_child, or borderless_popup.")
+                .translation("createmanaindustry.configuration.xessFg.surface")
+                .gameRestart().define("surface", XessFgSurfaceMode.CHILD.value(), XessFgSurfaceMode::valid);
         BUILDER.pop();
 
         BUILDER.comment("Shared GPU particle engine: capacity, frame budget, fade distance and shader integration.").push("particles");
@@ -186,8 +194,9 @@ public final class ClientConfig {
     public record StormSimulation(StormSimulationBackend backend, StormSimulationGpu gpu) {}
     public static volatile StormSimulation stormSimulation = new StormSimulation(
             StormSimulationBackend.AUTO, StormSimulationGpu.FOLLOW_MINECRAFT);
-    public record XessFg(boolean enabled, XessFgGpu gpu) {}
-    private static volatile XessFg xessFg = new XessFg(false, XessFgGpu.parse(XessFgGpu.AUTO));
+    public record XessFg(boolean enabled, XessFgGpu gpu, XessFgTransportMode transport, XessFgSurfaceMode surface) {}
+    private static volatile XessFg xessFg = new XessFg(false, XessFgGpu.parse(XessFgGpu.AUTO), XessFgTransportMode.RGB24,
+            XessFgSurfaceMode.CHILD);
 
     public static XessFg xessFg() {
         return xessFg;
@@ -212,7 +221,8 @@ public final class ClientConfig {
         if (event.getConfig().getSpec() == SPEC
                 && (event instanceof ModConfigEvent.Loading || event instanceof ModConfigEvent.Reloading)) {
             if (event instanceof ModConfigEvent.Loading) {
-                xessFg = new XessFg(XESS_FG_ENABLED.get(), XessFgGpu.parse(XESS_FG_GPU.get()));
+                xessFg = new XessFg(XESS_FG_ENABLED.get(), XessFgGpu.parse(XESS_FG_GPU.get()),
+                        XessFgTransportMode.parse(XESS_FG_TRANSPORT.get()), XessFgSurfaceMode.parse(XESS_FG_SURFACE.get()));
             }
             allvrLod = ALLVR_LOD.get();
             mistGlowStrength = MIST_GLOW_STRENGTH.get();

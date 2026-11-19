@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WindowsPerformanceRecorder Version="1.0" Author="Create Mana Industry">
+  <Profiles>
+    <EventCollector Id="CmiPresentCollector" Name="CMI XeSS-FG Present">
+      <BufferSize Value="64"/>
+      <Buffers Value="16"/>
+    </EventCollector>
+    <EventProvider Id="CmiPresentProvider" Name="2DD7D232-E6B6-45D9-9C9C-B61AE7671BC1" Level="5" Strict="true"/>
+    <Profile Id="CmiPresent.Verbose.File" Name="CmiPresent" Description="CMI XeSS-FG proxy Present boundaries"
+             LoggingMode="File" DetailLevel="Verbose">
+      <Collectors>
+        <EventCollectorId Value="CmiPresentCollector">
+          <EventProviders>
+            <EventProviderId Value="CmiPresentProvider"/>
+          </EventProviders>
+        </EventCollectorId>
+      </Collectors>
+    </Profile>
+  </Profiles>
+</WindowsPerformanceRecorder>

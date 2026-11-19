@@ -5,6 +5,8 @@ import com.iridium126.createmanaindustry.client.xessfg.XessFgAdapters;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.StormSimulationGpu;
 import com.iridium126.createmanaindustry.infrastructure.config.XessFgGpu;
+import com.iridium126.createmanaindustry.infrastructure.config.XessFgTransportMode;
+import com.iridium126.createmanaindustry.infrastructure.config.XessFgSurfaceMode;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -68,6 +70,22 @@ public final class StormGpuConfigurationScreen {
         @Override
         protected Element createStringValue(String key, Predicate<String> tester, Supplier<String> source,
                                             Consumer<String> target) {
+            if (key.equals("transport") || key.equals("surface")) {
+                String translation = "createmanaindustry.configuration.xessFg." + key;
+                boolean transport = key.equals("transport");
+                var choices = transport ? java.util.Arrays.stream(XessFgTransportMode.values()).map(XessFgTransportMode::value).toList()
+                        : java.util.Arrays.stream(XessFgSurfaceMode.values()).map(XessFgSurfaceMode::value).toList();
+                String selected = transport ? XessFgTransportMode.parse(source.get()).value()
+                        : XessFgSurfaceMode.parse(source.get()).value();
+                var option = new OptionInstance<>(getTranslationKey(key),
+                        value -> Tooltip.create(Component.translatable(translation + "." + value + ".tooltip")),
+                        (caption, value) -> Component.translatable(translation + "." + value),
+                        new Custom<>(choices), selected,
+                        value -> undoManager.add(v -> { target.accept(v); onChanged(key); }, value,
+                                v -> { target.accept(v); onChanged(key); }, source.get()));
+                return new Element(Component.translatable(translation),
+                        Component.translatable(translation + ".tooltip"), option);
+            }
             if (!key.equals("gpu")) return super.createStringValue(key, tester, source, target);
             String current = source.get();
             var selected = XessFgGpu.parse(current);

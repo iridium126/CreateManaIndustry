@@ -16,8 +16,9 @@ import org.lwjgl.system.Platform;
 final class XessFgNative {
     static final int SLOT_COUNT = 4;
     static final int GEOMETRY = 0, COLOR = 1;
-    static final int GPU_PROFILE_FIELDS = 15, CLOCK_PROFILE_FIELDS = 10;
+    static final int GPU_PROFILE_FIELDS = 17, CLOCK_PROFILE_FIELDS = 10, PRESENT_RESULT_CAPACITY = SLOT_COUNT * 4;
     static final int CONSTANT_BYTES = 152;
+    static final int REPROJECTION_BYTES = 136;
     private static final String ROOT = "/native/xessfg/windows-x86_64/";
     private static final String[] LIBRARIES = {"libxell.dll", "libxess_fg.dll", "CmiXessFg.dll"};
     private static boolean loaded;
@@ -65,21 +66,22 @@ final class XessFgNative {
     }
 
     static native int adapter(long luid);
-    static native long create(long hwnd, long renderLuid, long generationLuid, int width, int height);
+    static native long create(long hwnd, long renderLuid, long generationLuid, int width, int height, int transport,
+                              boolean topLevel);
     static native long[] exportGroup(long session, int slot, int group);
     static native void closeHandle(long handle);
     static native int acquire(long session, long sequence, long captureFrame);
     static native int slotsInUse(long session);
     static native void waitForSlot(long session);
-    static native void submitGeometry(long session, int slot, long sequence);
+    static native void submitGeometry(long session, int slot, long sequence, ByteBuffer reprojection);
     static native void submitColor(long session, int slot, long sequence, boolean full);
-    static native void discard(long session, int slot, long sequence);
+    static native boolean discard(long session, int slot, long sequence);
     static native int sleep(long session, int frameId);
     static native void marker(long session, int frameId, int marker);
-    static native int present(long session, int slot, int frameId, long sequence, boolean interpolate,
-                              boolean vsync, ByteBuffer constants);
-    static native int presentProfiled(long session, int slot, int frameId, long sequence, boolean interpolate,
-                                      boolean vsync, ByteBuffer constants, ByteBuffer output);
+    static native boolean enqueuePresent(long session, int slot, int frameId, long sequence, boolean interpolate,
+                                         boolean vsync, ByteBuffer constants, long captureFrame);
+    static native void waitForPresentSpace(long session);
+    static native int pollPresents(long session, ByteBuffer output);
     static native int pollGpuProfile(long session, ByteBuffer output);
     static native void sampleClocks(long session, ByteBuffer output);
     static native void destroy(long session);

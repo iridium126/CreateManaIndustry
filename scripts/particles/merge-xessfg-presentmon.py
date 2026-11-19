@@ -1,8 +1,8 @@
 """Join one CMI XeSS-FG capture with the PresentMon CSV from the same session."""
 
 import argparse
-from bisect import bisect_right
-from collections import defaultdict
+from bisect import bisect_left, bisect_right
+from collections import Counter, defaultdict
 import csv
 from decimal import Decimal
 import json
@@ -68,7 +68,48 @@ def associate(app, presents):
     for frame, rows in direct.items():
         if len(rows) == 1:
             matches[rows[0]] = (frame, "present_qpc")
-    return matches
+    return matches, verified
+
+
+def proxy_breakdown(app, presents, verified, frequency):
+    by_chain = defaultdict(list)
+    for row in presents:
+        if row["type"] in {"Application", "Intel XeSS-FG"}:
+            by_chain[row["address"]].append(row)
+    timelines = {}
+    for chain in set(verified.values()):
+        rows = sorted(by_chain[chain], key=lambda row: row["qpc"])
+        starts = [row["qpc"] for row in rows]
+        longest = max((row["api_ticks"] or 0 for row in rows), default=0)
+        timelines[chain] = (rows, starts, longest)
+
+    for frame in app:
+        timeline = timelines.get(verified.get(frame["session_id"]))
+        if timeline is None:
+            yield {}
+            continue
+        rows, starts, longest = timeline
+        enter, exit_qpc = int(frame["present_enter_qpc"]), int(frame["present_exit_qpc"])
+        first = bisect_left(starts, enter)
+        end = bisect_right(starts, exit_qpc)
+        if first == end:
+            yield {}
+            continue
+        data = {"proxy_to_first_dxgi_ms": milliseconds(starts[first] - enter, frequency)}
+        seen = rows[bisect_left(starts, enter - longest):end]
+        if all(row["api_ticks"] is not None for row in seen):
+            # The prior app ID can flip within this proxy call. Intersect time
+            # intervals on the verified chain and count each instant only once.
+            covered, covered_until = 0, enter
+            for row in seen:
+                left = max(row["qpc"], covered_until)
+                right = min(row["qpc"] + row["api_ticks"], exit_qpc)
+                if right > left:
+                    covered += right - left
+                    covered_until = right
+            data.update(proxy_dxgi_overlap_ms=milliseconds(covered, frequency),
+                        proxy_outside_dxgi_ms=milliseconds(exit_qpc - enter - covered, frequency))
+        yield data
 
 
 def milliseconds(delta, frequency):
@@ -130,20 +171,23 @@ def merge(metadata_path, presentmon_path):
             continue
         until = row.get("MsUntilDisplayed") or row.get("msUntilDisplayed", "")
         dropped = row.get("Dropped", "")
+        api = row.get("MsInPresentAPI") or row.get("msInPresentAPI", "")
+        api_ticks = round(Decimal(api) * frequency / 1000) if api and api.upper() != "NA" else None
         display = None
         if dropped != "1" and until and until.upper() != "NA" and Decimal(until) > 0:
             display = qpc + round(Decimal(until) * frequency / 1000)
         presents.append(dict(qpc=qpc, address=int(row["SwapChainAddress"], 16), app_id=app_id,
                              frame_id=row.get("FrameId", ""), type=row.get("FrameType") or "Unknown",
-                             mode=row.get("PresentMode", ""), display=display, dropped=dropped))
+                             mode=row.get("PresentMode", ""), display=display, dropped=dropped, api_ticks=api_ticks))
 
-    matched = associate(app, presents)
+    matched, verified = associate(app, presents)
     per_frame = defaultdict(list)
     for row, (frame, method) in matched.items():
         per_frame[frame].append((presents[row], method))
     output = metadata_path.with_name(metadata_path.stem + "-xessfg-timeline.csv")
     fields = ("match", "frame", "session_id", "present_id", "sequence", "present_enter_qpc", "present_exit_qpc",
               "arc_dma_ready_qpc", "arc_inputs_ready_qpc", "inputs_minus_present_ms", "dma_to_inputs_ms", "present_ms",
+              "arc_input_prepare_start_qpc", "dma_to_prepare_ms", "prepare_to_inputs_ms",
               "color_submit_qpc", "color_fence_token", "color_gl_fence_at_submit", "color_gl_fence_at_enter",
               "color_gl_fence_at_exit", "color_transfer_fence_at_enter", "color_transfer_fence_at_exit",
               "rtx_color_copy_start_qpc", "rtx_color_copy_end_qpc", "arc_color_dma_start_qpc",
@@ -152,17 +196,23 @@ def merge(metadata_path, presentmon_path):
               "arc_geometry_dma_end_qpc", "arc_color_fence_observed_qpc",
               "arc_wait_before_geometry_ms", "arc_wait_overlapping_geometry_ms", "arc_wait_after_geometry_ms",
               "arc_wait_after_observed_fence_ms",
+              "transport", "cross_bytes", "cross_geometry_bytes", "cross_color_bytes",
+              "pending_present_at_enqueue", "present_enqueue_ns", "present_backpressure_ns",
+              "present_queue_delay_ns", "worker_present_duration_ns", "arc_color_unpack_gpu_ns",
+              "presenter_thread_id", "proxy_present_thread_cpu_ns", "proxy_top_level", "proxy_to_first_dxgi_ms",
+              "proxy_dxgi_overlap_ms", "proxy_outside_dxgi_ms",
               "pm_frame_type", "pm_swap_chain", "pm_frame_id", "pm_app_frame_id", "pm_present_mode",
-              "pm_present_qpc", "display_qpc", "pm_dropped",
+              "pm_present_qpc", "pm_present_api_ms", "display_qpc", "pm_dropped",
               "present_exit_to_display_ms")
     with output.open("w", encoding="utf-8", newline="") as target:
         writer = csv.DictWriter(target, fields)
         writer.writeheader()
-        for index, frame in enumerate(app):
+        for index, (frame, breakdown) in enumerate(zip(app, proxy_breakdown(app, presents, verified, frequency))):
             enter = int(frame["present_enter_qpc"])
             exit_qpc = int(frame["present_exit_qpc"])
             dma = optional_int(frame.get("arc_dma_ready_qpc"))
             inputs = optional_int(frame.get("arc_inputs_ready_qpc"))
+            prepare_start = optional_int(frame.get("arc_input_prepare_start_qpc"))
             base = {field: frame.get(field, "") for field in fields if field in frame}
             submit = optional_int(frame.get("color_submit_qpc"))
             rtx_start = optional_int(frame.get("rtx_color_copy_start_qpc"))
@@ -174,8 +224,11 @@ def merge(metadata_path, presentmon_path):
                         arc_dma_ms=milliseconds(delta(dma, arc_start), frequency),
                         inputs_minus_present_ms=milliseconds(delta(inputs, enter), frequency),
                         dma_to_inputs_ms=milliseconds(delta(inputs, dma), frequency),
+                        dma_to_prepare_ms=milliseconds(delta(prepare_start, dma), frequency),
+                        prepare_to_inputs_ms=milliseconds(delta(inputs, prepare_start), frequency),
                         present_ms=milliseconds(exit_qpc - enter, frequency))
             base.update(geometry_wait(frame, rtx_end, arc_start, frequency))
+            base.update(breakdown)
             for row, method in per_frame[index] or [(None, "unmatched_app")]:
                 writer.writerow(dict(base, match=method, **display_fields(row, exit_qpc, frequency)))
         for index, row in enumerate(presents):
@@ -190,6 +243,10 @@ def merge(metadata_path, presentmon_path):
     if generated:
         displayed = sum(row["display"] is not None for row in generated)
         print(f"Matched generated frames displayed: {displayed}/{len(generated)}.")
+    modes = Counter((presents[index]["type"], presents[index]["mode"]) for index in matched
+                    if presents[index]["display"] is not None)
+    for (kind, mode), count in sorted(modes.items()):
+        print(f"Displayed {kind} | {mode or 'unknown mode'} | {count}")
 
 
 def display_fields(row, exit_qpc, frequency):
@@ -197,7 +254,8 @@ def display_fields(row, exit_qpc, frequency):
         return {}
     return dict(pm_frame_type=row["type"], pm_swap_chain=f"0x{row['address']:x}", pm_app_frame_id=row["app_id"],
                 pm_frame_id=row["frame_id"], pm_present_mode=row["mode"],
-                pm_present_qpc=row["qpc"], display_qpc=row["display"], pm_dropped=row["dropped"],
+                pm_present_qpc=row["qpc"], pm_present_api_ms=milliseconds(row["api_ticks"], frequency),
+                display_qpc=row["display"], pm_dropped=row["dropped"],
                 present_exit_to_display_ms=milliseconds(delta(row["display"], exit_qpc), frequency))
 
 

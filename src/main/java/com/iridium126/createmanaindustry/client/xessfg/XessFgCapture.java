@@ -23,9 +23,10 @@ import static org.lwjgl.opengl.GL45.*;
 
 final class XessFgCapture implements AutoCloseable {
     static final int FINAL = 0, HUDLESS = 1, DEPTH = 2, MOTION = 3;
+    private static final int DEPTH_ONLY = 4, FINAL_WITH_MASK = 5;
     private final int program;
     private final int sourceSize, extent, rowWords, offsets, mode, currentToPrevious, skyToPrevious;
-    private final int sourceScale, currentJitter, warpTypes, warpParameters;
+    private final int sourceScale, currentJitter, warpTypes, warpParameters, transportMode;
     private final int width, height;
 
     XessFgCapture(int width, int height) {
@@ -38,6 +39,7 @@ final class XessFgCapture implements AutoCloseable {
         rowWords = glGetUniformLocation(program, "rowWords");
         offsets = glGetUniformLocation(program, "offsets");
         mode = glGetUniformLocation(program, "mode");
+        transportMode = glGetUniformLocation(program, "transport");
         currentToPrevious = glGetUniformLocation(program, "currentToPrevious");
         skyToPrevious = glGetUniformLocation(program, "skyToPrevious");
         sourceScale = glGetUniformLocation(program, "sourceScale");
@@ -46,19 +48,38 @@ final class XessFgCapture implements AutoCloseable {
         warpParameters = glGetUniformLocation(program, "warpParameters");
     }
 
-    void color(XessFgTransport slot, int texture, int sourceWidth, int sourceHeight, int plane) {
-        dispatch(slot.color, texture, sourceWidth, sourceHeight, plane);
+    void color(XessFgTransport slot, int texture, int sourceWidth, int sourceHeight, int plane, boolean full) {
+        int output = plane == FINAL && full && slot.color.sharedInputs ? FINAL_WITH_MASK : plane;
+        dispatch(slot.color, texture, sourceWidth, sourceHeight, output);
+    }
+
+    boolean canReproject(XessFgTransport slot, int sourceWidth, int sourceHeight,
+                         XessFgView current, XessFgView previous) {
+        var now = current.coordinates();
+        // With one source texel per output pixel, jitter inside this interval cannot
+        // change which depth texel the existing OpenGL export selects.
+        return slot.geometry.sharedInputs && sourceWidth == width && sourceHeight == height
+                && now.scaleX() == 1 && now.scaleY() == 1
+                && now.warp() == XessFgCoordinates.Warp.NONE && previous.coordinates().warp() == XessFgCoordinates.Warp.NONE
+                && Math.abs(now.jitterX()) < 0.49f && Math.abs(now.jitterY()) < 0.49f;
     }
 
     void depthAndMotion(XessFgTransport slot, int texture, int sourceWidth, int sourceHeight,
-                        XessFgView current, XessFgView previous) {
-        try (var stack = MemoryStack.stackPush()) {
-            glProgramUniformMatrix4fv(program, currentToPrevious, false,
-                    current.reproject(previous, true).get(stack.mallocFloat(16)));
-            glProgramUniformMatrix4fv(program, skyToPrevious, false,
-                    current.reproject(previous, false).get(stack.mallocFloat(16)));
-        }
+                        XessFgView current, XessFgView previous, ByteBuffer reprojection) {
+        var withTranslation = current.reproject(previous, true);
+        var withoutTranslation = current.reproject(previous, false);
         var now = current.coordinates();
+        if (reprojection != null) {
+            matrix(reprojection, 0, withTranslation);
+            matrix(reprojection, 64, withoutTranslation);
+            reprojection.putFloat(128, now.jitterX()).putFloat(132, now.jitterY());
+            dispatch(slot.geometry, texture, sourceWidth, sourceHeight, DEPTH_ONLY);
+            return;
+        }
+        try (var stack = MemoryStack.stackPush()) {
+            glProgramUniformMatrix4fv(program, currentToPrevious, false, withTranslation.get(stack.mallocFloat(16)));
+            glProgramUniformMatrix4fv(program, skyToPrevious, false, withoutTranslation.get(stack.mallocFloat(16)));
+        }
         var then = previous.coordinates();
         glProgramUniform2f(program, sourceScale, now.scaleX(), now.scaleY());
         glProgramUniform2f(program, currentJitter, now.jitterX(), now.jitterY());
@@ -87,7 +108,14 @@ final class XessFgCapture implements AutoCloseable {
             glUniform1i(rowWords, group.rowWords);
             glUniform4i(offsets, 0, group.secondOffset, 0, group.secondOffset);
             glUniform1i(mode, plane);
-            glDispatchCompute((width + 15) / 16, (height + 7) / 8, 1);
+            glUniform1i(transportMode, group.transportMode);
+            int pixelsPerInvocation = switch (group.transportMode) {
+                case 1 -> 4;
+                case 2 -> 2;
+                default -> 1;
+            };
+            int groupWidth = plane == FINAL_WITH_MASK ? 128 : 16 * pixelsPerInvocation;
+            glDispatchCompute((width + groupWidth - 1) / groupWidth, (height + 7) / 8, 1);
             glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
         } finally {
             if (oldIndexed != 0 && oldSize > 0) {

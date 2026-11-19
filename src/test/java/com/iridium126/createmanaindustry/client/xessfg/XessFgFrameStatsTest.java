@@ -14,11 +14,11 @@ class XessFgFrameStatsTest {
         clock.add(new long[]{10, 500, 100, 100, 1000, 110, 200, 50, 100, 50});
         clock.add(new long[]{10, 700, 122, 100, 1400, 130, 200, 150, 120, 50});
         assertEquals(111, clock.toQpc(600, XessFgClockTimeline.ARC_COPY));
-        assertEquals(120, clock.toQpc(1200, XessFgClockTimeline.DIRECT));
+        assertEquals(120, clock.toQpc(1200, XessFgClockTimeline.ARC_PREPARE));
         assertEquals(115, clock.toQpc(125, XessFgClockTimeline.RTX_COPY));
         assertEquals(95, clock.toQpc(450, XessFgClockTimeline.ARC_COPY));
-        assertEquals(135, clock.toQpc(1500, XessFgClockTimeline.DIRECT));
-        assertEquals(missing, clock.toQpc(missing, XessFgClockTimeline.DIRECT));
+        assertEquals(135, clock.toQpc(1500, XessFgClockTimeline.ARC_PREPARE));
+        assertEquals(missing, clock.toQpc(missing, XessFgClockTimeline.ARC_PREPARE));
 
         var local = new XessFgClockTimeline();
         local.add(new long[]{10, missing, missing, missing, 1000, 110, 200, missing, missing, missing});

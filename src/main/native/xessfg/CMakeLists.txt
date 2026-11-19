@@ -9,7 +9,7 @@ function(configure_xessfg_target target)
     target_compile_features(${target} PRIVATE cxx_std_17)
     target_compile_definitions(${target} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
     target_include_directories(${target} PRIVATE ${JNI_INCLUDE_DIRS} "${XESS_INCLUDE}")
-    target_link_libraries(${target} PRIVATE d3d12 dxgi user32 "${XESS_FG_LIBRARY}" "${XELL_LIBRARY}")
+    target_link_libraries(${target} PRIVATE d3d12 d3dcompiler dxgi user32 advapi32 "${XESS_FG_LIBRARY}" "${XELL_LIBRARY}")
     set_property(TARGET ${target} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endfunction()
 

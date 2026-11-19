@@ -5,7 +5,7 @@ import java.util.List;
 
 /** Raw queue/QPC calibration samples belonging to one native session in a capture. */
 final class XessFgClockTimeline {
-    static final int ARC_COPY = 1, DIRECT = 4, RTX_COPY = 7;
+    static final int ARC_COPY = 1, ARC_PREPARE = 4, RTX_COPY = 7;
     private final List<long[]> anchors = new ArrayList<>();
     long nextSampleNs;
 

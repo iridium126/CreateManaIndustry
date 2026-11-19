@@ -2,7 +2,7 @@
 
 layout(local_size_x = 16, local_size_y = 8) in;
 layout(binding = 0) uniform sampler2D sourceTexture;
-layout(std430, binding = 0) writeonly buffer FrameTransport {
+layout(std430, binding = 0) buffer FrameTransport {
     uint words[];
 };
 
@@ -11,6 +11,7 @@ uniform ivec2 sourceSize;
 uniform ivec4 offsets;
 uniform int rowWords;
 uniform int mode;
+uniform int transport;
 uniform mat4 currentToPrevious;
 uniform mat4 skyToPrevious;
 uniform vec2 sourceScale;
@@ -19,8 +20,11 @@ uniform ivec2 warpTypes;
 uniform vec4 warpParameters;
 
 const int DEPTH = 2;
+const int DEPTH_ONLY = 4;
+const int FINAL_WITH_MASK = 5;
 const int SILDUR_RAIN = 5;
 shared vec4 rainDrops[8];
+shared uint hudChanges[128];
 
 void buildRainDrops(int first, float time) {
     const vec2 patterns[4] = vec2[4](vec2(-0.94386347, 1.0), vec2(0.9347, -0.2533282),
@@ -89,7 +93,90 @@ vec2 displayCoordinate(vec2 scene, vec2 estimate, int effect, vec2 parameters, i
     return estimate;
 }
 
+vec3 colorAt(ivec2 pixel) {
+    ivec2 glPixel = ivec2(min(pixel.x, extent.x - 1), extent.y - 1 - pixel.y);
+    return sourceSize == extent
+            ? texelFetch(sourceTexture, glPixel, 0).rgb
+            : textureLod(sourceTexture, (vec2(glPixel) + 0.5) / vec2(extent), 0.0).rgb;
+}
+
+uvec3 encodeRgb24(ivec2 pixel) {
+    uvec4 rgba = uvec4(packUnorm4x8(vec4(colorAt(pixel), 0.0)),
+                      packUnorm4x8(vec4(colorAt(pixel + ivec2(1, 0)), 0.0)),
+                      packUnorm4x8(vec4(colorAt(pixel + ivec2(2, 0)), 0.0)),
+                      packUnorm4x8(vec4(colorAt(pixel + ivec2(3, 0)), 0.0)));
+    return uvec3(rgba.x | (rgba.y << 24), (rgba.y >> 8) | (rgba.z << 16), (rgba.z >> 16) | (rgba.w << 8));
+}
+
+void storeRgb24(int address, uvec3 rgb) {
+    words[address] = rgb.x;
+    words[address + 1] = rgb.y;
+    words[address + 2] = rgb.z;
+}
+
+void packColor(ivec2 group) {
+    int pixels = transport == 1 ? 4 : transport == 2 ? 2 : 1;
+    ivec2 p = ivec2(group.x * pixels, group.y);
+    if (any(greaterThanEqual(p, extent))) return;
+    int address = offsets[mode] + p.y * rowWords;
+    if (transport == 1) {
+        storeRgb24(address + group.x * 3, encodeRgb24(p));
+    } else if (transport == 2) {
+        vec3 a = colorAt(p);
+        vec3 b = colorAt(p + ivec2(1, 0));
+        const vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+        float ya = dot(a, luma), yb = dot(b, luma);
+        vec3 average = (a + b) * 0.5;
+        float y = (ya + yb) * 0.5;
+        words[address + group.x] = packUnorm4x8(vec4(ya, 128.0 / 255.0 + (average.b - y) / 1.8556,
+                                                   yb, 128.0 / 255.0 + (average.r - y) / 1.5748));
+    } else {
+        words[address + p.x] = packUnorm4x8(vec4(colorAt(p), 1.0));
+    }
+}
+
+uint packFinalBlock(int block, int y) {
+    if (block * 4 >= extent.x || y >= extent.y) return 0u;
+    int address = y * rowWords + block * 3;
+    uvec3 rgb = encodeRgb24(ivec2(block * 4, y));
+    storeRgb24(address, rgb);
+    int hudless = offsets[1] + address;
+    bool differs = any(notEqual(rgb, uvec3(words[hudless], words[hudless + 1], words[hudless + 2])));
+    return differs ? (1u << (block % 32)) : 0u;
+}
+
+void packFinalWithMask(int y) {
+    // One 32-bit mask covers 128 pixels in a row. Unset bits select the exact final RGB bytes.
+    int x = int(gl_LocalInvocationID.x);
+    int block = int(gl_WorkGroupID.x) * 32 + x;
+    int lane = int(gl_LocalInvocationIndex);
+    hudChanges[lane] = packFinalBlock(block, y) | packFinalBlock(block + 16, y);
+    barrier();
+    if (x == 0 && y < extent.y) {
+        uint mask = 0u;
+        for (int i = 0; i < 16; ++i) mask |= hudChanges[lane + i];
+        int stride = (extent.x + 127) / 128;
+        words[2 * offsets[1] + y * stride + int(gl_WorkGroupID.x)] = mask;
+    }
+}
+
 void main() {
+    ivec2 outputPixel = ivec2(gl_GlobalInvocationID.xy);
+    if (mode == FINAL_WITH_MASK) {
+        packFinalWithMask(outputPixel.y);
+        return;
+    }
+    if (mode == DEPTH_ONLY) {
+        if (all(lessThan(outputPixel, extent))) {
+            ivec2 glPixel = ivec2(outputPixel.x, extent.y - 1 - outputPixel.y);
+            words[outputPixel.y * rowWords + outputPixel.x] = floatBitsToUint(texelFetch(sourceTexture, glPixel, 0).r);
+        }
+        return;
+    }
+    if (mode != DEPTH) {
+        packColor(outputPixel);
+        return;
+    }
     if (mode == DEPTH && (warpTypes.x == SILDUR_RAIN || warpTypes.y == SILDUR_RAIN)) {
         if (gl_LocalInvocationIndex == 0u) {
             if (warpTypes.x == SILDUR_RAIN) buildRainDrops(0, warpParameters.x);
@@ -97,20 +184,12 @@ void main() {
         }
         barrier();
     }
-    ivec2 outputPixel = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(outputPixel, extent))) return;
 
     // OpenGL textures start at the lower left. The transfer footprint starts at the upper left.
     ivec2 glPixel = ivec2(outputPixel.x, extent.y - 1 - outputPixel.y);
     vec2 uv = (vec2(glPixel) + 0.5) / vec2(extent);
     int address = outputPixel.y * rowWords + outputPixel.x;
-    if (mode != DEPTH) {
-        vec3 rgb = sourceSize == extent
-                ? texelFetch(sourceTexture, glPixel, 0).rgb
-                : textureLod(sourceTexture, uv, 0.0).rgb;
-        words[offsets[mode] + address] = packUnorm4x8(vec4(rgb, 1.0));
-        return;
-    }
 
     vec2 scene = sceneCoordinate(uv, warpTypes.x, warpParameters.xy, 0);
     vec2 sourceExtent = vec2(sourceSize) * sourceScale;

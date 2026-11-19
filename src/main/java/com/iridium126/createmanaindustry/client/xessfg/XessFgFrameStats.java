@@ -18,12 +18,14 @@ public final class XessFgFrameStats implements AutoCloseable {
             + "back_buffer_index,dxgi_sync_interval,dxgi_present_flags,cross_geometry_bytes,cross_color_bytes,"
             + "present_enter_qpc,present_exit_qpc,proxy_swap_chain_address,qpc_frequency,"
             + "color_submit_qpc,color_fence_token,color_gl_fence_at_submit,color_gl_fence_at_enter,color_gl_fence_at_exit,"
-            + "color_transfer_fence_at_enter,color_transfer_fence_at_exit,arc_color_fence_observed_qpc";
-    private static final int NATIVE_FIELDS = 33, NATIVE_QUERY_MASK = 14;
+            + "color_transfer_fence_at_enter,color_transfer_fence_at_exit,arc_color_fence_observed_qpc,"
+            + "present_queue_delay_ns,worker_present_duration_ns,proxy_present_thread_cpu_ns,presenter_thread_id,proxy_top_level";
+    private static final int NATIVE_FIELDS = 38, NATIVE_QUERY_MASK = 14, WORKER_PRESENT_DURATION = 34;
     private static final int DMA_TICK = 5, INPUTS_TICK = 6;
     private static final int RTX_START_TICK = 7, RTX_END_TICK = 8, DMA_START_TICK = 9;
     private static final int RTX_GEOMETRY_START_TICK = 10, RTX_GEOMETRY_END_TICK = 11;
     private static final int ARC_GEOMETRY_START_TICK = 12, ARC_GEOMETRY_END_TICK = 13;
+    private static final int PREPARE_START_TICK = 15;
     private static Frame current;
     private final Map<Long, Frame> frames = new LinkedHashMap<>();
     private final Map<Long, XessFgClockTimeline> clocks = new LinkedHashMap<>();
@@ -31,11 +33,11 @@ public final class XessFgFrameStats implements AutoCloseable {
     private ByteBuffer nativeOutput, gpuOutput, clockOutput;
     private Frame previous;
     private long gpuSession;
-    private int pendingGpu;
+    private int pendingGpu, pendingPresent;
 
     enum Stage {
         SESSION_OPEN, XELL_SLEEP, EARLY_SLOT, SLOT_WAIT, DEPTH_MOTION, HUDLESS, FINAL_COLOR, GL_PUBLISH,
-        NATIVE_PRESENT, WGL_SWAP, GEOMETRY_PUBLISH, COLOR_SUBMIT
+        NATIVE_PRESENT, WGL_SWAP, GEOMETRY_PUBLISH, COLOR_SUBMIT, PRESENT_ENQUEUE, PRESENT_BACKPRESSURE
     }
 
     public static final class Frame {
@@ -50,6 +52,8 @@ public final class XessFgFrameStats implements AutoCloseable {
         long earlySlot = UNAVAILABLE, slotsInUse = UNAVAILABLE, renderLuid, generationLuid, disabledChecks;
         private final long[] nativeGpu = new long[XessFgNative.GPU_PROFILE_FIELDS - 1];
         private boolean waitingForGpu;
+        private boolean receivedGpu;
+        long transportMode = UNAVAILABLE, pendingAtEnqueue = UNAVAILABLE;
         boolean interpolation, resetHistory;
         String route = "no_present";
 
@@ -85,27 +89,16 @@ public final class XessFgFrameStats implements AutoCloseable {
             if (began) owner.gl.end(success, false);
         }
 
-        int present(long session, int slot, int frame, long sequence, boolean interpolate, boolean vsync, ByteBuffer constants) {
-            this.sequence = sequence;
+        void enqueued(long sessionId, boolean interpolate, int transport, boolean waited) {
             this.interpolation = interpolate;
+            this.transportMode = transport;
+            this.pendingAtEnqueue = waited ? 1 : 0;
+            route = "dxgi_pending";
+            owner.switchSession(sessionId);
+            owner.pendingPresent++;
             if (owner.nativeOutput == null) {
-                owner.nativeOutput = directBuffer(NATIVE_FIELDS);
+                owner.nativeOutput = directBuffer((3 + NATIVE_FIELDS) * XessFgNative.PRESENT_RESULT_CAPACITY);
                 owner.gpuOutput = directBuffer(XessFgNative.SLOT_COUNT * XessFgNative.GPU_PROFILE_FIELDS);
-            }
-            long start = System.nanoTime();
-            try {
-                queued = XessFgNative.presentProfiled(session, slot, frame, sequence, interpolate, vsync, constants,
-                        owner.nativeOutput);
-                return (int) queued;
-            } finally {
-                complete(Stage.NATIVE_PRESENT, start);
-                nativeData = new long[NATIVE_FIELDS];
-                owner.nativeOutput.asLongBuffer().get(nativeData);
-                if (nativeData[NATIVE_QUERY_MASK] > 0) {
-                    owner.gpuSession = sessionId;
-                    waitingForGpu = true;
-                    owner.pendingGpu++;
-                }
             }
         }
     }
@@ -148,13 +141,32 @@ public final class XessFgFrameStats implements AutoCloseable {
 
     public void poll(long session, long sessionId, boolean finishing) {
         if (gl != null) gl.poll();
-        if (sessionId != gpuSession || session == 0) {
-            gpuSession = sessionId;
-            pendingGpu = 0;
-        }
+        switchSession(session == 0 ? 0 : sessionId);
         if (session == 0) return;
         if (clocks.containsKey(sessionId)) sampleClocks(session, sessionId, finishing);
         if (gpuOutput == null) return;
+        int completed = XessFgNative.pollPresents(session, nativeOutput);
+        var results = nativeOutput.asLongBuffer();
+        for (int i = 0; i < completed; i++) {
+            Frame sample = frames.get(results.get());
+            long queued = results.get();
+            boolean reset = results.get() != 0;
+            if (sample == null || !"dxgi_pending".equals(sample.route)) {
+                results.position(results.position() + NATIVE_FIELDS);
+                continue;
+            }
+            pendingPresent--;
+            sample.queued = queued;
+            sample.resetHistory = reset;
+            sample.route = queued == 0 ? "dxgi_no_queued_frames" : "dxgi";
+            sample.nativeData = new long[NATIVE_FIELDS];
+            results.get(sample.nativeData);
+            sample.cpu[Stage.NATIVE_PRESENT.ordinal()] = sample.nativeData[WORKER_PRESENT_DURATION];
+            if (sample.nativeData[NATIVE_QUERY_MASK] > 0 && !sample.receivedGpu) {
+                sample.waitingForGpu = true;
+                pendingGpu++;
+            }
+        }
         int samples = XessFgNative.pollGpuProfile(session, gpuOutput);
         var values = gpuOutput.asLongBuffer();
         for (int i = 0; i < samples; i++) {
@@ -165,6 +177,7 @@ public final class XessFgFrameStats implements AutoCloseable {
                 continue;
             }
             values.get(sample.nativeGpu);
+            sample.receivedGpu = true;
             if (sample.waitingForGpu) {
                 sample.waitingForGpu = false;
                 pendingGpu--;
@@ -172,8 +185,14 @@ public final class XessFgFrameStats implements AutoCloseable {
         }
     }
 
+    private void switchSession(long sessionId) {
+        if (gpuSession == sessionId) return;
+        gpuSession = sessionId;
+        pendingGpu = pendingPresent = 0;
+    }
+
     public boolean hasPending() {
-        return pendingGpu > 0 || (gl != null && gl.pending() > 0);
+        return pendingPresent > 0 || pendingGpu > 0 || (gl != null && gl.pending() > 0);
     }
 
     public static long beginWgl() {
@@ -194,15 +213,18 @@ public final class XessFgFrameStats implements AutoCloseable {
         out.write("frame,route,next_tick_interval_ns,present_id,sequence,render_luid,generation_luid,sleep_status,early_slot,slots_in_use,"
                 + "disabled_checks,interpolate,reset_history,queued,session_open_ns,xell_sleep_ns,early_slot_ns,slot_wait_ns,"
                 + "depth_motion_cpu_ns,hudless_cpu_ns,final_color_cpu_ns,gl_publish_ns,native_present_ns,wgl_swap_ns,geometry_publish_ns,color_submit_ns,"
+                + "present_enqueue_ns,present_backpressure_ns,"
                 + "depth_motion_gl_ns,hudless_gl_ns,final_color_gl_ns," + NATIVE_COLUMNS
                 + ",producer_geometry_gpu_ns,producer_color_gpu_ns,arc_geometry_dma_gpu_ns,arc_color_dma_gpu_ns,"
                 + "arc_texture_upload_gpu_ns,arc_dma_ready_gpu_tick,arc_inputs_ready_gpu_tick,"
                 + "rtx_color_copy_start_gpu_tick,rtx_color_copy_end_gpu_tick,arc_color_dma_start_gpu_tick,"
                 + "rtx_geometry_copy_start_gpu_tick,rtx_geometry_copy_end_gpu_tick,"
-                + "arc_geometry_dma_start_gpu_tick,arc_geometry_dma_end_gpu_tick,session_id,"
+                + "arc_geometry_dma_start_gpu_tick,arc_geometry_dma_end_gpu_tick,arc_color_unpack_gpu_ns,"
+                + "arc_input_prepare_start_gpu_tick,session_id,"
                 + "arc_dma_ready_qpc,arc_inputs_ready_qpc,rtx_color_copy_start_qpc,rtx_color_copy_end_qpc,"
                 + "arc_color_dma_start_qpc,rtx_geometry_copy_start_qpc,rtx_geometry_copy_end_qpc,"
-                + "arc_geometry_dma_start_qpc,arc_geometry_dma_end_qpc\n");
+                + "arc_geometry_dma_start_qpc,arc_geometry_dma_end_qpc,arc_input_prepare_start_qpc,"
+                + "transport,pending_present_at_enqueue\n");
         for (Frame frame : frames.values()) {
             out.write(frame.id + "," + frame.route);
             column(out, frame.nextTickIntervalNs);
@@ -223,7 +245,7 @@ public final class XessFgFrameStats implements AutoCloseable {
             column(out, frame.sessionId);
             var clock = clocks.get(frame.sessionId);
             column(out, calibratedTick(clock, frame, DMA_TICK, XessFgClockTimeline.ARC_COPY));
-            column(out, calibratedTick(clock, frame, INPUTS_TICK, XessFgClockTimeline.DIRECT));
+            column(out, calibratedTick(clock, frame, INPUTS_TICK, XessFgClockTimeline.ARC_PREPARE));
             column(out, calibratedTick(clock, frame, RTX_START_TICK, XessFgClockTimeline.RTX_COPY));
             column(out, calibratedTick(clock, frame, RTX_END_TICK, XessFgClockTimeline.RTX_COPY));
             column(out, calibratedTick(clock, frame, DMA_START_TICK, XessFgClockTimeline.ARC_COPY));
@@ -231,6 +253,14 @@ public final class XessFgFrameStats implements AutoCloseable {
             column(out, calibratedTick(clock, frame, RTX_GEOMETRY_END_TICK, XessFgClockTimeline.RTX_COPY));
             column(out, calibratedTick(clock, frame, ARC_GEOMETRY_START_TICK, XessFgClockTimeline.ARC_COPY));
             column(out, calibratedTick(clock, frame, ARC_GEOMETRY_END_TICK, XessFgClockTimeline.ARC_COPY));
+            column(out, calibratedTick(clock, frame, PREPARE_START_TICK, XessFgClockTimeline.ARC_PREPARE));
+            out.write("," + switch ((int) frame.transportMode) {
+                case 0 -> frame.transportMode == UNAVAILABLE ? "" : "rgba8";
+                case 1 -> "rgb24";
+                case 2 -> "ycbcr422";
+                default -> "";
+            });
+            column(out, frame.pendingAtEnqueue);
             out.newLine();
         }
     }

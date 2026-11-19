@@ -159,6 +159,7 @@
     "irisveil.BeforeDeferredTimingMixin",
     "render.WorldFrameTimingMixin",
     "render.XessFgClientMixin",
+    "render.XessFgWindowMixin",
     "render.XessFgPresentMixin",
     "render.XessFgWorldMixin",
     "ParticleClientFrameMixin",
