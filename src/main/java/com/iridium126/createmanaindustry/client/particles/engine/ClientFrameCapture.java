@@ -5,6 +5,8 @@ import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
 import com.google.gson.GsonBuilder;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.gpu.profile.GpuTimestampRing;
+import com.iridium126.createmanaindustry.client.xessfg.XessFgFrameStats;
+import com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime;
 import java.nio.file.*;
 import java.time.Instant;
 import java.util.*;
@@ -48,6 +50,7 @@ public final class ClientFrameCapture {
     private final VisibilitySlot[] visibilitySlots=java.util.stream.Stream.generate(VisibilitySlot::new).limit(12).toArray(VisibilitySlot[]::new);
     private final java.nio.ByteBuffer visibilityBytes=org.lwjgl.BufferUtils.createByteBuffer(16);
     private static final class Window {
+        final XessFgFrameStats xess = new XessFgFrameStats();
         record StageKey(String name,long generation) {}
         static final class Stage {double cpu,gpu;int cpuSamples,gpuSamples;}
         final Map<Long,Integer> indices=new HashMap<>();
@@ -149,6 +152,7 @@ public final class ClientFrameCapture {
         frameId++;head=System.nanoTime();active=-1;
         pollShadow();
         pollVisibility(false);
+        if(window!=null)XessFgRuntime.pollProfile(window.xess,false);
         if(timer!=null){
             timer.poll();
             ParticleDiagnostics.INSTANCE.pollFrameSamples();
@@ -158,7 +162,7 @@ public final class ClientFrameCapture {
             }
         }
         if(window!=null&&!window.collecting&&((++window.draining>=8&&timer.pending()==0&&window.spatialTickets.isEmpty()
-                &&window.stormTickets.isEmpty())||head-window.stopped>5_000_000_000L))finish();
+                &&window.stormTickets.isEmpty()&&!window.xess.hasPending())||head-window.stopped>5_000_000_000L))finish();
         var mc=Minecraft.getInstance();
         if(requestedSeconds!=0&&window==null){
             if(mc.level==null||!mc.isWindowActive()){requestedSeconds=0;CreateManaIndustry.LOGGER.warn(CMILog.FRAMES + "capture requires an active world window");return;}
@@ -199,6 +203,11 @@ public final class ClientFrameCapture {
             m.put("gpu_scope","runTick HEAD to before Window.updateDisplay; excludes swap and frame limiter");
             m.put("cpu_scope","runTick HEAD to before Window.updateDisplay; wall submission, not CPU utilization");
             m.put("interval_scope","successive runTick HEAD; includes swap and frame limiter");
+            var xess = com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.xessFg();
+            m.put("xessfg_config",Map.of("enabled",xess.enabled(),"gpu",xess.gpu().value()));
+            m.put("xessfg_real_frame_p95_max_increase_percent",5);
+            m.put("xessfg_csv_schema",5);
+            m.put("xessfg_csv_key","frame joins the main frame CSV; next_tick_interval_ns aligns the interval with the work that produced it");
             m.put("instrumented",true);m.put("fps_claim","requires matched independent-process A/A and A/B; this file alone is not evidence of improvement");
             timer=new GpuTimestampRing(32,null,(tag,generation,ms)->{var w=window;if(w!=null&&tag>=0&&tag<w.size)w.gpu[(int)tag]=ms;});
             // Allocate driver queries and warm the ring before the first measured interval.
@@ -216,7 +225,9 @@ public final class ClientFrameCapture {
         if(window.size==CAPACITY){window.invalid="sample capacity exhausted";stop();return;}
         stopAfterFrame=head-start>=window.seconds*1_000_000_000L;
         active=window.size++;window.frames[active]=frameId;
-        window.interval[active]=(head-previousHead)/1e6;previousHead=head;
+        long intervalNanos=head-previousHead;
+        window.xess.beginFrame(frameId,intervalNanos);
+        window.interval[active]=intervalNanos/1e6;previousHead=head;
         var storm=com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE;
         window.simulationTime[active]=storm.timeSec();
         String stage=storm.profileAttackStages();window.attacks[active]=window.stageStrings.computeIfAbsent(stage,key->key);
@@ -232,6 +243,7 @@ public final class ClientFrameCapture {
         if(timing){timer.end(true,false);timing=false;}
     }
     public void end(boolean success){
+        if(window!=null)window.xess.endFrame();
         if(timing){timer.end(false,false);timing=false;}
         if(!success&&collecting()){window.invalid="runTick failed";stop();}
         if(stopAfterFrame&&collecting())stop();
@@ -384,6 +396,9 @@ public final class ClientFrameCapture {
         if(window!=null)window.metadata.put("shadow_path_at_end",com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.performanceShadowPath():"Iris unavailable");
         if(window!=null&&com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE)window.metadata.put("target_sky_visibility_at_end",com.iridium126.createmanaindustry.client.render.shaderpack.RiftIrisUniforms.visibilityMetadata());
         Window w=window;
+        XessFgRuntime.pollProfile(w.xess,true);
+        w.xess.close();
+        w.metadata.put("xessfg_clock_samples",w.xess.clockSamples());
         pollShadow();
         closeShadow();
         pollVisibility(true);
@@ -415,6 +430,9 @@ public final class ClientFrameCapture {
                 try(var out=Files.newBufferedWriter(directory.resolve(name+".csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,published_generation,interval_ms,cpu_submit_ms,gpu_ms,live,model_input,body_visible,carrier_visible,ghost_visible,input_time_sec,input_dt_sec,attack_contract_stage,attack_generation,terrain_generation,display_generation,display_source_generation,shadow_source_generation,shadow_display_generation\n");
                     for(int i=0;i<w.size;i++)out.write(w.frames[i]+","+w.sceneFrames[i]+","+w.generations[i]+","+w.interval[i]+","+w.cpu[i]+","+w.gpu[i]+","+w.live[i]+","+w.models[i]+","+w.body[i]+","+w.carrier[i]+","+w.ghost[i]+","+w.simulationTime[i]+","+w.simulationDelta[i]+","+w.attacks[i]+","+w.attacksGeneration[i]+","+w.terrainGeneration[i]+","+w.displayGenerations[i]+","+w.displaySources[i]+","+w.shadowGenerations[i]+","+w.shadowDisplays[i]+"\n");
+                }
+                try(var out=Files.newBufferedWriter(directory.resolve(name+"-xessfg.csv"),StandardOpenOption.CREATE_NEW)){
+                    w.xess.write(out);
                 }
                 try(var out=Files.newBufferedWriter(directory.resolve(name+"-stages.csv"),StandardOpenOption.CREATE_NEW)){
                     out.write("frame,scene_frame,stage,generation,cpu_submit_ms,gpu_ms,cpu_ranges,gpu_ranges\n");

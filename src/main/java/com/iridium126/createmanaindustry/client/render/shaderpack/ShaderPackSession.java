@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.render.shaderpack;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.client.xessfg.XessFgPack;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.shaderpack.option.ShaderPackOptions;
 import net.irisshaders.iris.shaderpack.materialmap.*;
@@ -23,6 +24,7 @@ public final class ShaderPackSession {
     private final NativeRiftPatchPlan rift;
     private final StormCloudDensityPatchPlan clouds;
     private final PackCapabilities capabilities;
+    private final XessFgPack xessFgPack;
     private ShaderPackOptions options;
     private Object pipeline;
     private int width=-1,height=-1;
@@ -81,6 +83,7 @@ public final class ShaderPackSession {
         combined.putAll(rift.edits());
         clouds=(bypass||omitClouds)?StormCloudDensityPatchPlan.disabled(omitClouds?"density candidate excluded after compilation failure; sky retained":"unmodified retry"):StormCloudDensityPatchPlan.prepare(ShaderPackInventory.of(combined),rift.family());
         capabilities=PackCapabilities.detect(inventory,patch);
+        xessFgPack = XessFgPack.detect(inventory, rift.family());
     }
     private static ShaderPackSession empty(){return new ShaderPackSession(null,ShaderPackInventory.of(Map.of()),true);}
     public static ShaderPackSession current(){return current;}
@@ -122,6 +125,7 @@ public final class ShaderPackSession {
     }
     public PackCapabilities capabilities(){return capabilities;}
     public ShaderPackOptions options(){return options;}
+    public XessFgPack xessFgPack() { return xessFgPack; }
     /** A cached inventory is not evidence that its pipeline is still rendering. */
     public boolean ownsPipeline(Object active){
         return this==current&&active!=null&&pipeline==active&&root!=null

@@ -1,8 +1,11 @@
 package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
+import com.iridium126.createmanaindustry.client.xessfg.XessFgAdapters;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.StormSimulationGpu;
+import com.iridium126.createmanaindustry.infrastructure.config.XessFgGpu;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -41,13 +44,52 @@ public final class StormGpuConfigurationScreen {
 
         @Override
         protected Element createSection(String key, UnmodifiableConfig spec, UnmodifiableConfig section) {
-            if (!key.equals("allayStorm")) return super.createSection(key, spec, section);
+            if (!key.equals("allayStorm") && !key.equals("xessFg")) return super.createSection(key, spec, section);
             var title = getTranslationComponent(key);
             var tooltip = getTooltipComponent(key, null);
             return new Element(title, tooltip, Button.builder(title, button -> minecraft.setScreen(
-                    sectionCache.computeIfAbsent(key, name -> new StormSection(context, this, spec.valueMap(),
-                            name, section.entrySet(), title).build())))
+                    sectionCache.computeIfAbsent(key, name -> key.equals("xessFg")
+                            ? new XessFgSection(context, this, spec.valueMap(), name, section.entrySet(), title).build()
+                            : new StormSection(context, this, spec.valueMap(), name, section.entrySet(), title).build())))
                     .width(Button.DEFAULT_WIDTH).tooltip(Tooltip.create(tooltip)).build(), false);
+        }
+    }
+
+    private static final class XessFgSection extends ConfigurationSectionScreen {
+        private static final String TRANSLATION = "createmanaindustry.configuration.xessFg.gpu";
+
+        XessFgSection(Context context, Screen parent, Map<String, Object> specs, String key,
+                      Set<? extends UnmodifiableConfig.Entry> entries, Component title) {
+            super(context, parent, specs, key, entries, title);
+        }
+
+        ConfigurationSectionScreen build() { return rebuild(); }
+
+        @Override
+        protected Element createStringValue(String key, Predicate<String> tester, Supplier<String> source,
+                                            Consumer<String> target) {
+            if (!key.equals("gpu")) return super.createStringValue(key, tester, source, target);
+            String current = source.get();
+            var selected = XessFgGpu.parse(current);
+            var choices = new LinkedHashMap<String, Component>();
+            choices.put(XessFgGpu.AUTO, Component.translatable(TRANSLATION + ".auto"));
+            try {
+                for (var device : XessFgAdapters.discover(minecraft.gameDirectory.toPath())) {
+                    var gpu = device.selection();
+                    String value = gpu.id().equals(selected.id()) ? current : gpu.value();
+                    choices.put(value, Component.literal(gpu.label()));
+                }
+            } catch (IOException | LinkageError | RuntimeException unavailable) {
+                // Keep the saved selection available for viewing and undo.
+            }
+            choices.putIfAbsent(current, Component.translatable(TRANSLATION + ".unavailable",
+                    selected.label().isEmpty() ? selected.id() : selected.label()));
+            var option = new OptionInstance<>(getTranslationKey(key), value -> Tooltip.create(choices.get(value)),
+                    (caption, value) -> choices.get(value), new Custom<>(new ArrayList<>(choices.keySet())),
+                    current, value -> undoManager.add(v -> { target.accept(v); onChanged(key); }, value,
+                            v -> { target.accept(v); onChanged(key); }, source.get()));
+            return new Element(Component.translatable(TRANSLATION),
+                    Component.translatable(TRANSLATION + ".tooltip"), option);
         }
     }
 

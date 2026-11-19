@@ -1,0 +1,148 @@
+#version 450 core
+
+layout(local_size_x = 16, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D sourceTexture;
+layout(std430, binding = 0) writeonly buffer FrameTransport {
+    uint words[];
+};
+
+uniform ivec2 extent;
+uniform ivec2 sourceSize;
+uniform ivec4 offsets;
+uniform int rowWords;
+uniform int mode;
+uniform mat4 currentToPrevious;
+uniform mat4 skyToPrevious;
+uniform vec2 sourceScale;
+uniform vec2 currentJitter;
+uniform ivec2 warpTypes;
+uniform vec4 warpParameters;
+
+const int DEPTH = 2;
+const int SILDUR_RAIN = 5;
+shared vec4 rainDrops[8];
+
+void buildRainDrops(int first, float time) {
+    const vec2 patterns[4] = vec2[4](vec2(-0.94386347, 1.0), vec2(0.9347, -0.2533282),
+                                     vec2(0.785282, -0.285282), vec2(-0.347, 0.6847));
+    const float radii[4] = float[4](0.1, 0.07, 0.086, 0.092);
+    float phase = time * 0.25;
+    for (int i = 0; i < 4; i++) {
+        float offset = float((i + 1) % 4) * 0.25;
+        float noise = fract(sin(dot(patterns[i] * floor(phase + offset), vec2(83147.6995379, 125370.887575))));
+        vec2 position = fract(vec2(noise * 0.8 + 0.1) - vec2(0.0, fract(time / 20.0)));
+        rainDrops[first + i] = vec4(position, (1.0 - fract(phase + offset)), 1.0 / (radii[i] * radii[i]));
+    }
+}
+
+vec2 sceneCoordinate(vec2 uv, int effect, vec2 parameters, int firstDrop) {
+    float time = parameters.x;
+    float strength = parameters.y;
+    if (effect == 1) {
+        vec2 mapped = uv + strength * vec2(cos(uv.y * 32.0 + time * 3.0), sin(uv.x * 32.0 + time * 1.7));
+        return all(greaterThan(mapped, vec2(0.0))) && all(lessThan(mapped, vec2(1.0))) ? mapped : uv;
+    }
+    if (effect == 2) {
+        return uv + strength * sin((uv.x + uv.y) * 25.0 + time * 3.0);
+    }
+    if (effect == 3 || effect == SILDUR_RAIN) {
+        if (effect == SILDUR_RAIN) {
+            vec2 aspect = vec2(float(extent.x) / float(extent.y), 1.0);
+            for (int i = 0; i < 4; i++) {
+                vec4 drop = rainDrops[firstDrop + i];
+                vec2 distance = (uv - drop.xy) * aspect;
+                strength += 0.01 * drop.z * exp(-dot(distance, distance) * drop.w);
+            }
+        }
+        vec2 mapped = uv + strength * vec2(sin(time + uv.x * 100.0 + uv.y * 50.0),
+                                          cos(time + uv.y * 100.0 + uv.x * 50.0));
+        vec2 pixel = 1.0 / vec2(extent);
+        return clamp(mapped, pixel, 1.0 - pixel);
+    }
+    if (effect == 4) {
+        vec2 offset = uv - 0.5;
+        float scale = 1.0 / max(1.0 + strength * 0.25, 1.0 + strength * 0.5);
+        return 0.5 + offset * (1.0 + strength * dot(offset, offset)) * scale;
+    }
+    return uv;
+}
+
+vec2 displayCoordinate(vec2 scene, vec2 estimate, int effect, vec2 parameters, int firstDrop) {
+    if (effect == 0) return scene;
+    if (effect == 4) {
+        vec2 offset = scene - 0.5;
+        float strength = parameters.y;
+        float target = length(offset) * max(1.0 + strength * 0.25, 1.0 + strength * 0.5);
+        if (target < 0.000001) return vec2(0.5);
+        float radius = length(estimate - 0.5);
+        for (int i = 0; i < 4; ++i) {
+            float value = strength * radius * radius;
+            float derivative = 1.0 + 3.0 * value;
+            if (abs(derivative) < 0.05) break;
+            radius = clamp(radius - (radius * (1.0 + value) - target) / derivative, 0.0, 1.5);
+        }
+        return 0.5 + normalize(offset) * radius;
+    }
+    for (int i = 0; i < 4; ++i) {
+        estimate += scene - sceneCoordinate(estimate, effect, parameters, firstDrop);
+    }
+    return estimate;
+}
+
+void main() {
+    if (mode == DEPTH && (warpTypes.x == SILDUR_RAIN || warpTypes.y == SILDUR_RAIN)) {
+        if (gl_LocalInvocationIndex == 0u) {
+            if (warpTypes.x == SILDUR_RAIN) buildRainDrops(0, warpParameters.x);
+            if (warpTypes.y == SILDUR_RAIN) buildRainDrops(4, warpParameters.z);
+        }
+        barrier();
+    }
+    ivec2 outputPixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(outputPixel, extent))) return;
+
+    // OpenGL textures start at the lower left. The transfer footprint starts at the upper left.
+    ivec2 glPixel = ivec2(outputPixel.x, extent.y - 1 - outputPixel.y);
+    vec2 uv = (vec2(glPixel) + 0.5) / vec2(extent);
+    int address = outputPixel.y * rowWords + outputPixel.x;
+    if (mode != DEPTH) {
+        vec3 rgb = sourceSize == extent
+                ? texelFetch(sourceTexture, glPixel, 0).rgb
+                : textureLod(sourceTexture, uv, 0.0).rgb;
+        words[offsets[mode] + address] = packUnorm4x8(vec4(rgb, 1.0));
+        return;
+    }
+
+    vec2 scene = sceneCoordinate(uv, warpTypes.x, warpParameters.xy, 0);
+    vec2 sourceExtent = vec2(sourceSize) * sourceScale;
+    ivec2 limit = max(ivec2(sourceExtent) - 1, ivec2(0));
+    ivec2 center = clamp(ivec2(scene * sourceExtent + currentJitter), ivec2(0), limit);
+    float depth = texelFetch(sourceTexture, center, 0).r;
+    float closest = depth;
+    ivec2 nearest = center;
+    // XeSS-FG expects dilated, high-resolution velocities.
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            ivec2 point = clamp(center + ivec2(x, y), ivec2(0), limit);
+            float candidate = texelFetch(sourceTexture, point, 0).r;
+            if (candidate < closest) {
+                closest = candidate;
+                nearest = point;
+            }
+        }
+    }
+    vec2 currentNdc = ((vec2(nearest) + 0.5 - currentJitter) / sourceExtent) * 2.0 - 1.0;
+    vec4 currentClip = vec4(currentNdc, closest * 2.0 - 1.0, 1.0);
+    vec4 previous = closest >= 1.0 ? skyToPrevious * currentClip : currentToPrevious * currentClip;
+    vec2 motion = vec2(0.0);
+    if (previous.w > 0.00001) {
+        vec2 currentScene = currentNdc * 0.5 + 0.5;
+        vec2 previousScene = previous.xy / previous.w * 0.5 + 0.5;
+        vec2 currentDisplay = displayCoordinate(currentScene, uv + currentScene - scene, warpTypes.x, warpParameters.xy, 0);
+        vec2 previousDisplay = displayCoordinate(previousScene, currentDisplay + previousScene - currentScene,
+                                                 warpTypes.y, warpParameters.zw, 4);
+        motion = (previousDisplay - currentDisplay) * vec2(extent.x, -extent.y);
+        motion = clamp(motion, -vec2(extent), vec2(extent));
+    }
+    words[offsets[DEPTH] + address] = floatBitsToUint(depth);
+    words[offsets[3] + address] = packHalf2x16(motion);
+}

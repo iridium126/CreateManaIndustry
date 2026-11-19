@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.render.shaderpack;
 
+import com.iridium126.createmanaindustry.client.xessfg.XessFgCoordinates;
+import com.iridium126.createmanaindustry.client.xessfg.XessFgPack;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.*;
@@ -9,6 +11,39 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Explicit local samples runner; third-party archives are never embedded in the mod or normal unit tests. */
 @Tag("shaderpack-samples")
 class ShaderPackSamplesTest {
+    private static XessFgPack.Options options(Map<String, Boolean> flags, Map<String, Float> numbers) {
+        return new XessFgPack.Options() {
+            @Override public boolean flag(String key, boolean fallback) { return flags.getOrDefault(key, fallback); }
+            @Override public float number(String key, float fallback) { return numbers.getOrDefault(key, fallback); }
+        };
+    }
+
+    @Test void xessFgProfilesMatchLocalSourcesAndOptionVariants() throws Exception {
+        var directory = Path.of(System.getProperty("cmi.shaderpack.samples", "run/shaderpacks"));
+        var covered = EnumSet.noneOf(XessFgPack.class);
+        try (var zips = Files.list(directory)) {
+            for (var zip : zips.filter(path -> path.toString().endsWith(".zip")).toList()) {
+                var inventory = ShaderPackInventory.readPack(zip);
+                var profile = XessFgPack.detect(inventory, NativeRiftPatchPlan.prepare(inventory).family());
+                assertNotNull(profile, zip.toString());
+                covered.add(profile);
+                assertNotNull(profile.coordinates(options(Map.of(), Map.of()), 7, 1920, 1080, 0, false, 1));
+            }
+        }
+        assertEquals(EnumSet.allOf(XessFgPack.class), covered);
+        var photon = XessFgPack.PHOTON.coordinates(options(Map.of("TAAU", true), Map.of("TAAU_RENDER_SCALE", .67f)),
+                7, 1920, 1080, 0, false, 2);
+        assertEquals(.67f, photon.scaleX());
+        assertNotEquals(0, photon.jitterX());
+        var bsl = XessFgPack.BSL.coordinates(options(Map.of(), Map.of()), 3, 1920, 1080, 1, false, 2);
+        assertEquals(XessFgCoordinates.Warp.BSL_WATER, bsl.warp());
+        var sundial = XessFgPack.SUNDIAL.coordinates(options(Map.of(), Map.of("DISTORTION_STRENGTH", -.75f)),
+                3, 1920, 1080, 0, false, 2);
+        assertEquals(XessFgCoordinates.Warp.SUNDIAL_LENS, sundial.warp());
+        var sildur = XessFgPack.SILDUR.coordinates(options(Map.of(), Map.of()), 3, 1920, 1080, 0, true, 2);
+        assertEquals(XessFgCoordinates.Warp.SILDUR_RAIN, sildur.warp());
+    }
+
     @Test void allLocalSamplesAndRenamedCopiesHaveEquivalentContracts(@TempDir Path temp)throws Exception{
         Path directory=Path.of(System.getProperty("cmi.shaderpack.samples","run/shaderpacks"));
         List<Path> files;try(var stream=Files.list(directory)){files=stream.filter(p->p.toString().endsWith(".zip")).sorted().toList();}

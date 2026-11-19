@@ -27,7 +27,7 @@ public final class StormGpuDevices {
         }
     }
     record CudaDevice(String uuid, String model, long luid) {}
-    record RenderAdapter(long luid, int nodes) {
+    public record RenderAdapter(long luid, int nodes) {
         private static final RenderAdapter UNKNOWN = new RenderAdapter(0, 0);
     }
     record Route(boolean dxr, String id, String model, boolean shared, RenderAdapter renderer) {}
@@ -69,7 +69,7 @@ public final class StormGpuDevices {
         }
     }
 
-    static RenderAdapter renderAdapter() {
+    public static RenderAdapter renderAdapter() {
         if (GLFW.glfwGetCurrentContext() == 0) return RenderAdapter.UNKNOWN;
         var capabilities = GL.getCapabilities();
         if (!capabilities.GL_EXT_memory_object_win32 && !capabilities.GL_EXT_semaphore_win32)
@@ -148,6 +148,10 @@ public final class StormGpuDevices {
 
     static List<Device> discoverDxr() throws IOException {
         return windowsDevices(true).stream().filter(Device::dxr).toList();
+    }
+
+    public static List<Device> discoverWindowsAdapters() throws IOException {
+        return windowsDevices(false);
     }
 
     private static List<Device> windowsDevices(boolean probe) throws IOException {

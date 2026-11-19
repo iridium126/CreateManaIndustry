@@ -1,0 +1,33 @@
+def xessFiles = file('src/main/native/prebuilt/windows-x86_64/xessfg')
+def xessOutput = layout.buildDirectory.dir('generated/xessFgNativeResources')
+def xessManifest = new File(xessFiles, 'release.properties')
+def filesToPackage = ['CmiXessFg.dll', 'libxess_fg.dll', 'libxell.dll', 'LICENSE.txt', 'third-party-programs.txt']
+
+def prepareXessFgNativeResources = tasks.register('prepareXessFgNativeResources') {
+    inputs.files(filesToPackage.collect { new File(xessFiles, it) } + [xessManifest])
+    outputs.dir(xessOutput)
+    doLast {
+        def release = new Properties()
+        xessManifest.withInputStream { release.load(it) }
+        if (release.getProperty('sdk') != '3.0.2') {
+            throw new GradleException('Unexpected XeSS SDK version in the native bundle')
+        }
+        def destination = xessOutput.get().dir('native/xessfg/windows-x86_64').asFile.toPath()
+        java.nio.file.Files.createDirectories(destination)
+        filesToPackage.each { name ->
+            def asset = new File(xessFiles, name)
+            def actual = java.security.MessageDigest.getInstance('SHA-256').digest(asset.bytes).encodeHex().toString()
+            if (actual != release.getProperty(name)) {
+                throw new GradleException("Invalid XeSS-FG bundle member: ${name}")
+            }
+            java.nio.file.Files.copy(asset.toPath(), destination.resolve(name), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        }
+        java.nio.file.Files.copy(xessManifest.toPath(), destination.resolve('release.properties'),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+}
+
+tasks.named('processResources') {
+    dependsOn(prepareXessFgNativeResources)
+    from(xessOutput)
+}

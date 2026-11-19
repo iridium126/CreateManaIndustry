@@ -57,6 +57,8 @@ public final class ClientConfig {
     private static ModConfigSpec.EnumValue<ParticleShadowQuality> STORM_SHADOW_QUALITY;
     private static ModConfigSpec.EnumValue<StormSimulationBackend> STORM_BACKEND;
     private static ModConfigSpec.ConfigValue<String> STORM_GPU;
+    private static final ModConfigSpec.BooleanValue XESS_FG_ENABLED;
+    private static final ModConfigSpec.ConfigValue<String> XESS_FG_GPU;
     private static ModConfigSpec.BooleanValue RT_CAMERA_OCCLUSION, PARTICLE_RECEIVE_SHADOWS;
     private static ModConfigSpec.IntValue ALLAY_FEATHER_RATE, ALLAY_GOLD_RATE, STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT, PARTICLE_HEX_PATTERN_REDIRECT;
@@ -86,6 +88,15 @@ public final class ClientConfig {
         ALLVR_LOD = BUILDER
                 .comment("Enable far-terrain LOD rendering for the Allay dimension.")
                 .define("lod", DEFAULT_ALLVR_LOD);
+        BUILDER.pop();
+
+        BUILDER.push("xessFg");
+        XESS_FG_ENABLED = BUILDER.comment("Enable Intel XeSS Frame Generation on supported Windows clients.")
+                .translation("createmanaindustry.configuration.xessFg.enabled")
+                .gameRestart().define("enabled", false);
+        XESS_FG_GPU = BUILDER.comment("Use auto or a PnP device ID with an optional |model label.")
+                .translation("createmanaindustry.configuration.xessFg.gpu")
+                .gameRestart().define("gpu", XessFgGpu.AUTO, XessFgGpu::valid);
         BUILDER.pop();
 
         BUILDER.comment("Shared GPU particle engine: capacity, frame budget, fade distance and shader integration.").push("particles");
@@ -175,6 +186,12 @@ public final class ClientConfig {
     public record StormSimulation(StormSimulationBackend backend, StormSimulationGpu gpu) {}
     public static volatile StormSimulation stormSimulation = new StormSimulation(
             StormSimulationBackend.AUTO, StormSimulationGpu.FOLLOW_MINECRAFT);
+    public record XessFg(boolean enabled, XessFgGpu gpu) {}
+    private static volatile XessFg xessFg = new XessFg(false, XessFgGpu.parse(XessFgGpu.AUTO));
+
+    public static XessFg xessFg() {
+        return xessFg;
+    }
     public static volatile boolean rtCameraOcclusion = DEFAULT_RT_CAMERA_OCCLUSION, particleReceiveShadows = DEFAULT_PARTICLE_RECEIVE_SHADOWS;
     public static int allayFeatherMaxSpawnPerSecond = DEFAULT_ALLAY_FEATHER_RATE, allayGoldMaxSpawnPerSecond = DEFAULT_ALLAY_GOLD_RATE;
     public static int stormLod1Distance = DEFAULT_STORM_LOD_1_DISTANCE, stormLodDistance = DEFAULT_STORM_LOD_DISTANCE;
@@ -194,6 +211,9 @@ public final class ClientConfig {
     static void onLoad(ModConfigEvent event) {
         if (event.getConfig().getSpec() == SPEC
                 && (event instanceof ModConfigEvent.Loading || event instanceof ModConfigEvent.Reloading)) {
+            if (event instanceof ModConfigEvent.Loading) {
+                xessFg = new XessFg(XESS_FG_ENABLED.get(), XessFgGpu.parse(XESS_FG_GPU.get()));
+            }
             allvrLod = ALLVR_LOD.get();
             mistGlowStrength = MIST_GLOW_STRENGTH.get();
             mistDebugShadow = MIST_DEBUG_SHADOW.get();
