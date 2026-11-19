@@ -1,4 +1,4 @@
-// Included in update.comp; shares its declared simulation state.
+// Inlined into the particle update and Starfall column collision replay.
     // ---- block collision: axis-separated sweep from the PRE-move position ----
     // Each axis tests one step ahead; a blocked axis zeroes its velocity and
     // keeps the particle in place, a free axis advances exactly vel*uDt. The
@@ -199,6 +199,13 @@
                                 // the particle already sits in (spawned inside a
                                 // block), pop it up onto that voxel's top face
                                 float top = floor(pos.y + sy + 0.0001) + 1.0;
+#ifndef CMI_COLUMN_REPLAY
+                                if (isFeather) {
+                                    // Settle at this contact before any remaining tangential steps.
+                                    pos.y = top;
+                                    break;
+                                }
+#endif
                                 pos.y = max(pos.y, top);
                             }
                         } else {

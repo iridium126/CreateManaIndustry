@@ -59,6 +59,8 @@ allayFeatherMaxSpawnPerSecond = 1000
 
 主体复用悦灵/LOD2 的实体材质上下文、TBO 输入及光影包片元程序；无光影或合并不可用时不透明自绘，绘制标记避免重复。羽毛不加入 shadow-map 投影列表；这与 `.refs/Iris` 的原版粒子提交行为一致。主绘制仍可接受场景阴影，并自然参与光影包自己的屏幕空间效果。
 
+羽毛在向下命中的位置贴住方块顶面，落地后的首个显示帧直接使用这个接触位置。可摆动的树叶按当前 Sodium 网格的顶面变形，网格重建时直接替换已缓存的面数据。碰撞覆盖暂时未知时，已落稳的羽毛保持接触位置和附着标记，并继续由当前网格确认是否应用摆动。确认支撑消失或被扰动扬起时解除附着。
+
 光影主绘制和投影入口均须等待 `ALLAY` 图集就绪，未加载的内部 ID `-1` 不得提交给 OpenGL 或 Iris 的 `RenderSystem` 纹理表。只存在远景 LOD 时，由 LOD 的首次可见准备加载图集。keygen 必须先 `glUseProgram` 再上传羽毛 uniform，避免把目标程序的 location 用于先前的程序。
 
 ## 光影包对新增颜色的处理
@@ -80,7 +82,8 @@ allayFeatherMaxSpawnPerSecond = 1000
 ```powershell
 .\gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle test --tests '*AllayFeather*'
 .\gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle validateAllayFeatherGpu -PallayFeatherBenchmark=true
-.\gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle validateParticleProgramsGpu validateModelMaterialGpu validateModelShadowIrisGpu validateStormLodGpu validateModelPopulationGpu
+.\gradlew.bat --offline --no-configuration-cache -I scripts/particles/validation.init.gradle validateParticleProgramsGpu validateModelShadowIrisGpu validateStormLodGpu validateModelPopulationGpu
+.\gradlew.bat --offline --no-configuration-cache -I scripts/particles/gpu.init.gradle runParticleSuite -PparticleSuite=ModelMaterialGpuValidation
 ```
 
 行为验证使用生产 update/keygen/ground/emit 着色器、真实碰撞页表和 GPU 顶点读回，涵盖尺寸、旋转、图集外区域、地面状态、实际悦灵触地、玩家半径边界、冷却、支撑移除、未知覆盖、寿终无子粒子、容量及请求上限；另覆盖手动命令到寿终的完整生命周期、6 万 MODEL 同时触地和生产所有者的首次分配/发布/绘制。自动生成探针覆盖 R=16、32、最大半径的总速率、径向分布、8 格高度均匀分布及缺失覆盖不重新分配名额。交接探针给网格头放入安全的 `2×3×4` 哨兵，并确认羽毛 pass 之后的风暴式调度仍只执行引擎的 `1×1×1` 命令。CPU 测试覆盖平方速率、径向权重、旧零快照、可靠零快照门控、纯金色存活时跳过羽毛专用处理、玩家快照前缀兼容以及不进入模型投影入口。八包合并验证还通过真实变换后的顶点程序、双 bank TBO 和间接绘制读回 CMI 的顶点输出，检查羽毛未误读 MODEL 哨兵；不等同于实机观感验收。

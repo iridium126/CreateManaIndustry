@@ -272,6 +272,62 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
                 requested|=state.getInt(offset+12)==2&&state.getInt(offset)==x&&state.getInt(offset+4)==y&&state.getInt(offset+8)==z;
             }
             check(requested,"ground feedback includes the unresolved support block");
+
+            put(support,table);
+            q.clear();
+            q.simulate(one(2.25f,1.12f,2.98f,1,false).putFloat(20,-3).putFloat(24,2),1,.05f);
+            q.lists(1);bind(2,support);q.ground();
+            var settled=read(q.output,64);
+            check(settled.getFloat(12)<0,"a fast downward hit stays grounded on the same tick");
+            check(settled.getFloat(4)>1&&settled.getFloat(4)<1.007f&&settled.getFloat(8)<3
+                    &&(settled.getInt(56)&(1<<18))!=0,"landing rests on the actual leaf surface at its edge");
+
+            var section=new StormCollisionPages.Section(0,0,0);
+            var occupied=q.pages.remove(section);
+            publish(q);
+            for(int frame=0;frame<3;frame++){
+                q.clear();q.simulate(settled,1,.05f);q.lists(1);bind(2,support);q.ground();
+                var held=read(q.output,64);
+                check(held.getFloat(12)<0&&held.getFloat(4)==settled.getFloat(4)
+                        &&(held.getInt(56)&(1<<18))!=0,"unknown collision coverage preserves resting leaf attachment");
+                settled=held;
+            }
+            q.pages.put(section,occupied);
+            publish(q);
+            q.clear();q.simulate(settled,1,.05f);q.lists(1);bind(2,support);q.ground();
+            settled=read(q.output,64);
+            check(settled.getFloat(12)<0&&(settled.getInt(56)&(1<<18))!=0,"returning support needs no relanding");
+            q.floor(false);
+            q.clear();q.simulate(settled,1,.05f);q.lists(1);bind(2,support);q.ground();
+            var released=read(q.output,64);
+            check(released.getFloat(12)>0&&(released.getInt(56)&(1<<18))==0,
+                    "confirmed support removal releases leaf even while its render mesh is cached");
+        }
+    }
+    static void landingDisplay(){
+        try(var q=new FeatherFixture(1024)){
+            int display=compile("display.comp");
+            try{
+                int projected=q.alloc(64),history=q.alloc(4);
+                var air=one(2.25f,1.12f,3.01f,1,false);
+                var rest=one(2.25f,1.004f,2.98f,1.05f,true).putInt(56,3|(1<<18));
+                put(q.input,air);put(q.output,rest);put(history,bytes(4).putInt(0,1));put(q.counter,bytes(16).putInt(0,1));
+                bind(0,q.output);bind(1,q.input);bind(2,projected);bind(3,q.counter);bind(4,q.counter);
+                bind(5,history);bind(11,q.header);
+                ui(display,"capacity",1);ui(display,"phase",2);
+                for(float alpha:new float[]{0,.25f,.5f,.75f,1}){
+                    f(display,"alpha",alpha);dispatch(display,1);
+                    var frame=read(projected,64);
+                    check(frame.getFloat(4)==rest.getFloat(4)&&frame.getFloat(8)==rest.getFloat(8)
+                            &&frame.getFloat(12)<0&&(frame.getInt(56)&(1<<18))!=0,
+                            "settled display pose uses the actual support block for every interpolation weight");
+                }
+                bind(0,q.input);bind(1,q.output);
+                f(display,"alpha",.5f);dispatch(display,1);
+                var lifted=read(projected,64);
+                near(lifted.getFloat(4),(rest.getFloat(4)+air.getFloat(4))*.5f,1e-6,"lift still interpolates position");
+                check(lifted.getFloat(12)>0&&(lifted.getInt(56)&(1<<18))==0,"lift remains visually airborne");
+            }finally{deleteProgram(display);}
         }
     }
     static void paletteDistribution(){try(var q=new FeatherFixture(65536)){
@@ -565,7 +621,7 @@ public class AllayFeatherGpuValidation extends ModelPopulationGpuValidation {
         try(var errors=GLFWErrorCallback.createPrint(System.err)){
             runBenchmark=Arrays.asList(args).contains("--benchmark");errors.set();long window=GpuValidationSupport.open(64,64,"Allay feather validation",true);check(window!=0,"GL context");
             try{GL30.glBindVertexArray(GL30.glGenVertexArrays());System.out.println(GL11.glGetString(GL11.GL_RENDERER));
-                com.mojang.blaze3d.systems.RenderSystem.initRenderThread();productionOwnership();try(var stress=new FeatherFixture(65536)){stress.modelImpact();}manualLifecycle();if(!Arrays.asList(args).contains("--manual-only")){appearance();behavior();starfallBloomDisturbance();groundSupportAndNativeImpact();paletteDistribution();surfaceAndGold();hybridSurface();surfaceSnapshots();manualGold();radialDensity();goldDrawing();vertex();spriteVertices();}if(runBenchmark){benchmark();benchmarkGoldEmission();benchmarkHybridSurface();}check(GL11.glGetError()==0,"GL errors");System.out.println("Allay feather GPU: "+checks+" assertions passed");
+                com.mojang.blaze3d.systems.RenderSystem.initRenderThread();productionOwnership();try(var stress=new FeatherFixture(65536)){stress.modelImpact();}manualLifecycle();if(!Arrays.asList(args).contains("--manual-only")){appearance();behavior();starfallBloomDisturbance();groundSupportAndNativeImpact();landingDisplay();paletteDistribution();surfaceAndGold();hybridSurface();surfaceSnapshots();manualGold();radialDensity();goldDrawing();vertex();spriteVertices();}if(runBenchmark){benchmark();benchmarkGoldEmission();benchmarkHybridSurface();}check(GL11.glGetError()==0,"GL errors");System.out.println("Allay feather GPU: "+checks+" assertions passed");
             }finally{GpuValidationSupport.close(window);}
         }
     }

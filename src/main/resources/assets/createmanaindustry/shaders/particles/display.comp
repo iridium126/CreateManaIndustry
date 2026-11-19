@@ -89,13 +89,16 @@ void main(){
   vec4 q0=previousPool.rows[b];
   // Producers own birth, death and teleport semantics. Render values are never keys.
   if(relative)q0.xyz+=previousCameraDelta;
-  if((fields&CMI_DISPLAY_POSITION)!=0u)p0.xyz=mix(q0.xyz,p0.xyz,alpha);
+  bool feather=(fields&CMI_DISPLAY_FEATHER)!=0u;
+  bool featherLanded=feather&&p0.w<0.&&q0.w>=0.;
+  // A settled feather must use the contact position that selected its support face.
+  if((fields&CMI_DISPLAY_POSITION)!=0u&&!featherLanded)p0.xyz=mix(q0.xyz,p0.xyz,alpha);
   if((fields&(CMI_DISPLAY_VELOCITY|CMI_DISPLAY_ROTATION))!=0u){
    vec4 q1=previousPool.rows[b+1u];
    if((fields&CMI_DISPLAY_VELOCITY)!=0u)p1.xyz=mix(q1.xyz,p1.xyz,alpha);
-   // The feather record tags the resting pose with a negative extent. Its
-   // flight roll has a different basis, while position uses the same edge.
-   bool rollBasisChanged=(fields&CMI_DISPLAY_FEATHER)!=0u&&(p0.w<0.)!=(q0.w<0.);
+   // The feather record tags the resting pose with a negative extent.
+   // Flight roll and resting roll have different bases.
+   bool rollBasisChanged=feather&&(p0.w<0.)!=(q0.w<0.);
    if((fields&CMI_DISPLAY_ROTATION)!=0u&&!rollBasisChanged)p1.w=q1.w+atan(sin(p1.w-q1.w),cos(p1.w-q1.w))*alpha;
   }
   if(model||(fields&(CMI_DISPLAY_COLOR|CMI_DISPLAY_OPACITY))!=0u){

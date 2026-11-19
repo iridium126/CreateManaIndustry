@@ -180,7 +180,6 @@
     "particles.GlowingVineLevelMixin",
     "particles.GlowingVineClientLevelMixin",
     "particles.PackageLightChunkMixin",
-    "particles.FeatherLightChunkMixin",
     "allvr.AllvrMinecraftLevelMixin",
     "allvr.AllvrClientLevelMixin",
     "allvr.AllvrClientEntityTickingMixin",

@@ -153,7 +153,7 @@ public final class FeatherLeafDisplayGpu implements AutoCloseable {
                 GpuBindings.bind(GL43.GL_DISPATCH_INDIRECT_BUFFER, feather);
                 GL43.glDispatchComputeIndirect(AllayFeatherLayout.LEAF_DISPATCH * 4L);
                 GL42.glMemoryBarrier(GL42.GL_TEXTURE_FETCH_BARRIER_BIT | GL42.GL_COMMAND_BARRIER_BIT
-                        | GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+                        | GL42.GL_BUFFER_UPDATE_BARRIER_BIT | GL43.GL_SHADER_STORAGE_BARRIER_BIT);
             } finally {
                 for (int slot = 0; slot < priorBuffers.length; slot++) {
                     if (priorSizes[slot] == 0) GpuBindings.bindBase(STORAGE, slot, priorBuffers[slot]);

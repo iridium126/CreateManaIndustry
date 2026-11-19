@@ -124,7 +124,21 @@ public final class FeatherSupportGpu implements AutoCloseable {
     int buffer(){return buffer;}
 
     public void meshChanged(long section) {
-        if (world != null) sectionChanged(world, SectionPos.x(section), SectionPos.y(section), SectionPos.z(section));
+        if (columns.isEmpty()) return;
+        var entries = columns.get(ChunkPos.asLong(SectionPos.x(section), SectionPos.z(section)));
+        if (entries == null) return;
+        int y = SectionPos.y(section);
+        for (var pos : entries) {
+            if ((pos.getY() >> 4) != y) continue;
+            var face = FeatherLeafMesh.face(pos);
+            if (face == null) face = NO_FACE;
+            // Replace directly from the published mesh so a rebuild never
+            // temporarily hides unchanged supports or enqueues another lookup.
+            if (!face.equals(resolved.get(pos))) {
+                resolved.put(pos, face);
+                dirty = true;
+            }
+        }
     }
     private static long column(BlockPos pos){return ChunkPos.asLong(pos.getX()>>4,pos.getZ()>>4);}
     private void remove(BlockPos pos){
@@ -138,8 +152,7 @@ public final class FeatherSupportGpu implements AutoCloseable {
         if(level!=world||resolved.isEmpty())return;
         remove(pos);
     }
-    public void sectionChanged(ClientLevel level,int x,int y,int z){
-        if(level!=world)return;
+    private void invalidateSection(int x,int y,int z){
         long key=ChunkPos.asLong(x,z);
         var entries=columns.get(key);
         if(entries==null)return;
@@ -159,7 +172,7 @@ public final class FeatherSupportGpu implements AutoCloseable {
     public void cubeChanged(ClientLevel level,int x,int y,int z,int sections){
         if(level!=world||resolved.isEmpty())return;
         for(int dx=0;dx<sections;dx++)for(int dz=0;dz<sections;dz++)
-            for(int dy=0;dy<sections;dy++)sectionChanged(level,x+dx,y+dy,z+dz);
+            for(int dy=0;dy<sections;dy++)invalidateSection(x+dx,y+dy,z+dz);
     }
     void reset(){resolved.clear();columns.clear();requested.clear();world=null;plan=null;faceCount=0;dirty=true;staged=committed=false;epoch++;}
     @Override public void close(){reset();GpuBufferNames.delete(buffer);buffer=0;upload=null;}

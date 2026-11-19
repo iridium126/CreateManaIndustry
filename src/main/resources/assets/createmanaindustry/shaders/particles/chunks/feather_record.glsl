@@ -2,7 +2,7 @@
 #define CMI_FEATHER_RECORD
 #pragma cmi_include chunks/feather_quad.glsl
 // Feather-only record union: negative size = resting; p2 = cached motion;
-// p3.z = frame[0:3], lift cooldown ticks[4:14], newly landed[15].
+// p3.z = frame[0:3], lift cooldown ticks[4:14], newly landed[15], palette[16:17], leaf attachment[18].
 float cmiFeatherHash(float p){p=fract(p*.1031);p*=p+33.33;p*=p+p;return fract(p);}
 float cmiFeatherRoll(vec4 motion,vec4 cached,float age){return motion.w+(cached.z+cached.w*(age+.05))*age;}
 uint cmiFeatherFrame(vec4 age){return floatBitsToUint(age.z)&15u;}
