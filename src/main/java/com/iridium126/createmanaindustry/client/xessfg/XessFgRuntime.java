@@ -20,6 +20,7 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWNativeWin32;
 import org.lwjgl.system.Platform;
 import static com.iridium126.createmanaindustry.client.xessfg.XessFgFrameStats.Stage.*;
+import static org.lwjgl.opengl.GL11.glFlush;
 
 /** Render-thread owner of the frame inputs and the window's active presenter. */
 public final class XessFgRuntime {
@@ -32,7 +33,7 @@ public final class XessFgRuntime {
     private long session, sessionId, window, sequence, frameStart, previousFrameStart;
     private int frame, width, height, slot = -1, cameraMode, previousCameraMode;
     private long irisGeneration, previousIrisGeneration;
-    private boolean failed, eligible, depthReady, hudReady, reset, iris, interpolate;
+    private boolean failed, eligible, slotDeferred, depthReady, hudReady, reset, iris, interpolate;
     private boolean reportedSleepRejection;
     private boolean servicingWindow, windowInterrupted;
     private boolean topLevel;
@@ -65,7 +66,7 @@ public final class XessFgRuntime {
 
     private void beginFrame(Minecraft minecraft, boolean render) {
         current = null;
-        depthReady = hudReady = iris = false;
+        slotDeferred = depthReady = hudReady = iris = false;
         deferredBlit = null;
         irisGeneration = 0;
         if (!requested()) return;
@@ -102,7 +103,9 @@ public final class XessFgRuntime {
                 slot = -1;
                 previous = null;
             }
-            if (!acquireSlot(minecraft, profile)) {
+            // Queue independent world rendering before waiting for the previous OpenGL color.
+            slotDeferred = eligible && slots[0].geometry.sharedInputs;
+            if (!slotDeferred && !acquireSlot(minecraft, profile)) {
                 close();
                 return;
             }
@@ -135,6 +138,7 @@ public final class XessFgRuntime {
         long captureFrame = profile == null ? 0 : profile.id();
         if (profile != null) profile.slotsInUse = XessFgNative.slotsInUse(session);
         slot = XessFgNative.acquire(session, next, captureFrame);
+        if (slot < 0 && slotDeferred) glFlush();
         while (slot < 0) {
             boolean producer = slot == XessFgNative.PRODUCER_BACKPRESSURE;
             long waitStart = XessFgFrameStats.Frame.start(profile);
@@ -145,6 +149,7 @@ public final class XessFgRuntime {
         }
         sequence = next;
         slots[slot].color.acquire();
+        slotDeferred = false;
         if (profile != null) {
             profile.bindSession(session, sessionId);
             profile.sequence = sequence;
@@ -152,6 +157,13 @@ public final class XessFgRuntime {
             profile.complete(EARLY_SLOT, start);
         }
         return true;
+    }
+
+    private boolean ensureSlot(Minecraft minecraft, XessFgFrameStats.Frame profile) {
+        if (slot >= 0) return true;
+        if (slotDeferred && acquireSlot(minecraft, profile)) return true;
+        close();
+        return false;
     }
 
     private boolean surfaceMatches(Window target) {
@@ -214,7 +226,7 @@ public final class XessFgRuntime {
 
     public static void renderStart() {
         var owner = INSTANCE;
-        if (owner.servicingWindow || owner.session == 0 || owner.slot < 0) return;
+        if (owner.servicingWindow || owner.session == 0 || (owner.slot < 0 && !owner.slotDeferred)) return;
         try {
             XessFgNative.marker(owner.session, owner.frame, SIMULATION_END);
             XessFgNative.marker(owner.session, owner.frame, RENDER_START);
@@ -257,6 +269,12 @@ public final class XessFgRuntime {
     private void captureDepth(int texture, int w, int h) {
         if (texture <= 0 || w <= 0 || h <= 0 || current == null || depthReady) return;
         var profile = XessFgFrameStats.current();
+        try {
+            if (!ensureSlot(Minecraft.getInstance(), profile)) return;
+        } catch (RuntimeException | LinkageError failure) {
+            fail(failure);
+            return;
+        }
         long start = XessFgFrameStats.Frame.start(profile);
         boolean exported = false;
         boolean gpu = profile != null && profile.startGpu(DEPTH_MOTION);
@@ -297,7 +315,7 @@ public final class XessFgRuntime {
     }
 
     private boolean canCapture() {
-        return !servicingWindow && session != 0 && slot >= 0 && eligible;
+        return !servicingWindow && session != 0 && (slot >= 0 || slotDeferred) && eligible;
     }
 
     public static void hudless(RenderTarget target) {
@@ -334,7 +352,7 @@ public final class XessFgRuntime {
     private boolean exportFrame(RenderTarget target, int w, int h) {
         if (servicingWindow || session == 0) return false;
         var client = Minecraft.getInstance();
-        if (slot < 0 || client.level == null || width != w || height != h) {
+        if (client.level == null || width != w || height != h) {
             close();
             return false;
         }
@@ -347,6 +365,7 @@ public final class XessFgRuntime {
             if (!gameplay) profile.disabledChecks |= 32;
         }
         try {
+            if (!ensureSlot(client, profile)) return false;
             captureColor(target, XessFgCapture.FINAL, FINAL_COLOR);
             if (interpolate) writeConstants();
             long start = XessFgFrameStats.Frame.start(profile);
@@ -489,7 +508,7 @@ public final class XessFgRuntime {
         previousLevel = null;
         deferredBlit = null;
         window = sequence = 0;
-        topLevel = false;
+        topLevel = slotDeferred = false;
         slot = -1;
     }
 }

@@ -19,6 +19,8 @@
 #include <optional>
 #include <thread>
 #include <exception>
+#include <condition_variable>
+#include <atomic>
 
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -171,11 +173,21 @@ ComPtr<ID3D12CommandQueue> queue(ID3D12Device* gpu, D3D12_COMMAND_LIST_TYPE type
     return result;
 }
 
+// Coalesce adjacent dirty bands into a single COPY command without copying unchanged rows.
+constexpr UINT ColorBandRows = 64;
+struct CopyJob {
+    unsigned slot;
+    Group group;
+    UINT64 token, bytes;
+    bool timed, countBytes;
+};
+
 struct Transfer {
     ComPtr<ID3D12Resource> glBuffer;
     ComPtr<ID3D12Heap> sourceHeap, destinationHeap;
     ComPtr<ID3D12Resource> source, destination, local;
-    Commands producer, upload;
+    Commands producer, upload, baseColor;
+    ComPtr<ID3D12Resource> hudMaskReadback;
 };
 
 struct Slot {
@@ -187,6 +199,7 @@ struct Slot {
     int64_t colorSubmitQpc = 0;
     UINT64 glFenceAtSubmit = 0;
     UINT64 geometryBytes = 0;
+    std::atomic<UINT64> copiedColorBytes{0};
     std::optional<Reprojection> reprojection;
     unsigned recordedQueries = 0, pendingQueries = 0;
     bool geometrySubmitted = false, colorSubmitted = false, fullColor = false;
@@ -201,8 +214,8 @@ struct PreparedInput {
 };
 
 constexpr unsigned ProducerGeometry = 1, ProducerColor = 2, UploadGeometry = 4, UploadColor = 8, LocalTextures = 16,
-                   ColorUnpack = 32;
-constexpr unsigned GpuProfileFields = 17;
+                   ColorUnpack = 32, CopiedColorBytes = 64;
+constexpr unsigned GpuProfileFields = 18;
 constexpr unsigned ClockProfileFields = 10;
 
 constexpr int64_t Unavailable = std::numeric_limits<int64_t>::min();
@@ -428,9 +441,9 @@ void main(uint3 pixel : SV_DispatchThreadID, uint2 localPixel : SV_GroupThreadID
         if (origin.x >= width || origin.y >= height) return;
         uint row = origin.y * packedStride + block * 12;
         uint mask = packed.Load(2 * packedPlane + 4 * (origin.y * ((width + 127) / 128) + block / 32));
-        uint4 finalColors = expandRgb(packed.Load3(row));
-        uint4 hudlessColors = finalColors;
-        if ((mask & (1u << (block % 32))) != 0) hudlessColors = expandRgb(packed.Load3(row + packedPlane));
+        uint4 hudlessColors = expandRgb(packed.Load3(row + packedPlane));
+        uint4 finalColors = hudlessColors;
+        if ((mask & (1u << (block % 32))) != 0) finalColors = expandRgb(packed.Load3(row));
         [unroll] for (uint i = 0; i < 4; ++i) {
             if (origin.x + i < width) {
                 uint2 p = origin + uint2(i, 0);
@@ -601,6 +614,15 @@ struct Session {
     xefg_swapchain_handle_t fg = nullptr;
     xell_context_handle_t ll = nullptr;
 
+    std::thread copyWorker;
+    std::mutex copyMutex;
+    std::condition_variable copyWork;
+    std::array<CopyJob, SlotCount * GroupCount> copyJobs{};
+    unsigned copyStart = 0, copyCount = 0;
+    bool copyClosing = false;
+    ComPtr<ID3D12Fence> copyBaseDone;
+    Handle copyBaseReady;
+
     ~Session() {
         if (presenter.joinable()) {
             {
@@ -617,6 +639,14 @@ struct Session {
     }
 
     void releasePresentation() {
+        if (copyWorker.joinable()) {
+            {
+                std::lock_guard guard(copyMutex);
+                copyClosing = true;
+            }
+            copyWork.notify_one();
+            copyWorker.join();
+        }
         hideSurface();
         unblockFailedProducer();
         drain(presentQueue.Get(), completed.Get());
@@ -920,6 +950,12 @@ struct Session {
         sdk(xefgSwapChainSetUiCompositionState(fg, XEFG_SWAPCHAIN_UI_COMPOSITION_STATE_ENABLED),
             "Enabling XeSS-FG HUD composition");
         sdk(xefgSwapChainSetEnabled(fg, 0), "Initializing XeSS-FG in passthrough mode");
+        if (sharedInputs) {
+            check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&copyBaseDone)), "Creating base-color fence");
+            copyBaseReady.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            if (!copyBaseReady.value) throw std::runtime_error("Creating base-color event");
+            copyWorker = std::thread([this] { copyLoop(); });
+        }
     }
 
     bool supportsUavStore(DXGI_FORMAT format) const {
@@ -942,6 +978,14 @@ struct Session {
                   "Allocating shared OpenGL frame storage");
             if (!cross) continue;
             transfer.producer.create(renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
+            if (sharedInputs && i == Color) {
+                transfer.baseColor.create(renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
+                auto readback = memory;
+                readback.Type = D3D12_HEAP_TYPE_READBACK;
+                auto masks = buffer(hudMaskBytes());
+                check(renderGpu->CreateCommittedResource(&readback, D3D12_HEAP_FLAG_NONE, &masks,
+                      D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&transfer.hudMaskReadback)), "Creating XeSS-FG HUD mask readback");
+            }
             if (!sharedInputs) transfer.upload.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
             storage.Flags = D3D12_RESOURCE_FLAG_NONE;
             if (!sharedInputs && (!directGeometry || i != Geometry))
@@ -1138,6 +1182,8 @@ struct Session {
             *output++ = unpackNs;
             *output++ = unpackStart == Unavailable || (copyStart != Unavailable && copyStart < unpackStart)
                 ? copyStart : unpackStart;
+            *output++ = mask & CopiedColorBytes
+                ? static_cast<int64_t>(slot.copiedColorBytes.load(std::memory_order_acquire)) : Unavailable;
             slot.pendingQueries = 0;
             ++rows;
         }
@@ -1172,6 +1218,118 @@ struct Session {
             profile.fields[ArcColorFenceObservedQpc] = qpc();
     }
 
+    void copyLoop() {
+        SetThreadDescription(GetCurrentThread(), L"CMI XeSS-FG Transfer");
+        try {
+            for (;;) {
+                CopyJob job{};
+                {
+                    std::unique_lock lock(copyMutex);
+                    copyWork.wait(lock, [this] { return copyCount || copyClosing; });
+                    if (!copyCount) return;
+                    job = copyJobs[copyStart];
+                    copyStart = (copyStart + 1) % copyJobs.size();
+                    --copyCount;
+                }
+                copyFrame(job);
+            }
+        } catch (...) {
+            {
+                std::lock_guard guard(copyMutex);
+                copyClosing = true;
+                copyCount = 0;
+            }
+            recordFailure();
+            transferIn->Signal(DrainValue);
+            glReleased->Signal(DrainValue);
+        }
+    }
+
+    UINT64 hudMaskBytes() const {
+        return groupBytes[Color] - 2 * colorPlaneBytes;
+    }
+
+    bool copyBaseColor(const CopyJob& job, Transfer& transfer, unsigned query) {
+        auto* source = transfer.glBuffer.Get();
+        auto* destination = transfer.source.Get();
+        const auto maskOffset = 2 * colorPlaneBytes;
+        const auto masks = hudMaskBytes();
+        auto* base = transfer.baseColor.begin();
+        if (job.timed) profileProbes->producer.begin(base, query);
+        base->CopyBufferRegion(destination, colorPlaneBytes, source, colorPlaneBytes, colorPlaneBytes);
+        base->CopyBufferRegion(destination, maskOffset, source, maskOffset, masks);
+        // Only the existing one-bit-per-block mask is read by the worker.
+        base->CopyBufferRegion(transfer.hudMaskReadback.Get(), 0, source, maskOffset, masks);
+        transfer.baseColor.submit(copyQueue.Get());
+        check(copyQueue->Signal(copyBaseDone.Get(), job.token), "Publishing XeSS-FG HUD mask");
+        if (copyBaseDone->GetCompletedValue() < job.token) {
+            if (!ResetEvent(copyBaseReady.value)) throw std::runtime_error("Resetting XeSS-FG HUD mask event");
+            check(copyBaseDone->SetEventOnCompletion(job.token, copyBaseReady.value), "Waiting for XeSS-FG HUD mask");
+            if (WaitForSingleObject(copyBaseReady.value, 1000) == WAIT_FAILED)
+                throw std::runtime_error("Waiting for the XeSS-FG HUD mask event");
+        }
+        check(renderGpu->GetDeviceRemovedReason(), "Checking RTX after XeSS-FG base-color copy");
+        return copyBaseDone->GetCompletedValue() >= job.token;
+    }
+
+    UINT64 copyChangedColor(ID3D12GraphicsCommandList* commands, Transfer& transfer, bool maskReady) {
+        auto* source = transfer.glBuffer.Get();
+        auto* destination = transfer.source.Get();
+        void* data = nullptr;
+        const D3D12_RANGE read{0, static_cast<SIZE_T>(hudMaskBytes())};
+        if (!maskReady || FAILED(transfer.hudMaskReadback->Map(0, &read, &data))) {
+            // The masks still reach Arc on the COPY queue. Copy the full final plane if we cannot inspect them.
+            commands->CopyBufferRegion(destination, 0, source, 0, colorPlaneBytes);
+            return colorPlaneBytes;
+        }
+        const auto* masks = static_cast<const uint32_t*>(data);
+        const auto maskStride = (width + 127) / 128;
+        const auto changed = [&](UINT row) {
+            return std::any_of(masks + UINT64(row) * maskStride,
+                masks + UINT64(std::min(height, row + ColorBandRows)) * maskStride,
+                [](uint32_t mask) { return mask != 0; });
+        };
+        UINT64 copied = 0;
+        UINT first = 0;
+        while (first < height) {
+            if (!changed(first)) {
+                first += ColorBandRows;
+                continue;
+            }
+            UINT end = first + ColorBandRows;
+            while (end < height && changed(end)) end += ColorBandRows;
+            const auto offset = UINT64(first) * colorStride;
+            const auto bytes = UINT64(std::min(height, end) - first) * colorStride;
+            commands->CopyBufferRegion(destination, offset, source, offset, bytes);
+            copied += bytes;
+            first = end + ColorBandRows; // This band is clean, or is beyond the image.
+        }
+        const D3D12_RANGE written{0, 0};
+        transfer.hudMaskReadback->Unmap(0, &written);
+        return copied;
+    }
+
+    void copyFrame(const CopyJob& job) {
+        auto& slot = slots[job.slot];
+        auto& transfer = slot.groups[job.group];
+        const bool sparse = sharedInputs && job.group == Color && job.bytes == groupBytes[Color];
+        const unsigned query = timestampIndex(job.slot, job.group);
+        check(copyQueue->Wait(glWritten.Get(), job.token), "Waiting for OpenGL frame input");
+        const bool maskReady = sparse && copyBaseColor(job, transfer, query);
+        auto* producer = transfer.producer.begin();
+        if (sparse) {
+            const auto changes = copyChangedColor(producer, transfer, maskReady);
+            if (job.countBytes) slot.copiedColorBytes.store(colorPlaneBytes + hudMaskBytes() + changes, std::memory_order_release);
+        } else {
+            if (job.timed) profileProbes->producer.begin(producer, query);
+            producer->CopyBufferRegion(transfer.source.Get(), 0, transfer.glBuffer.Get(), 0, job.bytes);
+        }
+        if (job.timed) profileProbes->producer.end(producer, query);
+        transfer.producer.submit(copyQueue.Get());
+        check(copyQueue->Signal(glReleased.Get(), job.token), "Releasing OpenGL frame storage");
+        check(copyQueue->Signal(transferOut.Get(), job.token), "Publishing cross-adapter frame input");
+    }
+
     void submitTransfer(unsigned index, Slot& slot, Group group, UINT64 size) {
         if (!cross) return;
         const auto token = transferToken(sequence, group);
@@ -1182,15 +1340,21 @@ struct Session {
         const bool timedUpload = slot.captureFrame > 0 && (profileProbes->mask & uploadBit);
         const unsigned query = timestampIndex(index, group);
 
-        auto producer = transfer.producer.begin();
-        if (timedProducer) profileProbes->producer.begin(producer, query);
-        producer->CopyBufferRegion(transfer.source.Get(), 0, transfer.glBuffer.Get(), 0, size);
-        if (timedProducer) profileProbes->producer.end(producer, query);
-        check(copyQueue->Wait(glWritten.Get(), token), "Waiting for OpenGL frame input");
-        transfer.producer.submit(copyQueue.Get());
-        check(copyQueue->Signal(glReleased.Get(), token), "Releasing OpenGL frame storage");
-        check(copyQueue->Signal(transferOut.Get(), token), "Publishing cross-adapter frame input");
+        const bool countBytes = slot.captureFrame > 0 && sharedInputs && group == Color && size == groupBytes[Color];
+        const CopyJob job{index, group, token, size, timedProducer, countBytes};
+        if (sharedInputs) {
+            {
+                std::lock_guard guard(copyMutex);
+                if (copyClosing || copyCount == copyJobs.size()) throw std::logic_error("Invalid XeSS-FG copy queue");
+                copyJobs[(copyStart + copyCount) % copyJobs.size()] = job;
+                ++copyCount;
+            }
+            copyWork.notify_one();
+        } else {
+            copyFrame(job);
+        }
         if (timedProducer) slot.recordedQueries |= producerBit;
+        if (countBytes) slot.recordedQueries |= CopiedColorBytes;
         if (sharedInputs) return;
 
         auto upload = transfer.upload.begin();
@@ -1236,10 +1400,10 @@ struct Session {
         }
         submitTransfer(index, slot, Color, full ? groupBytes[Color] : colorPlaneBytes);
         if (sharedInputs) {
-            // Admit another frame after the older of the two published OpenGL colors completes.
-            // Geometry-only discards have no color token and must not enter this history.
-            oldestProducerColor = latestProducerColor;
-            latestProducerColor = transferToken(next, Color);
+            const auto color = transferToken(next, Color);
+            // The next frame can render up to its first export while this color is pending.
+            oldestProducerColor = full ? color : latestProducerColor;
+            latestProducerColor = color;
         }
         prepareInputs(index, slot, next, full);
         slot.colorSubmitted = true;
@@ -1397,8 +1561,10 @@ struct Session {
         if (profile) {
             profile->fields[CompletedBefore] = completed->GetCompletedValue();
             profile->fields[GeometryBytes] = job.geometryBytes;
-            profile->fields[ColorBytes] = cross ? colorBytes : 0;
-            profile->fields[CrossBytes] = profile->fields[ColorBytes] + job.geometryBytes;
+            if (!sharedInputs || !interpolate) {
+                profile->fields[ColorBytes] = cross ? colorBytes : 0;
+                profile->fields[CrossBytes] = profile->fields[ColorBytes] + job.geometryBytes;
+            }
             profile->fields[GpuMask] = 0;
             profile->split(ProfileSetup);
         }

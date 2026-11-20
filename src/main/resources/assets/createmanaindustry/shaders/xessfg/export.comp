@@ -139,14 +139,14 @@ uint packFinalBlock(int block, int y) {
     if (block * 4 >= extent.x || y >= extent.y) return 0u;
     int address = y * rowWords + block * 3;
     uvec3 rgb = encodeRgb24(ivec2(block * 4, y));
-    storeRgb24(address, rgb);
     int hudless = offsets[1] + address;
     bool differs = any(notEqual(rgb, uvec3(words[hudless], words[hudless + 1], words[hudless + 2])));
+    if (differs) storeRgb24(address, rgb);
     return differs ? (1u << (block % 32)) : 0u;
 }
 
 void packFinalWithMask(int y) {
-    // One 32-bit mask covers 128 pixels in a row. Unset bits select the exact final RGB bytes.
+    // One bit per four pixels marks where final color differs from the HUD-less base.
     int x = int(gl_LocalInvocationID.x);
     int block = int(gl_WorkGroupID.x) * 32 + x;
     int lane = int(gl_LocalInvocationIndex);

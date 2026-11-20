@@ -155,16 +155,22 @@ void verifyTransfer(Session& session, unsigned index, Group group, uint32_t tag)
     require(matches, "Frame group changed bits during transport or texture upload");
 }
 
-void verifyPackedColor(Session& session, unsigned index) {
+enum class HudCoverage { Dense, OneBand, Empty };
+
+void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = HudCoverage::Dense) {
     auto& slot = session.slots[index];
     auto input = hostBuffer(session.renderGpu.Get(), session.groupBytes[Color], D3D12_HEAP_TYPE_UPLOAD);
     const D3D12_RANGE empty{0, 0};
     void* mapped = nullptr;
     check(input->Map(0, &empty, &mapped), "Mapping packed color input");
     std::memset(mapped, 0, static_cast<size_t>(session.groupBytes[Color]));
-    auto changed = [](unsigned x, unsigned y) { return ((x / 4) + y) % 3 == 0; };
+    auto changed = [coverage](unsigned x, unsigned y) {
+        if (coverage == HudCoverage::Empty) return false;
+        if (coverage == HudCoverage::OneBand && y < ColorBandRows) return false;
+        return ((x / 4) + y) % 3 == 0;
+    };
     auto rgb = [&](unsigned x, unsigned y, unsigned plane) {
-        if (session.sharedInputs && !changed(x, y)) plane = 0;
+        if (session.sharedInputs && !changed(x, y)) plane = Hudless;
         return (x * 37 + y * 11 + plane * 1048579) & 0xffffff;
     };
     auto luma = [](unsigned x, unsigned y, unsigned plane) {
@@ -176,7 +182,9 @@ void verifyPackedColor(Session& session, unsigned index) {
             auto* row = bytes + UINT64(y) * session.colorStride;
             for (unsigned x = 0; x < session.width; ++x) {
                 if (session.transport == Rgb24) {
-                    const auto value = rgb(x, y, plane);
+                    // Stale final data outside the mask must be ignored even if the row was copied.
+                    const auto value = session.sharedInputs && plane == Final && !changed(x, y)
+                        ? 0x13579bu : rgb(x, y, plane);
                     for (unsigned channel = 0; channel < 3; ++channel)
                         row[x * 3 + channel] = static_cast<uint8_t>(value >> (8 * channel));
                 } else {
@@ -235,9 +243,9 @@ void verifyPackedColor(Session& session, unsigned index) {
     require(matches, "Packed color reconstruction differed at final or HUD-less plane");
 }
 
-void verifySharedGeometry(Session& session, bool reconstruct) {
+void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage coverage) {
     const auto sequence = session.sequence + 1;
-    const int index = session.acquire(sequence, 0);
+    const int index = session.acquire(sequence, static_cast<int64_t>(sequence));
     require(index >= 0, "Acquiring shared-input frame");
     auto& slot = session.slots[index];
     const auto& motion = session.footprints[Motion];
@@ -307,7 +315,14 @@ void verifySharedGeometry(Session& session, bool reconstruct) {
     readback->Unmap(0, &empty);
     require(matches, "Shared geometry was incorrect before color publication");
     require(session.prepared->GetCompletedValue() < sequence, "Geometry made the entire frame ready without color");
-    verifyPackedColor(session, index);
+    verifyPackedColor(session, index, coverage);
+    std::array<int64_t, GpuProfileFields * SlotCount> profile{};
+    const auto rows = session.pollProfile(profile.data());
+    const auto dirtyRows = coverage == HudCoverage::Dense ? session.height
+        : coverage == HudCoverage::OneBand ? session.height - ColorBandRows : 0;
+    const auto colorBytes = session.colorPlaneBytes + session.hudMaskBytes() + UINT64(dirtyRows) * session.colorStride;
+    require(rows == 1 && profile.front() == sequence && profile[GpuProfileFields - 1] == colorBytes,
+            "Sparse RGB24 profile did not report the actual number of copied bytes");
     queueDiscard(session, index, sequence);
     require(waitForFence(session.completed.Get(), sequence), "Shared-input frame did not retire");
 }
@@ -409,6 +424,26 @@ void verifyProducerBackpressure(Session& session) {
     queueDiscard(session, slot, blocked);
     check(session.glWritten->Signal(release.token), "Completing remaining OpenGL color work");
     require(waitForFence(session.prepared.Get(), blocked), "Producer test transfer slots did not retire");
+
+    const auto full = blocked + 1;
+    const int fullSlot = session.acquire(full, 0);
+    require(fullSlot >= 0, "Acquiring a complete producer test frame");
+    release.token = transferToken(full, Color);
+    session.submitGeometry(fullSlot, full);
+    session.submitColor(fullSlot, full, true);
+    queueDiscard(session, fullSlot, full);
+    check(session.glWritten->Signal(transferToken(full, Geometry)), "Completing only OpenGL geometry");
+    require(session.acquire(full + 1, 0) == ProducerBackpressure,
+            "A new export was admitted before the previous complete frame's OpenGL color");
+    session.waitForProducer();
+    require(session.producerWaitToken == release.token, "The deferred wait targeted the wrong color");
+    check(session.glWritten->Signal(release.token), "Completing the preceding OpenGL color");
+    require(WaitForSingleObject(session.producerReady.value, 2000) == WAIT_OBJECT_0,
+            "Deferred producer wait did not wake on the preceding color");
+    const int nextSlot = session.acquire(full + 1, 0);
+    require(nextSlot >= 0, "Deferred export failed to acquire its slot after color completion");
+    queueDiscard(session, nextSlot, full + 1);
+    require(waitForFence(session.prepared.Get(), full + 1), "Deferred producer test did not retire its final slots");
 }
 
 void verifyPopup(jlong render, jlong arc) {
@@ -502,8 +537,9 @@ int main() {
             Session shared;
             shared.start(window, render, arc, 129, 73, Rgb24, false, true, true);
             require(shared.sharedInputs && !shared.uploadQueue, "Arc shared-input path was not active");
-            verifySharedGeometry(shared, true);
-            verifySharedGeometry(shared, false);
+            verifySharedGeometry(shared, true, HudCoverage::Dense);
+            verifySharedGeometry(shared, false, HudCoverage::OneBand);
+            verifySharedGeometry(shared, true, HudCoverage::Empty);
             verifyInputReuse(shared);
             const auto frame = shared.sequence + 1;
             const int slot = shared.acquire(frame, 0);

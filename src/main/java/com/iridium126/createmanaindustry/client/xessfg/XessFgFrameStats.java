@@ -25,7 +25,8 @@ public final class XessFgFrameStats implements AutoCloseable {
     private static final int RTX_START_TICK = 7, RTX_END_TICK = 8, DMA_START_TICK = 9;
     private static final int RTX_GEOMETRY_START_TICK = 10, RTX_GEOMETRY_END_TICK = 11;
     private static final int ARC_GEOMETRY_START_TICK = 12, ARC_GEOMETRY_END_TICK = 13;
-    private static final int PREPARE_START_TICK = 15;
+    private static final int PREPARE_START_TICK = 15, COPIED_COLOR_BYTES = 16;
+    private static final int CROSS_BYTES = 7, GEOMETRY_BYTES = 19, COLOR_BYTES = 20;
     private static Frame current;
     private final Map<Long, Frame> frames = new LinkedHashMap<>();
     private final Map<Long, XessFgClockTimeline> clocks = new LinkedHashMap<>();
@@ -246,8 +247,8 @@ public final class XessFgFrameStats implements AutoCloseable {
             column(out, frame.queued);
             for (long time : frame.cpu) column(out, time);
             for (long time : frame.gpu) column(out, time);
-            for (int i = 0; i < NATIVE_FIELDS; i++) column(out, frame.nativeData == null ? UNAVAILABLE : frame.nativeData[i]);
-            for (long time : frame.nativeGpu) column(out, time);
+            for (int i = 0; i < NATIVE_FIELDS; i++) column(out, presentField(frame, i));
+            for (int i = 0; i < COPIED_COLOR_BYTES; i++) column(out, frame.nativeGpu[i]);
             column(out, frame.sessionId);
             var clock = clocks.get(frame.sessionId);
             column(out, calibratedTick(clock, frame, DMA_TICK, XessFgClockTimeline.ARC_COPY));
@@ -269,6 +270,16 @@ public final class XessFgFrameStats implements AutoCloseable {
             column(out, frame.pendingAtEnqueue);
             out.newLine();
         }
+    }
+
+    private static long presentField(Frame frame, int field) {
+        if (frame.nativeData == null) return UNAVAILABLE;
+        long colorBytes = frame.nativeGpu[COPIED_COLOR_BYTES];
+        if (colorBytes != UNAVAILABLE) {
+            if (field == COLOR_BYTES) return colorBytes;
+            if (field == CROSS_BYTES) return colorBytes + frame.nativeData[GEOMETRY_BYTES];
+        }
+        return frame.nativeData[field];
     }
 
     private static long calibratedTick(XessFgClockTimeline clock, Frame frame, int field, int queue) {
