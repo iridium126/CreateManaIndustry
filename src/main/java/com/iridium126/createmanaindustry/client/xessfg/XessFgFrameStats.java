@@ -26,6 +26,7 @@ public final class XessFgFrameStats implements AutoCloseable {
     private static final int RTX_GEOMETRY_START_TICK = 10, RTX_GEOMETRY_END_TICK = 11;
     private static final int ARC_GEOMETRY_START_TICK = 12, ARC_GEOMETRY_END_TICK = 13;
     private static final int PREPARE_START_TICK = 15, COPIED_COLOR_BYTES = 16;
+    private static final int HUD_COPY = 17;
     private static final int CROSS_BYTES = 7, GEOMETRY_BYTES = 19, COLOR_BYTES = 20;
     private static Frame current;
     private final Map<Long, Frame> frames = new LinkedHashMap<>();
@@ -51,6 +52,9 @@ public final class XessFgFrameStats implements AutoCloseable {
         long presentId = UNAVAILABLE, sequence = UNAVAILABLE, sleepStatus = UNAVAILABLE, queued = UNAVAILABLE;
         long sessionId = UNAVAILABLE;
         long earlySlot = UNAVAILABLE, slotsInUse = UNAVAILABLE, renderLuid, generationLuid, disabledChecks;
+        long geometryWidth = UNAVAILABLE, geometryHeight = UNAVAILABLE;
+        boolean gameplayEligible;
+        int skipReason;
         private final long[] nativeGpu = new long[XessFgNative.GPU_PROFILE_FIELDS - 1];
         private boolean waitingForGpu;
         private boolean receivedGpu;
@@ -231,7 +235,8 @@ public final class XessFgFrameStats implements AutoCloseable {
                 + "arc_dma_ready_qpc,arc_inputs_ready_qpc,rtx_color_copy_start_qpc,rtx_color_copy_end_qpc,"
                 + "arc_color_dma_start_qpc,rtx_geometry_copy_start_qpc,rtx_geometry_copy_end_qpc,"
                 + "arc_geometry_dma_start_qpc,arc_geometry_dma_end_qpc,arc_input_prepare_start_qpc,"
-                + "transport,pending_present_at_enqueue\n");
+                + "transport,pending_present_at_enqueue,fg_gameplay_eligible,fg_skip_reason,"
+                + "fg_geometry_width,fg_geometry_height,producer_hudless_gpu_ns\n");
         for (Frame frame : frames.values()) {
             out.write(frame.id + "," + frame.route);
             column(out, frame.nextTickIntervalNs);
@@ -268,6 +273,11 @@ public final class XessFgFrameStats implements AutoCloseable {
                 default -> "";
             });
             column(out, frame.pendingAtEnqueue);
+            out.write("," + frame.gameplayEligible);
+            column(out, frame.skipReason);
+            column(out, frame.geometryWidth);
+            column(out, frame.geometryHeight);
+            column(out, frame.nativeGpu[HUD_COPY]);
             out.newLine();
         }
     }

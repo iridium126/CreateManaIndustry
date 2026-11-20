@@ -14,12 +14,12 @@ import java.util.HexFormat;
 import org.lwjgl.system.Platform;
 
 final class XessFgNative {
-    static final int SLOT_COUNT = 4;
+    static final int GEOMETRY_SLOTS = 4, SLOT_COUNT = GEOMETRY_SLOTS + 1;
     static final int PRODUCER_BACKPRESSURE = -2;
-    static final int GEOMETRY = 0, COLOR = 1;
-    static final int GPU_PROFILE_FIELDS = 18, CLOCK_PROFILE_FIELDS = 10, PRESENT_RESULT_CAPACITY = SLOT_COUNT * 4;
+    static final int GEOMETRY = 0, COLOR = 1, HUD_BASE = 2;
+    static final int GPU_PROFILE_FIELDS = 19, CLOCK_PROFILE_FIELDS = 10, PRESENT_RESULT_CAPACITY = SLOT_COUNT * 4;
     static final int CONSTANT_BYTES = 152;
-    static final int REPROJECTION_BYTES = 136;
+    static final int REPROJECTION_BYTES = 144;
     private static final String ROOT = "/native/xessfg/windows-x86_64/";
     private static final String[] LIBRARIES = {"libxell.dll", "libxess_fg.dll", "CmiXessFg.dll"};
     private static boolean loaded;
@@ -68,14 +68,16 @@ final class XessFgNative {
 
     static native int adapter(long luid);
     static native long create(long hwnd, long renderLuid, long generationLuid, int width, int height, int transport,
-                              boolean topLevel);
+                              boolean topLevel, int geometryWidth, int geometryHeight);
     static native long[] exportGroup(long session, int slot, int group);
     static native void closeHandle(long handle);
-    static native int acquire(long session, long sequence, long captureFrame);
+    static native int admission(long session, boolean gameplay);
+    static native int acquire(long session, long sequence, long captureFrame, boolean colorOnly);
     static native int slotsInUse(long session);
-    static native void waitForSlot(long session);
+    static native void waitForSlot(long session, boolean colorOnly);
     static native void waitForProducer(long session);
-    static native void submitGeometry(long session, int slot, long sequence, ByteBuffer reprojection);
+    static native void submitGeometry(long session, int slot, long sequence, ByteBuffer reprojection, boolean overrides);
+    static native void submitHudless(long session, int slot, long sequence);
     static native void submitColor(long session, int slot, long sequence, boolean full);
     static native boolean discard(long session, int slot, long sequence);
     static native int sleep(long session, int frameId);

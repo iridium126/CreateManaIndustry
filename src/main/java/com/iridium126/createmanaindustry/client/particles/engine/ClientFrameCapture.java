@@ -207,7 +207,7 @@ public final class ClientFrameCapture {
             m.put("xessfg_config",Map.of("enabled",xess.enabled(),"gpu",xess.gpu().value(),
                     "transport",xess.transport().value(),"surface",xess.surface().value()));
             m.put("xessfg_real_frame_p95_max_increase_percent",5);
-            m.put("xessfg_csv_schema",10);
+            m.put("xessfg_csv_schema",11);
             m.put("xessfg_csv_key","frame joins the main frame CSV; next_tick_interval_ns aligns the interval with the work that produced it");
             m.put("instrumented",true);m.put("fps_claim","requires matched independent-process A/A and A/B; this file alone is not evidence of improvement");
             timer=new GpuTimestampRing(32,null,(tag,generation,ms)->{var w=window;if(w!=null&&tag>=0&&tag<w.size)w.gpu[(int)tag]=ms;});

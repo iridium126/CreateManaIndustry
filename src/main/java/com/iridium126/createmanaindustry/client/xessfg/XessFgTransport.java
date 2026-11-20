@@ -13,14 +13,18 @@ import static org.lwjgl.opengl.GL45.glCreateBuffers;
 import static org.lwjgl.system.MemoryUtil.memAddress;
 
 final class XessFgTransport implements AutoCloseable {
-    final Group geometry, color;
+    final Group geometry, color, hudBase;
 
     XessFgTransport(long session, int index) {
-        geometry = new Group(session, index, XessFgNative.GEOMETRY);
+        geometry = index < XessFgNative.GEOMETRY_SLOTS ? new Group(session, index, XessFgNative.GEOMETRY) : null;
+        Group packedColor = null;
         try {
-            color = new Group(session, index, XessFgNative.COLOR);
+            packedColor = new Group(session, index, XessFgNative.COLOR);
+            hudBase = geometry != null && packedColor.sharedInputs ? new Group(session, index, XessFgNative.HUD_BASE) : null;
+            color = packedColor;
         } catch (RuntimeException | LinkageError failure) {
-            geometry.close();
+            if (packedColor != null) packedColor.close();
+            if (geometry != null) geometry.close();
             throw failure;
         }
     }
@@ -38,13 +42,14 @@ final class XessFgTransport implements AutoCloseable {
 
     @Override
     public void close() {
-        geometry.close();
+        if (geometry != null) geometry.close();
+        if (hudBase != null) hudBase.close();
         color.close();
     }
 
     static final class Group implements AutoCloseable {
         private int memory, produced, released;
-        final int phase, rowWords, secondOffset, transportMode;
+        final int phase, rowWords, secondOffset, transportMode, width, height;
         final boolean sharedInputs;
         int buffer;
         private long lastToken;
@@ -67,6 +72,8 @@ final class XessFgTransport implements AutoCloseable {
                 secondOffset = Math.toIntExact(handles[6] / Integer.BYTES);
                 transportMode = Math.toIntExact(handles[7]);
                 sharedInputs = handles[8] != 0;
+                width = Math.toIntExact(handles[9]);
+                height = Math.toIntExact(handles[10]);
             } catch (RuntimeException | LinkageError failure) {
                 close();
                 throw failure;
@@ -85,7 +92,7 @@ final class XessFgTransport implements AutoCloseable {
         }
 
         void publish(long sequence) {
-            long token = 2 * sequence + phase;
+            long token = phase == XessFgNative.HUD_BASE ? sequence : 2 * sequence + phase;
             try (var stack = MemoryStack.stackPush()) {
                 glSemaphoreParameterui64EXT(produced, GL_D3D12_FENCE_VALUE_EXT, token);
                 nglSignalSemaphoreEXT(produced, 1, memAddress(stack.ints(buffer)), 0, 0, 0);

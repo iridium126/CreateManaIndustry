@@ -128,7 +128,7 @@ void verifyTransfer(Session& session, unsigned index, Group group, uint32_t tag)
             readTexture(session, cmd, image.Get(), readback.Get(), plane, session.inputState(plane));
             continue;
         }
-        const auto desc = texture(Formats[plane], session.width, session.height);
+        const auto desc = session.inputTexture(plane);
         check(session.generationGpu->CreateCommittedResource(&memory, D3D12_HEAP_FLAG_NONE, &desc,
               D3D12_RESOURCE_STATE_COPY_SOURCE, nullptr, IID_PPV_ARGS(&copies[i])), "Allocating probe texture");
         session.copyPlane(cmd, session.sourceFor(slot, plane), copies[i].Get(), plane, D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -145,9 +145,9 @@ void verifyTransfer(Session& session, unsigned index, Group group, uint32_t tag)
     bool matches = true;
     for (unsigned i = 0; i < copies.size(); ++i) {
         const auto& footprint = session.footprints[first + i];
-        for (unsigned y = 0; y < session.height; ++y) {
+        for (unsigned y = 0; y < footprint.Footprint.Height; ++y) {
             const auto row = (footprint.Offset + UINT64(y) * footprint.Footprint.RowPitch) / sizeof(uint32_t);
-            for (unsigned x = 0; x < session.width; ++x)
+            for (unsigned x = 0; x < footprint.Footprint.Width; ++x)
                 matches &= data[row + x] == (tag ^ static_cast<uint32_t>(row + x));
         }
     }
@@ -155,7 +155,7 @@ void verifyTransfer(Session& session, unsigned index, Group group, uint32_t tag)
     require(matches, "Frame group changed bits during transport or texture upload");
 }
 
-enum class HudCoverage { Dense, OneBand, Empty };
+enum class HudCoverage { Dense, OneTile, Empty };
 
 void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = HudCoverage::Dense) {
     auto& slot = session.slots[index];
@@ -166,7 +166,7 @@ void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = 
     std::memset(mapped, 0, static_cast<size_t>(session.groupBytes[Color]));
     auto changed = [coverage](unsigned x, unsigned y) {
         if (coverage == HudCoverage::Empty) return false;
-        if (coverage == HudCoverage::OneBand && y < ColorBandRows) return false;
+        if (coverage == HudCoverage::OneTile && (x >= ColorTileWidth || y >= ColorTileHeight)) return false;
         return ((x / 4) + y) % 3 == 0;
     };
     auto rgb = [&](unsigned x, unsigned y, unsigned plane) {
@@ -176,8 +176,16 @@ void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = 
     auto luma = [](unsigned x, unsigned y, unsigned plane) {
         return (x * 13 + y * 7 + plane * 31) & 255;
     };
+    ComPtr<ID3D12Resource> base;
+    void* baseMapped = nullptr;
+    if (session.sharedInputs) {
+        base = hostBuffer(session.renderGpu.Get(), session.linearColorBytes, D3D12_HEAP_TYPE_UPLOAD);
+        check(base->Map(0, &empty, &baseMapped), "Mapping HUD-less input");
+        std::memset(baseMapped, 0, static_cast<size_t>(session.linearColorBytes));
+    }
     for (unsigned plane = 0; plane < 2; ++plane) {
         auto* bytes = static_cast<uint8_t*>(mapped) + plane * session.colorPlaneBytes;
+        if (baseMapped && plane == Hudless) bytes = static_cast<uint8_t*>(baseMapped);
         for (unsigned y = 0; y < session.height; ++y) {
             auto* row = bytes + UINT64(y) * session.colorStride;
             for (unsigned x = 0; x < session.width; ++x) {
@@ -185,8 +193,14 @@ void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = 
                     // Stale final data outside the mask must be ignored even if the row was copied.
                     const auto value = session.sharedInputs && plane == Final && !changed(x, y)
                         ? 0x13579bu : rgb(x, y, plane);
+                    auto* pixel = row + x * 3;
+                    if (session.sharedInputs && plane == Final) {
+                        const auto tile = UINT64(y / ColorTileHeight) * session.colorTilesAcross() + x / ColorTileWidth;
+                        pixel = bytes + tile * ColorTileBytes
+                            + (y % ColorTileHeight * ColorTileWidth + x % ColorTileWidth) * 3;
+                    }
                     for (unsigned channel = 0; channel < 3; ++channel)
-                        row[x * 3 + channel] = static_cast<uint8_t>(value >> (8 * channel));
+                        pixel[channel] = static_cast<uint8_t>(value >> (8 * channel));
                 } else {
                     row[x * 2] = static_cast<uint8_t>(luma(x, y, plane));
                     row[x * 2 + 1] = 128;
@@ -196,13 +210,22 @@ void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = 
         }
     }
     if (session.sharedInputs) {
-        auto* masks = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(mapped) + 2 * session.colorPlaneBytes);
+        auto* masks = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(mapped) + session.colorPlaneBytes);
         const unsigned stride = (session.width + 127) / 128;
         for (unsigned y = 0; y < session.height; ++y)
             for (unsigned x = 0; x < session.width; x += 4)
                 if (changed(x, y)) masks[y * stride + x / 128] |= 1u << ((x / 4) % 32);
     }
     input->Unmap(0, nullptr);
+    Commands hudFill;
+    if (base) {
+        base->Unmap(0, nullptr);
+        hudFill.create(session.renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
+        hudFill.begin()->CopyBufferRegion(slot.hudBase.glBuffer.Get(), 0, base.Get(), 0, session.linearColorBytes);
+        hudFill.submit(session.hudQueue.Get());
+        check(session.hudQueue->Signal(session.hudWritten.Get(), session.sequence), "Publishing synthetic HUD-less");
+        session.submitHudless(index, session.sequence);
+    }
     Commands fill;
     fill.create(session.renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
     fill.begin()->CopyBufferRegion(slot.groups[Color].glBuffer.Get(), 0, input.Get(), 0, session.groupBytes[Color]);
@@ -243,13 +266,13 @@ void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = 
     require(matches, "Packed color reconstruction differed at final or HUD-less plane");
 }
 
-void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage coverage) {
+void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage coverage, bool overrides = false) {
     const auto sequence = session.sequence + 1;
     const int index = session.acquire(sequence, static_cast<int64_t>(sequence));
     require(index >= 0, "Acquiring shared-input frame");
     auto& slot = session.slots[index];
     const auto& motion = session.footprints[Motion];
-    const auto bytes = reconstruct ? motion.Offset : session.groupBytes[Geometry];
+    const auto bytes = reconstruct && !overrides ? motion.Offset : session.groupBytes[Geometry];
     auto input = hostBuffer(session.renderGpu.Get(), bytes, D3D12_HEAP_TYPE_UPLOAD);
     const D3D12_RANGE empty{0, 0};
     void* mapped = nullptr;
@@ -259,11 +282,14 @@ void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage covera
     constexpr uint32_t sky = 0x3f800000, ground = 0x3e800000;
     constexpr uint32_t skyMotion = 0xbc004000, groundMotion = 0x3c00c000;
     constexpr uint32_t packedMotion = 0xbda03a01;
-    for (unsigned y = 0; y < session.height; ++y) {
+    for (unsigned y = 0; y < session.geometryHeight; ++y) {
         auto* row = static_cast<uint8_t*>(mapped) + UINT64(y) * format.RowPitch;
-        for (unsigned x = 0; x < session.width; ++x) {
+        for (unsigned x = 0; x < session.geometryWidth; ++x) {
             reinterpret_cast<uint32_t*>(row)[x] = x < 37 ? sky : ground;
-            if (!reconstruct) reinterpret_cast<uint32_t*>(row + motion.Offset)[x] = packedMotion;
+            if (!reconstruct || overrides) {
+                reinterpret_cast<uint32_t*>(row + motion.Offset)[x] =
+                    !reconstruct || x == 20 ? packedMotion : 0x7e007e00u;
+            }
         }
     }
     input->Unmap(0, nullptr);
@@ -272,11 +298,11 @@ void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage covera
     fill.begin()->CopyBufferRegion(slot.groups[Geometry].glBuffer.Get(), 0, input.Get(), 0, bytes);
     fill.submit(session.copyQueue.Get());
     check(session.copyQueue->Signal(session.glWritten.Get(), transferToken(sequence, Geometry)), "Publishing shared geometry");
-    const float dx = 4.0f / session.width;
-    const float dy = 2.0f / session.height;
+    const float dx = 4.0f / session.geometryWidth;
+    const float dy = 2.0f / session.geometryHeight;
     const Reprojection reprojection{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -dx, -dy, 0, 1,
-                                    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, dx, dy, 0, 1, 0.25f, -0.25f};
-    session.submitGeometry(index, sequence, reconstruct ? &reprojection : nullptr);
+                                    1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, dx, dy, 0, 1, 0.25f, -0.25f, float(session.geometryWidth), float(session.geometryHeight)};
+    session.submitGeometry(index, sequence, reconstruct ? &reprojection : nullptr, overrides);
     require(slot.geometryBytes == bytes, "Incorrect cross-adapter geometry byte count");
     const auto total = session.groupBytes[Geometry];
     auto readback = hostBuffer(session.generationGpu.Get(), total, D3D12_HEAP_TYPE_READBACK);
@@ -294,14 +320,15 @@ void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage covera
     const D3D12_RANGE range{0, total};
     check(readback->Map(0, &range, &mapped), "Mapping prepared geometry");
     bool matches = true;
-    for (unsigned y = 0; y < session.height; ++y) {
+    for (unsigned y = 0; y < session.geometryHeight; ++y) {
         auto* row = static_cast<const uint8_t*>(mapped) + UINT64(y) * format.RowPitch;
-        for (unsigned x = 0; x < session.width; ++x) {
+        for (unsigned x = 0; x < session.geometryWidth; ++x) {
             const auto receivedDepth = reinterpret_cast<const uint32_t*>(row)[x];
-            const auto expected = reconstruct ? (x < 36 ? skyMotion : groundMotion) : packedMotion;
+            const bool rebuilt = reconstruct && !(overrides && x == 20);
+            const auto expected = rebuilt ? (x < 37 ? skyMotion : groundMotion) : packedMotion;
             const auto receivedMotion = reinterpret_cast<const uint32_t*>(row + motion.Offset)[x];
             // Permit one adjacent half-float value after the GPU projection and quantization.
-            const bool motionMatches = reconstruct
+            const bool motionMatches = rebuilt
                 ? std::abs(int(receivedMotion & 0xffff) - int(expected & 0xffff)) <= 1
                     && std::abs(int(receivedMotion >> 16) - int(expected >> 16)) <= 1
                 : receivedMotion == expected;
@@ -318,10 +345,10 @@ void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage covera
     verifyPackedColor(session, index, coverage);
     std::array<int64_t, GpuProfileFields * SlotCount> profile{};
     const auto rows = session.pollProfile(profile.data());
-    const auto dirtyRows = coverage == HudCoverage::Dense ? session.height
-        : coverage == HudCoverage::OneBand ? session.height - ColorBandRows : 0;
-    const auto colorBytes = session.colorPlaneBytes + session.hudMaskBytes() + UINT64(dirtyRows) * session.colorStride;
-    require(rows == 1 && profile.front() == sequence && profile[GpuProfileFields - 1] == colorBytes,
+    const auto dirtyTiles = coverage == HudCoverage::Dense ? session.colorTileCount()
+        : coverage == HudCoverage::OneTile ? 1 : 0;
+    const auto colorBytes = session.linearColorBytes + session.hudMaskBytes() + dirtyTiles * ColorTileBytes;
+    require(rows == 1 && profile.front() == sequence && profile[GpuProfileFields - 2] == colorBytes,
             "Sparse RGB24 profile did not report the actual number of copied bytes");
     queueDiscard(session, index, sequence);
     require(waitForFence(session.completed.Get(), sequence), "Shared-input frame did not retire");
@@ -330,17 +357,17 @@ void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage covera
 void verifySaturation(Session& session) {
     QueueGate gate;
     gate.hold(session, session.prepareQueue.Get());
-    std::array<int, SlotCount> indices{};
+    std::array<int, GeometrySlots> indices{};
     const auto first = session.sequence + 1;
-    for (unsigned i = 0; i < SlotCount; ++i) {
+    for (unsigned i = 0; i < GeometrySlots; ++i) {
         indices[i] = session.acquire(first + i, 0);
         require(indices[i] >= 0, "Expected a free full-input slot");
         queueDiscard(session, indices[i], first + i);
     }
     std::sort(indices.begin(), indices.end());
-    for (unsigned i = 0; i < SlotCount; ++i) require(indices[i] == i, "Reused a slot before its fence");
-    const auto fifth = first + SlotCount;
-    const bool full = session.slotsInUse() == SlotCount && session.acquire(fifth, 0) == -1;
+    for (unsigned i = 0; i < GeometrySlots; ++i) require(indices[i] == i, "Reused a slot before its fence");
+    const auto fifth = first + GeometrySlots;
+    const bool full = session.slotsInUse() == GeometrySlots && session.acquire(fifth, 0) == -1;
     std::thread release([&] {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         gate.fence->Signal(1);
@@ -478,7 +505,32 @@ void verifyPopup(jlong render, jlong arc) {
 }
 }
 
-int main() {
+void verifyOffline() {
+    FrameAdmission admission;
+    require(admission.update(true, false, false) == 0, "Brief transfer pressure triggered a skip");
+    require(admission.update(true, false, false) == 1, "Sustained transfer pressure did not trigger a skip");
+    require(admission.update(false, true, false) == 2, "Stale presentation was not reported");
+    for (unsigned i = 0; i < 7; ++i)
+        require(admission.update(false, false, false) == 2, "Resumed frame generation too early");
+    require(admission.update(false, false, true) == 2, "Producer pressure did not interrupt recovery");
+    for (unsigned i = 0; i < 7; ++i)
+        require(admission.update(false, false, false) == 2, "Resumed before eight clean frames");
+    require(admission.update(false, false, false) == 0, "Frame generation did not resume");
+    require(ColorDecoder::compile(false) && ColorDecoder::compile(true), "Input shaders did not compile");
+    require(ColorTileBytes == 3072, "RGB24 tile layout changed");
+    std::puts("PASS: admission hysteresis and D3D12 input shaders");
+}
+
+int main(int argc, char** argv) {
+    if (argc == 2 && std::strcmp(argv[1], "--offline") == 0) {
+        try {
+            verifyOffline();
+            return 0;
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "%s\n", error.what());
+            return 1;
+        }
+    }
     HWND window = CreateWindowExW(0, L"STATIC", L"XeSS-FG pipeline probe", WS_OVERLAPPEDWINDOW,
                                  0, 0, 1400, 800, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     if (!window) return 1;
@@ -487,8 +539,11 @@ int main() {
         verifyPendingCapacity();
         const auto render = adapter(0x10de, L"RTX 4070 Laptop");
         const auto arc = adapter(0x8086, L"A750");
+        std::printf("Dual-adapter probe: render LUID %llx, Arc LUID %llx\n", render, arc);
+        std::puts("Checking presentation surface");
         verifyPopup(render, arc);
         {
+            std::puts("Checking RGBA8 transfer and saturation");
             Session session;
             session.start(window, render, arc, 1283, 719, Rgba8);
             require(GetWindowThreadProcessId(session.surface, nullptr) != GetCurrentThreadId()
@@ -515,6 +570,7 @@ int main() {
         }
         require(SetWindowPos(window, nullptr, 0, 0, 900, 700, SWP_NOZORDER | SWP_NOMOVE), "Resizing probe window");
         for (auto mode : {Rgb24, Ycbcr422}) {
+            std::printf("Checking packed transport %u\n", static_cast<unsigned>(mode));
             Session packed;
             packed.start(window, render, arc, 803, 611, mode, false, true);
             require(!packed.slots[0].groups[Geometry].local, "Direct geometry retained a staging buffer");
@@ -534,12 +590,14 @@ int main() {
             require(waitForFence(packed.prepared.Get(), partialFrame), "Direct geometry did not retire without color");
         }
         {
+            std::puts("Checking Arc shared geometry and HUD tiles");
             Session shared;
             shared.start(window, render, arc, 129, 73, Rgb24, false, true, true);
             require(shared.sharedInputs && !shared.uploadQueue, "Arc shared-input path was not active");
             verifySharedGeometry(shared, true, HudCoverage::Dense);
-            verifySharedGeometry(shared, false, HudCoverage::OneBand);
+            verifySharedGeometry(shared, false, HudCoverage::OneTile);
             verifySharedGeometry(shared, true, HudCoverage::Empty);
+            verifySharedGeometry(shared, true, HudCoverage::OneTile, true);
             verifyInputReuse(shared);
             const auto frame = shared.sequence + 1;
             const int slot = shared.acquire(frame, 0);
@@ -550,12 +608,14 @@ int main() {
             require(waitForFence(shared.prepared.Get(), frame), "Partial shared input did not retire");
         }
         {
+            std::puts("Checking producer admission");
             Session paced;
             paced.start(window, render, arc, 129, 73, Rgb24, false, true, true);
             require(paced.sharedInputs, "Producer test requires shared inputs");
             verifyProducerBackpressure(paced);
         }
         for (bool sharedInputs : {false, true}) {
+            std::printf("Checking producer device removal (shared %d)\n", sharedInputs);
             ComPtr<ID3D12Fence> staged;
             UINT64 done;
             {
@@ -576,6 +636,7 @@ int main() {
                     "Arc input queue did not drain after producer removal");
         }
         {
+            std::puts("Checking resize and Arc device removal");
             Session resized;
             resized.start(window, arc, arc, 803, 611, Rgba8);
             const int index = resized.acquire(1, 0);

@@ -1,12 +1,14 @@
 package com.iridium126.createmanaindustry.client.xessfg;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.StormGpuDevices;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.XessFgSurfaceMode;
 import com.iridium126.createmanaindustry.infrastructure.config.XessFgTransportMode;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.Window;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -14,6 +16,11 @@ import java.util.Locale;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.particle.Particle;
+import net.minecraft.client.particle.ParticleRenderType;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Item;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.lwjgl.glfw.GLFW;
@@ -35,13 +42,24 @@ public final class XessFgRuntime {
     private long irisGeneration, previousIrisGeneration;
     private boolean failed, eligible, slotDeferred, depthReady, hudReady, reset, iris, interpolate;
     private boolean reportedSleepRejection;
+    private int skipReason;
     private boolean servicingWindow, windowInterrupted;
     private boolean topLevel;
     private XessFgCapture capture;
+    private XessFgMotion motion;
+    private XessFgFlywheelMotion flywheelMotion;
+    private boolean worldScope, geometryStaged, motionOverrides;
+    private ByteBuffer stagedReprojection;
+    private record Hand(InteractionHand hand, Item item) {}
+    public interface MotionScope extends AutoCloseable {
+        MotionScope INACTIVE = () -> {};
+        @Override void close();
+    }
     private XessFgView current, previous;
     private ClientLevel level, previousLevel;
     private RenderTarget deferredBlit;
     private long renderLuid, generationLuid;
+    private long geometrySize;
 
     private XessFgRuntime() {}
 
@@ -66,6 +84,8 @@ public final class XessFgRuntime {
 
     private void beginFrame(Minecraft minecraft, boolean render) {
         current = null;
+        worldScope = geometryStaged = motionOverrides = false;
+        stagedReprojection = null;
         slotDeferred = depthReady = hudReady = iris = false;
         deferredBlit = null;
         irisGeneration = 0;
@@ -80,7 +100,8 @@ public final class XessFgRuntime {
             level = null;
             return;
         }
-        if (window != handle || width != w || height != h || topLevel != usePopup(target)) close();
+        long geometry = geometrySize(w, h);
+        if (window != handle || width != w || height != h || topLevel != usePopup(target) || geometrySize != geometry) close();
         level = minecraft.level;
         cameraMode = minecraft.options.getCameraType().ordinal();
         eligible = render && level != null && minecraft.screen == null && minecraft.getOverlay() == null
@@ -90,7 +111,7 @@ public final class XessFgRuntime {
         try {
             if (session == 0) {
                 long start = XessFgFrameStats.Frame.start(profile);
-                if (!open(minecraft, handle, w, h, usePopup(target))) return;
+                if (!open(minecraft, handle, w, h, usePopup(target), geometry)) return;
                 if (profile != null) profile.complete(SESSION_OPEN, start);
             }
             if (slot >= 0) {
@@ -104,6 +125,8 @@ public final class XessFgRuntime {
                 previous = null;
             }
             // Queue independent world rendering before waiting for the previous OpenGL color.
+            skipReason = XessFgNative.admission(session, eligible);
+            motion.begin();
             slotDeferred = eligible && slots[0].geometry.sharedInputs;
             if (!slotDeferred && !acquireSlot(minecraft, profile)) {
                 close();
@@ -118,6 +141,10 @@ public final class XessFgRuntime {
                 profile.sleepStatus = sleepStatus;
                 profile.renderLuid = renderLuid;
                 profile.generationLuid = generationLuid;
+                profile.gameplayEligible = eligible;
+                profile.skipReason = skipReason;
+                profile.geometryWidth = (int) (geometrySize >>> 32);
+                profile.geometryHeight = (int) geometrySize;
                 if (!eligible) profile.disabledChecks |= 1;
             }
             if (sleepStatus < 0 && !reportedSleepRejection) {
@@ -137,7 +164,8 @@ public final class XessFgRuntime {
         long next = sequence + 1;
         long captureFrame = profile == null ? 0 : profile.id();
         if (profile != null) profile.slotsInUse = XessFgNative.slotsInUse(session);
-        slot = XessFgNative.acquire(session, next, captureFrame);
+        boolean colorOnly = !eligible || skipReason != 0;
+        slot = XessFgNative.acquire(session, next, captureFrame, colorOnly);
         if (slot < 0 && slotDeferred) glFlush();
         while (slot < 0) {
             boolean producer = slot == XessFgNative.PRODUCER_BACKPRESSURE;
@@ -145,7 +173,7 @@ public final class XessFgRuntime {
             boolean active = waitForWindow(minecraft, producer ? WaitFor.OPENGL_PRODUCER : WaitFor.TRANSFER_SLOT);
             if (profile != null) profile.accumulate(producer ? PRODUCER_WAIT : SLOT_WAIT, waitStart);
             if (!active) return false;
-            slot = XessFgNative.acquire(session, next, captureFrame);
+            slot = XessFgNative.acquire(session, next, captureFrame, colorOnly);
         }
         sequence = next;
         slots[slot].color.acquire();
@@ -181,7 +209,17 @@ public final class XessFgRuntime {
         return target.isFullscreen() && ClientConfig.xessFg().surface() == XessFgSurfaceMode.BORDERLESS_POPUP;
     }
 
-    private boolean open(Minecraft minecraft, long handle, int w, int h, boolean popup) throws IOException {
+    private static long geometrySize(int width, int height) {
+        var coords = CreateManaIndustry.IRIS_ACTIVE ? IrisShadows.unwarpedCoordinates(width, height) : null;
+        int w = (width + 1) / 2, h = (height + 1) / 2;
+        if (coords != null && coords.warp() == XessFgCoordinates.Warp.NONE && coords.scaleX() < 1 && coords.scaleY() < 1) {
+            w = Math.max(1, (int) (width * coords.scaleX()));
+            h = Math.max(1, (int) (height * coords.scaleY()));
+        }
+        return (long) w << 32 | Integer.toUnsignedLong(h);
+    }
+
+    private boolean open(Minecraft minecraft, long handle, int w, int h, boolean popup, long geometry) throws IOException {
         if (!XessFgTransport.supported()) throw new IOException("Win32 OpenGL memory and semaphore sharing are unavailable");
         var renderAdapter = StormGpuDevices.renderAdapter();
         if (renderAdapter.luid() == 0 || renderAdapter.nodes() != 1) {
@@ -192,18 +230,19 @@ public final class XessFgRuntime {
         generationLuid = adapter.luid();
         boolean crossAdapter = renderLuid != generationLuid;
         var transport = crossAdapter ? ClientConfig.xessFg().transport() : XessFgTransportMode.RGBA8;
-        capture = new XessFgCapture(w, h);
+        capture = new XessFgCapture();
         windowInterrupted = false;
         servicingWindow = true;
         try {
             session = XessFgNative.create(GLFWNativeWin32.glfwGetWin32Window(handle), renderAdapter.luid(), adapter.luid(), w, h,
-                    transport.nativeId(), popup);
+                    transport.nativeId(), popup, (int) (geometry >>> 32), (int) geometry);
         } finally {
             servicingWindow = false;
         }
         window = handle;
         width = w;
         height = h;
+        geometrySize = geometry;
         topLevel = popup;
         if (windowInterrupted || minecraft.level != level || !surfaceMatches(minecraft.getWindow())) {
             close();
@@ -211,6 +250,8 @@ public final class XessFgRuntime {
         }
         ++sessionId;
         for (int i = 0; i < slots.length; i++) slots[i] = new XessFgTransport(session, i);
+        motion = new XessFgMotion();
+        flywheelMotion = new XessFgFlywheelMotion();
         constants = ByteBuffer.allocateDirect(XessFgNative.CONSTANT_BYTES).order(ByteOrder.nativeOrder());
         if (slots[0].geometry.sharedInputs) {
             reprojectionConstants = ByteBuffer.allocateDirect(XessFgNative.REPROJECTION_BYTES).order(ByteOrder.nativeOrder());
@@ -237,8 +278,57 @@ public final class XessFgRuntime {
 
     public static void worldView(Camera camera, Matrix4fc view, Matrix4fc projection) {
         var owner = INSTANCE;
-        if (owner.canCapture() && !owner.iris) {
-            owner.current = new XessFgView(view, projection, camera.getPosition());
+        if (owner.canCapture() && !RiftRenderFrame.auxiliary()) {
+            owner.worldScope = true;
+            if (!owner.iris) owner.current = new XessFgView(view, projection, camera.getPosition());
+        }
+    }
+
+    public static MotionScope entityMotion(Object entity) {
+        var owner = INSTANCE;
+        return owner.captureObjects() ? owner.motion.track(entity, false) : MotionScope.INACTIVE;
+    }
+
+    public static MotionScope handMotion(InteractionHand hand, Item item) {
+        var owner = INSTANCE;
+        return owner.captureObjects() ? owner.motion.track(new Hand(hand, item), true) : MotionScope.INACTIVE;
+    }
+
+    public static VertexConsumer motionBuffer(VertexConsumer source, RenderType type) {
+        var motion = INSTANCE.motion;
+        return motion != null ? motion.buffers(source, type) : source;
+    }
+
+    public static VertexConsumer particleMotion(VertexConsumer source, Particle particle) {
+        var owner = INSTANCE;
+        if (!owner.captureObjects()) return source;
+        var type = particle.getRenderType();
+        return type == ParticleRenderType.TERRAIN_SHEET || type == ParticleRenderType.PARTICLE_SHEET_OPAQUE
+                ? owner.motion.particle(source, particle, type) : source;
+    }
+
+    public static void flywheelMotion(dev.engine_room.flywheel.api.backend.Engine engine,
+                                      dev.engine_room.flywheel.api.backend.RenderContext context) {
+        var owner = INSTANCE;
+        if (owner.captureObjects() && owner.level == context.level()) owner.flywheelMotion.capture(owner.motion, engine, context);
+    }
+
+    private boolean captureObjects() {
+        return worldScope && canCapture() && !RiftRenderFrame.auxiliary()
+                && (!CreateManaIndustry.IRIS_ACTIVE || !IrisShadows.active());
+    }
+
+    private static final class IrisShadows {
+        static boolean active() {
+            return net.irisshaders.iris.shadows.ShadowRenderingState.areShadowsCurrentlyBeingRendered();
+        }
+
+        static XessFgCoordinates unwarpedCoordinates(int width, int height) {
+            var pack = com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();
+            if (pack.xessFgPack() == null || pack.options() == null
+                    || !(net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable()
+                    instanceof net.irisshaders.iris.pipeline.IrisRenderingPipeline)) return null;
+            return pack.xessFgPack().coordinates(new XessFgIrisOptions(pack.options()), 0, width, height, 0, false, 0);
         }
     }
 
@@ -251,23 +341,25 @@ public final class XessFgRuntime {
         owner.depthReady = false;
     }
 
-    public static void irisDepth(int texture, int width, int height, Camera camera, Matrix4fc view, Matrix4fc projection,
-                                 XessFgCoordinates coordinates) {
+    public static void irisDepth(int texture, int handDepth, int width, int height, Camera camera, Matrix4fc view,
+                                 Matrix4fc projection, XessFgCoordinates coordinates) {
         var owner = INSTANCE;
         if (!owner.canCapture() || !owner.iris) return;
         owner.current = new XessFgView(new Matrix4f(view), new Matrix4f(projection), camera.getPosition(), coordinates);
         owner.captureDepth(texture, width, height);
+        owner.finishGeometry(handDepth);
     }
 
-    public static void vanillaDepth(RenderTarget target) {
+    public static void vanillaDepth(RenderTarget target, boolean rendersHand) {
         var owner = INSTANCE;
         if (owner.canCapture() && !owner.iris) {
             owner.captureDepth(target.getDepthTextureId(), target.width, target.height);
+            if (!rendersHand) owner.finishGeometry(0);
         }
     }
 
     private void captureDepth(int texture, int w, int h) {
-        if (texture <= 0 || w <= 0 || h <= 0 || current == null || depthReady) return;
+        if (texture <= 0 || w <= 0 || h <= 0 || current == null || geometryStaged) return;
         var profile = XessFgFrameStats.current();
         try {
             if (!ensureSlot(Minecraft.getInstance(), profile)) return;
@@ -290,8 +382,11 @@ public final class XessFgRuntime {
                         + current.modelView().m22() * previous.modelView().m22() < 0.5f;
             slots[slot].geometry.acquire();
             var priorView = reset ? current : previous;
-            if (capture.canReproject(slots[slot], w, h, current, priorView)) reprojection = reprojectionConstants;
+            if (capture.canReproject(slots[slot], current, priorView)) reprojection = reprojectionConstants;
             capture.depthAndMotion(slots[slot], texture, w, h, current, priorView, reprojection);
+            stagedReprojection = reprojection;
+            applyObjectMotion(false, texture);
+            geometryStaged = true;
             exported = true;
         } catch (RuntimeException | LinkageError failure) {
             fail(failure);
@@ -301,11 +396,25 @@ public final class XessFgRuntime {
                 profile.complete(DEPTH_MOTION, start);
             }
         }
-        if (!exported) return;
-        start = XessFgFrameStats.Frame.start(profile);
+    }
+
+    private void applyObjectMotion(boolean hand, int texture) {
+        var coords = current.coordinates();
+        var geometry = slots[slot].geometry;
+        int vectors = motion.draw(hand, reset, texture, geometry.width, geometry.height, coords);
+        if (vectors == 0) return;
+        capture.applyMotion(slots[slot], vectors, stagedReprojection != null && !motionOverrides);
+        motionOverrides = true;
+    }
+
+    private void finishGeometry(int handDepth) {
+        if (!geometryStaged || depthReady || slot < 0) return;
+        var profile = XessFgFrameStats.current();
+        long start = XessFgFrameStats.Frame.start(profile);
         try {
+            if (handDepth != 0) applyObjectMotion(true, handDepth);
             slots[slot].geometry.publish(sequence);
-            XessFgNative.submitGeometry(session, slot, sequence, reprojection);
+            XessFgNative.submitGeometry(session, slot, sequence, stagedReprojection, motionOverrides);
             depthReady = true;
         } catch (RuntimeException | LinkageError failure) {
             fail(failure);
@@ -315,14 +424,22 @@ public final class XessFgRuntime {
     }
 
     private boolean canCapture() {
-        return !servicingWindow && session != 0 && (slot >= 0 || slotDeferred) && eligible;
+        return !servicingWindow && session != 0 && (slot >= 0 || slotDeferred) && eligible && skipReason == 0;
     }
 
     public static void hudless(RenderTarget target) {
         var owner = INSTANCE;
-        if (!owner.canCapture() || !owner.depthReady) return;
+        if (!owner.canCapture()) return;
+        owner.worldScope = false;
+        if (!owner.iris) owner.finishGeometry(target.getDepthTextureId());
+        if (!owner.depthReady) return;
         try {
             owner.captureColor(target, XessFgCapture.HUDLESS, HUDLESS);
+            var base = owner.slots[owner.slot].hudBase;
+            if (base != null) {
+                base.publish(owner.sequence);
+                XessFgNative.submitHudless(owner.session, owner.slot, owner.sequence);
+            }
             owner.hudReady = true;
         } catch (RuntimeException | LinkageError failure) {
             owner.fail(failure);
@@ -410,7 +527,7 @@ public final class XessFgRuntime {
         }
         try {
             var profile = XessFgFrameStats.current();
-            boolean vsync = minecraft.options.enableVsync().get();
+            boolean vsync = minecraft.options.enableVsync().get() || eligible && skipReason != 0;
             long captureFrame = profile == null ? 0 : profile.id();
             long start = XessFgFrameStats.Frame.start(profile);
             long wait = 0;
@@ -427,6 +544,7 @@ public final class XessFgRuntime {
                 profile.enqueued(sessionId, interpolate, slots[slot].color.transportMode, wait != 0);
             }
             slot = -1;
+            motion.finish(interpolate);
             previous = interpolate ? current : null;
             previousLevel = interpolate ? level : null;
             previousCameraMode = cameraMode;
@@ -445,7 +563,7 @@ public final class XessFgRuntime {
         servicingWindow = true;
         try {
             switch (wait) {
-                case TRANSFER_SLOT -> XessFgNative.waitForSlot(session);
+                case TRANSFER_SLOT -> XessFgNative.waitForSlot(session, !eligible || skipReason != 0);
                 case OPENGL_PRODUCER -> XessFgNative.waitForProducer(session);
                 case PRESENT_QUEUE -> XessFgNative.waitForPresentSpace(session);
             }
@@ -459,9 +577,10 @@ public final class XessFgRuntime {
     private void writeConstants() {
         XessFgCapture.matrix(constants, 0, current.sdkView());
         XessFgCapture.matrix(constants, 64, XessFgCapture.dxProjection(current.projection()));
-        // The exported buffer has already been resampled into the unjittered output grid.
-        constants.putFloat(128, 0);
-        constants.putFloat(132, 0);
+        var coords = current.coordinates();
+        boolean nativeGrid = coords.warp() == XessFgCoordinates.Warp.NONE && coords.scaleX() < 1 && coords.scaleY() < 1;
+        constants.putFloat(128, nativeGrid ? coords.jitterX() : 0);
+        constants.putFloat(132, nativeGrid ? -coords.jitterY() : 0);
         constants.putFloat(136, 1);
         constants.putFloat(140, 1);
         constants.putInt(144, reset ? 1 : 0);
@@ -501,6 +620,9 @@ public final class XessFgRuntime {
             slots[i] = null;
         }
         if (capture != null) capture.close();
+        if (motion != null) motion.close();
+        motion = null;
+        flywheelMotion = null;
         capture = null;
         constants = null;
         reprojectionConstants = null;

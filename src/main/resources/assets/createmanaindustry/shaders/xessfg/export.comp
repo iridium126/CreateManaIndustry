@@ -5,6 +5,9 @@ layout(binding = 0) uniform sampler2D sourceTexture;
 layout(std430, binding = 0) buffer FrameTransport {
     uint words[];
 };
+layout(std430, binding = 1) readonly buffer HudlessTransport {
+    uint hudlessWords[];
+};
 
 uniform ivec2 extent;
 uniform ivec2 sourceSize;
@@ -22,6 +25,8 @@ uniform vec4 warpParameters;
 const int DEPTH = 2;
 const int DEPTH_ONLY = 4;
 const int FINAL_WITH_MASK = 5;
+const int APPLY_MOTION = 6;
+const int INITIALIZE_MOTION = 7;
 const int SILDUR_RAIN = 5;
 shared vec4 rainDrops[8];
 shared uint hudChanges[128];
@@ -139,9 +144,11 @@ uint packFinalBlock(int block, int y) {
     if (block * 4 >= extent.x || y >= extent.y) return 0u;
     int address = y * rowWords + block * 3;
     uvec3 rgb = encodeRgb24(ivec2(block * 4, y));
-    int hudless = offsets[1] + address;
-    bool differs = any(notEqual(rgb, uvec3(words[hudless], words[hudless + 1], words[hudless + 2])));
-    if (differs) storeRgb24(address, rgb);
+    bool differs = any(notEqual(rgb, uvec3(hudlessWords[address], hudlessWords[address + 1], hudlessWords[address + 2])));
+    int tilesAcross = (extent.x + 127) / 128;
+    int tile = (y / 8) * tilesAcross + block / 32;
+    int tileAddress = tile * 768 + (y % 8) * 96 + (block % 32) * 3;
+    if (differs) storeRgb24(tileAddress, rgb);
     return differs ? (1u << (block % 32)) : 0u;
 }
 
@@ -156,7 +163,7 @@ void packFinalWithMask(int y) {
         uint mask = 0u;
         for (int i = 0; i < 16; ++i) mask |= hudChanges[lane + i];
         int stride = (extent.x + 127) / 128;
-        words[2 * offsets[1] + y * stride + int(gl_WorkGroupID.x)] = mask;
+        words[offsets[1] + y * stride + int(gl_WorkGroupID.x)] = mask;
     }
 }
 
@@ -169,20 +176,53 @@ void main() {
     if (mode == DEPTH_ONLY) {
         if (all(lessThan(outputPixel, extent))) {
             ivec2 glPixel = ivec2(outputPixel.x, extent.y - 1 - outputPixel.y);
-            words[outputPixel.y * rowWords + outputPixel.x] = floatBitsToUint(texelFetch(sourceTexture, glPixel, 0).r);
+            vec2 sourceExtent = vec2(sourceSize) * sourceScale;
+            vec2 uv = (vec2(glPixel) + 0.5) / vec2(extent);
+            ivec2 center = clamp(ivec2(uv * sourceExtent + currentJitter), ivec2(0),
+                                 max(ivec2(sourceExtent) - 1, ivec2(0)));
+            words[outputPixel.y * rowWords + outputPixel.x] = floatBitsToUint(texelFetch(sourceTexture, center, 0).r);
+        }
+        return;
+    }
+    bool applyMotion = mode == APPLY_MOTION || mode == INITIALIZE_MOTION;
+    if ((mode == DEPTH || applyMotion) && (warpTypes.x == SILDUR_RAIN || warpTypes.y == SILDUR_RAIN)) {
+        if (gl_LocalInvocationIndex == 0u) {
+            if (warpTypes.x == SILDUR_RAIN) buildRainDrops(0, warpParameters.x);
+            if (warpTypes.y == SILDUR_RAIN) buildRainDrops(4, warpParameters.z);
+        }
+        barrier();
+    }
+    if (applyMotion) {
+        if (all(lessThan(outputPixel, extent))) {
+            ivec2 glPixel = ivec2(outputPixel.x, extent.y - 1 - outputPixel.y);
+            vec2 uv = (vec2(glPixel) + 0.5) / vec2(extent);
+            vec2 scene = sceneCoordinate(uv, warpTypes.x, warpParameters.xy, 0);
+            ivec2 samplePixel = clamp(ivec2(scene * vec2(extent)), ivec2(0), extent - 1);
+            vec4 sampleMotion = texelFetch(sourceTexture, samplePixel, 0);
+            int address = outputPixel.y * rowWords + outputPixel.x;
+            if (sampleMotion.a > 0.5) {
+                vec2 velocity = sampleMotion.xy;
+                if (warpTypes != ivec2(0)) {
+                    vec2 currentScene = (vec2(samplePixel) + 0.5) / vec2(extent);
+                    vec2 previousScene = currentScene + velocity / vec2(extent.x, -extent.y);
+                    vec2 currentDisplay = displayCoordinate(currentScene, uv + currentScene - scene,
+                                                            warpTypes.x, warpParameters.xy, 0);
+                    vec2 previousDisplay = displayCoordinate(previousScene, currentDisplay + previousScene - currentScene,
+                                                             warpTypes.y, warpParameters.zw, 4);
+                    velocity = clamp((previousDisplay - currentDisplay) * vec2(extent.x, -extent.y),
+                                     -vec2(extent), vec2(extent));
+                }
+                words[address] = floatBitsToUint(sampleMotion.z);
+                words[offsets[3] + address] = packHalf2x16(velocity);
+            } else if (mode == INITIALIZE_MOTION) {
+                words[offsets[3] + address] = 0x7e007e00u;
+            }
         }
         return;
     }
     if (mode != DEPTH) {
         packColor(outputPixel);
         return;
-    }
-    if (mode == DEPTH && (warpTypes.x == SILDUR_RAIN || warpTypes.y == SILDUR_RAIN)) {
-        if (gl_LocalInvocationIndex == 0u) {
-            if (warpTypes.x == SILDUR_RAIN) buildRainDrops(0, warpParameters.x);
-            if (warpTypes.y == SILDUR_RAIN) buildRainDrops(4, warpParameters.z);
-        }
-        barrier();
     }
     if (any(greaterThanEqual(outputPixel, extent))) return;
 
@@ -196,22 +236,10 @@ void main() {
     ivec2 limit = max(ivec2(sourceExtent) - 1, ivec2(0));
     ivec2 center = clamp(ivec2(scene * sourceExtent + currentJitter), ivec2(0), limit);
     float depth = texelFetch(sourceTexture, center, 0).r;
-    float closest = depth;
-    ivec2 nearest = center;
-    // XeSS-FG expects dilated, high-resolution velocities.
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
-            ivec2 point = clamp(center + ivec2(x, y), ivec2(0), limit);
-            float candidate = texelFetch(sourceTexture, point, 0).r;
-            if (candidate < closest) {
-                closest = candidate;
-                nearest = point;
-            }
-        }
-    }
-    vec2 currentNdc = ((vec2(nearest) + 0.5 - currentJitter) / sourceExtent) * 2.0 - 1.0;
-    vec4 currentClip = vec4(currentNdc, closest * 2.0 - 1.0, 1.0);
-    vec4 previous = closest >= 1.0 ? skyToPrevious * currentClip : currentToPrevious * currentClip;
+    // Low-resolution inputs are undilated. Depth and velocity describe the same sample.
+    vec2 currentNdc = ((vec2(center) + 0.5 - currentJitter) / sourceExtent) * 2.0 - 1.0;
+    vec4 currentClip = vec4(currentNdc, depth * 2.0 - 1.0, 1.0);
+    vec4 previous = depth >= 1.0 ? skyToPrevious * currentClip : currentToPrevious * currentClip;
     vec2 motion = vec2(0.0);
     if (previous.w > 0.00001) {
         vec2 currentScene = currentNdc * 0.5 + 0.5;

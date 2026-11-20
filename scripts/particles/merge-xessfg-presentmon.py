@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 import csv
 from decimal import Decimal
 import json
+from math import ceil
 from pathlib import Path
 
 
@@ -22,17 +23,19 @@ def associate(app, presents):
     """Map PresentMon rows to app frames, leaving ambiguous rows unresolved."""
     starts = [int(frame["present_enter_qpc"]) for frame in app]
     ends = [int(frame["present_exit_qpc"]) for frame in app]
-    by_id = {int(frame["present_id"]): index for index, frame in enumerate(app)}
+    by_id = defaultdict(list)
     address_to_sessions = defaultdict(set)
-    for frame in app:
+    for index, frame in enumerate(app):
+        by_id[int(frame["present_id"])].append(index)
         address_to_sessions[int(frame["proxy_swap_chain_address"])].add(frame["session_id"])
 
     typed = {"Application", "Intel XeSS-FG"}
     anchors = defaultdict(lambda: defaultdict(set))
     for row in presents:
-        frame = by_id.get(row["app_id"])
-        if frame is not None and row["type"] in typed and starts[frame] <= row["qpc"] <= ends[frame]:
-            anchors[app[frame]["session_id"]][row["address"]].add(frame)
+        if row["type"] in typed:
+            for frame in by_id[row["app_id"]]:
+                if starts[frame] <= row["qpc"] <= ends[frame]:
+                    anchors[app[frame]["session_id"]][row["address"]].add(frame)
 
     # The generated DXGI Present can occur inside the proxy call, with the real
     # DXGI Present for the same app ID arriving during a later proxy call.
@@ -44,11 +47,11 @@ def associate(app, presents):
 
     candidates = defaultdict(list)
     for row_index, row in enumerate(presents):
-        frame = by_id.get(row["app_id"])
-        if frame is not None and row["type"] in typed and row["qpc"] >= starts[frame]:
-            session = app[frame]["session_id"]
-            if verified.get(session) == row["address"]:
-                candidates[frame, row["type"]].append(row_index)
+        if row["type"] in typed:
+            frames = [frame for frame in by_id[row["app_id"]] if starts[frame] <= row["qpc"]
+                      and verified.get(app[frame]["session_id"]) == row["address"]]
+            if frames:
+                candidates[frames[-1], row["type"]].append(row_index)
 
     matches = {}
     for (frame, _), rows in candidates.items():
@@ -69,6 +72,84 @@ def associate(app, presents):
         if len(rows) == 1:
             matches[rows[0]] = (frame, "present_qpc")
     return matches, verified
+
+
+def percentiles(samples):
+    values = sorted(samples)
+    return {f"p{p}": values[ceil(len(values) * p / 100) - 1] if values else None
+            for p in (50, 95, 99)}
+
+
+def display_pacing(app, presents, matches, frequency):
+    """Measure display intervals and attribute each generated frame to its following real frame."""
+    timelines = defaultdict(list)
+    known = set()
+    counts = Counter()
+    for index, (frame, _) in matches.items():
+        row = presents[index]
+        kind = row["type"]
+        if kind not in {"Application", "Intel XeSS-FG"}:
+            continue
+        known.add((frame, kind))
+        if row["display"] is None:
+            counts["dropped" if row["dropped"] == "1" else "missing_display_time"] += 1
+            continue
+        timelines[app[frame]["session_id"], row["address"]].append((row["display"], frame, kind, index))
+    counts["unmatched_real"] = sum((frame, "Application") not in known for frame in range(len(app)))
+    counts["unmatched_display_rows"] = sum(index not in matches for index in range(len(presents)))
+
+    intervals, midpoint, annotations = [], [], {}
+    for events in timelines.values():
+        preceding = None
+        generated = []
+        for event in sorted(events):
+            time, frame, kind, index = event
+            if kind == "Intel XeSS-FG":
+                generated.append(event)
+                continue
+            if preceding is not None:
+                last_time, last_frame, _, _ = preceding
+                gap = milliseconds(time - last_time, frequency)
+                intervals.append(gap)
+                annotations[index] = {"real_display_interval_ms": gap}
+                # Count every gameplay-eligible interval, including intentional overload skips.
+                current = app[frame]
+                eligible = current.get("fg_gameplay_eligible", current.get("interpolate")) == "true"
+                reset = current.get("reset_history") == "true"
+                if eligible and (not reset or current.get("fg_skip_reason") not in {None, "", "0"}):
+                    counts["eligible_intervals"] += 1
+                if len(generated) == 1 and generated[0][1] == frame and frame == last_frame + 1:
+                    gen_time, _, _, gen_index = generated[0]
+                    if last_time < gen_time < time:
+                        error = milliseconds(2 * gen_time - last_time - time, 2 * frequency)
+                        midpoint.append(error)
+                        annotations[gen_index] = {"midpoint_error_ms": error}
+                        if eligible and not reset:
+                            counts["covered_intervals"] += 1
+                    else:
+                        counts["ambiguous_intervals"] += 1
+                elif generated:
+                    counts["ambiguous_intervals"] += 1
+            preceding = event
+            generated.clear()
+    eligible = counts["eligible_intervals"]
+    bytes_written = [int(frame["cross_bytes"]) for frame in app if frame.get("cross_bytes")]
+    gpu = {}
+    for key in ("depth_motion_gl_ns", "hudless_gl_ns", "final_color_gl_ns", "producer_geometry_gpu_ns",
+                "producer_hudless_gpu_ns", "producer_color_gpu_ns", "arc_texture_upload_gpu_ns",
+                "arc_color_unpack_gpu_ns"):
+        samples = [int(frame[key]) / 1_000_000 for frame in app if frame.get(key)]
+        if samples:
+            gpu[key.removesuffix("_ns") + "_ms"] = {"samples": len(samples), **percentiles(samples)}
+    return annotations, {
+        "real_display_interval_ms": {"samples": len(intervals), **percentiles(intervals)},
+        "midpoint_error_ms": {"samples": len(midpoint), **percentiles(midpoint)},
+        "absolute_midpoint_error_ms": percentiles([abs(value) for value in midpoint]),
+        "generation_coverage": counts["covered_intervals"] / eligible if eligible else None,
+        "cross_bytes_per_frame": {"samples": len(bytes_written), **percentiles(bytes_written)},
+        "gpu_stages": gpu,
+        "counts": dict(counts),
+    }
 
 
 def proxy_breakdown(app, presents, verified, frequency):
@@ -181,9 +262,10 @@ def merge(metadata_path, presentmon_path):
                              mode=row.get("PresentMode", ""), display=display, dropped=dropped, api_ticks=api_ticks))
 
     matched, verified = associate(app, presents)
+    pacing_fields, pacing = display_pacing(app, presents, matched, frequency)
     per_frame = defaultdict(list)
     for row, (frame, method) in matched.items():
-        per_frame[frame].append((presents[row], method))
+        per_frame[frame].append((row, method))
     output = metadata_path.with_name(metadata_path.stem + "-xessfg-timeline.csv")
     fields = ("match", "frame", "session_id", "present_id", "sequence", "present_enter_qpc", "present_exit_qpc",
               "arc_dma_ready_qpc", "arc_inputs_ready_qpc", "inputs_minus_present_ms", "dma_to_inputs_ms", "present_ms",
@@ -203,7 +285,8 @@ def merge(metadata_path, presentmon_path):
               "proxy_dxgi_overlap_ms", "proxy_outside_dxgi_ms",
               "pm_frame_type", "pm_swap_chain", "pm_frame_id", "pm_app_frame_id", "pm_present_mode",
               "pm_present_qpc", "pm_present_api_ms", "display_qpc", "pm_dropped",
-              "present_exit_to_display_ms")
+              "present_exit_to_display_ms", "real_display_interval_ms", "midpoint_error_ms",
+              "fg_gameplay_eligible", "fg_skip_reason", "fg_geometry_width", "fg_geometry_height", "producer_hudless_gpu_ns")
     with output.open("w", encoding="utf-8", newline="") as target:
         writer = csv.DictWriter(target, fields)
         writer.writeheader()
@@ -230,13 +313,18 @@ def merge(metadata_path, presentmon_path):
             base.update(geometry_wait(frame, rtx_end, arc_start, frequency))
             base.update(breakdown)
             for row, method in per_frame[index] or [(None, "unmatched_app")]:
-                writer.writerow(dict(base, match=method, **display_fields(row, exit_qpc, frequency)))
+                present = presents[row] if row is not None else None
+                writer.writerow(dict(base, match=method, **display_fields(present, exit_qpc, frequency),
+                                     **pacing_fields.get(row, {})))
         for index, row in enumerate(presents):
             if index not in matched:
                 writer.writerow(dict(match="unmatched_display", **display_fields(row, None, frequency)))
 
     rows_with_matches = sum(bool(rows) for rows in per_frame.values())
     print(f"Timeline: {output}")
+    report = output.with_name(metadata_path.stem + "-xessfg-pacing.json")
+    report.write_text(json.dumps(pacing, indent=2) + "\n", encoding="utf-8")
+    print(f"Display pacing: {report}")
     print(f"Matched app frames: {rows_with_matches}/{len(app)}. PresentMon rows: {len(matched)}/{len(presents)}. "
           f"Unmatched rows are retained.")
     generated = [presents[index] for index in matched if presents[index]["type"] == "Intel XeSS-FG"]

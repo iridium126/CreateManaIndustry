@@ -24,5 +24,7 @@ if(CMI_XESSFG_BUILD_PROBE)
     configure_xessfg_target(CmiXessFgPipelineProbe)
     add_test(NAME xessfg_pipeline_probe COMMAND "${CMAKE_COMMAND}" -E env
         --modify "PATH=path_list_prepend:${XESS_SDK_DIR}/bin" "$<TARGET_FILE:CmiXessFgPipelineProbe>")
+    add_test(NAME xessfg_offline_probe COMMAND "${CMAKE_COMMAND}" -E env
+        --modify "PATH=path_list_prepend:${XESS_SDK_DIR}/bin" "$<TARGET_FILE:CmiXessFgPipelineProbe>" --offline)
     set_tests_properties(xessfg_pipeline_probe PROPERTIES TIMEOUT 60)
 endif()

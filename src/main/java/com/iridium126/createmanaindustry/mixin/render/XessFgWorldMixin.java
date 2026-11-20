@@ -11,6 +11,7 @@ import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import org.joml.Matrix4f;
 import org.objectweb.asm.Opcodes;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -18,6 +19,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(GameRenderer.class)
 abstract class XessFgWorldMixin {
+    @Shadow private boolean renderHand;
+
     @WrapOperation(method = "renderLevel", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/LevelRenderer;renderLevel(Lnet/minecraft/client/DeltaTracker;ZLnet/minecraft/client/Camera;Lnet/minecraft/client/renderer/GameRenderer;Lnet/minecraft/client/renderer/LightTexture;Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;)V"))
     private void cmi$camera(LevelRenderer renderer, DeltaTracker delta, boolean outline, Camera camera,
@@ -30,7 +33,8 @@ abstract class XessFgWorldMixin {
     @Inject(method = "renderLevel", at = @At(value = "FIELD", opcode = Opcodes.GETFIELD,
             target = "Lnet/minecraft/client/renderer/GameRenderer;renderHand:Z"))
     private void cmi$worldDepth(DeltaTracker delta, CallbackInfo ci) {
-        XessFgRuntime.vanillaDepth(Minecraft.getInstance().getMainRenderTarget());
+        var minecraft = Minecraft.getInstance();
+        XessFgRuntime.vanillaDepth(minecraft.getMainRenderTarget(), renderHand && minecraft.options.getCameraType().isFirstPerson());
     }
 
     @Inject(method = "render", at = @At(value = "INVOKE",

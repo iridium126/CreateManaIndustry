@@ -2,7 +2,7 @@ package com.iridium126.createmanaindustry.mixin.iris;
 
 import com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame;
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession;
-import com.iridium126.createmanaindustry.client.xessfg.XessFgPack;
+import com.iridium126.createmanaindustry.client.xessfg.XessFgIrisOptions;
 import com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime;
 import net.irisshaders.iris.gui.option.IrisVideoSettings;
 import net.irisshaders.iris.pathways.colorspace.ColorSpace;
@@ -33,7 +33,6 @@ abstract class XessFgIrisMixin {
         if (client.level == null) return;
         var target = client.getMainRenderTarget();
         var state = CapturedRenderingState.INSTANCE;
-        var options = pack.options().getOptionValues();
         var camera = client.gameRenderer.getMainCamera();
         int fluid = switch (camera.getFluidInCamera()) {
             case WATER -> 1;
@@ -41,29 +40,14 @@ abstract class XessFgIrisMixin {
             case POWDER_SNOW -> 3;
             default -> 0;
         };
-        var coordinates = pack.xessFgPack().coordinates(new XessFgPack.Options() {
-            @Override
-            public boolean flag(String key, boolean fallback) {
-                return options.getOptionSet().getBooleanOptions().containsKey(key)
-                        ? options.getBooleanValueOrDefault(key) : fallback;
-            }
-
-            @Override
-            public float number(String key, float fallback) {
-                if (!options.getOptionSet().getStringOptions().containsKey(key)) return fallback;
-                try {
-                    return Float.parseFloat(options.getStringValueOrDefault(key));
-                } catch (NumberFormatException | NullPointerException invalid) {
-                    return fallback;
-                }
-            }
-        }, SystemTimeUniforms.COUNTER.getAsInt(), target.width, target.height, fluid,
+        var coordinates = pack.xessFgPack().coordinates(new XessFgIrisOptions(pack.options()), SystemTimeUniforms.COUNTER.getAsInt(), target.width, target.height, fluid,
                 client.level.getRainLevel(state.getTickDelta()) > .02f, SystemTimeUniforms.TIMER.getFrameTimeCounter());
         if (coordinates == null) return;
         var targets = ((NativeSkyPipelineAccess) this).cmi$targets();
         int depth = client.options.getCameraType().isFirstPerson()
                 ? targets.getDepthTextureNoHand().getTextureId() : targets.getDepthTexture();
-        XessFgRuntime.irisDepth(depth, target.width, target.height, camera,
+        int handDepth = depth == targets.getDepthTexture() ? 0 : targets.getDepthTexture();
+        XessFgRuntime.irisDepth(depth, handDepth, target.width, target.height, camera,
                 state.getGbufferModelView(), state.getGbufferProjection(), coordinates);
     }
 }

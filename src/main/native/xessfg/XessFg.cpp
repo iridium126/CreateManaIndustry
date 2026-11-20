@@ -21,20 +21,21 @@
 #include <exception>
 #include <condition_variable>
 #include <atomic>
+#include <deque>
 
 namespace {
 using Microsoft::WRL::ComPtr;
-constexpr unsigned SlotCount = 4;
+constexpr unsigned GeometrySlots = 4, SlotCount = GeometrySlots + 1;
 constexpr unsigned InputCount = 4;
 constexpr unsigned BackBufferCount = 3;
 constexpr int NoTransferSlot = -1, ProducerBackpressure = -2;
 constexpr UINT64 DrainValue = UINT64_MAX - 1;
 TRACELOGGING_DEFINE_PROVIDER(presentTrace, "CreateManaIndustry.XeSSFG",
     (0x2dd7d232, 0xe6b6, 0x45d9, 0x9c, 0x9c, 0xb6, 0x1a, 0xe7, 0x67, 0x1b, 0xc1));
-enum Group { Geometry, Color, GroupCount };
+enum Group { Geometry, Color, GroupCount, HudBase = GroupCount };
 enum Plane { Final, Hudless, Depth, Motion, PlaneCount };
 enum Transport { Rgba8, Rgb24, Ycbcr422 };
-using Reprojection = std::array<float, 34>;
+using Reprojection = std::array<float, 36>;
 constexpr std::array<DXGI_FORMAT, PlaneCount> Formats{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R16G16_FLOAT
 };
@@ -169,12 +170,21 @@ ComPtr<ID3D12CommandQueue> queue(ID3D12Device* gpu, D3D12_COMMAND_LIST_TYPE type
     D3D12_COMMAND_QUEUE_DESC desc{};
     desc.Type = type;
     ComPtr<ID3D12CommandQueue> result;
-    check(gpu->CreateCommandQueue(&desc, IID_PPV_ARGS(&result)), "Creating a XeSS-FG command queue");
+    const auto status = gpu->CreateCommandQueue(&desc, IID_PPV_ARGS(&result));
+    if (FAILED(status)) {
+        const auto luid = gpu->GetAdapterLuid();
+        char where[160];
+        std::snprintf(where, sizeof(where), "Creating XeSS-FG queue type %u on LUID %08lx:%08lx (device status 0x%08lx)",
+                      static_cast<unsigned>(type), static_cast<unsigned long>(luid.HighPart),
+                      static_cast<unsigned long>(luid.LowPart), static_cast<unsigned long>(gpu->GetDeviceRemovedReason()));
+        check(status, where);
+    }
     return result;
 }
 
-// Coalesce adjacent dirty bands into a single COPY command without copying unchanged rows.
-constexpr UINT ColorBandRows = 64;
+// Color patches use tile-major storage so a sparse region is contiguous for COPY.
+constexpr UINT ColorTileWidth = 128, ColorTileHeight = 8;
+constexpr UINT ColorTileBytes = ColorTileWidth * ColorTileHeight * 3;
 struct CopyJob {
     unsigned slot;
     Group group;
@@ -192,6 +202,8 @@ struct Transfer {
 
 struct Slot {
     std::array<Transfer, GroupCount> groups;
+    Transfer hudBase;
+    bool hudSubmitted = false;
     Commands prepare, prepareGeometry;
     UINT64 reuseAfter = 0;
     UINT64 profileSequence = 0;
@@ -201,6 +213,7 @@ struct Slot {
     UINT64 geometryBytes = 0;
     std::atomic<UINT64> copiedColorBytes{0};
     std::optional<Reprojection> reprojection;
+    bool motionOverrides = false;
     unsigned recordedQueries = 0, pendingQueries = 0;
     bool geometrySubmitted = false, colorSubmitted = false, fullColor = false;
 };
@@ -214,8 +227,8 @@ struct PreparedInput {
 };
 
 constexpr unsigned ProducerGeometry = 1, ProducerColor = 2, UploadGeometry = 4, UploadColor = 8, LocalTextures = 16,
-                   ColorUnpack = 32, CopiedColorBytes = 64;
-constexpr unsigned GpuProfileFields = 18;
+                   ColorUnpack = 32, CopiedColorBytes = 64, ProducerHud = 128;
+constexpr unsigned GpuProfileFields = 19;
 constexpr unsigned ClockProfileFields = 10;
 
 constexpr int64_t Unavailable = std::numeric_limits<int64_t>::min();
@@ -313,7 +326,7 @@ struct TimestampProbe {
 };
 
 struct TimestampProbes {
-    TimestampProbe producer, upload, local, unpack;
+    TimestampProbe producer, upload, local, unpack, hud;
     unsigned mask = 0;
 };
 
@@ -331,22 +344,23 @@ struct ColorDecoder {
     ComPtr<ID3D12DescriptorHeap> views;
     UINT stride = 0;
 
-    void initialize(ID3D12Device* gpu, bool sharedInputs) {
+    static ComPtr<ID3DBlob> compile(bool sharedInputs) {
         constexpr char shader[] = R"(
 ByteAddressBuffer packed : register(t0);
 RWTexture2D<unorm float4> finalImage : register(u0);
 RWTexture2D<unorm float4> hudlessImage : register(u1);
 #if SHARED_INPUTS
+ByteAddressBuffer packedHud : register(t1);
 RWTexture2D<float> depthImage : register(u2);
 RWTexture2D<float2> motionImage : register(u3);
-groupshared float depthTile[18 * 10];
+
 #endif
 cbuffer Layout : register(b0) {
     uint width, height, packedStride, packedPlane, mode;
 #if SHARED_INPUTS
     uint3 padding;
     float4x4 currentToPrevious, skyToPrevious;
-    float2 jitter;
+    float2 jitter, sourceExtent;
 #endif
 };
 uint decodeRgb(uint row, uint x) {
@@ -377,54 +391,38 @@ uint4 expandRgb(uint3 words) {
                  (words.y >> 16) | (words.z << 16), words.z >> 8);
 }
 
-void reconstructMotion(uint2 pixel, uint2 localPixel) {
-    const int2 limit = int2(width, height) - 1;
-    const int2 groupOrigin = int2(pixel) - int2(localPixel);
-    const uint lane = localPixel.y * 16 + localPixel.x;
-    // The tile has a one-pixel halo. The export and UAV both use upper-left row order.
-    for (uint entry = lane; entry < 180; entry += 128) {
-        int2 p = clamp(groupOrigin + int2(entry % 18, entry / 18) - 1, 0, limit);
-        depthTile[entry] = asfloat(packed.Load(p.y * packedStride + p.x * 4));
-    }
-    GroupMemoryBarrierWithGroupSync();
+void reconstructMotion(uint2 pixel, bool overrides) {
     if (pixel.x >= width || pixel.y >= height) return;
-    const int2 center = int2(pixel);
-    const int2 tileCenter = int2(localPixel) + 1;
-    const float depth = depthTile[tileCenter.y * 18 + tileCenter.x];
-    float closest = depth;
-    int2 nearest = center;
-    // Traverse in the same order as OpenGL, including ties at geometry edges.
-    [unroll] for (int y = 1; y >= -1; --y) {
-        [unroll] for (int x = -1; x <= 1; ++x) {
-            int2 samplePixel = clamp(center + int2(x, y), 0, limit);
-            int2 tilePixel = samplePixel - groupOrigin + 1;
-            float candidate = depthTile[tilePixel.y * 18 + tilePixel.x];
-            if (candidate < closest) {
-                closest = candidate;
-                nearest = samplePixel;
-            }
+    const uint address = pixel.y * packedStride + pixel.x * 4;
+    const float depth = asfloat(packed.Load(address));
+    depthImage[pixel] = depth;
+    if (overrides) {
+        const uint motion = packed.Load(packedPlane + address);
+        if (motion != 0x7e007e00) {
+            motionImage[pixel] = f16tof32(uint2(motion & 65535, motion >> 16));
+            return;
         }
     }
-
     const float2 size = float2(width, height);
-    const float2 currentNdc = ((float2(nearest.x, limit.y - nearest.y) + 0.5 - jitter) / size) * 2 - 1;
-    const float4 currentClip = float4(currentNdc, closest * 2 - 1, 1);
-    const float4 previous = closest >= 1 ? mul(skyToPrevious, currentClip) : mul(currentToPrevious, currentClip);
+    const float2 uv = (float2(pixel.x, height - 1 - pixel.y) + 0.5) / size;
+    const float2 sourcePixel = clamp(floor(uv * sourceExtent + jitter), 0, floor(sourceExtent) - 1);
+    const float2 currentNdc = ((sourcePixel + 0.5 - jitter) / sourceExtent) * 2 - 1;
+    const float4 currentClip = float4(currentNdc, depth * 2 - 1, 1);
+    const float4 previous = depth >= 1 ? mul(skyToPrevious, currentClip) : mul(currentToPrevious, currentClip);
     float2 motion = 0;
     if (previous.w > 0.00001) {
         motion = (previous.xy / previous.w * 0.5 + 0.5 - (currentNdc * 0.5 + 0.5)) * float2(width, -float(height));
         motion = clamp(motion, -size, size);
     }
-    depthImage[pixel] = depth;
     // Quantize explicitly like GLSL packHalf2x16 before writing the typed UAV.
     motionImage[pixel] = f16tof32(f32tof16(motion));
 }
 #endif
 [numthreads(16, 8, 1)]
-void main(uint3 pixel : SV_DispatchThreadID, uint2 localPixel : SV_GroupThreadID) {
+void main(uint3 pixel : SV_DispatchThreadID) {
 #if SHARED_INPUTS
-    if (mode == 6) {
-        reconstructMotion(pixel.xy, localPixel);
+    if (mode == 6 || mode == 7) {
+        reconstructMotion(pixel.xy, mode == 7);
         return;
     }
     if (mode == 5) {
@@ -440,10 +438,14 @@ void main(uint3 pixel : SV_DispatchThreadID, uint2 localPixel : SV_GroupThreadID
         const uint2 origin = uint2(block * 4, pixel.y);
         if (origin.x >= width || origin.y >= height) return;
         uint row = origin.y * packedStride + block * 12;
-        uint mask = packed.Load(2 * packedPlane + 4 * (origin.y * ((width + 127) / 128) + block / 32));
-        uint4 hudlessColors = expandRgb(packed.Load3(row + packedPlane));
+        uint mask = packed.Load(packedPlane + 4 * (origin.y * ((width + 127) / 128) + block / 32));
+        uint4 hudlessColors = expandRgb(packedHud.Load3(row));
         uint4 finalColors = hudlessColors;
-        if ((mask & (1u << (block % 32))) != 0) finalColors = expandRgb(packed.Load3(row));
+        if ((mask & (1u << (block % 32))) != 0) {
+            const uint tile = (origin.y / 8) * ((width + 127) / 128) + block / 32;
+            const uint address = tile * 3072 + (origin.y % 8) * 384 + (block % 32) * 12;
+            finalColors = expandRgb(packed.Load3(address));
+        }
         [unroll] for (uint i = 0; i < 4; ++i) {
             if (origin.x + i < width) {
                 uint2 p = origin + uint2(i, 0);
@@ -462,7 +464,17 @@ void main(uint3 pixel : SV_DispatchThreadID, uint2 localPixel : SV_GroupThreadID
     else hudlessImage[pixel.xy] = color;
 }
 )";
-        D3D12_ROOT_PARAMETER parameters[3]{};
+        const D3D_SHADER_MACRO defines[]{{"SHARED_INPUTS", sharedInputs ? "1" : "0"}, {nullptr, nullptr}};
+        ComPtr<ID3DBlob> code, errors;
+        HRESULT compiled = D3DCompile(shader, sizeof(shader) - 1, "XeSS-FG input unpack", defines, nullptr, "main",
+                                      "cs_5_1", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors);
+        if (FAILED(compiled) && errors) throw std::runtime_error(static_cast<const char*>(errors->GetBufferPointer()));
+        check(compiled, "Compiling XeSS-FG color unpack");
+        return code;
+    }
+
+    void initialize(ID3D12Device* gpu, bool sharedInputs) {
+        D3D12_ROOT_PARAMETER parameters[4]{};
         parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
         parameters[0].Constants.Num32BitValues = sharedInputs ? 8 + ReprojectionWords : 5;
         parameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
@@ -471,18 +483,16 @@ void main(uint3 pixel : SV_DispatchThreadID, uint2 localPixel : SV_GroupThreadID
         parameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         parameters[2].DescriptorTable = {1, &colors};
         D3D12_ROOT_SIGNATURE_DESC desc{};
-        desc.NumParameters = 3;
+        parameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+        parameters[3].Descriptor.ShaderRegister = 1;
+        desc.NumParameters = sharedInputs ? 4 : 3;
         desc.pParameters = parameters;
-        ComPtr<ID3DBlob> signature, code, errors;
+        ComPtr<ID3DBlob> signature;
         check(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, nullptr),
               "Serializing XeSS-FG color unpack root signature");
         check(gpu->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&root)),
               "Creating XeSS-FG color unpack root signature");
-        const D3D_SHADER_MACRO defines[]{{"SHARED_INPUTS", sharedInputs ? "1" : "0"}, {nullptr, nullptr}};
-        HRESULT compiled = D3DCompile(shader, sizeof(shader) - 1, "XeSS-FG input unpack", defines, nullptr, "main",
-                                      "cs_5_1", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &errors);
-        if (FAILED(compiled) && errors) throw std::runtime_error(static_cast<const char*>(errors->GetBufferPointer()));
-        check(compiled, "Compiling XeSS-FG color unpack");
+        const auto code = compile(sharedInputs);
         D3D12_COMPUTE_PIPELINE_STATE_DESC pso{};
         pso.pRootSignature = root.Get();
         pso.CS = {code->GetBufferPointer(), code->GetBufferSize()};
@@ -526,6 +536,7 @@ struct PresentJob {
     int64_t captureFrame, enqueuedAt;
     unsigned recordedQueries = 0;
     UINT64 geometryBytes = 0;
+    UINT64 hudBytes = 0;
     int64_t colorSubmitQpc = Unavailable;
     UINT64 glFenceAtSubmit = 0;
 };
@@ -576,14 +587,31 @@ HWND createPresentationSurface(HWND owner, bool topLevel) {
     return surface;
 }
 
+struct FrameAdmission {
+    unsigned consecutiveFull = 0, recoveredFrames = 0;
+    int reason = 0;
+
+    int update(bool full, bool stale, bool producerBehind) {
+        consecutiveFull = full ? std::min(consecutiveFull + 1, 2u) : 0;
+        if (stale || consecutiveFull == 2) {
+            recoveredFrames = 0;
+            reason = stale ? 2 : 1;
+        } else if (reason) {
+            recoveredFrames = full || producerBehind ? 0 : recoveredFrames + 1;
+            if (recoveredFrames == 8) reason = 0;
+        }
+        return reason;
+    }
+};
+
 struct Session {
-    UINT width = 0, height = 0;
+    UINT width = 0, height = 0, geometryWidth = 0, geometryHeight = 0;
     UINT64 sequence = 0, slotWaitSequence = 0;
     UINT64 oldestProducerColor = 0, latestProducerColor = 0, producerWaitToken = 0;
     std::array<UINT64, GroupCount> groupBytes{};
     Transport transport = Rgba8;
     UINT colorStride = 0;
-    UINT64 colorPlaneBytes = 0;
+    UINT64 colorPlaneBytes = 0, linearColorBytes = 0;
     ColorDecoder decoder;
     bool directGeometry = false, sharedInputs = false;
     int activeSlot = -1;
@@ -597,8 +625,10 @@ struct Session {
     std::array<Slot, SlotCount> slots;
     std::array<PreparedInput, InputCount> inputs;
     ComPtr<ID3D12Device> renderGpu, generationGpu;
-    ComPtr<ID3D12CommandQueue> copyQueue, uploadQueue, prepareQueue, presentQueue;
+    ComPtr<ID3D12CommandQueue> copyQueue, uploadQueue, prepareQueue, presentQueue, hudQueue;
     ComPtr<ID3D12Fence> glWritten, glReleased, transferOut, transferIn, uploadReady, prepared, completed;
+    ComPtr<ID3D12Fence> hudWritten, hudCopied, hudReady;
+    ComPtr<ID3D12Fence> geometryReleased, geometryOut, geometryIn;
     ComPtr<IDXGISwapChain4> swap;
     std::unique_ptr<TimestampProbes> profileProbes;
     std::array<ComPtr<ID3D12Resource>, BackBufferCount> backBuffers;
@@ -608,6 +638,25 @@ struct Session {
     std::mutex workMutex, xellMutex;
     std::optional<PresentJob> waiting;
     bool closing = false, resetNext = false;
+    FrameAdmission admissionPolicy;
+    int64_t refreshTicks = 0;
+
+    int admission(bool gameplay) {
+        if (!gameplay) {
+            admissionPolicy = {};
+            return 0;
+        }
+        const auto finished = preparedSequence();
+        const bool full = std::all_of(slots.begin(), slots.begin() + GeometrySlots,
+                                     [&](const Slot& slot) { return slot.reuseAfter > finished; });
+        bool stale = false;
+        {
+            std::lock_guard guard(workMutex);
+            if (failure) std::rethrow_exception(failure);
+            stale = waiting && qpc() - waiting->enqueuedAt >= refreshTicks;
+        }
+        return admissionPolicy.update(full, stale, admissionPolicy.reason && producerBehind());
+    }
     std::exception_ptr failure;
     std::array<PresentResult, ResultCapacity> results{};
     unsigned resultStart = 0, resultCount = 0;
@@ -617,8 +666,7 @@ struct Session {
     std::thread copyWorker;
     std::mutex copyMutex;
     std::condition_variable copyWork;
-    std::array<CopyJob, SlotCount * GroupCount> copyJobs{};
-    unsigned copyStart = 0, copyCount = 0;
+    std::deque<CopyJob> copyJobs;
     bool copyClosing = false;
     ComPtr<ID3D12Fence> copyBaseDone;
     Handle copyBaseReady;
@@ -653,6 +701,7 @@ struct Session {
         drain(prepareQueue.Get(), prepared.Get());
         drain(uploadQueue.Get(), uploadReady.Get());
         drain(copyQueue.Get(), glReleased.Get());
+        drain(hudQueue.Get(), hudCopied.Get());
         for (auto& image : backBuffers) image.Reset();
         swap.Reset();
         if (fg) xefgSwapChainDestroy(fg);
@@ -662,7 +711,11 @@ struct Session {
 
     void unblockFailedProducer() {
         // Arc may be inside Present waiting on a copy the removed RTX can no longer signal.
-        if (cross && transferIn && FAILED(renderGpu->GetDeviceRemovedReason())) transferIn->Signal(DrainValue);
+        if (cross && transferIn && FAILED(renderGpu->GetDeviceRemovedReason())) {
+            transferIn->Signal(DrainValue);
+            if (hudReady) hudReady->Signal(DrainValue);
+            if (geometryIn) geometryIn->Signal(DrainValue);
+        }
     }
 
     static void pumpMessages(std::optional<int>& quit) {
@@ -684,7 +737,8 @@ struct Session {
     }
 
     void start(HWND hwnd, jlong render, jlong generate, UINT w, UINT h, Transport requested,
-               bool popup = false, bool copyGeometryToTextures = false, bool allowSharedInputs = false) {
+               bool popup = false, bool copyGeometryToTextures = false, bool allowSharedInputs = false,
+               UINT gw = 0, UINT gh = 0) {
         workReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
         queueSpace.value = CreateEventW(nullptr, TRUE, TRUE, nullptr);
         initialized.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -694,7 +748,7 @@ struct Session {
         presenter = std::thread([=] {
             SetThreadDescription(GetCurrentThread(), L"CMI XeSS-FG Presenter");
             try {
-                initialize(hwnd, render, generate, w, h, requested, popup, copyGeometryToTextures, allowSharedInputs);
+                initialize(hwnd, render, generate, w, h, requested, popup, copyGeometryToTextures, allowSharedInputs, gw, gh);
             } catch (...) {
                 recordFailure();
             }
@@ -726,9 +780,10 @@ struct Session {
         auto& slot = active(job.slot, job.sequence);
         if (!job.discard && (!slot.colorSubmitted || slot.fullColor != job.interpolate))
             throw std::logic_error("Missing XeSS-FG inputs for presentation");
-        if (job.captureFrame > 0) job.enqueuedAt = qpc();
+        job.enqueuedAt = qpc();
         if (!slot.colorSubmitted) discardTransfer(slot, job.sequence);
         job.geometryBytes = slot.geometryBytes;
+        job.hudBytes = slot.hudSubmitted ? linearColorBytes : 0;
         job.recordedQueries = slot.recordedQueries;
         if (slot.captureFrame > 0 && slot.colorSubmitted) {
             job.colorSubmitQpc = slot.colorSubmitQpc;
@@ -844,10 +899,23 @@ struct Session {
     }
 
     void initialize(HWND hwnd, jlong render, jlong generate, UINT w, UINT h, Transport requested, bool popup,
-                    bool copyGeometryToTextures = false, bool allowSharedInputs = false) {
+                     bool copyGeometryToTextures, bool allowSharedInputs, UINT gw, UINT gh) {
         width = w;
         height = h;
+        geometryWidth = gw ? gw : (w + 1) / 2;
+        geometryHeight = gh ? gh : (h + 1) / 2;
         host = hwnd;
+        MONITORINFOEXW monitor{};
+        monitor.cbSize = sizeof(monitor);
+        DEVMODEW mode{};
+        mode.dmSize = sizeof(mode);
+        UINT refresh = 60;
+        if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor)
+                && EnumDisplaySettingsW(monitor.szDevice, ENUM_CURRENT_SETTINGS, &mode) && mode.dmDisplayFrequency > 1)
+            refresh = mode.dmDisplayFrequency;
+        LARGE_INTEGER frequency{};
+        QueryPerformanceFrequency(&frequency);
+        refreshTicks = frequency.QuadPart / refresh;
         topLevel = popup;
         cross = render != generate;
         transport = cross ? requested : Rgba8;
@@ -865,6 +933,15 @@ struct Session {
         if (sharedInputs) {
             producerReady.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
             if (!producerReady.value) throw std::runtime_error("Creating XeSS-FG producer fence event");
+            hudQueue = queue(renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
+            check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&hudWritten)),
+                  "Creating OpenGL HUD-less fence");
+            check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_SHARED | D3D12_FENCE_FLAG_SHARED_CROSS_ADAPTER,
+                  IID_PPV_ARGS(&hudCopied)), "Creating cross-adapter HUD-less fence");
+            Handle fence;
+            check(renderGpu->CreateSharedHandle(hudCopied.Get(), nullptr, GENERIC_ALL, nullptr, &fence.value),
+                  "Exporting HUD-less fence");
+            check(generationGpu->OpenSharedHandle(fence.value, IID_PPV_ARGS(&hudReady)), "Importing HUD-less fence");
         }
         directGeometry = cross && copyGeometryToTextures && !sharedInputs;
         presentQueue = queue(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
@@ -886,27 +963,41 @@ struct Session {
             check(renderGpu->CreateSharedHandle(transferOut.Get(), nullptr, GENERIC_ALL, nullptr, &fence.value),
                   "Exporting cross-adapter fence");
             check(generationGpu->OpenSharedHandle(fence.value, IID_PPV_ARGS(&transferIn)), "Importing cross-adapter fence");
+            if (sharedInputs) {
+                check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&geometryReleased)),
+                      "Creating OpenGL geometry release fence");
+                check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_SHARED | D3D12_FENCE_FLAG_SHARED_CROSS_ADAPTER,
+                      IID_PPV_ARGS(&geometryOut)), "Creating cross-adapter geometry fence");
+                Handle geometryFence;
+                check(renderGpu->CreateSharedHandle(geometryOut.Get(), nullptr, GENERIC_ALL, nullptr, &geometryFence.value),
+                      "Exporting cross-adapter geometry fence");
+                check(generationGpu->OpenSharedHandle(geometryFence.value, IID_PPV_ARGS(&geometryIn)),
+                      "Importing cross-adapter geometry fence");
+            }
         }
 
         for (unsigned i = 0; i < PlaneCount; ++i) {
-            auto desc = texture(Formats[i], width, height);
+            auto desc = inputTexture(static_cast<Plane>(i));
             auto& bytes = groupBytes[groupOf(static_cast<Plane>(i))];
             generationGpu->GetCopyableFootprints(&desc, 0, 1, bytes, &footprints[i], nullptr, nullptr, nullptr);
-            UINT64 end = footprints[i].Offset + UINT64(footprints[i].Footprint.RowPitch) * height;
+            UINT64 end = footprints[i].Offset + UINT64(footprints[i].Footprint.RowPitch) * desc.Height;
             bytes = (end + D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT - 1)
                     & ~(UINT64(D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT) - 1);
         }
         colorStride = footprints[Final].Footprint.RowPitch;
-        colorPlaneBytes = footprints[Hudless].Offset;
+        linearColorBytes = colorPlaneBytes = footprints[Hudless].Offset;
         if (transport != Rgba8) {
             const UINT64 packedRow = transport == Rgb24 ? ((UINT64(width) + 3) / 4) * 12 : ((UINT64(width) + 1) / 2) * 4;
             colorStride = static_cast<UINT>(alignUp(packedRow, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT));
-            colorPlaneBytes = alignUp(UINT64(colorStride) * height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
-            groupBytes[Color] = 2 * colorPlaneBytes;
-            if (sharedInputs) groupBytes[Color] += UINT64((width + 127) / 128) * height * sizeof(uint32_t);
+            linearColorBytes = alignUp(UINT64(colorStride) * height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
+            colorPlaneBytes = sharedInputs ? std::max(linearColorBytes, colorTileCount() * ColorTileBytes)
+                                           : linearColorBytes;
+            groupBytes[Color] = sharedInputs
+                ? colorPlaneBytes + UINT64(colorTilesAcross()) * height * sizeof(uint32_t)
+                : 2 * colorPlaneBytes;
             decoder.initialize(generationGpu.Get(), sharedInputs);
         }
-        for (auto& slot : slots) allocate(slot);
+        for (unsigned i = 0; i < SlotCount; ++i) allocate(slots[i], i == GeometrySlots);
         for (unsigned i = 0; i < InputCount; ++i) allocate(inputs[i], i);
 
         sdk(xellD3D12CreateContext(generationGpu.Get(), &ll), "Creating XeLL context");
@@ -918,7 +1009,6 @@ struct Session {
             "Installing XeSS-FG logging");
         sdk(xefgSwapChainSetLatencyReduction(fg, ll), "Connecting XeSS-FG with XeLL");
         xefg_swapchain_d3d12_init_params_t params{};
-        params.initFlags = XEFG_SWAPCHAIN_INIT_FLAG_HIGH_RES_MV;
         params.maxInterpolatedFrames = 1;
         params.creationNodeMask = params.visibleNodeMask = 1;
         params.uiMode = XEFG_SWAPCHAIN_UI_MODE_BACKBUFFER_HUDLESS;
@@ -965,17 +1055,13 @@ struct Session {
             && (support.Support2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE) != 0;
     }
 
-    void allocate(Slot& slot) {
+    void allocate(Slot& slot, bool colorOnly) {
         auto memory = defaultMemory();
         slot.prepare.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
-        if (sharedInputs) slot.prepareGeometry.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
-        for (unsigned i = 0; i < GroupCount; ++i) {
+        if (sharedInputs && !colorOnly) slot.prepareGeometry.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
+        for (unsigned i = colorOnly ? Color : Geometry; i < GroupCount; ++i) {
             auto& transfer = slot.groups[i];
-            auto storage = buffer(groupBytes[i]);
-            storage.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-            check(renderGpu->CreateCommittedResource(&memory, D3D12_HEAP_FLAG_SHARED, &storage,
-                  D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&transfer.glBuffer)),
-                  "Allocating shared OpenGL frame storage");
+            auto storage = allocateGlBuffer(transfer, groupBytes[i]);
             if (!cross) continue;
             transfer.producer.create(renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
             if (sharedInputs && i == Color) {
@@ -987,34 +1073,58 @@ struct Session {
                       D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&transfer.hudMaskReadback)), "Creating XeSS-FG HUD mask readback");
             }
             if (!sharedInputs) transfer.upload.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
-            storage.Flags = D3D12_RESOURCE_FLAG_NONE;
             if (!sharedInputs && (!directGeometry || i != Geometry))
                 check(generationGpu->CreateCommittedResource(&memory, D3D12_HEAP_FLAG_NONE, &storage,
                       D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&transfer.local)),
                       "Allocating generation GPU staging buffer");
-
-            storage.Flags = D3D12_RESOURCE_FLAG_ALLOW_CROSS_ADAPTER;
-            auto info = renderGpu->GetResourceAllocationInfo(0, 1, &storage);
-            D3D12_HEAP_DESC heap{info.SizeInBytes, memory, info.Alignment,
-                D3D12_HEAP_FLAG_SHARED | D3D12_HEAP_FLAG_SHARED_CROSS_ADAPTER};
-            check(renderGpu->CreateHeap(&heap, IID_PPV_ARGS(&transfer.sourceHeap)), "Allocating cross-adapter frame heap");
-            Handle shared;
-            check(renderGpu->CreateSharedHandle(transfer.sourceHeap.Get(), nullptr, GENERIC_ALL, nullptr, &shared.value),
-                  "Exporting cross-adapter frame heap");
-            check(generationGpu->OpenSharedHandle(shared.value, IID_PPV_ARGS(&transfer.destinationHeap)),
-                  "Importing cross-adapter frame heap");
-            check(renderGpu->CreatePlacedResource(transfer.sourceHeap.Get(), 0, &storage, D3D12_RESOURCE_STATE_COMMON,
-                  nullptr, IID_PPV_ARGS(&transfer.source)), "Opening source cross-adapter buffer");
-            check(generationGpu->CreatePlacedResource(transfer.destinationHeap.Get(), 0, &storage, D3D12_RESOURCE_STATE_COMMON,
-                  nullptr, IID_PPV_ARGS(&transfer.destination)), "Opening destination cross-adapter buffer");
+            allocateCrossBuffer(transfer, storage);
         }
+        if (sharedInputs && !colorOnly) {
+            auto& base = slot.hudBase;
+            auto storage = allocateGlBuffer(base, linearColorBytes);
+            allocateCrossBuffer(base, storage);
+            base.producer.create(renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
+        }
+    }
+
+    D3D12_RESOURCE_DESC allocateGlBuffer(Transfer& transfer, UINT64 bytes) {
+        auto memory = defaultMemory();
+        auto storage = buffer(bytes);
+        storage.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        check(renderGpu->CreateCommittedResource(&memory, D3D12_HEAP_FLAG_SHARED, &storage,
+              D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&transfer.glBuffer)), "Allocating shared OpenGL frame storage");
+        storage.Flags = D3D12_RESOURCE_FLAG_NONE;
+        return storage;
+    }
+
+    void allocateCrossBuffer(Transfer& transfer, D3D12_RESOURCE_DESC storage) {
+        auto memory = defaultMemory();
+        storage.Flags = D3D12_RESOURCE_FLAG_ALLOW_CROSS_ADAPTER;
+        auto info = renderGpu->GetResourceAllocationInfo(0, 1, &storage);
+        D3D12_HEAP_DESC heap{info.SizeInBytes, memory, info.Alignment,
+            D3D12_HEAP_FLAG_SHARED | D3D12_HEAP_FLAG_SHARED_CROSS_ADAPTER};
+        check(renderGpu->CreateHeap(&heap, IID_PPV_ARGS(&transfer.sourceHeap)), "Allocating cross-adapter frame heap");
+        Handle shared;
+        check(renderGpu->CreateSharedHandle(transfer.sourceHeap.Get(), nullptr, GENERIC_ALL, nullptr, &shared.value),
+              "Exporting cross-adapter frame heap");
+        check(generationGpu->OpenSharedHandle(shared.value, IID_PPV_ARGS(&transfer.destinationHeap)),
+              "Importing cross-adapter frame heap");
+        check(renderGpu->CreatePlacedResource(transfer.sourceHeap.Get(), 0, &storage, D3D12_RESOURCE_STATE_COMMON,
+              nullptr, IID_PPV_ARGS(&transfer.source)), "Opening source cross-adapter buffer");
+        check(generationGpu->CreatePlacedResource(transfer.destinationHeap.Get(), 0, &storage, D3D12_RESOURCE_STATE_COMMON,
+              nullptr, IID_PPV_ARGS(&transfer.destination)), "Opening destination cross-adapter buffer");
+    }
+
+    D3D12_RESOURCE_DESC inputTexture(Plane plane) const {
+        return texture(Formats[plane], plane >= Depth ? geometryWidth : width,
+                       plane >= Depth ? geometryHeight : height);
     }
 
     void allocate(PreparedInput& input, unsigned index) {
         const auto memory = defaultMemory();
         input.present.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
         for (unsigned i = 0; i < PlaneCount; ++i) {
-            auto desc = texture(Formats[i], width, height);
+            auto desc = inputTexture(static_cast<Plane>(i));
             if (transport != Rgba8 && (i <= Hudless || sharedInputs)) desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
             check(generationGpu->CreateCommittedResource(&memory, D3D12_HEAP_FLAG_NONE, &desc, inputState(static_cast<Plane>(i)), nullptr,
                 IID_PPV_ARGS(&input.planes[i])), "Allocating local XeSS-FG input");
@@ -1035,14 +1145,15 @@ struct Session {
         return count;
     }
 
-    int acquire(UINT64 next, int64_t captureFrame) {
+    int acquire(UINT64 next, int64_t captureFrame, bool colorOnly = false) {
         std::lock_guard guard(workMutex);
         if (failure) std::rethrow_exception(failure);
         if (activeSlot >= 0 || next <= sequence) throw std::logic_error("XeSS-FG frame acquisition out of order");
         const auto finished = preparedSequence();
-        if (producerBehind()) return ProducerBackpressure;
-        for (unsigned i = 0; i < SlotCount; ++i) {
-            const unsigned index = (cursor + i) % SlotCount;
+        if (!colorOnly && producerBehind()) return ProducerBackpressure;
+        for (unsigned i = 0; i < (colorOnly ? SlotCount : GeometrySlots); ++i) {
+            const unsigned index = colorOnly && i == 0 ? GeometrySlots
+                : (cursor + i - (colorOnly ? 1 : 0)) % GeometrySlots;
             auto& slot = slots[index];
             if (finished < slot.reuseAfter) continue;
             if (captureFrame > 0) prepareProfile();
@@ -1050,8 +1161,9 @@ struct Session {
             slot.recordedQueries = 0;
             slot.geometryBytes = 0;
             slot.reprojection.reset();
-            slot.geometrySubmitted = slot.colorSubmitted = slot.fullColor = false;
-            cursor = (index + 1) % SlotCount;
+            slot.motionOverrides = false;
+            slot.geometrySubmitted = slot.hudSubmitted = slot.colorSubmitted = slot.fullColor = false;
+            if (index < GeometrySlots) cursor = (index + 1) % GeometrySlots;
             sequence = next;
             return activeSlot = static_cast<int>(index);
         }
@@ -1085,11 +1197,13 @@ struct Session {
         return slots.at(index);
     }
 
-    void waitForSlot() {
+    void waitForSlot(bool colorOnly = false) {
         checkPresenter();
-        if (slotsInUse() < SlotCount) return;
-        UINT64 oldest = slots.front().reuseAfter;
-        for (const auto& slot : slots) if (slot.reuseAfter < oldest) oldest = slot.reuseAfter;
+        const auto end = slots.begin() + (colorOnly ? SlotCount : GeometrySlots);
+        const auto first = std::min_element(slots.begin(), end,
+            [](const Slot& a, const Slot& b) { return a.reuseAfter < b.reuseAfter; });
+        const UINT64 oldest = first->reuseAfter;
+        if (oldest <= preparedSequence()) return;
         if (slotWaitSequence != oldest) {
             if (!ResetEvent(slotReady.value)) throw std::runtime_error("Resetting XeSS-FG slot fence event");
             check(prepared->SetEventOnCompletion(oldest, slotReady.value), "Waiting for earliest XeSS-FG frame slot");
@@ -1112,6 +1226,7 @@ struct Session {
     }
 
     void discardTransfer(Slot& slot, UINT64 next) {
+        if (slot.hudSubmitted) check(prepareQueue->Wait(hudReady.Get(), next), "Retiring HUD-less storage");
         if (slot.geometrySubmitted) {
             const auto token = transferToken(next, Geometry);
             waitForTransfer(token);
@@ -1139,6 +1254,8 @@ struct Session {
             profileProbes->mask |= ProducerGeometry | ProducerColor;
         if (uploadQueue && copyTimestamps(profileProbes->upload, generationGpu.Get(), uploadQueue.Get()))
             profileProbes->mask |= UploadGeometry | UploadColor;
+        if (hudQueue && copyTimestamps(profileProbes->hud, renderGpu.Get(), hudQueue.Get()))
+            profileProbes->mask |= ProducerHud;
         if (profileProbes->local.initialize(generationGpu.Get(), prepareQueue.Get(), D3D12_QUERY_HEAP_TYPE_TIMESTAMP))
             profileProbes->mask |= LocalTextures;
         if (transport != Rgba8 && profileProbes->unpack.initialize(generationGpu.Get(), prepareQueue.Get(),
@@ -1184,6 +1301,7 @@ struct Session {
                 ? copyStart : unpackStart;
             *output++ = mask & CopiedColorBytes
                 ? static_cast<int64_t>(slot.copiedColorBytes.load(std::memory_order_acquire)) : Unavailable;
+            *output++ = mask & ProducerHud ? profileProbes->hud.read(i) : Unavailable;
             slot.pendingQueries = 0;
             ++rows;
         }
@@ -1225,51 +1343,78 @@ struct Session {
                 CopyJob job{};
                 {
                     std::unique_lock lock(copyMutex);
-                    copyWork.wait(lock, [this] { return copyCount || copyClosing; });
-                    if (!copyCount) return;
-                    job = copyJobs[copyStart];
-                    copyStart = (copyStart + 1) % copyJobs.size();
-                    --copyCount;
+                    copyWork.wait(lock, [this] { return !copyJobs.empty() || copyClosing; });
+                    if (copyJobs.empty()) return;
+                    job = copyJobs.front();
+                    copyJobs.pop_front();
                 }
-                copyFrame(job);
+                if (!sparseColor(job)) {
+                    copyFrame(job);
+                    continue;
+                }
+                check(copyQueue->Wait(glWritten.Get(), job.token), "Waiting for OpenGL HUD changes");
+                copyHudMask(job, slots[job.slot].groups[Color], timestampIndex(job.slot, Color));
+
+                // Geometry with an already-published GL fence cannot block the color queue.
+                // Geometry and color retire on separate fences so advancing one cannot release the other.
+                while (copyBaseDone->GetCompletedValue() < job.token) {
+                    std::optional<CopyJob> geometry;
+                    {
+                        std::lock_guard guard(copyMutex);
+                        const auto candidate = std::find_if(copyJobs.begin(), copyJobs.end(),
+                            [](const CopyJob& queued) { return queued.group == Geometry; });
+                        const auto gpuProgress = glWritten->GetCompletedValue();
+                        if (candidate != copyJobs.end() && gpuProgress != UINT64_MAX && candidate->token <= gpuProgress) {
+                            geometry = *candidate;
+                            copyJobs.erase(candidate);
+                        }
+                    }
+                    if (!geometry) break;
+                    copyFrame(*geometry);
+                }
+                if (copyBaseDone->GetCompletedValue() < job.token) {
+                    if (!ResetEvent(copyBaseReady.value)) throw std::runtime_error("Resetting XeSS-FG HUD mask event");
+                    check(copyBaseDone->SetEventOnCompletion(job.token, copyBaseReady.value), "Waiting for XeSS-FG HUD mask");
+                    if (WaitForSingleObject(copyBaseReady.value, 1) == WAIT_FAILED)
+                        throw std::runtime_error("Waiting for the XeSS-FG HUD mask event");
+                }
+                check(renderGpu->GetDeviceRemovedReason(), "Checking RTX after the XeSS-FG HUD mask");
+                copyFrame(job, copyBaseDone->GetCompletedValue() >= job.token);
             }
         } catch (...) {
             {
                 std::lock_guard guard(copyMutex);
                 copyClosing = true;
-                copyCount = 0;
+                copyJobs.clear();
             }
             recordFailure();
             transferIn->Signal(DrainValue);
             glReleased->Signal(DrainValue);
+            geometryIn->Signal(DrainValue);
+            geometryReleased->Signal(DrainValue);
         }
     }
 
+    UINT colorTilesAcross() const { return (width + ColorTileWidth - 1) / ColorTileWidth; }
+    UINT64 colorTileCount() const { return UINT64(colorTilesAcross()) * ((height + ColorTileHeight - 1) / ColorTileHeight); }
+
     UINT64 hudMaskBytes() const {
-        return groupBytes[Color] - 2 * colorPlaneBytes;
+        return groupBytes[Color] - colorPlaneBytes;
     }
 
-    bool copyBaseColor(const CopyJob& job, Transfer& transfer, unsigned query) {
+    void copyHudMask(const CopyJob& job, Transfer& transfer, unsigned query) {
         auto* source = transfer.glBuffer.Get();
         auto* destination = transfer.source.Get();
-        const auto maskOffset = 2 * colorPlaneBytes;
+        const auto maskOffset = colorPlaneBytes;
         const auto masks = hudMaskBytes();
         auto* base = transfer.baseColor.begin();
         if (job.timed) profileProbes->producer.begin(base, query);
-        base->CopyBufferRegion(destination, colorPlaneBytes, source, colorPlaneBytes, colorPlaneBytes);
         base->CopyBufferRegion(destination, maskOffset, source, maskOffset, masks);
         // Only the existing one-bit-per-block mask is read by the worker.
         base->CopyBufferRegion(transfer.hudMaskReadback.Get(), 0, source, maskOffset, masks);
         transfer.baseColor.submit(copyQueue.Get());
         check(copyQueue->Signal(copyBaseDone.Get(), job.token), "Publishing XeSS-FG HUD mask");
-        if (copyBaseDone->GetCompletedValue() < job.token) {
-            if (!ResetEvent(copyBaseReady.value)) throw std::runtime_error("Resetting XeSS-FG HUD mask event");
-            check(copyBaseDone->SetEventOnCompletion(job.token, copyBaseReady.value), "Waiting for XeSS-FG HUD mask");
-            if (WaitForSingleObject(copyBaseReady.value, 1000) == WAIT_FAILED)
-                throw std::runtime_error("Waiting for the XeSS-FG HUD mask event");
-        }
-        check(renderGpu->GetDeviceRemovedReason(), "Checking RTX after XeSS-FG base-color copy");
-        return copyBaseDone->GetCompletedValue() >= job.token;
+
     }
 
     UINT64 copyChangedColor(ID3D12GraphicsCommandList* commands, Transfer& transfer, bool maskReady) {
@@ -1277,57 +1422,70 @@ struct Session {
         auto* destination = transfer.source.Get();
         void* data = nullptr;
         const D3D12_RANGE read{0, static_cast<SIZE_T>(hudMaskBytes())};
+        const UINT64 fullBytes = colorTileCount() * ColorTileBytes;
         if (!maskReady || FAILED(transfer.hudMaskReadback->Map(0, &read, &data))) {
-            // The masks still reach Arc on the COPY queue. Copy the full final plane if we cannot inspect them.
-            commands->CopyBufferRegion(destination, 0, source, 0, colorPlaneBytes);
-            return colorPlaneBytes;
+            commands->CopyBufferRegion(destination, 0, source, 0, fullBytes);
+            return fullBytes;
         }
         const auto* masks = static_cast<const uint32_t*>(data);
-        const auto maskStride = (width + 127) / 128;
-        const auto changed = [&](UINT row) {
-            return std::any_of(masks + UINT64(row) * maskStride,
-                masks + UINT64(std::min(height, row + ColorBandRows)) * maskStride,
-                [](uint32_t mask) { return mask != 0; });
-        };
-        UINT64 copied = 0;
-        UINT first = 0;
-        while (first < height) {
-            if (!changed(first)) {
-                first += ColorBandRows;
-                continue;
+        const auto across = colorTilesAcross();
+        std::array<std::pair<UINT64, UINT64>, 64> ranges{};
+        unsigned rangeCount = 0;
+        UINT64 tiles = 0;
+        const auto count = colorTileCount();
+        for (UINT64 tile = 0; tile < count; ++tile) {
+            const UINT firstRow = static_cast<UINT>(tile / across) * ColorTileHeight;
+            const UINT endRow = std::min(height, firstRow + ColorTileHeight);
+            bool dirty = false;
+            for (UINT row = firstRow; row < endRow && !dirty; ++row) dirty = masks[UINT64(row) * across + tile % across] != 0;
+            if (!dirty) continue;
+            if (rangeCount && ranges[rangeCount - 1].second == tile) {
+                ++ranges[rangeCount - 1].second;
+            } else if (rangeCount < ranges.size()) {
+                ranges[rangeCount++] = {tile, tile + 1};
+            } else {
+                tiles = count;
+                break;
             }
-            UINT end = first + ColorBandRows;
-            while (end < height && changed(end)) end += ColorBandRows;
-            const auto offset = UINT64(first) * colorStride;
-            const auto bytes = UINT64(std::min(height, end) - first) * colorStride;
-            commands->CopyBufferRegion(destination, offset, source, offset, bytes);
-            copied += bytes;
-            first = end + ColorBandRows; // This band is clean, or is beyond the image.
+            ++tiles;
         }
         const D3D12_RANGE written{0, 0};
         transfer.hudMaskReadback->Unmap(0, &written);
-        return copied;
+        if (tiles >= count - count / 8) {
+            commands->CopyBufferRegion(destination, 0, source, 0, fullBytes);
+            return fullBytes;
+        }
+        for (unsigned i = 0; i < rangeCount; ++i) {
+            const auto [first, end] = ranges[i];
+            commands->CopyBufferRegion(destination, first * ColorTileBytes, source, first * ColorTileBytes,
+                                       (end - first) * ColorTileBytes);
+        }
+        return tiles * ColorTileBytes;
     }
 
-    void copyFrame(const CopyJob& job) {
+    bool sparseColor(const CopyJob& job) const {
+        return sharedInputs && job.group == Color && job.bytes == groupBytes[Color];
+    }
+
+    void copyFrame(const CopyJob& job, bool maskReady = false) {
         auto& slot = slots[job.slot];
         auto& transfer = slot.groups[job.group];
-        const bool sparse = sharedInputs && job.group == Color && job.bytes == groupBytes[Color];
+        const bool sparse = sparseColor(job);
         const unsigned query = timestampIndex(job.slot, job.group);
-        check(copyQueue->Wait(glWritten.Get(), job.token), "Waiting for OpenGL frame input");
-        const bool maskReady = sparse && copyBaseColor(job, transfer, query);
+        if (!sparse) check(copyQueue->Wait(glWritten.Get(), job.token), "Waiting for OpenGL frame input");
         auto* producer = transfer.producer.begin();
         if (sparse) {
             const auto changes = copyChangedColor(producer, transfer, maskReady);
-            if (job.countBytes) slot.copiedColorBytes.store(colorPlaneBytes + hudMaskBytes() + changes, std::memory_order_release);
+            if (job.countBytes) slot.copiedColorBytes.store(linearColorBytes + hudMaskBytes() + changes, std::memory_order_release);
         } else {
             if (job.timed) profileProbes->producer.begin(producer, query);
             producer->CopyBufferRegion(transfer.source.Get(), 0, transfer.glBuffer.Get(), 0, job.bytes);
         }
         if (job.timed) profileProbes->producer.end(producer, query);
         transfer.producer.submit(copyQueue.Get());
-        check(copyQueue->Signal(glReleased.Get(), job.token), "Releasing OpenGL frame storage");
-        check(copyQueue->Signal(transferOut.Get(), job.token), "Publishing cross-adapter frame input");
+        const bool geometry = sharedInputs && job.group == Geometry;
+        check(copyQueue->Signal((geometry ? geometryReleased : glReleased).Get(), job.token), "Releasing OpenGL frame storage");
+        check(copyQueue->Signal((geometry ? geometryOut : transferOut).Get(), job.token), "Publishing cross-adapter frame input");
     }
 
     void submitTransfer(unsigned index, Slot& slot, Group group, UINT64 size) {
@@ -1345,9 +1503,8 @@ struct Session {
         if (sharedInputs) {
             {
                 std::lock_guard guard(copyMutex);
-                if (copyClosing || copyCount == copyJobs.size()) throw std::logic_error("Invalid XeSS-FG copy queue");
-                copyJobs[(copyStart + copyCount) % copyJobs.size()] = job;
-                ++copyCount;
+                if (copyClosing || copyJobs.size() >= SlotCount * GroupCount) throw std::logic_error("Invalid XeSS-FG copy queue");
+                copyJobs.push_back(job);
             }
             copyWork.notify_one();
         } else {
@@ -1376,29 +1533,49 @@ struct Session {
         if (timedUpload) slot.recordedQueries |= uploadBit;
     }
 
-    void submitGeometry(unsigned index, UINT64 next, const Reprojection* reprojection = nullptr) {
+    void submitGeometry(unsigned index, UINT64 next, const Reprojection* reprojection = nullptr, bool overrides = false) {
         auto& slot = active(index, next);
-        if (slot.geometrySubmitted || slot.colorSubmitted) throw std::logic_error("XeSS-FG geometry submitted out of order");
+        if (index >= GeometrySlots || slot.geometrySubmitted || slot.colorSubmitted) throw std::logic_error("XeSS-FG geometry submitted out of order");
         if (reprojection) {
             if (!sharedInputs) throw std::logic_error("Unexpected XeSS-FG reprojection constants");
             slot.reprojection = *reprojection;
         }
-        const auto bytes = reprojection ? footprints[Motion].Offset : groupBytes[Geometry];
+        slot.motionOverrides = overrides;
+        const auto bytes = reprojection && !overrides ? footprints[Motion].Offset : groupBytes[Geometry];
         submitTransfer(index, slot, Geometry, bytes);
         slot.geometryBytes = cross ? bytes : 0;
         slot.geometrySubmitted = true;
         if (sharedInputs) prepareSharedGeometry(index, slot, next);
     }
 
+    void submitHudless(unsigned index, UINT64 next) {
+        auto& slot = active(index, next);
+        if (!sharedInputs || index >= GeometrySlots || !slot.geometrySubmitted || slot.hudSubmitted || slot.colorSubmitted)
+            throw std::logic_error("Invalid XeSS-FG HUD-less submission");
+        auto& base = slot.hudBase;
+        check(hudQueue->Wait(hudWritten.Get(), next), "Waiting for OpenGL HUD-less input");
+        auto* commands = base.producer.begin();
+        const bool timed = slot.captureFrame > 0 && (profileProbes->mask & ProducerHud);
+        if (timed) profileProbes->hud.begin(commands, index);
+        commands->CopyBufferRegion(base.source.Get(), 0, base.glBuffer.Get(), 0, linearColorBytes);
+        if (timed) {
+            profileProbes->hud.end(commands, index);
+            slot.recordedQueries |= ProducerHud;
+        }
+        base.producer.submit(hudQueue.Get());
+        check(hudQueue->Signal(hudCopied.Get(), next), "Publishing HUD-less input to Arc");
+        slot.hudSubmitted = true;
+    }
+
     void submitColor(unsigned index, UINT64 next, bool full) {
         auto& slot = active(index, next);
-        if (slot.colorSubmitted || (full && !slot.geometrySubmitted))
+        if (slot.colorSubmitted || (full && (!slot.geometrySubmitted || (sharedInputs && !slot.hudSubmitted))))
             throw std::logic_error("XeSS-FG color submitted out of order");
         if (slot.captureFrame > 0) {
             slot.colorSubmitQpc = qpc();
             slot.glFenceAtSubmit = glWritten->GetCompletedValue();
         }
-        submitTransfer(index, slot, Color, full ? groupBytes[Color] : colorPlaneBytes);
+        submitTransfer(index, slot, Color, full ? groupBytes[Color] : linearColorBytes);
         if (sharedInputs) {
             const auto color = transferToken(next, Color);
             // The next frame can render up to its first export while this color is pending.
@@ -1411,7 +1588,8 @@ struct Session {
     }
 
     void waitForTransfer(UINT64 token) {
-        auto* fence = sharedInputs ? transferIn.Get() : cross ? uploadReady.Get() : glWritten.Get();
+        auto* fence = sharedInputs ? (token % GroupCount == Geometry ? geometryIn.Get() : transferIn.Get())
+                                   : cross ? uploadReady.Get() : glWritten.Get();
         check(prepareQueue->Wait(fence, token), "Acquiring XeSS-FG frame inputs");
     }
 
@@ -1437,6 +1615,10 @@ struct Session {
         decoder.bind(cmd, input);
         cmd->SetComputeRoot32BitConstants(0, 5, layout, 0);
         cmd->SetComputeRootShaderResourceView(1, sourceFor(slot, Final)->GetGPUVirtualAddress());
+        if (sharedInputs) {
+            auto* base = paired ? slot.hudBase.destination.Get() : sourceFor(slot, Final);
+            cmd->SetComputeRootShaderResourceView(3, base->GetGPUVirtualAddress());
+        }
         const UINT groupWidth = paired ? 64 : 16;
         cmd->Dispatch((width + groupWidth - 1) / groupWidth, (height + 7) / 8, full && !paired ? 2 : 1);
         transition(cmd, finalImage, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -1448,14 +1630,17 @@ struct Session {
             transition(cmd, input.planes[plane].Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         }
-        constexpr UINT PackedGeometry = 5, DepthReprojection = 6;
-        const UINT layout[]{width, height, footprints[Depth].Footprint.RowPitch,
-                            static_cast<UINT>(footprints[Motion].Offset), slot.reprojection ? DepthReprojection : PackedGeometry};
+        constexpr UINT PackedGeometry = 5, DepthReprojection = 6, DepthWithMotion = 7;
+        const UINT mode = slot.reprojection ? (slot.motionOverrides ? DepthWithMotion : DepthReprojection) : PackedGeometry;
+        const UINT layout[]{geometryWidth, geometryHeight, footprints[Depth].Footprint.RowPitch,
+                            static_cast<UINT>(footprints[Motion].Offset), mode};
         decoder.bind(cmd, input);
         cmd->SetComputeRoot32BitConstants(0, 5, layout, 0);
         if (slot.reprojection) cmd->SetComputeRoot32BitConstants(0, ReprojectionWords, slot.reprojection->data(), 8);
-        cmd->SetComputeRootShaderResourceView(1, sourceFor(slot, Depth)->GetGPUVirtualAddress());
-        cmd->Dispatch((width + 15) / 16, (height + 7) / 8, 1);
+        const auto address = sourceFor(slot, Depth)->GetGPUVirtualAddress();
+        cmd->SetComputeRootShaderResourceView(1, address);
+        cmd->SetComputeRootShaderResourceView(3, address);
+        cmd->Dispatch((geometryWidth + 15) / 16, (geometryHeight + 7) / 8, 1);
         for (auto plane : {Depth, Motion}) {
             transition(cmd, input.planes[plane].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
@@ -1511,6 +1696,7 @@ struct Session {
         auto& input = inputsFor(next);
         const auto token = transferToken(next, Color);
         waitForTransfer(token);
+        if (slot.hudSubmitted) check(prepareQueue->Wait(hudReady.Get(), next), "Acquiring HUD-less input on Arc");
         // Shared geometry already waited on this input slot on the same prepare queue.
         if (!sharedInputs || !slot.geometrySubmitted) waitForInputReuse(input);
         auto* cmd = slot.prepare.begin();
@@ -1557,7 +1743,7 @@ struct Session {
         const auto frame = job.frame;
         const auto interpolate = job.interpolate;
         const auto& input = job.constants;
-        const auto colorBytes = interpolate ? groupBytes[Color] : colorPlaneBytes;
+        const auto colorBytes = (interpolate ? groupBytes[Color] : linearColorBytes) + job.hudBytes;
         if (profile) {
             profile->fields[CompletedBefore] = completed->GetCompletedValue();
             profile->fields[GeometryBytes] = job.geometryBytes;
@@ -1592,7 +1778,7 @@ struct Session {
                 xefg_swapchain_d3d12_resource_data_t data{};
                 data.type = types[i - Hudless];
                 data.validity = XEFG_SWAPCHAIN_RV_UNTIL_NEXT_PRESENT;
-                data.resourceSize = {width, height};
+                data.resourceSize = {i >= Depth ? geometryWidth : width, i >= Depth ? geometryHeight : height};
                 data.pResource = local.planes[i].Get();
                 data.incomingState = inputState(static_cast<Plane>(i));
                 sdk(xefgSwapChainD3D12TagFrameResource(fg, cmd, frame, &data), "Tagging XeSS-FG frame texture");
@@ -1609,6 +1795,10 @@ struct Session {
             sdk(xefgSwapChainTagFrameConstants(fg, frame, &constants), "Tagging XeSS-FG frame constants");
         }
         local.present.submit(presentQueue.Get());
+        {
+            std::lock_guard guard(xellMutex);
+            recordMarker(ll, frame, XELL_RENDERSUBMIT_END);
+        }
         local.submittedAfter = job.sequence;
         if (profile) profile->split(ArcSubmit);
         sdk(xefgSwapChainSetPresentId(fg, frame), "Selecting XeSS-FG present ID");
@@ -1637,7 +1827,6 @@ struct Session {
         }
         {
             std::lock_guard guard(xellMutex);
-            recordMarker(ll, frame, XELL_RENDERSUBMIT_END);
             recordMarker(ll, frame, XELL_PRESENT_START);
         }
         int64_t cpuStart = Unavailable;
@@ -1728,13 +1917,15 @@ JNIEXPORT jint JNICALL JAVA(adapter)(JNIEnv*, jclass, jlong id) {
 }
 
 JNIEXPORT jlong JNICALL JAVA(create)(JNIEnv* env, jclass, jlong hwnd, jlong render, jlong generate, jint w, jint h,
-                                    jint transport, jboolean topLevel) {
+                                    jint transport, jboolean topLevel, jint geometryWidth, jint geometryHeight) {
     try {
-        if (!hwnd || !render || !generate || w <= 0 || h <= 0 || transport < Rgba8 || transport > Ycbcr422)
+        if (!hwnd || !render || !generate || w <= 0 || h <= 0 || transport < Rgba8 || transport > Ycbcr422
+                || geometryWidth <= 0 || geometryHeight <= 0 || geometryWidth > w || geometryHeight > h)
             throw std::invalid_argument("Invalid XeSS-FG session configuration");
         auto owner = std::make_unique<Session>();
         const auto mode = static_cast<Transport>(transport);
-        owner->start(reinterpret_cast<HWND>(hwnd), render, generate, w, h, mode, topLevel != 0, mode != Rgba8, true);
+        owner->start(reinterpret_cast<HWND>(hwnd), render, generate, w, h, mode, topLevel != 0, mode != Rgba8, true,
+                     geometryWidth, geometryHeight);
         return reinterpret_cast<jlong>(owner.release());
     } catch (const std::exception& error) { report(env, error); return 0; }
 }
@@ -1742,26 +1933,32 @@ JNIEXPORT jlong JNICALL JAVA(create)(JNIEnv* env, jclass, jlong hwnd, jlong rend
 JNIEXPORT jlongArray JNICALL JAVA(exportGroup)(JNIEnv* env, jclass, jlong ptr, jint index, jint groupIndex) {
     try {
         auto& s = session(ptr);
-        const auto& transfer = s.slots.at(index).groups.at(groupIndex);
-        const auto first = firstPlane(static_cast<Group>(groupIndex));
+        const bool hud = groupIndex == HudBase;
+        const auto& slot = s.slots.at(index);
+        const auto& transfer = hud ? slot.hudBase : slot.groups.at(groupIndex);
+        if (!transfer.glBuffer) throw std::invalid_argument("Unavailable XeSS-FG buffer");
+        const auto first = hud ? Hudless : firstPlane(static_cast<Group>(groupIndex));
         Handle memory, producer, consumer;
         auto gpu = s.renderGpu.Get();
         check(gpu->CreateSharedHandle(transfer.glBuffer.Get(), nullptr, GENERIC_ALL, nullptr, &memory.value),
               "Exporting OpenGL frame buffer");
-        check(gpu->CreateSharedHandle(s.glWritten.Get(), nullptr, GENERIC_ALL, nullptr, &producer.value),
+        check(gpu->CreateSharedHandle((hud ? s.hudWritten.Get() : s.glWritten.Get()), nullptr, GENERIC_ALL, nullptr, &producer.value),
               "Exporting OpenGL producer fence");
-        check(gpu->CreateSharedHandle(s.glReleased.Get(), nullptr, GENERIC_ALL, nullptr, &consumer.value),
+        auto* released = hud ? s.hudCopied.Get()
+            : groupIndex == Geometry && s.sharedInputs ? s.geometryReleased.Get() : s.glReleased.Get();
+        check(gpu->CreateSharedHandle(released, nullptr, GENERIC_ALL, nullptr, &consumer.value),
               "Exporting OpenGL consumer fence");
-        constexpr size_t fields = 9;
+        constexpr size_t fields = 11;
         jlongArray array = env->NewLongArray(fields);
         if (!array) return nullptr;
         auto desc = transfer.glBuffer->GetDesc();
         auto allocation = gpu->GetResourceAllocationInfo(0, 1, &desc);
         std::array<jlong, fields> out{reinterpret_cast<jlong>(memory.value), reinterpret_cast<jlong>(producer.value),
             reinterpret_cast<jlong>(consumer.value), static_cast<jlong>(allocation.SizeInBytes),
-            static_cast<jlong>(desc.Width), groupIndex == Color ? s.colorStride : s.footprints[first].Footprint.RowPitch,
-            static_cast<jlong>(groupIndex == Color ? s.colorPlaneBytes : s.footprints[first + 1].Offset),
-            groupIndex == Color ? s.transport : Rgba8, s.sharedInputs};
+            static_cast<jlong>(desc.Width), groupIndex != Geometry ? s.colorStride : s.footprints[first].Footprint.RowPitch,
+            static_cast<jlong>(hud ? 0 : groupIndex == Color ? s.colorPlaneBytes : s.footprints[Motion].Offset),
+            groupIndex != Geometry ? s.transport : Rgba8, s.sharedInputs,
+             s.footprints[first].Footprint.Width, s.footprints[first].Footprint.Height};
         env->SetLongArrayRegion(array, 0, fields, out.data());
         if (env->ExceptionCheck()) return nullptr;
         memory.detach();
@@ -1775,8 +1972,13 @@ JNIEXPORT void JNICALL JAVA(closeHandle)(JNIEnv*, jclass, jlong handle) {
     if (handle) CloseHandle(reinterpret_cast<HANDLE>(handle));
 }
 
-JNIEXPORT jint JNICALL JAVA(acquire)(JNIEnv* env, jclass, jlong ptr, jlong sequence, jlong captureFrame) {
-    try { return session(ptr).acquire(sequence, captureFrame); }
+JNIEXPORT jint JNICALL JAVA(admission)(JNIEnv* env, jclass, jlong ptr, jboolean gameplay) {
+    try { return session(ptr).admission(gameplay != 0); }
+    catch (const std::exception& error) { report(env, error); return 0; }
+}
+
+JNIEXPORT jint JNICALL JAVA(acquire)(JNIEnv* env, jclass, jlong ptr, jlong sequence, jlong captureFrame, jboolean colorOnly) {
+    try { return session(ptr).acquire(sequence, captureFrame, colorOnly != 0); }
     catch (const std::exception& error) { report(env, error); return -1; }
 }
 
@@ -1785,8 +1987,8 @@ JNIEXPORT jint JNICALL JAVA(slotsInUse)(JNIEnv* env, jclass, jlong ptr) {
     catch (const std::exception& error) { report(env, error); return 0; }
 }
 
-JNIEXPORT void JNICALL JAVA(waitForSlot)(JNIEnv* env, jclass, jlong ptr) {
-    try { session(ptr).waitForSlot(); }
+JNIEXPORT void JNICALL JAVA(waitForSlot)(JNIEnv* env, jclass, jlong ptr, jboolean colorOnly) {
+    try { session(ptr).waitForSlot(colorOnly != 0); }
     catch (const std::exception& error) { report(env, error); }
 }
 
@@ -1795,7 +1997,8 @@ JNIEXPORT void JNICALL JAVA(waitForProducer)(JNIEnv* env, jclass, jlong ptr) {
     catch (const std::exception& error) { report(env, error); }
 }
 
-JNIEXPORT void JNICALL JAVA(submitGeometry)(JNIEnv* env, jclass, jlong ptr, jint index, jlong sequence, jobject constants) {
+JNIEXPORT void JNICALL JAVA(submitGeometry)(JNIEnv* env, jclass, jlong ptr, jint index, jlong sequence,
+                                            jobject constants, jboolean overrides) {
     try {
         Reprojection reprojection{};
         if (constants) {
@@ -1804,8 +2007,13 @@ JNIEXPORT void JNICALL JAVA(submitGeometry)(JNIEnv* env, jclass, jlong ptr, jint
                 throw std::invalid_argument("Invalid XeSS-FG reprojection constants");
             std::memcpy(reprojection.data(), data, sizeof(reprojection));
         }
-        session(ptr).submitGeometry(index, sequence, constants ? &reprojection : nullptr);
+        session(ptr).submitGeometry(index, sequence, constants ? &reprojection : nullptr, overrides != 0);
     }
+    catch (const std::exception& error) { report(env, error); }
+}
+
+JNIEXPORT void JNICALL JAVA(submitHudless)(JNIEnv* env, jclass, jlong ptr, jint index, jlong sequence) {
+    try { session(ptr).submitHudless(index, sequence); }
     catch (const std::exception& error) { report(env, error); }
 }
 

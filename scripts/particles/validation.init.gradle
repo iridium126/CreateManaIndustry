@@ -94,6 +94,10 @@ allprojects {
             classpath = validationClasspath
             mainClass = 'scripts/particles/ModelDrawTelemetryGpuValidation.java'
         }
+        tasks.register('validateXessFgMotionGpu', JavaExec) {
+            classpath = validationClasspath
+            mainClass = 'scripts/particles/XessFgMotionGpuValidation.java'
+        }
         tasks.register('validateSceneFrameGpu', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = validationClasspath
