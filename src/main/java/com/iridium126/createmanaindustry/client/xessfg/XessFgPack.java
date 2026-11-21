@@ -2,6 +2,10 @@ package com.iridium126.createmanaindustry.client.xessfg;
 
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackInventory;
 import com.iridium126.createmanaindustry.client.xessfg.XessFgCoordinates.Warp;
+import java.util.function.Consumer;
+import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
+import org.joml.Vector4f;
 
 /** Screen-space conventions of the local shader pack samples. */
 public enum XessFgPack {
@@ -40,6 +44,43 @@ public enum XessFgPack {
             if (pack.family.equals(family) && inventory.containsCode(pack.source, pack.contract)) return pack;
         }
         return null;
+    }
+
+    public boolean hasHandDeformation(ShaderPackInventory inventory) {
+        return switch (this) {
+            case COMPLEMENTARY -> inventory.containsCode("lib/misc/handSway.glsl",
+                    "gl_Position\\.x\\s*\\+=.*sin\\(frameTimeCounter \\* 0\\.86\\).*gl_Position\\.y\\s*\\+=.*cos\\(frameTimeCounter \\* 1\\.5\\)");
+            case BSL -> inventory.containsCode("program/gbuffers_hand.glsl", "position\\.y -= WorldCurvature\\(position\\.xz\\)")
+                    && inventory.containsCode("lib/vertex/worldCurvature.glsl", "dot\\(pos, pos\\) / WORLD_CURVATURE_SIZE");
+            default -> false;
+        };
+    }
+
+    Consumer<Vector4f> handDeformation(Options options, Matrix4fc projection, Matrix4fc modelView,
+                                       Matrix4fc worldView, float time) {
+        if (this == COMPLEMENTARY) {
+            float strength = switch ((int) options.number("HAND_SWAYING", 0)) {
+                case 1 -> .5f;
+                case 2 -> 1;
+                case 3 -> 2;
+                default -> 0;
+            };
+            if (strength == 0) return null;
+            float x = strength * (float) Math.sin(time * .86f) / 256;
+            float y = strength * (float) Math.cos(time * 1.5f) / 64;
+            Matrix4f clip = new Matrix4f(projection).mul(modelView);
+            return vertex -> clip.transform(vertex).add(x, y, 0, 0);
+        }
+        if (this != BSL || !options.flag("WORLD_CURVATURE", false) || projection.m22() >= -.5f) return null;
+        float radius = options.number("WORLD_CURVATURE_SIZE", 256);
+        if (!Float.isFinite(radius) || radius == 0) return null;
+        Matrix4f world = new Matrix4f(worldView).invert().mul(modelView);
+        Matrix4f clip = new Matrix4f(projection).mul(worldView);
+        return vertex -> {
+            world.transform(vertex);
+            vertex.y -= (vertex.x * vertex.x + vertex.z * vertex.z) / radius;
+            clip.transform(vertex);
+        };
     }
 
     public XessFgCoordinates coordinates(Options options, int counter, int width, int height, int fluid,

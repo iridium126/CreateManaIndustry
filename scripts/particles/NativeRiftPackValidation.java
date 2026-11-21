@@ -204,10 +204,105 @@ public final class NativeRiftPackValidation {
         }
         System.out.println("Native rift pack validation: "+checks+" assertions passed");
     }
+    static void xessTerrain() throws Exception {
+        Path samples = Path.of("run/shaderpacks");
+        List<Path> archives;
+        try (var files = Files.list(samples)) {
+            archives = files.filter(p -> p.toString().endsWith(".zip")).sorted().toList();
+        }
+        var families = EnumSet.noneOf(com.iridium126.createmanaindustry.client.xessfg.XessFgPack.class);
+        for (Path archive : archives) {
+            var pack = ShaderPackInventory.readPack(archive);
+            var color = ShaderPatchPlan.prepare(pack);
+            var sources = new TreeMap<>(pack.sources());
+            sources.putAll(color.edits());
+            var rift = NativeRiftPatchPlan.prepare(ShaderPackInventory.of(sources));
+            var family = com.iridium126.createmanaindustry.client.xessfg.XessFgPack.detect(pack, rift.family());
+            if (family == null) continue;
+            if (family == com.iridium126.createmanaindustry.client.xessfg.XessFgPack.BSL
+                    || family == com.iridium126.createmanaindustry.client.xessfg.XessFgPack.COMPLEMENTARY)
+                check(family.hasHandDeformation(pack), family + " first-person deformation source changed");
+            Path root = Path.of("build/xessfg-iris-history", family.name());
+            Files.createDirectories(root);
+            for (var entry : sources.entrySet()) {
+                Path path = root.resolve(entry.getKey());
+                Files.createDirectories(path.getParent());
+                Files.writeString(path, entry.getValue());
+            }
+            int linked = 0;
+            boolean opaqueLinked = false, geometryLinked = false;
+            for (String pass : List.of("gbuffers_terrain", "gbuffers_terrain_solid", "gbuffers_terrain_cutout", "gbuffers_water")) {
+                String name = sources.containsKey("world0/" + pass + ".vsh") ? "world0/" + pass : pass;
+                if (pass.equals("gbuffers_terrain") && !sources.containsKey(name + ".vsh")
+                        && family == com.iridium126.createmanaindustry.client.xessfg.XessFgPack.SILDUR)
+                    name = sources.containsKey("gbuffers_textured_lit.vsh") ? "gbuffers_textured_lit" : "gbuffers_textured";
+                if (!sources.containsKey(name + ".vsh") || !sources.containsKey(name + ".fsh")) continue;
+                String vertex = preprocess(root, name + ".vsh");
+                String geometry = sources.containsKey(name + ".gsh") ? preprocess(root, name + ".gsh") : null;
+                String fragment = preprocess(root, name + ".fsh");
+                var result = net.irisshaders.iris.pipeline.transform.TransformPatcher.patchSodium(name,
+                        vertex, geometry, null, null, fragment, net.irisshaders.iris.gl.blending.AlphaTests.ONE_TENTH_ALPHA,
+                        new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
+                String forwarded = null;
+                if (geometry != null) {
+                    forwarded = com.iridium126.createmanaindustry.client.xessfg.XessFgGpuShaderSources.terrainGeometry(family,
+                            result.get(net.irisshaders.iris.pipeline.transform.PatchShaderType.GEOMETRY));
+                    check(forwarded != null, name + " has no XeSS geometry forwarding anchor");
+                }
+                var decorated = com.iridium126.createmanaindustry.client.xessfg.XessFgGpuShaderSources.terrain(family,
+                        result.get(net.irisshaders.iris.pipeline.transform.PatchShaderType.VERTEX),
+                        result.get(net.irisshaders.iris.pipeline.transform.PatchShaderType.FRAGMENT), pass.endsWith("water"),
+                        forwarded != null);
+                check(decorated != null, name + " has no XeSS vertex anchor");
+                int vs = linkStage(decorated.vertex(), GL20.GL_VERTEX_SHADER, root.resolve(pass + "-history.vert"));
+                int fs = linkStage(decorated.fragment(), GL20.GL_FRAGMENT_SHADER, root.resolve(pass + "-history.frag"));
+                int program = GL20.glCreateProgram();
+                GL20.glAttachShader(program, vs);
+                GL20.glAttachShader(program, fs);
+                int gs = 0;
+                if (forwarded != null) {
+                    gs = linkStage(forwarded, GL32.GL_GEOMETRY_SHADER, root.resolve(pass + "-history.geom"));
+                    GL20.glAttachShader(program, gs);
+                    geometryLinked = true;
+                }
+                GL20.glLinkProgram(program);
+                check(GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) != 0, name + ": " + GL20.glGetProgramInfoLog(program));
+                check(GL31.glGetUniformBlockIndex(program, "CmiFgGrid") != GL31.GL_INVALID_INDEX, name + " motion inactive");
+                GL20.glDeleteProgram(program);
+                GL20.glDeleteShader(vs);
+                GL20.glDeleteShader(fs);
+                if (gs != 0) GL20.glDeleteShader(gs);
+                opaqueLinked |= !pass.endsWith("water");
+                linked++;
+            }
+            check(opaqueLinked, family + " did not compile an opaque terrain program");
+            if (family == com.iridium126.createmanaindustry.client.xessfg.XessFgPack.ITERATION)
+                check(geometryLinked, "IterationT terrain did not link its geometry stage");
+            families.add(family);
+            System.out.println(family + " XeSS-FG terrain programs linked: " + linked);
+        }
+        check(families.size() == 8, "Eight Iris packs must link: " + families);
+    }
+
+    static int linkStage(String source, int type, Path output) throws Exception {
+        Files.writeString(output, source);
+        int shader = GL20.glCreateShader(type);
+        GL20.glShaderSource(shader, source);
+        GL20.glCompileShader(shader);
+        check(GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS) != 0, output + ": " + GL20.glGetShaderInfoLog(shader));
+        return shader;
+    }
+
     public static void main(String[] args)throws Exception{
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_COMPAT_PROFILE);
         long window=GLFW.glfwCreateWindow(32,32,"Native rift pack validation",0,0);check(window!=0,"OpenGL context");
-        try{GLFW.glfwMakeContextCurrent(window);GL.createCapabilities();System.out.println(GL11.glGetString(GL11.GL_RENDERER));run();}
+        try {
+            GLFW.glfwMakeContextCurrent(window);
+            GL.createCapabilities();
+            System.out.println(GL11.glGetString(GL11.GL_RENDERER));
+            if (Arrays.asList(args).contains("--xess-terrain")) xessTerrain();
+            else run();
+        }
         finally{GpuValidationSupport.close(window);}
     }
 }

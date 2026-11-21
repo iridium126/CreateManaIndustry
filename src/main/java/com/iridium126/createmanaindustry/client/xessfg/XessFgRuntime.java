@@ -47,6 +47,7 @@ public final class XessFgRuntime {
     private boolean topLevel;
     private XessFgCapture capture;
     private XessFgMotion motion;
+    private XessFgGpuMotion gpuMotion;
     private XessFgFlywheelMotion flywheelMotion;
     private boolean worldScope, geometryStaged, motionOverrides;
     private ByteBuffer stagedReprojection;
@@ -83,6 +84,7 @@ public final class XessFgRuntime {
     }
 
     private void beginFrame(Minecraft minecraft, boolean render) {
+        if (gpuMotion != null) gpuMotion.discardUnfinishedFrame();
         current = null;
         worldScope = geometryStaged = motionOverrides = false;
         stagedReprojection = null;
@@ -251,6 +253,7 @@ public final class XessFgRuntime {
         ++sessionId;
         for (int i = 0; i < slots.length; i++) slots[i] = new XessFgTransport(session, i);
         motion = new XessFgMotion();
+        if (XessFgGpuMotion.shaderSupport()) gpuMotion = new XessFgGpuMotion((int) (geometry >>> 32), (int) geometry);
         flywheelMotion = new XessFgFlywheelMotion();
         constants = ByteBuffer.allocateDirect(XessFgNative.CONSTANT_BYTES).order(ByteOrder.nativeOrder());
         if (slots[0].geometry.sharedInputs) {
@@ -281,6 +284,10 @@ public final class XessFgRuntime {
         if (owner.canCapture() && !RiftRenderFrame.auxiliary()) {
             owner.worldScope = true;
             if (!owner.iris) owner.current = new XessFgView(view, projection, camera.getPosition());
+            if (owner.gpuMotion != null && (!CreateManaIndustry.IRIS_ACTIVE || !IrisShadows.packActive())) {
+                var target = Minecraft.getInstance().getMainRenderTarget();
+                owner.gpuMotion.begin(camera.getPosition(), target.width, target.height, XessFgCoordinates.VANILLA);
+            }
         }
     }
 
@@ -291,7 +298,8 @@ public final class XessFgRuntime {
 
     public static MotionScope handMotion(InteractionHand hand, Item item) {
         var owner = INSTANCE;
-        return owner.captureObjects() ? owner.motion.track(new Hand(hand, item), true) : MotionScope.INACTIVE;
+        if (!owner.captureObjects()) return MotionScope.INACTIVE;
+        return owner.motion.track(new Hand(hand, item), true, owner.iris ? IrisShadows.handDeformation() : null);
     }
 
     public static VertexConsumer motionBuffer(VertexConsumer source, RenderType type) {
@@ -303,8 +311,9 @@ public final class XessFgRuntime {
         var owner = INSTANCE;
         if (!owner.captureObjects()) return source;
         var type = particle.getRenderType();
-        return type == ParticleRenderType.TERRAIN_SHEET || type == ParticleRenderType.PARTICLE_SHEET_OPAQUE
-                ? owner.motion.particle(source, particle, type) : source;
+        boolean transparent = type == ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT;
+        return transparent || type == ParticleRenderType.TERRAIN_SHEET || type == ParticleRenderType.PARTICLE_SHEET_OPAQUE
+                ? owner.motion.particle(source, particle, type, transparent) : source;
     }
 
     public static void flywheelMotion(dev.engine_room.flywheel.api.backend.Engine engine,
@@ -313,14 +322,56 @@ public final class XessFgRuntime {
         if (owner.captureObjects() && owner.level == context.level()) owner.flywheelMotion.capture(owner.motion, engine, context);
     }
 
+    public static void gpuParticleMotion(int program,
+                                         com.iridium126.createmanaindustry.client.particles.engine.ParticleBuffers buffers) {
+        var owner = INSTANCE;
+        if (owner.gpuMotion != null && owner.captureObjects())
+            owner.gpuMotion.particle(program, buffers.historyBufferId(), buffers.drawIdentityWordBase());
+    }
+
+    public static void gpuLodMotion(int program, Matrix4fc sceneProjection, Matrix4fc lodProjection) {
+        var owner = INSTANCE;
+        if (owner.gpuMotion != null && owner.captureObjects())
+            owner.gpuMotion.lod(program, sceneProjection, lodProjection);
+    }
+
+    public static MotionScope auxiliaryView() {
+        var gpuMotion = INSTANCE.gpuMotion;
+        return gpuMotion != null && RiftRenderFrame.auxiliary() ? gpuMotion.suspend() : MotionScope.INACTIVE;
+    }
+
     private boolean captureObjects() {
         return worldScope && canCapture() && !RiftRenderFrame.auxiliary()
                 && (!CreateManaIndustry.IRIS_ACTIVE || !IrisShadows.active());
     }
 
     private static final class IrisShadows {
+        static boolean packActive() {
+            return net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable()
+                    instanceof net.irisshaders.iris.pipeline.IrisRenderingPipeline;
+        }
+
         static boolean active() {
             return net.irisshaders.iris.shadows.ShadowRenderingState.areShadowsCurrentlyBeingRendered();
+        }
+
+        static java.util.function.Consumer<org.joml.Vector4f> handDeformation() {
+            var pack = com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();
+            if (!pack.xessFgHandDeformation() || pack.options() == null) return null;
+            var captured = net.irisshaders.iris.uniforms.CapturedRenderingState.INSTANCE;
+            return pack.xessFgPack().handDeformation(new XessFgIrisOptions(pack.options()),
+                    com.mojang.blaze3d.systems.RenderSystem.getProjectionMatrix(),
+                    com.mojang.blaze3d.systems.RenderSystem.getModelViewMatrix(), captured.getGbufferModelView(),
+                    net.irisshaders.iris.uniforms.SystemTimeUniforms.TIMER.getFrameTimeCounter());
+        }
+
+        static XessFgCoordinates handCoordinates(XessFgCoordinates coordinates) {
+            var pack = com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current();
+            if (pack.xessFgPack() == XessFgPack.COMPLEMENTARY || (pack.xessFgPack() == XessFgPack.BSL
+                    && pack.options() != null && new XessFgIrisOptions(pack.options()).flag("TAA_SELECTIVE", false)))
+                return new XessFgCoordinates(coordinates.scaleX(), coordinates.scaleY(), 0, 0,
+                        coordinates.warp(), coordinates.time(), coordinates.strength());
+            return coordinates;
         }
 
         static XessFgCoordinates unwarpedCoordinates(int width, int height) {
@@ -332,13 +383,18 @@ public final class XessFgRuntime {
         }
     }
 
-    public static void irisBegin(long generation) {
+    public static void irisBegin(long generation, XessFgCoordinates coordinates, Camera camera, int width, int height,
+                                 boolean terrainHistory) {
         var owner = INSTANCE;
         if (!owner.canCapture()) return;
         owner.iris = true;
         owner.irisGeneration = generation;
         owner.current = null;
         owner.depthReady = false;
+        if (owner.gpuMotion != null && coordinates != null) {
+            owner.gpuMotion.begin(camera.getPosition(), width, height, coordinates);
+            if (terrainHistory) owner.gpuMotion.terrain();
+        }
     }
 
     public static void irisDepth(int texture, int handDepth, int width, int height, Camera camera, Matrix4fc view,
@@ -385,7 +441,13 @@ public final class XessFgRuntime {
             if (capture.canReproject(slots[slot], current, priorView)) reprojection = reprojectionConstants;
             capture.depthAndMotion(slots[slot], texture, w, h, current, priorView, reprojection);
             stagedReprojection = reprojection;
-            applyObjectMotion(false, texture);
+            applyObjectMotion(XessFgMotion.Layer.WORLD, texture);
+            if (gpuMotion != null && gpuMotion.hasWinners(reset)) {
+                capture.applyGpuMotion(slots[slot], texture, w, h, gpuMotion.winners(),
+                        stagedReprojection != null && !motionOverrides);
+                motionOverrides = true;
+            }
+            applyObjectMotion(XessFgMotion.Layer.TRANSLUCENT, texture);
             geometryStaged = true;
             exported = true;
         } catch (RuntimeException | LinkageError failure) {
@@ -398,11 +460,14 @@ public final class XessFgRuntime {
         }
     }
 
-    private void applyObjectMotion(boolean hand, int texture) {
-        var coords = current.coordinates();
+    private void applyObjectMotion(XessFgMotion.Layer layer, int texture) {
+        var coords = layer == XessFgMotion.Layer.HAND && iris ? IrisShadows.handCoordinates(current.coordinates()) : current.coordinates();
         var geometry = slots[slot].geometry;
-        int vectors = motion.draw(hand, reset, texture, geometry.width, geometry.height, coords);
-        if (vectors == 0) return;
+        int vectors = motion.draw(layer, reset, texture, geometry.width, geometry.height, coords);
+        if (vectors != 0) mergeMotion(vectors);
+    }
+
+    private void mergeMotion(int vectors) {
         capture.applyMotion(slots[slot], vectors, stagedReprojection != null && !motionOverrides);
         motionOverrides = true;
     }
@@ -412,7 +477,7 @@ public final class XessFgRuntime {
         var profile = XessFgFrameStats.current();
         long start = XessFgFrameStats.Frame.start(profile);
         try {
-            if (handDepth != 0) applyObjectMotion(true, handDepth);
+            if (handDepth != 0) applyObjectMotion(XessFgMotion.Layer.HAND, handDepth);
             slots[slot].geometry.publish(sequence);
             XessFgNative.submitGeometry(session, slot, sequence, stagedReprojection, motionOverrides);
             depthReady = true;
@@ -545,6 +610,7 @@ public final class XessFgRuntime {
             }
             slot = -1;
             motion.finish(interpolate);
+            if (gpuMotion != null) gpuMotion.finish(interpolate);
             previous = interpolate ? current : null;
             previousLevel = interpolate ? level : null;
             previousCameraMode = cameraMode;
@@ -621,6 +687,8 @@ public final class XessFgRuntime {
         }
         if (capture != null) capture.close();
         if (motion != null) motion.close();
+        if (gpuMotion != null) gpuMotion.close();
+        gpuMotion = null;
         motion = null;
         flywheelMotion = null;
         capture = null;

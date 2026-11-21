@@ -24,6 +24,7 @@ import static org.lwjgl.opengl.GL45.*;
 final class XessFgCapture implements AutoCloseable {
     static final int FINAL = 0, HUDLESS = 1, DEPTH = 2, MOTION = 3;
     private static final int DEPTH_ONLY = 4, FINAL_WITH_MASK = 5, APPLY_MOTION = 6, INITIALIZE_MOTION = 7;
+    private static final int APPLY_GPU_MOTION = 8, INITIALIZE_GPU_MOTION = 9;
     private final int program;
     private final int sourceSize, extent, rowWords, offsets, mode, currentToPrevious, skyToPrevious;
     private final int sourceScale, currentJitter, warpTypes, warpParameters, transportMode;
@@ -65,6 +66,12 @@ final class XessFgCapture implements AutoCloseable {
     void applyMotion(XessFgTransport slot, int texture, boolean initialize) {
         var geometry = slot.geometry;
         dispatch(geometry, texture, geometry.width, geometry.height, initialize ? INITIALIZE_MOTION : APPLY_MOTION, 0);
+    }
+
+    void applyGpuMotion(XessFgTransport slot, int sceneDepth, int sourceWidth, int sourceHeight,
+                        int winners, boolean initialize) {
+        dispatch(slot.geometry, sceneDepth, sourceWidth, sourceHeight,
+                initialize ? INITIALIZE_GPU_MOTION : APPLY_GPU_MOTION, winners);
     }
 
     void depthAndMotion(XessFgTransport slot, int texture, int sourceWidth, int sourceHeight,

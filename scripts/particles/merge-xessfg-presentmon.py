@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 import csv
 from decimal import Decimal
 import json
-from math import ceil
+from math import ceil, isfinite
 from pathlib import Path
 
 
@@ -80,7 +80,13 @@ def percentiles(samples):
             for p in (50, 95, 99)}
 
 
-def display_pacing(app, presents, matches, frequency):
+def refresh_steps(ticks, period):
+    steps = round(ticks / period)
+    # Leave non-quantized samples out of the fixed-refresh histogram.
+    return steps if steps > 0 and abs(ticks - steps * period) <= 0.1 * period else None
+
+
+def display_pacing(app, presents, matches, frequency, refresh_hz=None):
     """Measure display intervals and attribute each generated frame to its following real frame."""
     timelines = defaultdict(list)
     known = set()
@@ -99,6 +105,8 @@ def display_pacing(app, presents, matches, frequency):
     counts["unmatched_display_rows"] = sum(index not in matches for index in range(len(presents)))
 
     intervals, midpoint, annotations = [], [], {}
+    period = frequency / refresh_hz if refresh_hz is not None else None
+    refresh_splits = Counter()
     for events in timelines.values():
         preceding = None
         generated = []
@@ -123,7 +131,20 @@ def display_pacing(app, presents, matches, frequency):
                     if last_time < gen_time < time:
                         error = milliseconds(2 * gen_time - last_time - time, 2 * frequency)
                         midpoint.append(error)
-                        annotations[gen_index] = {"midpoint_error_ms": error}
+                        phase = {"midpoint_error_ms": error}
+                        ready = optional_int(current.get("arc_inputs_ready_qpc"))
+                        if ready is not None:
+                            phase["arc_inputs_to_generated_ms"] = milliseconds(gen_time - ready, frequency)
+                            phase["arc_inputs_to_midpoint_ms"] = milliseconds(
+                                last_time + time - 2 * ready, 2 * frequency)
+                        if period is not None:
+                            before = refresh_steps(gen_time - last_time, period)
+                            after = refresh_steps(time - gen_time, period)
+                            if before is not None and after is not None:
+                                split = f"{before}:{after}"
+                                phase["refresh_split"] = split
+                                refresh_splits[split] += 1
+                        annotations[gen_index] = phase
                         if eligible and not reset:
                             counts["covered_intervals"] += 1
                     else:
@@ -141,15 +162,23 @@ def display_pacing(app, presents, matches, frequency):
         samples = [int(frame[key]) / 1_000_000 for frame in app if frame.get(key)]
         if samples:
             gpu[key.removesuffix("_ns") + "_ms"] = {"samples": len(samples), **percentiles(samples)}
-    return annotations, {
+    summary = {
         "real_display_interval_ms": {"samples": len(intervals), **percentiles(intervals)},
         "midpoint_error_ms": {"samples": len(midpoint), **percentiles(midpoint)},
         "absolute_midpoint_error_ms": percentiles([abs(value) for value in midpoint]),
         "generation_coverage": counts["covered_intervals"] / eligible if eligible else None,
         "cross_bytes_per_frame": {"samples": len(bytes_written), **percentiles(bytes_written)},
+        "hud_copy_routes": dict(Counter(frame["hud_copy_route"] for frame in app if frame.get("hud_copy_route"))),
         "gpu_stages": gpu,
         "counts": dict(counts),
     }
+    if period is not None:
+        summary["fixed_refresh"] = {
+            "refresh_hz": refresh_hz,
+            "splits": dict(refresh_splits),
+            "unquantized_intervals": len(midpoint) - sum(refresh_splits.values()),
+        }
+    return annotations, summary
 
 
 def proxy_breakdown(app, presents, verified, frequency):
@@ -220,7 +249,7 @@ def geometry_wait(frame, rtx_end, arc_start, frequency):
                 arc_wait_after_observed_fence_ms=milliseconds(after_fence, frequency))
 
 
-def merge(metadata_path, presentmon_path):
+def merge(metadata_path, presentmon_path, refresh_hz=None):
     metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
     native_path = metadata_path.with_name(metadata_path.stem + "-xessfg.csv")
     app = sorted((row for row in read_rows(native_path) if row.get("present_enter_qpc")
@@ -262,7 +291,7 @@ def merge(metadata_path, presentmon_path):
                              mode=row.get("PresentMode", ""), display=display, dropped=dropped, api_ticks=api_ticks))
 
     matched, verified = associate(app, presents)
-    pacing_fields, pacing = display_pacing(app, presents, matched, frequency)
+    pacing_fields, pacing = display_pacing(app, presents, matched, frequency, refresh_hz)
     per_frame = defaultdict(list)
     for row, (frame, method) in matched.items():
         per_frame[frame].append((row, method))
@@ -286,7 +315,9 @@ def merge(metadata_path, presentmon_path):
               "pm_frame_type", "pm_swap_chain", "pm_frame_id", "pm_app_frame_id", "pm_present_mode",
               "pm_present_qpc", "pm_present_api_ms", "display_qpc", "pm_dropped",
               "present_exit_to_display_ms", "real_display_interval_ms", "midpoint_error_ms",
-              "fg_gameplay_eligible", "fg_skip_reason", "fg_geometry_width", "fg_geometry_height", "producer_hudless_gpu_ns")
+              "refresh_split", "arc_inputs_to_generated_ms", "arc_inputs_to_midpoint_ms",
+              "fg_gameplay_eligible", "fg_skip_reason", "fg_geometry_width", "fg_geometry_height",
+              "producer_hudless_gpu_ns", "hud_copy_route")
     with output.open("w", encoding="utf-8", newline="") as target:
         writer = csv.DictWriter(target, fields)
         writer.writeheader()
@@ -351,5 +382,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("frame_capture", type=Path)
     parser.add_argument("presentmon_csv", type=Path)
+    parser.add_argument("--refresh-hz", type=float, help="Fixed display refresh rate for the phase histogram")
     args = parser.parse_args()
-    merge(args.frame_capture, args.presentmon_csv)
+    if args.refresh_hz is not None and (not isfinite(args.refresh_hz) or args.refresh_hz <= 0):
+        parser.error("--refresh-hz must be a finite positive number")
+    merge(args.frame_capture, args.presentmon_csv, args.refresh_hz)

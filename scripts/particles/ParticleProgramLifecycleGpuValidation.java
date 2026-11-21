@@ -42,7 +42,13 @@ public final class ParticleProgramLifecycleGpuValidation {
         }
         int graphics(String vertex, String fragment) {
             if (fail != null && vertex.endsWith(fail)) return 0;
-            int id = GpuShaderCompiler.graphics(vertex, source(vertex), source(fragment));
+            String vs = source(vertex), fs = source(fragment);
+            if (Boolean.getBoolean("cmi.xess.history")) {
+                var decorated = com.iridium126.createmanaindustry.client.xessfg.XessFgGpuShaderSources.particle(
+                        java.nio.file.Path.of(vertex).getFileName().toString(), vs, fs);
+                if (decorated != null) { vs = decorated.vertex(); fs = decorated.fragment(); }
+            }
+            int id = GpuShaderCompiler.graphics(vertex, vs, fs);
             created.add(id);
             return id;
         }

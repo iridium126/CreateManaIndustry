@@ -363,6 +363,7 @@ public final class CMIPackEntityMergeHook {
         bindAtlas(COMPILER.gtextureUnit());
         try {GpuPrograms.applyExternal(shader);
         int progId = shader.getId();
+        com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime.gpuParticleMotion(progId, gpu);
         uploadSegmentUniforms(progId);
         // Nearest-first cutout: early-Z rejects occluded fragments before the
         // pack's fragment shader runs -- the dense-swarm fragment-pressure fix.
@@ -385,6 +386,7 @@ public final class CMIPackEntityMergeHook {
         var captured=CapturedRenderingState.INSTANCE;
         if(com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene.INSTANCE.currentFrameReady())lod.drawNative(publication.generation(),captured.getGbufferModelView(),captured.getGbufferProjection(),projection->{
             uploadIrisMatrices(progId,projection,captured.getGbufferModelView());
+            com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime.gpuLodMotion(progId, captured.getGbufferProjection(), projection);
             lod.bindNative();
             setMat(progId,"cmi_LodInverseView",inverseUpload.set(captured.getGbufferModelView()).invert());
             RenderSystem.enableDepthTest();RenderSystem.depthMask(true);RenderSystem.disableCull();
@@ -402,7 +404,9 @@ public final class CMIPackEntityMergeHook {
         ShaderInstance carrier=COMPILER.carrierShader();
         if(carrier!=shader){
             gpu.beginBindings();bindSharedResources(gpu);gpu.bindDrawIndirect();bindAtlas(COMPILER.carrierGtextureUnit());
-            try{GpuPrograms.applyExternal(carrier);int progId=carrier.getId();uploadSegmentUniforms(progId);drawCarrier(gpu,progId,COMPILER.carrierGtextureUnit());}
+            try{GpuPrograms.applyExternal(carrier);int progId=carrier.getId();
+                com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime.gpuParticleMotion(progId, gpu);
+                uploadSegmentUniforms(progId);drawCarrier(gpu,progId,COMPILER.carrierGtextureUnit());}
             finally{GpuPrograms.clearExternal(carrier);}
         }
 
@@ -412,6 +416,7 @@ public final class CMIPackEntityMergeHook {
         bindAtlas(COMPILER.ghostGtextureUnit());
         try {GpuPrograms.applyExternal(ghost);
         int progId = ghost.getId();
+        com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime.gpuParticleMotion(progId, gpu);
         uploadSegmentUniforms(progId);
         // Ghost keeps forward reads: back-to-front order is load-bearing for
         // correct translucent compositing of overlapping shells.

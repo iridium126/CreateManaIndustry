@@ -141,9 +141,11 @@ public final class StormLodGpu implements AutoCloseable {
     }
     public void fallback(long publishedGeneration,Matrix4fc view,Matrix4fc projection){
         if(nativeDrawn||!ready(publishedGeneration))return;
-        target.frameContext(ParticleDiagnostics.INSTANCE.lastFrame(),generation);target.draw(projection,projection(projection),()->{
+        var extended = projection(projection);
+        target.frameContext(ParticleDiagnostics.INSTANCE.lastFrame(),generation);target.draw(projection,extended,()->{
             int program=ParticlePrograms.INSTANCE.lodRender();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);
-            setMat4Uniform(program,"ModelViewMat",view);setMat4Uniform(program,"ProjMat",projection(projection));setMat4Uniform(program,"cmi_LodInverseView",new Matrix4f(view).invert());
+            com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime.gpuLodMotion(program, projection, extended);
+            setMat4Uniform(program,"ModelViewMat",view);setMat4Uniform(program,"ProjMat",extended);setMat4Uniform(program,"cmi_LodInverseView",new Matrix4f(view).invert());
             ParticleBuffers.INSTANCE.bindVao();ParticleBuffers.INSTANCE.bindModelGeo();
             GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,0,records[bank]);GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,1,order[bank]);
             // Model geometry remains bound at BIND_MODELGEO by the engine.
@@ -152,7 +154,8 @@ public final class StormLodGpu implements AutoCloseable {
             RenderSystem.enableDepthTest();RenderSystem.depthMask(true);RenderSystem.disableBlend();RenderSystem.disableCull();
             setIntUniform(program,"cmi_LodPass",1);drawBody();
             int pixel=ParticlePrograms.INSTANCE.lodPixel();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(pixel);
-            setMat4Uniform(pixel,"ModelViewMat",view);setMat4Uniform(pixel,"ProjMat",projection(projection));setMat4Uniform(pixel,"cmi_LodInverseView",new Matrix4f(view).invert());
+            com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime.gpuLodMotion(pixel, projection, extended);
+            setMat4Uniform(pixel,"ModelViewMat",view);setMat4Uniform(pixel,"ProjMat",extended);setMat4Uniform(pixel,"cmi_LodInverseView",new Matrix4f(view).invert());
             setIntUniform(pixel,"uSprite",1);setIntUniform(pixel,"uMode",1);setIntUniform(pixel,"cmi_LodPass",2);drawPixel();
         });
     }

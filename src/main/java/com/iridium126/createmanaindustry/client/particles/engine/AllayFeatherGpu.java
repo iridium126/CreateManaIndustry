@@ -162,7 +162,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
         if(!enabled||spawn+goldSpawn==0)return;var gpu=ParticleBuffers.INSTANCE;
         boolean ready=goldSpawn>0&&surface.prepare(ParticlePrograms.INSTANCE.goldSurface(),StormCollisionRuntime.publication(),origin,radius,StormCollisionRuntime.surfaceUploadBudget());
         if(ready)surface.feedback(origin,radius,(frames&7)==0);
-        int p=ParticlePrograms.INSTANCE.featherEmit();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(p);gpu.bindParticleWrite(1);gpu.bindCounter(3,slot);bind(p);StormCollisionRuntime.bindCurrent(p);
+        int p=ParticlePrograms.INSTANCE.featherEmit();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(p);gpu.bindParticleWrite(1);gpu.bindCounter(3,slot);gpu.bindIdentities(p);bind(p);StormCollisionRuntime.bindCurrent(p);
         int leaves=featherId>=0?spawn:0,gold=goldId>=0&&ready?goldSpawn:0;
         if(leaves+gold==0)return;
         setUIntUniform(p,"uCapacity",capacity);setUIntUniform(p,"uCount",leaves);setUIntUniform(p,"uGoldCount",gold);
@@ -285,6 +285,7 @@ public final class AllayFeatherGpu implements AutoCloseable {
     public void draw(long frameGeneration,Matrix4fc view,Matrix4fc projection,Camera camera){
         if(nativeDrawn||!mayFeathers||generation!=frameGeneration||state[bank]==0)return;
         int p=ParticlePrograms.INSTANCE.featherRender();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(p);
+        com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime.gpuParticleMotion(p, ParticleBuffers.INSTANCE);
         GpuBindings.bindBase(GL43.GL_SHADER_STORAGE_BUFFER,1,ParticleBuffers.INSTANCE.particleDrawBufferId());GpuBindings.bindRange(GL43.GL_SHADER_STORAGE_BUFFER,20,drawBuffer(),drawOffset(),BYTES);
         setMat4Uniform(p,"ModelViewMat",view);setMat4Uniform(p,"ProjMat",projection);var pos=camera.getPosition();setFloatUniform(p,"uCamPos",(float)pos.x,(float)pos.y,(float)pos.z);camera(p,camera);
         ParticleAtlas.ALLAY.bind(1);setIntUniform(p,"uSprite",1);setIntUniform(p,"uMode",1);setFloatUniform(p,"uFadeDist",ClientConfig.particleFadeDistance);

@@ -163,6 +163,7 @@ allprojects {
             dependsOn tasks.named('classes')
             classpath = validationClasspath
             mainClass = 'scripts/particles/ParticleProgramLifecycleGpuValidation.java'
+            if (project.hasProperty('xessTerrain')) systemProperty 'cmi.xess.history', 'true'
         }
         tasks.register('validateParticleStartupGpu', JavaExec) {
             dependsOn 'compileStarfallHarness'
@@ -630,6 +631,7 @@ allprojects {
                 !it.name.startsWith('glsl-transformer-')
             } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
             mainClass = 'scripts/particles/NativeRiftPackValidation.java'
+            if (project.hasProperty('xessTerrain')) args '--xess-terrain'
         }
         tasks.register('validateHexSharedIrisGpu', JavaExec) {
             dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness', 'compileHexNativeHarness'
@@ -712,6 +714,7 @@ allprojects {
             classpath = validationClasspath + files(packageIrisTransformer)
             destinationDirectory = layout.buildDirectory.dir('model-merge-harness')
             source fileTree('build/readonly-draw-reference') { include '*.java' }
+            source 'scripts/particles/OffscreenIrisPlatform.java'
             source 'scripts/particles/NativeAttachmentReplayGpuValidation.java'
             source 'scripts/particles/TargetSkyMaskReplayGpuValidation.java'
             source 'scripts/particles/ShadowDrawGpuValidation.java'
@@ -731,6 +734,7 @@ allprojects {
                     !it.name.startsWith('glsl-transformer-')
                 } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
                 mainClass = 'ModelMergeGpuValidation'
+                if (project.hasProperty('xessTerrain')) systemProperty 'cmi.xess.history', 'true'
                 if(taskName.contains('ModelDraw')||taskName.contains('ShaderEfficiency')||taskName.contains('FeatherMerge')) systemProperty 'cmi.model.draw', 'true'
                 if(taskName.contains('FeatherMerge')) {systemProperty 'cmi.feather.merge','true';systemProperty 'cmi.feather.variant',project.findProperty('featherVariant') ?: 'branch'}
                 if(project.hasProperty('featherModelBench'))systemProperty 'cmi.feather.model.bench','true'

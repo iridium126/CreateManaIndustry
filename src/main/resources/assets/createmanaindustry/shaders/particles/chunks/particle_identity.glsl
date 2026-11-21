@@ -7,9 +7,13 @@ uniform uint uIdentityCapacity,uDamageApprovalCount;
 // birth/teleport; otherwise the value is the previous simulation slot plus one.
 uint cmiHistorySource=0xffffffffu;
 uniform bool uHistoryEnabled;
+uniform bool uFgOrdinaryIds;
+void cmiNewIdentity(uint slot) { identities.token[uIdentityWriteBase + slot] = atomicAdd(identities.serial, 1u) + 1u; }
+void cmiCopyIdentity(uint src, uint dst) { identities.token[uIdentityWriteBase + dst] = identities.token[uIdentityReadBase + src]; }
 void cmiHistoryContinue(uint slot){
     if(!uHistoryEnabled)return;
     identities.token[2u*uIdentityCapacity+2u*DAMAGE_QUEUE_CAP+slot]=cmiHistorySource+1u;
+    if(uFgOrdinaryIds && cmiHistorySource != 0xffffffffu) cmiCopyIdentity(cmiHistorySource, slot);
 }
 void cmiHistorySnap(uint slot){
     if(!uHistoryEnabled)return;
@@ -20,5 +24,3 @@ bool cmiCombatApproved(uint token,float previousHurt){
         return identities.token[2u*uIdentityCapacity+2u*i+1u]==token;
     return previousHurt>0.0;
 }
-void cmiNewIdentity(uint slot) { identities.token[uIdentityWriteBase + slot] = atomicAdd(identities.serial, 1u) + 1u; }
-void cmiCopyIdentity(uint src, uint dst) { identities.token[uIdentityWriteBase + dst] = identities.token[uIdentityReadBase + src]; }

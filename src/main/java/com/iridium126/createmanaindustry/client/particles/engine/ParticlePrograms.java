@@ -124,7 +124,20 @@ public final class ParticlePrograms {
                 programStarted=progress=System.nanoTime();
                 LOGGER.info(CMILog.PARTICLES + "shader compilation {}/{} started: {} ({})",index+1,SPECIFICATIONS.size(),specification.path(),parallel?"background":"synchronous fallback");
                 String vertex=VERSION+PRELUDE+sources.get(specification.path());
-                current=specification.fragment==null?GpuShaderCompiler.beginCompute(specification.path(),vertex):GpuShaderCompiler.beginGraphics(specification.path(),vertex,VERSION+PRELUDE+sources.get(GLSL_DIR+specification.fragment));
+                if (specification.fragment == null) {
+                    current = GpuShaderCompiler.beginCompute(specification.path(), vertex);
+                } else {
+                    String fragment = VERSION + PRELUDE + sources.get(GLSL_DIR + specification.fragment);
+                    if (com.iridium126.createmanaindustry.client.xessfg.XessFgGpuMotion.shaderSupport()) {
+                        var decorated = com.iridium126.createmanaindustry.client.xessfg.XessFgGpuShaderSources.particle(
+                                specification.path().substring(GLSL_DIR.length()), vertex, fragment);
+                        if (decorated != null) {
+                            vertex = decorated.vertex();
+                            fragment = decorated.fragment();
+                        }
+                    }
+                    current = GpuShaderCompiler.beginGraphics(specification.path(), vertex, fragment);
+                }
                 return false;
             }
             if(!current.poll()){

@@ -26,7 +26,7 @@ public final class XessFgFrameStats implements AutoCloseable {
     private static final int RTX_GEOMETRY_START_TICK = 10, RTX_GEOMETRY_END_TICK = 11;
     private static final int ARC_GEOMETRY_START_TICK = 12, ARC_GEOMETRY_END_TICK = 13;
     private static final int PREPARE_START_TICK = 15, COPIED_COLOR_BYTES = 16;
-    private static final int HUD_COPY = 17;
+    private static final int HUD_COPY = 17, HUD_COPY_ROUTE = 18;
     private static final int CROSS_BYTES = 7, GEOMETRY_BYTES = 19, COLOR_BYTES = 20;
     private static Frame current;
     private final Map<Long, Frame> frames = new LinkedHashMap<>();
@@ -236,7 +236,7 @@ public final class XessFgFrameStats implements AutoCloseable {
                 + "arc_color_dma_start_qpc,rtx_geometry_copy_start_qpc,rtx_geometry_copy_end_qpc,"
                 + "arc_geometry_dma_start_qpc,arc_geometry_dma_end_qpc,arc_input_prepare_start_qpc,"
                 + "transport,pending_present_at_enqueue,fg_gameplay_eligible,fg_skip_reason,"
-                + "fg_geometry_width,fg_geometry_height,producer_hudless_gpu_ns\n");
+                + "fg_geometry_width,fg_geometry_height,producer_hudless_gpu_ns,hud_copy_route\n");
         for (Frame frame : frames.values()) {
             out.write(frame.id + "," + frame.route);
             column(out, frame.nextTickIntervalNs);
@@ -278,6 +278,14 @@ public final class XessFgFrameStats implements AutoCloseable {
             column(out, frame.geometryWidth);
             column(out, frame.geometryHeight);
             column(out, frame.nativeGpu[HUD_COPY]);
+            out.write("," + switch ((int) frame.nativeGpu[HUD_COPY_ROUTE]) {
+                case 0 -> frame.nativeGpu[HUD_COPY_ROUTE] == UNAVAILABLE ? "" : "sparse";
+                case 1 -> "deadline";
+                case 2 -> "dense";
+                case 3 -> "range_limit";
+                case 4 -> "map_failed";
+                default -> "";
+            });
             out.newLine();
         }
     }

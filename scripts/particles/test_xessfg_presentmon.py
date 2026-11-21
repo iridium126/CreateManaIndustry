@@ -32,7 +32,9 @@ class ProxyTimingTest(unittest.TestCase):
 
     def test_display_p99_includes_missed_refresh_and_midpoint_uses_following_real_id(self):
         app = [{"session_id": "a", "fg_gameplay_eligible": "true"} for _ in range(5)]
-        app[4]["fg_skip_reason"] = "2"
+        app[1]["hud_copy_route"] = "sparse"
+        app[3]["hud_copy_route"] = "deadline"
+        app[4]["fg_skip_reason"] = "3"
         app.append({"session_id": "b", "fg_gameplay_eligible": "true"})
 
         def event(frame, display, kind="Application", dropped="0"):
@@ -57,6 +59,7 @@ class ProxyTimingTest(unittest.TestCase):
         self.assertEqual(summary["counts"]["dropped"], 1)
         self.assertEqual(summary["counts"]["ambiguous_intervals"], 1)
         self.assertEqual(summary["generation_coverage"], 1/3)
+        self.assertEqual(summary["hud_copy_routes"], {"sparse": 1, "deadline": 1})
 
     def test_reused_present_id_and_swap_chain_do_not_merge_sessions(self):
         app = []
@@ -71,6 +74,22 @@ class ProxyTimingTest(unittest.TestCase):
         matches, verified = merge.associate(app, rows)
         self.assertEqual(verified, {"0": 42, "1": 42})
         self.assertEqual([matches[i][0] for i in range(6)], list(range(6)))
+
+    def test_fixed_refresh_splits_use_display_time_and_exclude_unquantized_intervals(self):
+        app = [{"session_id": "a"} for _ in range(4)]
+        app[1]["arc_inputs_ready_qpc"] = "17"
+        rows = [dict(type=kind, display=display, address=42) for kind, display in [
+            ("Application", 0), ("Intel XeSS-FG", 30), ("Application", 40),
+            ("Intel XeSS-FG", 60), ("Application", 80),
+            ("Intel XeSS-FG", 95), ("Application", 110),
+        ]]
+        matches = {index: ((index + 1) // 2, "verified") for index in range(len(rows))}
+        fields, summary = merge.display_pacing(app, rows, matches, 1000, 100)
+        self.assertEqual(summary["fixed_refresh"]["splits"], {"3:1": 1, "2:2": 1})
+        self.assertEqual(summary["fixed_refresh"]["unquantized_intervals"], 1)
+        self.assertEqual(fields[1]["arc_inputs_to_midpoint_ms"], 3)
+        self.assertEqual(fields[1]["arc_inputs_to_generated_ms"], 13)
+        self.assertNotIn("refresh_split", fields[5])
 
 
 if __name__ == "__main__":

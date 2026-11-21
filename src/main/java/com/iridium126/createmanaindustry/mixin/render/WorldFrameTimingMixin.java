@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.mixin.render;
 
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages;
+import com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.*;
 import net.minecraft.client.*;
@@ -16,13 +17,15 @@ public abstract class WorldFrameTimingMixin {
     @Unique private ParticleFrameStages.Scope cmi$section;
     @WrapMethod(method="renderLevel")
     private void cmi$level(DeltaTracker delta,boolean outline,Camera camera,GameRenderer game,LightTexture light,Matrix4f view,Matrix4f projection,Operation<Void> original){
-        if (!ParticleFrameStages.active() && cmi$section == null) {
-            original.call(delta,outline,camera,game,light,view,projection);
-            return;
+        try (var motion = XessFgRuntime.auxiliaryView()) {
+            if (!ParticleFrameStages.active() && cmi$section == null) {
+                original.call(delta,outline,camera,game,light,view,projection);
+                return;
+            }
+            var saved=cmi$section;cmi$section=null;boolean success=false;
+            try{original.call(delta,outline,camera,game,light,view,projection);success=true;}
+            finally{if(cmi$section!=null)cmi$section.end(success);cmi$section=saved;}
         }
-        var saved=cmi$section;cmi$section=null;boolean success=false;
-        try{original.call(delta,outline,camera,game,light,view,projection);success=true;}
-        finally{if(cmi$section!=null)cmi$section.end(success);cmi$section=saved;}
     }
     @WrapOperation(method="renderLevel",at=@At(value="INVOKE",target="Lnet/minecraft/util/profiling/ProfilerFiller;popPush(Ljava/lang/String;)V"))
     private void cmi$section(ProfilerFiller profiler,String name,Operation<Void> original){

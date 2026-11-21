@@ -236,6 +236,7 @@
     "iris.FeatherLeafTerrainSettings",
     "iris.RiftPipelineMixin",
     "iris.XessFgIrisMixin",
+    "iris.XessFgTerrainProgramMixin",
     "iris.JuliaSamplerMixin",
     "iris.NativeSkySourceAccess",
     "iris.NativeSkyPipelineAccess",

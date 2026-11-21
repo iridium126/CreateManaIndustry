@@ -43,4 +43,24 @@ class XessFgInputsTest {
         assertEquals(0, near.z / near.w, .00001);
         assertEquals(1, far.z / far.w, .00001);
     }
+
+    @Test
+    void evaluatesRecognizedHandDeformationsInClipSpace() {
+        var options = new XessFgPack.Options() {
+            @Override public boolean flag(String key, boolean fallback) { return key.equals("WORLD_CURVATURE") || fallback; }
+            @Override public float number(String key, float fallback) { return key.equals("HAND_SWAYING") ? 2 : fallback; }
+        };
+        var identity = new Matrix4f();
+        var point = new Vector4f(2, 0, 3, 1);
+        XessFgPack.BSL.handDeformation(options, new Matrix4f().m22(-1), identity, identity, 0).accept(point);
+        assertEquals(-13f / 256, point.y, 1e-6f);
+        assertEquals(-3, point.z, 1e-6f);
+        point.set(0, 0, 0, 1);
+        XessFgPack.COMPLEMENTARY.handDeformation(options, identity, identity, identity, 0).accept(point);
+        assertEquals(1f / 64, point.y, 1e-6f);
+        point.set(0, 0, 0, 1);
+        XessFgPack.COMPLEMENTARY.handDeformation(options, identity, identity, identity,
+                (float) (Math.PI / 1.5)).accept(point);
+        assertEquals(-1f / 64, point.y, 1e-6f);
+    }
 }

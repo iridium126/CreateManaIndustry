@@ -6,6 +6,7 @@ param(
     [string]$PresentMonExe = '',
     [string]$FrameCapture = '',
     [string]$PresentMonCsv = '',
+    [ValidateRange(1, 10000)][double]$RefreshHz,
     [switch]$TracePresent,
     [string]$WprExe = '',
     [ValidatePattern('^\d{8}-\d{6}-\d{3}-[1-9]\d*$')][string[]]$RecoverTrace
@@ -18,11 +19,15 @@ $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 if (!$GameDirectory) { $GameDirectory = Join-Path $root 'run' }
 if (!$PresentMonExe) { $PresentMonExe = Join-Path $root 'run/.cache/presentmon/PresentMon-2.6.0-x64.exe' }
 $merge = Join-Path $PSScriptRoot 'merge-xessfg-presentmon.py'
+$pacingArgs = @()
+if ($RefreshHz) {
+    $pacingArgs = @('--refresh-hz', $RefreshHz.ToString([Globalization.CultureInfo]::InvariantCulture))
+}
 
 if ($FrameCapture -or $PresentMonCsv) {
     if (!$FrameCapture -or !$PresentMonCsv) { throw 'Pass both -FrameCapture (JSON) and -PresentMonCsv to merge existing captures.' }
     if ($TracePresent -or $RecoverTrace) { throw 'Merge mode takes only saved captures.' }
-    python $merge $FrameCapture $PresentMonCsv
+    python $merge $FrameCapture $PresentMonCsv @pacingArgs
     exit $LASTEXITCODE
 }
 
@@ -204,6 +209,6 @@ if (!$capture) {
     exit 0
 }
 if (!(Get-Command python -ErrorAction SilentlyContinue)) { throw 'Python 3 is required to merge the saved CSV files.' }
-python $merge $capture.FullName $csv
+python $merge $capture.FullName $csv @pacingArgs
 if ($LASTEXITCODE -eq 0 -and !$traceSaved) { exit 1 }
 exit $LASTEXITCODE

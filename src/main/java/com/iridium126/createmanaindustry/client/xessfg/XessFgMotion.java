@@ -12,6 +12,7 @@ import java.nio.FloatBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Consumer;
 import net.minecraft.client.renderer.RenderType;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
@@ -26,23 +27,23 @@ final class XessFgMotion implements AutoCloseable {
     // Keep additional submission work bounded in crowded scenes.
     private static final int MAX_VERTICES = 65_536;
     private static final int FLOATS_PER_POINT = 3;
-    private static final int STRIDE = 8 * Float.BYTES;
-    private record Key(Object object, Object stream, boolean hand) {}
+    private static final int VERTEX_WORDS = 11, STRIDE = VERTEX_WORDS * Float.BYTES;
+    enum Layer { WORLD, HAND, TRANSLUCENT }
+    private record Key(Object object, Object stream, Layer layer) {}
 
     private static final class Stream {
         final Matrix4f clipFromVertex;
         final Matrix4f instancePose;
+        final Consumer<Vector4f> deformation;
         float[] vertices = new float[12 * FLOATS_PER_POINT];
+        float[] coverage;
         int count;
         boolean complete = true;
 
-        Stream(Matrix4f clipFromVertex) {
-            this(clipFromVertex, null);
-        }
-
-        Stream(Matrix4f clipFromVertex, Matrix4f instancePose) {
+        Stream(Matrix4f clipFromVertex, Matrix4f instancePose, Consumer<Vector4f> deformation) {
             this.clipFromVertex = clipFromVertex;
             this.instancePose = instancePose;
+            this.deformation = deformation;
         }
 
         void append(float x, float y, float z) {
@@ -58,9 +59,9 @@ final class XessFgMotion implements AutoCloseable {
     private Selection selection;
     private int vertices, width, height;
     private int program, vao, vbo, framebuffer, vectorTexture, depthTexture;
-    private final FloatBuffer upload = MemoryUtil.memAllocFloat(MAX_VERTICES * 12);
+    private final FloatBuffer upload = MemoryUtil.memAllocFloat(MAX_VERTICES * VERTEX_WORDS * 3 / 2);
     private final Vector4f now = new Vector4f(), then = new Vector4f();
-    private record Selection(Object object, boolean hand, Matrix4f clipFromVertex) {}
+    private record Selection(Object object, boolean hand, Matrix4f clipFromVertex, Consumer<Vector4f> deformation) {}
 
     void begin() {
         current.clear();
@@ -80,42 +81,52 @@ final class XessFgMotion implements AutoCloseable {
     }
 
     XessFgRuntime.MotionScope track(Object object, boolean hand) {
+        return track(object, hand, null);
+    }
+
+    XessFgRuntime.MotionScope track(Object object, boolean hand, Consumer<Vector4f> deformation) {
         var prior = selection;
         var matrices = new Matrix4f(RenderSystem.getProjectionMatrix()).mul(RenderSystem.getModelViewMatrix());
-        selection = new Selection(object, hand, matrices);
+        selection = new Selection(object, hand, matrices, deformation);
         return () -> selection = prior;
     }
 
     VertexConsumer buffers(VertexConsumer source, RenderType type) {
         var scope = selection;
         if (scope == null || type.mode() != VertexFormat.Mode.QUADS || source instanceof TrackingConsumer) return source;
-        return track(source, new Key(scope.object, type, scope.hand), scope.clipFromVertex);
+        return track(source, new Key(scope.object, type, scope.hand ? Layer.HAND : Layer.WORLD),
+                scope.clipFromVertex, scope.deformation);
     }
 
-    VertexConsumer particle(VertexConsumer source, Object particle, Object type) {
-        return track(source, new Key(particle, type, false),
-                new Matrix4f(RenderSystem.getProjectionMatrix()).mul(RenderSystem.getModelViewMatrix()));
+    VertexConsumer particle(VertexConsumer source, Object particle, Object type, boolean transparent) {
+        return track(source, new Key(particle, type, transparent ? Layer.TRANSLUCENT : Layer.WORLD),
+                new Matrix4f(RenderSystem.getProjectionMatrix()).mul(RenderSystem.getModelViewMatrix()), null);
     }
 
-    private VertexConsumer track(VertexConsumer source, Key key, Matrix4f matrices) {
+    private VertexConsumer track(VertexConsumer source, Key key, Matrix4f matrices, Consumer<Vector4f> deformation) {
         if (vertices >= MAX_VERTICES) return source;
-        var stream = current.computeIfAbsent(key, ignored -> new Stream(matrices));
+        var stream = current.computeIfAbsent(key, ignored -> {
+            var result = new Stream(matrices, null, deformation);
+            if (key.layer == Layer.TRANSLUCENT) result.coverage = new float[result.vertices.length];
+            return result;
+        });
         return sodium ? SodiumConsumer.wrap(this, source, stream) : new TrackingConsumer(source, stream);
     }
 
     void mesh(Object instance, Object model, float[] positions, Matrix4fc camera, Matrix4f pose) {
         int count = positions.length / FLOATS_PER_POINT;
         if (count > MAX_VERTICES - vertices) return;
-        var stream = new Stream(new Matrix4f(camera).mul(pose), pose);
+        var stream = new Stream(new Matrix4f(camera).mul(pose), pose, null);
         stream.vertices = positions;
         stream.count = positions.length;
-        current.put(new Key(instance, model, false), stream);
+        current.put(new Key(instance, model, Layer.WORLD), stream);
         vertices += count;
     }
 
     private class TrackingConsumer implements VertexConsumer {
         private final VertexConsumer source;
         private final Stream stream;
+        private int lastPoint = -1;
 
         private TrackingConsumer(VertexConsumer source, Stream stream) {
             this.source = source;
@@ -123,8 +134,27 @@ final class XessFgMotion implements AutoCloseable {
         }
 
         final void point(float x, float y, float z) {
-            if (vertices++ < MAX_VERTICES) stream.append(x, y, z);
-            else stream.complete = false;
+            lastPoint = -1;
+            if (vertices++ < MAX_VERTICES) {
+                lastPoint = stream.count;
+                stream.append(x, y, z);
+                if (stream.coverage != null) {
+                    if (stream.coverage.length < stream.vertices.length)
+                        stream.coverage = Arrays.copyOf(stream.coverage, stream.vertices.length);
+                    stream.coverage[lastPoint + 2] = 1;
+                }
+            } else stream.complete = false;
+        }
+
+        final void uv(float u, float v) {
+            if (lastPoint >= 0 && stream.coverage != null) {
+                stream.coverage[lastPoint] = u;
+                stream.coverage[lastPoint + 1] = v;
+            }
+        }
+
+        final void alpha(int alpha) {
+            if (lastPoint >= 0 && stream.coverage != null) stream.coverage[lastPoint + 2] = alpha / 255f;
         }
 
         @Override
@@ -139,10 +169,12 @@ final class XessFgMotion implements AutoCloseable {
                               float normalX, float normalY, float normalZ) {
             source.addVertex(x, y, z, color, u, v, overlay, light, normalX, normalY, normalZ);
             point(x, y, z);
+            uv(u, v);
+            alpha(color >>> 24);
         }
 
-        @Override public VertexConsumer setColor(int r, int g, int b, int a) { source.setColor(r, g, b, a); return this; }
-        @Override public VertexConsumer setUv(float u, float v) { source.setUv(u, v); return this; }
+        @Override public VertexConsumer setColor(int r, int g, int b, int a) { source.setColor(r, g, b, a); alpha(a); return this; }
+        @Override public VertexConsumer setUv(float u, float v) { source.setUv(u, v); uv(u, v); return this; }
         @Override public VertexConsumer setUv1(int u, int v) { source.setUv1(u, v); return this; }
         @Override public VertexConsumer setUv2(int u, int v) { source.setUv2(u, v); return this; }
         @Override public VertexConsumer setNormal(float x, float y, float z) { source.setNormal(x, y, z); return this; }
@@ -171,21 +203,27 @@ final class XessFgMotion implements AutoCloseable {
         @Override
         public void push(MemoryStack stack, long pointer, int count, VertexFormat format) {
             if (format.contains(VertexFormatElement.POSITION)) {
-                long position = pointer + format.getOffset(VertexFormatElement.POSITION);
-                for (int i = 0; i < count; i++, position += format.getVertexSize()) {
+                long vertex = pointer;
+                int positionOffset = format.getOffset(VertexFormatElement.POSITION);
+                int uvOffset = format.getOffset(VertexFormatElement.UV0);
+                int colorOffset = format.getOffset(VertexFormatElement.COLOR);
+                for (int i = 0; i < count; i++, vertex += format.getVertexSize()) {
+                    long position = vertex + positionOffset;
                     point(MemoryUtil.memGetFloat(position), MemoryUtil.memGetFloat(position + 4),
                             MemoryUtil.memGetFloat(position + 8));
+                    if (uvOffset >= 0) uv(MemoryUtil.memGetFloat(vertex + uvOffset), MemoryUtil.memGetFloat(vertex + uvOffset + 4));
+                    if (colorOffset >= 0) alpha(Byte.toUnsignedInt(MemoryUtil.memGetByte(vertex + colorOffset + 3)));
                 }
             }
             writer.push(stack, pointer, count, format);
         }
     }
 
-    int draw(boolean hand, boolean reset, int sceneDepth, int w, int h, XessFgCoordinates coordinates) {
+    int draw(Layer layer, boolean reset, int sceneDepth, int w, int h, XessFgCoordinates coordinates) {
         if (reset || sceneDepth == 0 || previous.isEmpty()) return 0;
         upload.clear();
         current.forEach((key, stream) -> {
-            if (key.hand != hand || !stream.complete) return;
+            if (key.layer != layer || !stream.complete) return;
             Stream prior = previous.get(key);
             if (prior == null || !prior.complete || prior.count != stream.count) return;
             if (stream.instancePose != null) {
@@ -194,7 +232,7 @@ final class XessFgMotion implements AutoCloseable {
                 return;
             }
             if (stream.count % 12 != 0) return;
-            if (!hand && Arrays.equals(stream.vertices, 0, stream.count, prior.vertices, 0, prior.count)) return;
+            if (layer == Layer.WORLD && Arrays.equals(stream.vertices, 0, stream.count, prior.vertices, 0, prior.count)) return;
             for (int offset = 0; offset < stream.count; offset += 12) {
                 point(stream, prior, offset);
                 point(stream, prior, offset + 3);
@@ -208,7 +246,9 @@ final class XessFgMotion implements AutoCloseable {
         upload.flip();
         ensureResources(w, h);
         glNamedBufferData(vbo, upload, GL_STREAM_DRAW);
-        render(sceneDepth, upload.remaining() / 8, coordinates);
+        int atlas = layer == Layer.TRANSLUCENT ? net.minecraft.client.Minecraft.getInstance().getTextureManager()
+                .getTexture(net.minecraft.resources.ResourceLocation.withDefaultNamespace("textures/atlas/particles.png")).getId() : 0;
+        render(sceneDepth, upload.remaining() / VERTEX_WORDS, coordinates, atlas);
         return vectorTexture;
     }
 
@@ -217,11 +257,14 @@ final class XessFgMotion implements AutoCloseable {
         transform(then, prior, index);
         upload.put(now.x).put(now.y).put(now.z).put(now.w);
         upload.put(then.x).put(then.y).put(then.z).put(then.w);
+        if (current.coverage == null) upload.put(0).put(0).put(1);
+        else upload.put(current.coverage[index]).put(current.coverage[index + 1]).put(current.coverage[index + 2]);
     }
 
     private static void transform(Vector4f result, Stream stream, int index) {
         result.set(stream.vertices[index], stream.vertices[index + 1], stream.vertices[index + 2], 1);
-        stream.clipFromVertex.transform(result);
+        if (stream.deformation != null) stream.deformation.accept(result);
+        else stream.clipFromVertex.transform(result);
     }
 
     private void ensureResources(int w, int h) {
@@ -231,9 +274,9 @@ final class XessFgMotion implements AutoCloseable {
             vao = glCreateVertexArrays();
             vbo = glCreateBuffers();
             glVertexArrayVertexBuffer(vao, 0, vbo, 0, STRIDE);
-            for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < 3; i++) {
                 glEnableVertexArrayAttrib(vao, i);
-                glVertexArrayAttribFormat(vao, i, 4, GL_FLOAT, false, i * 4 * Float.BYTES);
+                glVertexArrayAttribFormat(vao, i, i == 2 ? 3 : 4, GL_FLOAT, false, i * 4 * Float.BYTES);
                 glVertexArrayAttribBinding(vao, i, 0);
             }
             framebuffer = glCreateFramebuffers();
@@ -258,7 +301,7 @@ final class XessFgMotion implements AutoCloseable {
         return texture;
     }
 
-    private void render(int sceneDepth, int count, XessFgCoordinates coordinates) {
+    private void render(int sceneDepth, int count, XessFgCoordinates coordinates, int atlas) {
         int oldFramebuffer = glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING);
         int oldVao = glGetInteger(GL_VERTEX_ARRAY_BINDING);
         int oldProgram = glGetInteger(GL_CURRENT_PROGRAM);
@@ -272,6 +315,10 @@ final class XessFgMotion implements AutoCloseable {
         glActiveTexture(GL_TEXTURE0);
         int oldTexture = glGetInteger(GL_TEXTURE_BINDING_2D);
         int oldSampler = glGetInteger(GL_SAMPLER_BINDING);
+        if (atlas != 0) glActiveTexture(GL_TEXTURE1);
+        int oldAtlas = atlas != 0 ? glGetInteger(GL_TEXTURE_BINDING_2D) : 0;
+        int oldAtlasSampler = atlas != 0 ? glGetInteger(GL_SAMPLER_BINDING) : 0;
+        if (atlas != 0) glActiveTexture(GL_TEXTURE0);
         try (var stack = MemoryStack.stackPush()) {
             var viewport = stack.mallocInt(4);
             var colors = stack.malloc(4);
@@ -283,6 +330,11 @@ final class XessFgMotion implements AutoCloseable {
                 glUseProgram(program);
                 glBindTexture(GL_TEXTURE_2D, sceneDepth);
                 glBindSampler(0, 0);
+                if (atlas != 0) {
+                    glBindTextureUnit(1, atlas);
+                    glBindSampler(1, 0);
+                }
+                glUniform1i(glGetUniformLocation(program, "translucent"), atlas != 0 ? 1 : 0);
                 glUniform2f(glGetUniformLocation(program, "extent"), width, height);
                 glUniform2f(glGetUniformLocation(program, "sourceScale"), coordinates.scaleX(), coordinates.scaleY());
                 glUniform2f(glGetUniformLocation(program, "jitter"), coordinates.jitterX(), coordinates.jitterY());
@@ -304,6 +356,11 @@ final class XessFgMotion implements AutoCloseable {
                 glUseProgram(oldProgram);
                 glBindTexture(GL_TEXTURE_2D, oldTexture);
                 glBindSampler(0, oldSampler);
+                if (atlas != 0) {
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_2D, oldAtlas);
+                    glBindSampler(1, oldAtlasSampler);
+                }
                 glActiveTexture(oldUnit);
                 glViewport(viewport.get(0), viewport.get(1), viewport.get(2), viewport.get(3));
                 glColorMaski(0, colors.get(0) != 0, colors.get(1) != 0, colors.get(2) != 0, colors.get(3) != 0);

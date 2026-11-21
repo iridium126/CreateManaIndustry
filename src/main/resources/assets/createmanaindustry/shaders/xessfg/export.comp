@@ -27,9 +27,34 @@ const int DEPTH_ONLY = 4;
 const int FINAL_WITH_MASK = 5;
 const int APPLY_MOTION = 6;
 const int INITIALIZE_MOTION = 7;
+const int APPLY_GPU_MOTION = 8;
+const int INITIALIZE_GPU_MOTION = 9;
 const int SILDUR_RAIN = 5;
 shared vec4 rainDrops[8];
 shared uint hudChanges[128];
+
+float surfaceDepth(uint rank) {
+    return float(0xffffffu - (rank >> 8)) / 16777215.0;
+}
+
+vec4 gpuMotionSample(ivec2 samplePixel) {
+    uint pixel = uint(samplePixel.y * extent.x + samplePixel.x);
+    uint opaqueAddress = pixel * 2u;
+    uint transparentAddress = (pixel + uint(extent.x * extent.y)) * 2u;
+    uint opaqueRank = hudlessWords[opaqueAddress + 1u];
+    uint transparentRank = hudlessWords[transparentAddress + 1u];
+    if ((opaqueRank | transparentRank) == 0u) return vec4(0.0);
+    vec2 size = vec2(sourceSize) * sourceScale;
+    ivec2 sourcePixel = clamp(ivec2((vec2(samplePixel) + 0.5) * size / vec2(extent) + currentJitter),
+                             ivec2(0), max(ivec2(size) - 1, ivec2(0)));
+    float depth = texelFetch(sourceTexture, sourcePixel, 0).r;
+    // A blended contribution can own the vector while retaining scene depth.
+    if (transparentRank != 0u && surfaceDepth(transparentRank) <= depth + 0.000002)
+        return vec4(unpackHalf2x16(hudlessWords[transparentAddress]), depth, 1.0);
+    if (opaqueRank != 0u && abs(surfaceDepth(opaqueRank) - depth) <= 0.000002)
+        return vec4(unpackHalf2x16(hudlessWords[opaqueAddress]), depth, 1.0);
+    return vec4(0.0);
+}
 
 void buildRainDrops(int first, float time) {
     const vec2 patterns[4] = vec2[4](vec2(-0.94386347, 1.0), vec2(0.9347, -0.2533282),
@@ -184,7 +209,8 @@ void main() {
         }
         return;
     }
-    bool applyMotion = mode == APPLY_MOTION || mode == INITIALIZE_MOTION;
+    bool gpuMotion = mode == APPLY_GPU_MOTION || mode == INITIALIZE_GPU_MOTION;
+    bool applyMotion = mode == APPLY_MOTION || mode == INITIALIZE_MOTION || gpuMotion;
     if ((mode == DEPTH || applyMotion) && (warpTypes.x == SILDUR_RAIN || warpTypes.y == SILDUR_RAIN)) {
         if (gl_LocalInvocationIndex == 0u) {
             if (warpTypes.x == SILDUR_RAIN) buildRainDrops(0, warpParameters.x);
@@ -198,7 +224,7 @@ void main() {
             vec2 uv = (vec2(glPixel) + 0.5) / vec2(extent);
             vec2 scene = sceneCoordinate(uv, warpTypes.x, warpParameters.xy, 0);
             ivec2 samplePixel = clamp(ivec2(scene * vec2(extent)), ivec2(0), extent - 1);
-            vec4 sampleMotion = texelFetch(sourceTexture, samplePixel, 0);
+            vec4 sampleMotion = gpuMotion ? gpuMotionSample(samplePixel) : texelFetch(sourceTexture, samplePixel, 0);
             int address = outputPixel.y * rowWords + outputPixel.x;
             if (sampleMotion.a > 0.5) {
                 vec2 velocity = sampleMotion.xy;
@@ -214,7 +240,7 @@ void main() {
                 }
                 words[address] = floatBitsToUint(sampleMotion.z);
                 words[offsets[3] + address] = packHalf2x16(velocity);
-            } else if (mode == INITIALIZE_MOTION) {
+            } else if (mode == INITIALIZE_MOTION || mode == INITIALIZE_GPU_MOTION) {
                 words[offsets[3] + address] = 0x7e007e00u;
             }
         }

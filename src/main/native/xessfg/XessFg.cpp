@@ -19,9 +19,9 @@
 #include <optional>
 #include <thread>
 #include <exception>
-#include <condition_variable>
 #include <atomic>
 #include <deque>
+#include <utility>
 
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -30,6 +30,14 @@ constexpr unsigned InputCount = 4;
 constexpr unsigned BackBufferCount = 3;
 constexpr int NoTransferSlot = -1, ProducerBackpressure = -2;
 constexpr UINT64 DrainValue = UINT64_MAX - 1;
+
+void traceProbe(const char* message) {
+#ifdef CMI_XESSFG_PROBE_TRACE
+    std::printf("    %s\n", message);
+#else
+    (void) message;
+#endif
+}
 TRACELOGGING_DEFINE_PROVIDER(presentTrace, "CreateManaIndustry.XeSSFG",
     (0x2dd7d232, 0xe6b6, 0x45d9, 0x9c, 0x9c, 0xb6, 0x1a, 0xe7, 0x67, 0x1b, 0xc1));
 enum Group { Geometry, Color, GroupCount, HudBase = GroupCount };
@@ -192,6 +200,12 @@ struct CopyJob {
     bool timed, countBytes;
 };
 
+enum class HudCopyRoute { Sparse, Deadline, Dense, RangeLimit, MapFailed };
+struct HudCopy {
+    UINT64 bytes;
+    HudCopyRoute route;
+};
+
 struct Transfer {
     ComPtr<ID3D12Resource> glBuffer;
     ComPtr<ID3D12Heap> sourceHeap, destinationHeap;
@@ -212,6 +226,7 @@ struct Slot {
     UINT64 glFenceAtSubmit = 0;
     UINT64 geometryBytes = 0;
     std::atomic<UINT64> copiedColorBytes{0};
+    std::atomic<HudCopyRoute> hudCopyRoute{HudCopyRoute::Sparse};
     std::optional<Reprojection> reprojection;
     bool motionOverrides = false;
     unsigned recordedQueries = 0, pendingQueries = 0;
@@ -228,7 +243,7 @@ struct PreparedInput {
 
 constexpr unsigned ProducerGeometry = 1, ProducerColor = 2, UploadGeometry = 4, UploadColor = 8, LocalTextures = 16,
                    ColorUnpack = 32, CopiedColorBytes = 64, ProducerHud = 128;
-constexpr unsigned GpuProfileFields = 19;
+constexpr unsigned GpuProfileFields = 20;
 constexpr unsigned ClockProfileFields = 10;
 
 constexpr int64_t Unavailable = std::numeric_limits<int64_t>::min();
@@ -588,16 +603,17 @@ HWND createPresentationSurface(HWND owner, bool topLevel) {
 }
 
 struct FrameAdmission {
-    unsigned consecutiveFull = 0, recoveredFrames = 0;
+    unsigned consecutiveFull = 0, consecutivePresentPressure = 0, recoveredFrames = 0;
     int reason = 0;
 
-    int update(bool full, bool stale, bool producerBehind) {
+    int update(bool full, bool stale, bool presentPressure, bool producerBehind) {
         consecutiveFull = full ? std::min(consecutiveFull + 1, 2u) : 0;
-        if (stale || consecutiveFull == 2) {
+        consecutivePresentPressure = presentPressure ? std::min(consecutivePresentPressure + 1, 2u) : 0;
+        if (stale || consecutivePresentPressure == 2 || consecutiveFull == 2) {
             recoveredFrames = 0;
-            reason = stale ? 2 : 1;
+            reason = stale ? 2 : consecutivePresentPressure == 2 ? 3 : 1;
         } else if (reason) {
-            recoveredFrames = full || producerBehind ? 0 : recoveredFrames + 1;
+            recoveredFrames = full || presentPressure || producerBehind ? 0 : recoveredFrames + 1;
             if (recoveredFrames == 8) reason = 0;
         }
         return reason;
@@ -637,25 +653,34 @@ struct Session {
     std::thread presenter;
     std::mutex workMutex, xellMutex;
     std::optional<PresentJob> waiting;
+    std::atomic<int64_t> presentingSince{0};
+    bool presentRejected = false;
     bool closing = false, resetNext = false;
     FrameAdmission admissionPolicy;
     int64_t refreshTicks = 0;
+    int64_t qpcFrequency = 0;
 
     int admission(bool gameplay) {
         if (!gameplay) {
+            std::lock_guard guard(workMutex);
+            presentRejected = false;
             admissionPolicy = {};
             return 0;
         }
         const auto finished = preparedSequence();
         const bool full = std::all_of(slots.begin(), slots.begin() + GeometrySlots,
                                      [&](const Slot& slot) { return slot.reuseAfter > finished; });
-        bool stale = false;
+        bool stale, presentPressure;
         {
             std::lock_guard guard(workMutex);
             if (failure) std::rethrow_exception(failure);
-            stale = waiting && qpc() - waiting->enqueuedAt >= refreshTicks;
+            const auto now = qpc();
+            const auto activeSince = presentingSince.load(std::memory_order_acquire);
+            stale = waiting && now - waiting->enqueuedAt >= refreshTicks;
+            presentPressure = std::exchange(presentRejected, false)
+                || (activeSince != 0 && now - activeSince >= refreshTicks);
         }
-        return admissionPolicy.update(full, stale, admissionPolicy.reason && producerBehind());
+        return admissionPolicy.update(full, stale, presentPressure, admissionPolicy.reason && producerBehind());
     }
     std::exception_ptr failure;
     std::array<PresentResult, ResultCapacity> results{};
@@ -665,11 +690,10 @@ struct Session {
 
     std::thread copyWorker;
     std::mutex copyMutex;
-    std::condition_variable copyWork;
+    Handle copyWork, copyGlReady, copyBaseReady;
     std::deque<CopyJob> copyJobs;
     bool copyClosing = false;
     ComPtr<ID3D12Fence> copyBaseDone;
-    Handle copyBaseReady;
 
     ~Session() {
         if (presenter.joinable()) {
@@ -692,7 +716,7 @@ struct Session {
                 std::lock_guard guard(copyMutex);
                 copyClosing = true;
             }
-            copyWork.notify_one();
+            SetEvent(copyWork.value);
             copyWorker.join();
         }
         hideSurface();
@@ -738,7 +762,7 @@ struct Session {
 
     void start(HWND hwnd, jlong render, jlong generate, UINT w, UINT h, Transport requested,
                bool popup = false, bool copyGeometryToTextures = false, bool allowSharedInputs = false,
-               UINT gw = 0, UINT gh = 0) {
+               UINT gw = 0, UINT gh = 0, bool initializeProxy = true) {
         workReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
         queueSpace.value = CreateEventW(nullptr, TRUE, TRUE, nullptr);
         initialized.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -748,7 +772,8 @@ struct Session {
         presenter = std::thread([=] {
             SetThreadDescription(GetCurrentThread(), L"CMI XeSS-FG Presenter");
             try {
-                initialize(hwnd, render, generate, w, h, requested, popup, copyGeometryToTextures, allowSharedInputs, gw, gh);
+                initialize(hwnd, render, generate, w, h, requested, popup, copyGeometryToTextures, allowSharedInputs,
+                           gw, gh, initializeProxy);
             } catch (...) {
                 recordFailure();
             }
@@ -776,7 +801,10 @@ struct Session {
         std::lock_guard guard(workMutex);
         if (failure) std::rethrow_exception(failure);
         if (closing) throw std::runtime_error("XeSS-FG presenter is closing");
-        if (waiting) return false;
+        if (waiting) {
+            if (!job.discard) presentRejected = true;
+            return false;
+        }
         auto& slot = active(job.slot, job.sequence);
         if (!job.discard && (!slot.colorSubmitted || slot.fullColor != job.interpolate))
             throw std::logic_error("Missing XeSS-FG inputs for presentation");
@@ -812,6 +840,7 @@ struct Session {
                 if (!failure && waiting) {
                     job = waiting;
                     waiting.reset();
+                    if (!job->discard) presentingSince.store(qpc(), std::memory_order_release);
                     SetEvent(queueSpace.value);
                 }
             }
@@ -824,6 +853,7 @@ struct Session {
             } catch (...) {
                 recordFailure();
             }
+            presentingSince.store(0, std::memory_order_release);
         }
     }
 
@@ -899,7 +929,7 @@ struct Session {
     }
 
     void initialize(HWND hwnd, jlong render, jlong generate, UINT w, UINT h, Transport requested, bool popup,
-                     bool copyGeometryToTextures, bool allowSharedInputs, UINT gw, UINT gh) {
+                     bool copyGeometryToTextures, bool allowSharedInputs, UINT gw, UINT gh, bool initializeProxy) {
         width = w;
         height = h;
         geometryWidth = gw ? gw : (w + 1) / 2;
@@ -915,7 +945,8 @@ struct Session {
             refresh = mode.dmDisplayFrequency;
         LARGE_INTEGER frequency{};
         QueryPerformanceFrequency(&frequency);
-        refreshTicks = frequency.QuadPart / refresh;
+        qpcFrequency = frequency.QuadPart;
+        refreshTicks = qpcFrequency / refresh;
         topLevel = popup;
         cross = render != generate;
         transport = cross ? requested : Rgba8;
@@ -925,6 +956,7 @@ struct Session {
         ComPtr<IDXGIFactory4> factory;
         check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)), "Creating XeSS-FG DXGI factory");
         DXGI_ADAPTER_DESC1 renderAdapter{}, generationAdapter{};
+        traceProbe("Opening D3D12 adapters");
         renderGpu = device(factory.Get(), render, &renderAdapter);
         generationGpu = cross ? device(factory.Get(), generate, &generationAdapter) : renderGpu;
         sharedInputs = allowSharedInputs && cross && transport == Rgb24 && renderAdapter.VendorId == 0x10de
@@ -944,6 +976,7 @@ struct Session {
             check(generationGpu->OpenSharedHandle(fence.value, IID_PPV_ARGS(&hudReady)), "Importing HUD-less fence");
         }
         directGeometry = cross && copyGeometryToTextures && !sharedInputs;
+        traceProbe("Initializing D3D12 queues");
         presentQueue = queue(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
         prepareQueue = queue(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
         check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&glWritten)), "Creating OpenGL producer fence");
@@ -995,11 +1028,16 @@ struct Session {
             groupBytes[Color] = sharedInputs
                 ? colorPlaneBytes + UINT64(colorTilesAcross()) * height * sizeof(uint32_t)
                 : 2 * colorPlaneBytes;
+            traceProbe("Building input decoder");
             decoder.initialize(generationGpu.Get(), sharedInputs);
         }
+        traceProbe("Allocating input storage");
         for (unsigned i = 0; i < SlotCount; ++i) allocate(slots[i], i == GeometrySlots);
         for (unsigned i = 0; i < InputCount; ++i) allocate(inputs[i], i);
+        if (sharedInputs) startCopyWorker();
+        if (!initializeProxy) return;
 
+        traceProbe("Creating XeLL and XeSS-FG contexts");
         sdk(xellD3D12CreateContext(generationGpu.Get(), &ll), "Creating XeLL context");
         xell_sleep_params_t sleep{};
         sleep.bLowLatencyMode = 1;
@@ -1012,8 +1050,6 @@ struct Session {
         params.maxInterpolatedFrames = 1;
         params.creationNodeMask = params.visibleNodeMask = 1;
         params.uiMode = XEFG_SWAPCHAIN_UI_MODE_BACKBUFFER_HUDLESS;
-        sdk(xefgSwapChainD3D12BuildPipelines(fg, nullptr, 0, params.initFlags), "Precompiling XeSS-FG kernels");
-
         ComPtr<IDXGIFactory5> factory5;
         BOOL canTear = FALSE;
         if (SUCCEEDED(factory.As(&factory5)))
@@ -1031,7 +1067,9 @@ struct Session {
         desc.Flags = tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
         // GLFW's WGL presentation surface can itself occupy the HWND's DXGI flip path.
         // Give the proxy a separate surface while GLFW retains focus and input.
+        traceProbe("Creating presentation surface");
         surface = createPresentationSurface(hwnd, topLevel);
+        traceProbe("Initializing proxy swap chain");
         sdk(xefgSwapChainD3D12InitFromSwapChainDesc(fg, surface, &desc, nullptr, presentQueue.Get(), factory.Get(), &params),
             "Creating Minecraft's XeSS-FG proxy swap chain");
         sdk(xefgSwapChainD3D12GetSwapChainPtr(fg, IID_PPV_ARGS(&swap)), "Opening XeSS-FG proxy swap chain");
@@ -1040,12 +1078,16 @@ struct Session {
         sdk(xefgSwapChainSetUiCompositionState(fg, XEFG_SWAPCHAIN_UI_COMPOSITION_STATE_ENABLED),
             "Enabling XeSS-FG HUD composition");
         sdk(xefgSwapChainSetEnabled(fg, 0), "Initializing XeSS-FG in passthrough mode");
-        if (sharedInputs) {
-            check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&copyBaseDone)), "Creating base-color fence");
-            copyBaseReady.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-            if (!copyBaseReady.value) throw std::runtime_error("Creating base-color event");
-            copyWorker = std::thread([this] { copyLoop(); });
-        }
+    }
+
+    void startCopyWorker() {
+        check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&copyBaseDone)), "Creating base-color fence");
+        copyWork.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        copyGlReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        copyBaseReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (!copyWork.value || !copyGlReady.value || !copyBaseReady.value)
+            throw std::runtime_error("Creating XeSS-FG copy worker events");
+        copyWorker = std::thread([this] { copyLoop(); });
     }
 
     bool supportsUavStore(DXGI_FORMAT format) const {
@@ -1302,6 +1344,8 @@ struct Session {
             *output++ = mask & CopiedColorBytes
                 ? static_cast<int64_t>(slot.copiedColorBytes.load(std::memory_order_acquire)) : Unavailable;
             *output++ = mask & ProducerHud ? profileProbes->hud.read(i) : Unavailable;
+            *output++ = mask & CopiedColorBytes
+                ? static_cast<int64_t>(slot.hudCopyRoute.load(std::memory_order_acquire)) : Unavailable;
             slot.pendingQueries = 0;
             ++rows;
         }
@@ -1339,47 +1383,81 @@ struct Session {
     void copyLoop() {
         SetThreadDescription(GetCurrentThread(), L"CMI XeSS-FG Transfer");
         try {
+            std::optional<CopyJob> pendingMask;
+            int64_t maskDeadline = 0;
+            UINT64 armedGl = 0;
+            const HANDLE wake[]{copyWork.value, copyGlReady.value, copyBaseReady.value};
             for (;;) {
-                CopyJob job{};
-                {
-                    std::unique_lock lock(copyMutex);
-                    copyWork.wait(lock, [this] { return !copyJobs.empty() || copyClosing; });
-                    if (copyJobs.empty()) return;
-                    job = copyJobs.front();
-                    copyJobs.pop_front();
+                UINT64 glTarget = 0;
+                if (pendingMask) {
+                    const auto completedMask = copyBaseDone->GetCompletedValue();
+                    if (completedMask == UINT64_MAX) throw std::runtime_error("XeSS-FG HUD mask device removed");
+                    const bool ready = completedMask >= pendingMask->token;
+                    if (ready || (maskDeadline && qpc() >= maskDeadline)) {
+                        copyFrame(*pendingMask, ready);
+                        pendingMask.reset();
+                        continue;
+                    }
+                    if (!maskDeadline) {
+                        const auto published = glWritten->GetCompletedValue();
+                        if (published == UINT64_MAX) throw std::runtime_error("XeSS-FG OpenGL producer device removed");
+                        if (published >= pendingMask->token) maskDeadline = qpc() + refreshTicks / 2;
+                        else glTarget = pendingMask->token;
+                    }
                 }
-                if (!sparseColor(job)) {
-                    copyFrame(job);
-                    continue;
-                }
-                check(copyQueue->Wait(glWritten.Get(), job.token), "Waiting for OpenGL HUD changes");
-                copyHudMask(job, slots[job.slot].groups[Color], timestampIndex(job.slot, Color));
 
-                // Geometry with an already-published GL fence cannot block the color queue.
-                // Geometry and color retire on separate fences so advancing one cannot release the other.
-                while (copyBaseDone->GetCompletedValue() < job.token) {
-                    std::optional<CopyJob> geometry;
-                    {
-                        std::lock_guard guard(copyMutex);
-                        const auto candidate = std::find_if(copyJobs.begin(), copyJobs.end(),
-                            [](const CopyJob& queued) { return queued.group == Geometry; });
-                        const auto gpuProgress = glWritten->GetCompletedValue();
-                        if (candidate != copyJobs.end() && gpuProgress != UINT64_MAX && candidate->token <= gpuProgress) {
-                            geometry = *candidate;
-                            copyJobs.erase(candidate);
+                std::optional<CopyJob> job;
+                {
+                    std::lock_guard guard(copyMutex);
+                    if (copyClosing && copyJobs.empty() && !pendingMask) return;
+                    // Color publication and geometry publication have separate fences.
+                    // Keep FIFO within each group while a pending mask leaves the queue free for geometry.
+                    auto next = pendingMask ? std::find_if(copyJobs.begin(), copyJobs.end(),
+                        [](const CopyJob& candidate) { return candidate.group == Geometry; }) : copyJobs.begin();
+                    if (next != copyJobs.end()) {
+                        bool ready = true;
+                        if (pendingMask) {
+                            const auto published = glWritten->GetCompletedValue();
+                            if (published == UINT64_MAX) throw std::runtime_error("XeSS-FG OpenGL producer device removed");
+                            ready = published >= next->token;
+                            if (!ready && !glTarget) glTarget = next->token;
+                        }
+                        if (ready) {
+                            job = *next;
+                            copyJobs.erase(next);
                         }
                     }
-                    if (!geometry) break;
-                    copyFrame(*geometry);
                 }
-                if (copyBaseDone->GetCompletedValue() < job.token) {
-                    if (!ResetEvent(copyBaseReady.value)) throw std::runtime_error("Resetting XeSS-FG HUD mask event");
-                    check(copyBaseDone->SetEventOnCompletion(job.token, copyBaseReady.value), "Waiting for XeSS-FG HUD mask");
-                    if (WaitForSingleObject(copyBaseReady.value, 1) == WAIT_FAILED)
-                        throw std::runtime_error("Waiting for the XeSS-FG HUD mask event");
+                if (job) {
+                    if (sparseColor(*job)) {
+                        // Queue the GPU dependency early, but start the CPU budget only after publication.
+                        check(copyQueue->Wait(glWritten.Get(), job->token), "Waiting for OpenGL HUD changes");
+                        copyHudMask(*job, slots[job->slot].groups[Color], timestampIndex(job->slot, Color));
+                        maskDeadline = 0;
+                        check(copyBaseDone->SetEventOnCompletion(job->token, copyBaseReady.value),
+                              "Waiting for XeSS-FG HUD mask");
+                        pendingMask = job;
+                    } else {
+                        copyFrame(*job);
+                    }
+                    continue;
                 }
-                check(renderGpu->GetDeviceRemovedReason(), "Checking RTX after the XeSS-FG HUD mask");
-                copyFrame(job, copyBaseDone->GetCompletedValue() >= job.token);
+
+                if (glTarget && glTarget != armedGl) {
+                    check(glWritten->SetEventOnCompletion(glTarget, copyGlReady.value), "Waiting for OpenGL HUD changes");
+                    armedGl = glTarget;
+                }
+                DWORD timeout = glTarget ? 50 : INFINITE;
+                if (pendingMask && maskDeadline) {
+                    const auto remaining = std::max<int64_t>(0, maskDeadline - qpc());
+                    timeout = static_cast<DWORD>((remaining * 1000 + qpcFrequency - 1) / qpcFrequency);
+                }
+                const auto result = WaitForMultipleObjects(static_cast<DWORD>(std::size(wake)), wake, FALSE, timeout);
+                if (result == WAIT_FAILED) throw std::runtime_error("Waiting for XeSS-FG copy work");
+                if (result == WAIT_TIMEOUT) {
+                    check(renderGpu->GetDeviceRemovedReason(), "Checking the XeSS-FG producer");
+                    check(generationGpu->GetDeviceRemovedReason(), "Checking the XeSS-FG generation device");
+                }
             }
         } catch (...) {
             {
@@ -1417,21 +1495,24 @@ struct Session {
 
     }
 
-    UINT64 copyChangedColor(ID3D12GraphicsCommandList* commands, Transfer& transfer, bool maskReady) {
+    HudCopy copyChangedColor(ID3D12GraphicsCommandList* commands, Transfer& transfer, bool maskReady) {
         auto* source = transfer.glBuffer.Get();
         auto* destination = transfer.source.Get();
         void* data = nullptr;
         const D3D12_RANGE read{0, static_cast<SIZE_T>(hudMaskBytes())};
         const UINT64 fullBytes = colorTileCount() * ColorTileBytes;
-        if (!maskReady || FAILED(transfer.hudMaskReadback->Map(0, &read, &data))) {
+        const auto full = [&](HudCopyRoute route) {
             commands->CopyBufferRegion(destination, 0, source, 0, fullBytes);
-            return fullBytes;
-        }
+            return HudCopy{fullBytes, route};
+        };
+        if (!maskReady) return full(HudCopyRoute::Deadline);
+        if (FAILED(transfer.hudMaskReadback->Map(0, &read, &data))) return full(HudCopyRoute::MapFailed);
         const auto* masks = static_cast<const uint32_t*>(data);
         const auto across = colorTilesAcross();
         std::array<std::pair<UINT64, UINT64>, 64> ranges{};
         unsigned rangeCount = 0;
         UINT64 tiles = 0;
+        bool rangeLimit = false;
         const auto count = colorTileCount();
         for (UINT64 tile = 0; tile < count; ++tile) {
             const UINT firstRow = static_cast<UINT>(tile / across) * ColorTileHeight;
@@ -1444,23 +1525,21 @@ struct Session {
             } else if (rangeCount < ranges.size()) {
                 ranges[rangeCount++] = {tile, tile + 1};
             } else {
-                tiles = count;
+                rangeLimit = true;
                 break;
             }
             ++tiles;
         }
         const D3D12_RANGE written{0, 0};
         transfer.hudMaskReadback->Unmap(0, &written);
-        if (tiles >= count - count / 8) {
-            commands->CopyBufferRegion(destination, 0, source, 0, fullBytes);
-            return fullBytes;
-        }
+        if (rangeLimit) return full(HudCopyRoute::RangeLimit);
+        if (tiles >= count - count / 8) return full(HudCopyRoute::Dense);
         for (unsigned i = 0; i < rangeCount; ++i) {
             const auto [first, end] = ranges[i];
             commands->CopyBufferRegion(destination, first * ColorTileBytes, source, first * ColorTileBytes,
                                        (end - first) * ColorTileBytes);
         }
-        return tiles * ColorTileBytes;
+        return {tiles * ColorTileBytes, HudCopyRoute::Sparse};
     }
 
     bool sparseColor(const CopyJob& job) const {
@@ -1476,7 +1555,10 @@ struct Session {
         auto* producer = transfer.producer.begin();
         if (sparse) {
             const auto changes = copyChangedColor(producer, transfer, maskReady);
-            if (job.countBytes) slot.copiedColorBytes.store(linearColorBytes + hudMaskBytes() + changes, std::memory_order_release);
+            if (job.countBytes) {
+                slot.copiedColorBytes.store(linearColorBytes + hudMaskBytes() + changes.bytes, std::memory_order_release);
+                slot.hudCopyRoute.store(changes.route, std::memory_order_release);
+            }
         } else {
             if (job.timed) profileProbes->producer.begin(producer, query);
             producer->CopyBufferRegion(transfer.source.Get(), 0, transfer.glBuffer.Get(), 0, job.bytes);
@@ -1506,7 +1588,7 @@ struct Session {
                 if (copyClosing || copyJobs.size() >= SlotCount * GroupCount) throw std::logic_error("Invalid XeSS-FG copy queue");
                 copyJobs.push_back(job);
             }
-            copyWork.notify_one();
+            SetEvent(copyWork.value);
         } else {
             copyFrame(job);
         }

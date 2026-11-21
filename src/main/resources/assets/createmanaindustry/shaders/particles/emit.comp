@@ -283,7 +283,7 @@ void main() {
         // as the per-particle gravity bit; additive.vsh uses abs() for alpha.
         writeBuf.data[wb + 2u] = vec4(directColor, directGravity ? -1.0 : 1.0);
         writeBuf.data[wb + 3u] = vec4(float(elapsed)*.05, maxLife, uHexTickReady?uintBitsToFloat(uHexCurrentTick):seed, uintBitsToFloat(eid));
-        if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,origin,vel,seed,false);}
+        if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,origin,vel,seed,false);} else if(uFgOrdinaryIds)cmiNewIdentity(slot);
         return;
     }
     if (spawnStyle > 3.5 && spawnStyle < 4.5) {
@@ -343,7 +343,7 @@ void main() {
         writeBuf.data[wb + 1u] = vec4(vel, roll);
         writeBuf.data[wb + 2u] = vec4(hexPigment(lo,velUnlen),gravity?-1.:1.);
         writeBuf.data[wb + 3u] = vec4(float(elapsed)*.05, maxLife, uHexTickReady?uintBitsToFloat(uHexCurrentTick):seed, uintBitsToFloat(eid));
-        if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,pos,vel,seed,false);}
+        if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,pos,vel,seed,false);} else if(uFgOrdinaryIds)cmiNewIdentity(slot);
         return;
     }
     if (spawnStyle > 0.5) {
@@ -423,7 +423,7 @@ void main() {
             writeBuf.data[wb + 1u] = vec4(vel, 0.0);
             writeBuf.data[wb + 2u] = vec4(1.0, 1.0, 1.0, lightOut);
             writeBuf.data[wb + 3u] = vec4(0.0, maxLife, seed, uintBitsToFloat(eid));
-            if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,pos,vel,seed,false);}
+            if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,pos,vel,seed,false);} else if(uFgOrdinaryIds)cmiNewIdentity(slot);
             return;
         } else {
             // damage-indicator heart: packet offsets gaussian·0.1 (x/z) at the
@@ -450,7 +450,7 @@ void main() {
             writeBuf.data[wb + 1u] = vec4(vel, 0.0);
             writeBuf.data[wb + 2u] = vec4(1.0, 1.0, 1.0, lightOut);
             writeBuf.data[wb + 3u] = vec4(0.0, maxLife, seed, uintBitsToFloat(eid));
-            if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,pos,vel,seed,false);}
+            if(cmiSpawnAnimationSlot<CMI_MODEL_LIMIT){cmiNewIdentity(slot);cmiRegisterModelSpawn(slot,pos,vel,seed,false);} else if(uFgOrdinaryIds)cmiNewIdentity(slot);
             return;
         }
     }

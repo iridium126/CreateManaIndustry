@@ -818,6 +818,10 @@ public final class ShaderPackProgramCompiler {
                 vec4 cmi_LightCoordv; // full-bright lightmap (block light 15)
                 vec3 cmi_NormalLevel;  // level-space pose normal
                 vec4 cmi_Tint;         // emitter colour keyframes x per-particle tint
+                uint cmi_FgSlot = 0xffffffffu;
+                uint cmi_FgMember = 0u;
+                uint cmi_FgEmitter = 0u;
+                bool cmi_FgGhost = false;
 
                 """);
         if (withEntityColor) {
@@ -870,6 +874,7 @@ public final class ShaderPackProgramCompiler {
         sb.append("""
                         uvec2 indices=texelFetch(cmi_Sorted,(cmi_FeatherWordBase+cmi_FeatherVisibleOffset)/2+rank/2).xy;
                         int base=int(indices[rank&1])*4;vec3 vertex,normal;vec2 uv;
+                        cmi_FgSlot = uint(base / 4);
                         vec4 featherPosition=texelFetch(cmi_Pool,base),featherAge=texelFetch(cmi_Pool,base+3);
                         cmiFeatherPoint(featherPosition,texelFetch(cmi_Pool,base+1),texelFetch(cmi_Pool,base+2),featherAge,cmi_FeatherRight,cmi_FeatherUp,featherPoint,vertex,normal,uv);
                 """);
@@ -909,6 +914,8 @@ public final class ShaderPackProgramCompiler {
                         uint index=texelFetch(cmi_Sorted,(cmi_LodPass==1?0:131072)+gl_InstanceID).x;
                         vec4 position=texelFetch(cmi_Pool,int(index*2u));
                         vec4 motion=texelFetch(cmi_Pool,int(index*2u+1u));
+                        cmi_FgSlot = index;
+                        cmi_FgMember = floatBitsToUint(motion.w);
                         vec3 local=vec3(0);vec2 sourceUv=vec2(0);int part=0,axis=4;
                         if(cmi_LodPass==1){
                             vec4 geoA=texelFetch(cmi_Geo,gl_VertexID*2),geoB=texelFetch(cmi_Geo,gl_VertexID*2+1);
@@ -971,6 +978,12 @@ public final class ShaderPackProgramCompiler {
                     float sizeEnd = gone ? 0.0 : texelFetch(cmi_Emitters, int(hb + 5u)).w;
                     vec4 sizeAndColor=texelFetch(cmi_Emitters,int(hb+6u));
                     vec4 stormA=texelFetch(cmi_Emitters,int(hb+18u));
+                    if (!gone) {
+                        cmi_FgSlot = inst;
+                        cmi_FgMember = stormA.x > 0.5 ? uint(p0.w + 0.5) & 0x3ffffu : 0u;
+                        cmi_FgEmitter = eid ^ (cmi_FgMember != 0u ? floatBitsToUint(p3.z) : 0u);
+                        cmi_FgGhost = cmi_SegmentMode == 0;
+                    }
                     float size=cmiModelSize(p0,p3,sizeStart,sizeEnd,max(sizeAndColor.x,.001),stormA.x>.5);
                     float scale=(2.0*size)/MODEL_ABOVE_FEET;
                     // HP-death corpse: per-particle death pose + roll timer

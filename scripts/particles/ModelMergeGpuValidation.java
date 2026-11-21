@@ -78,8 +78,18 @@ public final class ModelMergeGpuValidation {
         return latest;
     }
     static Map<PatchShaderType,String> transform(ModelShaderOptimization.Stages s,AlphaTest alpha,String name){
-        return TransformPatcher.patchVanilla(name,s.vertex(),s.geometry(),s.tessControl(),s.tessEval(),s.fragment(),alpha,false,true,
+        var stages = TransformPatcher.patchVanilla(name,s.vertex(),s.geometry(),s.tessControl(),s.tessEval(),s.fragment(),alpha,false,true,
                 new net.irisshaders.iris.gl.state.ShaderAttributeInputs(true,true,false,true,true),new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
+        if (!Boolean.getBoolean("cmi.xess.history") || s.geometry() != null || s.tessControl() != null
+                || s.tessEval() != null || !s.vertex().contains("cmi_FgSlot")) return stages;
+        var motion = com.iridium126.createmanaindustry.client.xessfg.XessFgGpuShaderSources.mergedParticles(
+                stages.get(PatchShaderType.VERTEX), stages.get(PatchShaderType.FRAGMENT));
+        check(motion != null, "Transformed merged particle program lost its motion contract");
+        var result = new EnumMap<PatchShaderType, String>(PatchShaderType.class);
+        result.putAll(stages);
+        result.put(PatchShaderType.VERTEX, motion.vertex());
+        result.put(PatchShaderType.FRAGMENT, motion.fragment());
+        return result;
     }
     // Experiment-only exclusions; never read by the production optimizer.
     static ModelShaderOptimization.Plan candidate(ModelShaderOptimization.Stages input,int id){

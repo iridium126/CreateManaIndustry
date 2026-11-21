@@ -103,7 +103,7 @@ void cmiSpawnClassic(uint eid, float seed, vec3 origin, float lightPacked, uint 
 #endif
 
 
-    if (isModel) cmiNewIdentity(slot);
+    if (isModel || uFgOrdinaryIds) cmiNewIdentity(slot);
     uint wb = slot * 4u;
     writeBuf.data[wb + 0u] = vec4(pos, baseSize);
     writeBuf.data[wb + 1u] = vec4(vel, billboardRoll);

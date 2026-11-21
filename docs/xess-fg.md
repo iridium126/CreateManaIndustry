@@ -20,9 +20,9 @@ DXGI 默认使用 Minecraft 窗口客户区里的子呈现表面，原 GLFW 窗�
 
 NVIDIA 渲染、Arc A750 生成并使用 RGB24 时，`Arc shared inputs=true` 表示 Arc 从共享缓冲直接准备本地纹理。无扭曲时 Arc 重建相机运动，RTX 只需传输原始深度和可选局部运动覆盖。2560×1600 的半尺寸几何组为 4.096 MB，仅在有覆盖时需要 8.192 MB。对照旧版的 16.384 MB 仅深度路径。传输的实际字节量见 `cross_geometry_bytes`。已识别的屏幕扭曲由 OpenGL 产生两张低分辨率输入。
 
-HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差分以 128×8 像素 tile 存放，块遮罩仍精确到四个像素。颜色遮罩准备期间，可处理已发布的几何。遮罩未及时就绪、差分稠密或复制范围过多时使用整面差分复制。Arc 复用无差异区域的基底 RGB。
+HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差分以 128×8 像素 tile 存放，块遮罩精确到四个像素。复制 worker 提前提交遮罩回读，在 OpenGL 发布颜色后才启动半个刷新周期的回读预算，期间可处理已发布的几何。超过回读预算、遮罩映射失败、差分稠密或复制范围过多时使用整面差分复制。Arc 复用无差异区域的基底 RGB。
 
-原生呈现线程按顺序呈现真实帧，最多一个待呈现作业。可选传输槽连续两帧满载，或待呈现作业跨过一个刷新周期时，先走仅最终色的输入。连续八帧无背压后重置补帧历史，再恢复 2×。记录 `fg_skip_reason` 区分容量压力（1）和呈现排队（2）。
+原生呈现线程按顺序呈现真实帧，最多一个待呈现作业。可选传输槽连续两帧满载、待呈现作业跨过一个刷新周期，或连续两帧观察到入队受阻或执行中的呈现超龄时，下一帧使用仅最终色的输入。连续八帧无背压后重置补帧历史，再恢复 2×。`fg_skip_reason` 区分容量压力（1）、待呈现作业超龄（2）和持续呈现背压（3）。
 
 ### 独立翻转对照
 
@@ -41,6 +41,8 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 
 ## XeSS-FG 逐帧数据
 
+固定刷新采集或重新合并时，给 `capture-xessfg-presentmon.ps1` 传入显示器的实际刷新率，如 `-RefreshHz 240`。`fixed_refresh.splits` 统计真实帧 A 到生成帧再到真实帧 B 的刷新周期分布，`2:2` 和 `3:1` 对应四刷新区间。偏离整数刷新周期超过 10% 的间隔记入 `unquantized_intervals`。时间线中的 `arc_inputs_to_generated_ms` 和 `arc_inputs_to_midpoint_ms` 分别表示 Arc 输入就绪到生成帧上屏及到真实帧中点的时间。VRR 采集使用毫秒指标。
+
 采集目录 `logs/cmi-particle-frames` 中的 `frames-…-xessfg.csv` 用 `frame` 列与整帧 CSV 对齐。`next_tick_interval_ns` 从本帧开始计到下一次客户端帧循环开始，包含呈现和限速。最后一行没有下一帧样本。空白表示阶段未执行或本次采样没有收到结果。
 
 - `xell_sleep_ns`、`early_slot_ns`、`slot_wait_ns` 区分帧节奏、槽位申请总时间和满载等待。用 `slots_in_use` 查看尝试申请前的占用，用 `early_slot` 查看分配到的槽。`disabled_checks` 的位值 1 表示帧开始时游戏条件不符，8 表示深度或速度未就绪，16 表示无 HUD 输入未就绪，32 表示导出时游戏条件不符。
@@ -56,6 +58,7 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 - 格式 9 增加 `proxy_top_level`，记录每帧使用子窗口（0）或顶层窗口（1）。合并脚本按实际显示的真实帧与生成帧统计各自的 `pm_present_mode`。
 - 格式 10 增加 `producer_wait_ns`，记录渲染线程在帧开始等待先前 OpenGL 颜色完成的时间。`slot_wait_ns` 继续记录传输槽等待。
 - 格式 11 增加 `fg_gameplay_eligible`、`fg_skip_reason`、几何尺寸及 `producer_hudless_gpu_ns`，分别记录跳补帧与独立颜色基底复制。
+- 格式 12 增加 `hud_copy_route`，记录稀疏复制（`sparse`）及整面回落原因（`deadline`、`dense`、`range_limit`、`map_failed`）。合并摘要中的 `hud_copy_routes` 按真实帧统计各路径。
 - Arc 直接读取共享输入时，Arc DMA 字段留空。`arc_color_unpack_gpu_ns` 记录颜色重建，`arc_texture_upload_gpu_ns` 记录几何纹理写入及运动矢量重建，`arc_inputs_ready_qpc` 对应两组输出就绪。
 
 ## PresentMon 联合采集
@@ -76,11 +79,11 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 
 启用插帧时，代理交换链用 `SyncInterval=1` 呈现生成帧和真实帧，避免较新的翻转按间隔 0 的规则替换排队帧。复测时保留上次的 Minecraft 垂直同步设置，验证 XeSS-FG CSV 的 `dxgi_sync_interval=1`，再比较脚本报告的生成帧显示比例、实际显示 FPS 和真实帧 P95。同步呈现的节奏受当前显示刷新率约束。 [Microsoft DXGI Present](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present)
 
-在本机配置原生构建时传入 `-DCMI_XESSFG_BUILD_PROBE=ON`。运行 `ctest -C Release -R xessfg_offline_probe` 检查调度状态与 D3D12 着色器编译，运行 `ctest -C Release -R xessfg_pipeline_probe` 检查双卡低分辨率输入、运动覆盖合并、HUD tile、槽位与部分帧退役、尺寸变化和设备丢失。
+在本机配置原生构建时传入 `-DCMI_XESSFG_BUILD_PROBE=ON`。运行 `ctest --test-dir build/xessfg-native -C Release -R '^xessfg_' --output-on-failure -V`。调度探针检查背压进入及八帧恢复，传输探针检查双卡低分辨率输入、运动覆盖合并、HUD tile、槽位退役、尺寸变化和设备丢失。代理探针独立启动 XeSS SDK，在交互桌面提交六张合成真实帧，检查固定刷新间隔、顺序、真实帧直通和重建历史。交互桌面上可在 SDK `bin` 已加入 PATH 的环境运行 `CmiXessFgPipelineProbe.exe --display`，此模式要求至少一帧实际进入生成队列。
 
 ### 客户端 A/B 与画质
 
-可先用 `.\gradlew.bat --no-configuration-cache -I scripts/particles/validation.init.gradle validateXessFgMotionGpu` 在隐藏的 OpenGL 窗口中验证运动方向、深度遮挡和两档深度导出的 GPU 时间。探针使用合成几何及纹理。
+可先用 `.\gradlew.bat --no-configuration-cache -I scripts/particles/validation.init.gradle validateXessFgMotionGpu validateParticleProgramsGpu validateNativeRiftPacks validateModelMergeGpu -PxessTerrain`。合成场景检查低分辨率网格上的目标速度、加法和透明覆盖、jitter、遮挡与历史重置。光影探针编译链接八个样本的默认 Sodium 地形和水面程序，合批探针还检查项目粒子的着色器与原有 MRT 输出。
 
 用提交 `a987720f` 的独立构建作为基线。相同机器、显示器、显示模式、光影设置、存档、视角路径及 Storm 负载下，先做两轮基线 A/A，再交替做至少三组优化前后对照。每次用 `.\scripts\particles\capture-xessfg-presentmon.ps1 -Seconds 80` 启动采集，并在游戏内执行 `/cmi particle profile frames 60`。分别采集稳态和有背压的场景。固定刷新与启用 VRR 的结果分开比较。
 
@@ -91,4 +94,12 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 | BSL、Complementary、Sildur | 同样测试五类运动，额外覆盖水下、风摆和 Sildur 雨滴。 |
 | IterationT、Solas、Sundial Lite | 同样测试五类运动，并检查风摆、Sundial 畸变和外部超分切换。 |
 
-当前接入了经 BufferBuilder 提交的实体、手部、方块实体、原版不透明粒子，以及 Flywheel 1.0.6 的旋转和变换实例。CPU 生成的动态顶点随顶点流匹配。项目 GPU 粒子、透明 / 加法粒子和第三方顶点变形的独立历史仍需接入。八包源码验证覆盖现有光影兼容契约，客户端画质按上表另行验收。Bliss 截图模式、Sundial 外部超分和未知渲染配置呈现真实帧。
+当前覆盖经 BufferBuilder 提交的实体、手部、方块实体、原版粒子和 Flywheel 1.0.6 实例。原版透明粒子按图集与顶点 alpha 筛选覆盖。项目 GPU 粒子的面片、模型、羽毛和远距 LOD 在原绘制中记录实际顶点，支持自绘和 Iris 合批。加法火花按亮度筛选，透明贴图粒子按 alpha 筛选。粒子覆盖只为可见样本写运动，导出时保留深度输入的采样值。
+
+八个已识别光影包使用 Iris 变换后的 Sodium 程序记录地形和水面实际形变。IterationT 通过地形几何阶段转发原三角形的历史，Sildur 的不透明地形使用其实际回落的 textured 程序。BSL 手部曲率和 Complementary 手部摆动在已识别源码及选项开启时按对应帧的参数求值。GPU 采集目前要求 NVIDIA 64 位 SSBO 原子操作。包专用的其他实体变形以及额外生成的几何或细分顶点仍需接入。历史在提交插帧输入后推进。Bliss 截图模式、Sundial 外部超分和未知渲染配置呈现真实帧。
+
+### 本次探针结果
+
+RTX 4070 Laptop 与 Arc A750 通过三项原生探针。代理为六张合成真实帧分别排入 1、2、2、1、1、2 个呈现，其中第 4 帧走真实帧专用槽，第 5 帧重建历史，第 6 帧恢复生成。PresentMon 记录到真实帧和生成帧上屏。短采样仅含一个完整的真实帧、生成帧、真实帧区间，其中点误差为 +4.17 ms。
+
+RTX 隐藏窗口深度导出探针中，2560×1600 到 1280×800 的深度有效载荷由 16.384 MB 降至 4.096 MB，一次采集的导出 GPU P99 由 0.043 ms 降至 0.016 ms。真实帧上屏 P99、生成覆盖率和双卡稳态 GPU 时间由客户端采集确认。

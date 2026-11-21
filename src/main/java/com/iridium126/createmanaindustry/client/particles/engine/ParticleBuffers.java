@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms;
+
 import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
 import org.lwjgl.opengl.GL45;
 
@@ -667,6 +669,7 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     /** Call after a full frame: the freshly written buffer becomes the next read source. */
     public void beginComputeFrame(){beginComputeFrame(0);}
     public int historyBufferId(){return identitySSBO;}
+    public int drawIdentityWordBase(){return 1+readIndex*capacity;}
     public int historyWordBase(){return 1+2*capacity+2*DAMAGE_QUEUE_CAP;}
     public void beginComputeFrame(float dt) {
         // Birth is the default for every producer. Compaction alone writes an edge.
@@ -1206,6 +1209,8 @@ public final class ParticleBuffers implements com.iridium126.createmanaindustry.
     }
 
     public void bindIdentities(int program) {
+        GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"uFgOrdinaryIds"),
+                com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.xessFg().enabled() ? 1 : 0);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uHistoryEnabled"),1);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1ui(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uHistoryBase"),historyWordBase());
         if(com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uModelMembersEnabled")>=0)bindModelMembers(program);

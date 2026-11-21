@@ -17,7 +17,7 @@ final class XessFgNative {
     static final int GEOMETRY_SLOTS = 4, SLOT_COUNT = GEOMETRY_SLOTS + 1;
     static final int PRODUCER_BACKPRESSURE = -2;
     static final int GEOMETRY = 0, COLOR = 1, HUD_BASE = 2;
-    static final int GPU_PROFILE_FIELDS = 19, CLOCK_PROFILE_FIELDS = 10, PRESENT_RESULT_CAPACITY = SLOT_COUNT * 4;
+    static final int GPU_PROFILE_FIELDS = 20, CLOCK_PROFILE_FIELDS = 10, PRESENT_RESULT_CAPACITY = SLOT_COUNT * 4;
     static final int CONSTANT_BYTES = 152;
     static final int REPROJECTION_BYTES = 144;
     private static final String ROOT = "/native/xessfg/windows-x86_64/";

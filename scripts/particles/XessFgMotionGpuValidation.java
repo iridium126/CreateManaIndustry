@@ -23,6 +23,9 @@ class XessFgMotionGpuValidation {
             GL.createCapabilities();
             System.out.println(glGetString(GL_RENDERER));
             verifyMotion();
+            verifyGpuHistory("additive.vsh");
+            verifyGpuHistory("textured.vsh");
+            verifyGpuHistory("terrain");
             int exporter = program(stage("export.comp", GL_COMPUTE_SHADER));
             verifyMotionMerge(exporter);
             verifyDepthExport(exporter);
@@ -32,6 +35,125 @@ class XessFgMotionGpuValidation {
             if (window != 0) glfwDestroyWindow(window);
             glfwTerminate();
         }
+    }
+
+    private static void verifyGpuHistory(String kind) throws Exception {
+        require(GL.getCapabilities().GL_NV_shader_atomic_int64 && glGetInteger(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS) > 35,
+                "GPU history bindings or atomics unavailable");
+        boolean terrain = kind.equals("terrain");
+        String vertex = """
+                #version 450 core
+                #define VEC4_PER_EMITTER 19u
+                layout(std430, binding = 2) readonly buffer ParticleRead { vec4 data[]; } particles;
+                layout(std430, binding = 3) readonly buffer Emitters { vec4 u[]; } emitters;
+                uniform float offsetX;
+                uniform float jitterX;
+                uniform mat4 iris_ProjectionMatrix, iris_ModelViewMatrix;
+                vec4 getVertexPosition() {
+                    vec2 corner = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+                    return vec4(corner * 2.0 - 1.0, 0.0, 1.0);
+                }
+                void main() {
+                    uint inst = 0u;
+                    uint base = inst * 4u;
+                    vec4 p0 = particles.data[base];
+                    vec4 p3 = particles.data[base + 3u];
+                    gl_Position = getVertexPosition() + vec4(offsetX + jitterX, 0.0, 0.0, 0.0);
+                }
+                """;
+        String fragment = """
+                #version 450 core
+                uniform int uMode;
+                uniform float coverage;
+                out vec4 fragColor;
+                void main() { fragColor = vec4(coverage, coverage * 0.5, 0.0, coverage); }
+                """;
+        var shader = terrain
+                ? com.iridium126.createmanaindustry.client.xessfg.XessFgGpuShaderSources.terrain(
+                        com.iridium126.createmanaindustry.client.xessfg.XessFgPack.BSL, vertex, fragment, false, false)
+                : com.iridium126.createmanaindustry.client.xessfg.XessFgGpuShaderSources.particle(kind, vertex, fragment);
+        require(shader != null, kind + " program was not decorated");
+        int program = program(stageText(shader.vertex(), GL_VERTEX_SHADER), stageText(shader.fragment(), GL_FRAGMENT_SHADER));
+        int merge = program(stage("export.comp", GL_COMPUTE_SHADER));
+        int width = 16, height = 8;
+        int[] buffers = new int[6];
+        long[] bytes = {64, 19 * 16, 8, 4096 * 32, 4096 * 32, width * height * 16L};
+        for (int i = 0; i < buffers.length; i++) {
+            buffers[i] = glCreateBuffers();
+            glNamedBufferStorage(buffers[i], bytes[i], GL_DYNAMIC_STORAGE_BIT);
+            glClearNamedBufferData(buffers[i], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, new int[]{0});
+        }
+        int grid = glCreateBuffers(), vao = glCreateVertexArrays();
+        glNamedBufferStorage(grid, 64, GL_DYNAMIC_STORAGE_BIT);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 31, grid);
+        glNamedBufferSubData(buffers[2], 0, new int[]{0, 19});
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, buffers[0]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, buffers[1]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 34, buffers[5]);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 35, buffers[2]);
+        glBindVertexArray(vao);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        int sourceWidth = terrain ? width : width * 2, sourceHeight = terrain ? height : height * 2;
+        glViewport(0, 0, sourceWidth, sourceHeight);
+        int sceneDepth = texture(GL_R32F, sourceWidth, sourceHeight, GL_RED, new float[]{terrain ? .5f : .6f});
+        int output = glCreateBuffers();
+        int planeWords = width * height;
+        glNamedBufferStorage(output, (long) planeWords * 8, GL_DYNAMIC_STORAGE_BIT);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, output);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffers[5]);
+        int zero = Float.floatToIntBits(0.0f);
+        for (int frame = 1; frame <= 6; frame++) {
+            int previous = frame == 3 ? 0 : frame - 1;
+            float jitter = terrain && frame % 2 == 0 ? .5f : 0;
+            glNamedBufferSubData(grid, 0, new int[]{frame, previous, width, height,
+                    Float.floatToIntBits(sourceWidth), Float.floatToIntBits(sourceHeight), Float.floatToIntBits(jitter), zero,
+                    0, 0, 0, 0, 0, 0, 0, 0});
+            glClearNamedBufferData(buffers[5], GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT, new int[]{0});
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 32, buffers[3 + frame % 2]);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 33, buffers[3 + (frame + 1) % 2]);
+            glUseProgram(program);
+            glUniform1f(glGetUniformLocation(program, "offsetX"), .0625f + (frame % 2 == 0 ? .25f : 0));
+            glUniform1f(glGetUniformLocation(program, "jitterX"), jitter * 2 / sourceWidth);
+            glUniform1f(glGetUniformLocation(program, "coverage"), frame == 5 ? .04f : .7f);
+            glUniform1i(glGetUniformLocation(program, "uMode"), 0);
+            glUniform1ui(glGetUniformLocation(program, "cmiFgIdentityBase"), 1);
+            float[] identity = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            glUniformMatrix4fv(glGetUniformLocation(program, "iris_ProjectionMatrix"), false, identity);
+            glUniformMatrix4fv(glGetUniformLocation(program, "iris_ModelViewMatrix"), false, identity);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            glUseProgram(merge);
+            glBindTextureUnit(0, sceneDepth);
+            glUniform2i(glGetUniformLocation(merge, "extent"), width, height);
+            glUniform2i(glGetUniformLocation(merge, "sourceSize"), sourceWidth, sourceHeight);
+            glUniform2f(glGetUniformLocation(merge, "sourceScale"), 1, 1);
+            glUniform2f(glGetUniformLocation(merge, "currentJitter"), jitter, 0);
+            glUniform1i(glGetUniformLocation(merge, "rowWords"), width);
+            glUniform4i(glGetUniformLocation(merge, "offsets"), 0, 0, 0, planeWords);
+            glUniform1i(glGetUniformLocation(merge, "mode"), 9);
+            if (frame == 6) glClearTexImage(sceneDepth, 0, GL_RED, GL_FLOAT, new float[]{.3f});
+            glDispatchCompute(1, 1, 1);
+            glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+            long address = ((height - 1 - 4L) * width + 8) * 4;
+            int[] depth = new int[1], velocity = new int[1];
+            glGetNamedBufferSubData(output, address, depth);
+            glGetNamedBufferSubData(output, planeWords * 4L + address, velocity);
+            if (frame == 2 || frame == 4 || (terrain && frame == 5)) {
+                float expected = frame == 5 ? 2 : -2;
+                float dx = Float.float16ToFloat((short) velocity[0]);
+                require(Math.abs(dx - expected) < .01f
+                                && Math.abs(Float.intBitsToFloat(depth[0]) - (terrain ? .5f : .6f)) < .001,
+                        kind + " velocity or scene depth mismatched: " + dx + ", " + Float.intBitsToFloat(depth[0]));
+            } else require(velocity[0] == 0x7e007e00, kind + " published hidden, weak, or reset geometry at frame " + frame);
+        }
+        glDeleteTextures(sceneDepth);
+        glDeleteBuffers(output);
+        glDeleteVertexArrays(vao);
+        glDeleteProgram(program);
+        glDeleteProgram(merge);
+        glDeleteBuffers(buffers);
+        glDeleteBuffers(grid);
+        System.out.println("PASS: " + kind + " history, scale, visibility and history reset");
     }
 
     private static void verifyMotionMerge(int program) {
@@ -152,8 +274,12 @@ class XessFgMotionGpuValidation {
     }
 
     private static int stage(String name, int type) throws Exception {
+        return stageText(Files.readString(SHADERS.resolve(name)), type);
+    }
+
+    private static int stageText(String code, int type) {
         int shader = glCreateShader(type);
-        glShaderSource(shader, Files.readString(SHADERS.resolve(name)));
+        glShaderSource(shader, code);
         glCompileShader(shader);
         require(glGetShaderi(shader, GL_COMPILE_STATUS) != 0, glGetShaderInfoLog(shader));
         return shader;

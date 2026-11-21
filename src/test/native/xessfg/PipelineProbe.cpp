@@ -1,4 +1,5 @@
 // The probe exercises the same queue and resource code as JNI on two physical adapters.
+#define CMI_XESSFG_PROBE_TRACE
 #include "XessFg.cpp"
 #include <algorithm>
 #include <chrono>
@@ -28,6 +29,41 @@ void verifyPendingCapacity() {
     session.activeSlot = 1;
     require(!session.enqueue({1, 0, 2, false, false, true, {}, 0, 0}), "Accepted two pending frames");
     require(session.waiting->sequence == 1 && session.activeSlot == 1, "Overwrote an older pending frame");
+}
+
+void verifyPresentAdmission(ID3D12Device* arc) {
+    Session session;
+    session.workReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    session.queueSpace.value = CreateEventW(nullptr, TRUE, TRUE, nullptr);
+    require(session.workReady.value && session.queueSpace.value, "Creating presentation admission events");
+    check(arc->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&session.prepared)),
+          "Creating presentation admission fence");
+    session.refreshTicks = INT64_MAX;
+    auto submit = [&](UINT64 sequence) {
+        return session.enqueue({0, static_cast<uint32_t>(sequence), sequence, false, true, false, {}, 0, 0});
+    };
+    for (UINT64 sequence : {1u, 2u, 3u}) {
+        session.sequence = sequence;
+        session.activeSlot = 0;
+        session.slots[0].colorSubmitted = true;
+        if (sequence > 1) {
+            require(!submit(sequence) && !submit(sequence), "Expected a blocked real frame while the presenter was busy");
+            session.waiting.reset();
+        }
+        require(submit(sequence), "Failed to enqueue an unblocked real frame");
+        require(session.slotsInUse() == 0, "Admission probe must have free transfer slots");
+        const int reason = session.admission(true);
+        require(reason == (sequence == 3 ? 3 : 0), "Presentation backpressure was not counted once per real frame");
+    }
+    session.waiting.reset();
+    for (int frame = 0; frame < 7; ++frame)
+        require(session.admission(true) == 3, "Resumed before eight clean presentation frames");
+    require(session.admission(true) == 0, "Clean presentation frames did not restore generation");
+
+    session.refreshTicks = 1;
+    session.presentingSince.store(qpc() - 2);
+    require(session.admission(true) == 0 && session.admission(true) == 3,
+            "An aged in-flight presentation escaped admission after leaving the waiting slot");
 }
 
 jlong adapter(UINT vendor, std::wstring_view model) {
@@ -157,7 +193,8 @@ void verifyTransfer(Session& session, unsigned index, Group group, uint32_t tag)
 
 enum class HudCoverage { Dense, OneTile, Empty };
 
-void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = HudCoverage::Dense) {
+void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = HudCoverage::Dense,
+                       bool delayedPublication = false) {
     auto& slot = session.slots[index];
     auto input = hostBuffer(session.renderGpu.Get(), session.groupBytes[Color], D3D12_HEAP_TYPE_UPLOAD);
     const D3D12_RANGE empty{0, 0};
@@ -231,8 +268,21 @@ void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = 
     fill.begin()->CopyBufferRegion(slot.groups[Color].glBuffer.Get(), 0, input.Get(), 0, session.groupBytes[Color]);
     fill.submit(session.copyQueue.Get());
     const auto token = transferToken(session.sequence, Color);
-    check(session.copyQueue->Signal(session.glWritten.Get(), token), "Publishing packed color");
-    session.submitColor(index, session.sequence, true);
+    if (delayedPublication) {
+        ComPtr<ID3D12Fence> filled;
+        check(session.renderGpu->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&filled)),
+              "Creating delayed color upload fence");
+        check(session.copyQueue->Signal(filled.Get(), 1), "Finishing the simulated producer upload");
+        require(waitForFence(filled.Get(), 1), "Simulated producer upload did not retire");
+        session.submitColor(index, session.sequence, true);
+        std::this_thread::sleep_for(std::chrono::milliseconds(24));
+        const bool maskUnpublished = session.copyBaseDone->GetCompletedValue() < token;
+        check(session.glWritten->Signal(token), "Publishing delayed OpenGL color");
+        require(maskUnpublished, "HUD mask reached CPU before producer publication");
+    } else {
+        check(session.copyQueue->Signal(session.glWritten.Get(), token), "Publishing packed color");
+        session.submitColor(index, session.sequence, true);
+    }
     require(waitForFence(session.prepared.Get(), session.sequence), "Waiting for prepared packed color");
     const auto& hudless = session.footprints[Hudless];
     const auto bytes = hudless.Offset + UINT64(hudless.Footprint.RowPitch) * session.height;
@@ -266,7 +316,17 @@ void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = 
     require(matches, "Packed color reconstruction differed at final or HUD-less plane");
 }
 
-void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage coverage, bool overrides = false) {
+void markSyntheticFrame(Session& session, uint32_t frame) {
+    std::lock_guard guard(session.xellMutex);
+    const auto result = xellSleep(session.ll, frame);
+    if (result != XELL_RESULT_ERROR_INVALID_ARGUMENT) checkXeLL(result, "Probe xellSleep", frame);
+    recordMarker(session.ll, frame, XELL_SIMULATION_START);
+    recordMarker(session.ll, frame, XELL_SIMULATION_END);
+    recordMarker(session.ll, frame, XELL_RENDERSUBMIT_START);
+}
+
+void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage coverage, bool overrides = false,
+                          bool present = false, bool delayedPublication = false) {
     const auto sequence = session.sequence + 1;
     const int index = session.acquire(sequence, static_cast<int64_t>(sequence));
     require(index >= 0, "Acquiring shared-input frame");
@@ -342,16 +402,78 @@ void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage covera
     readback->Unmap(0, &empty);
     require(matches, "Shared geometry was incorrect before color publication");
     require(session.prepared->GetCompletedValue() < sequence, "Geometry made the entire frame ready without color");
-    verifyPackedColor(session, index, coverage);
+    verifyPackedColor(session, index, coverage, delayedPublication);
     std::array<int64_t, GpuProfileFields * SlotCount> profile{};
     const auto rows = session.pollProfile(profile.data());
     const auto dirtyTiles = coverage == HudCoverage::Dense ? session.colorTileCount()
         : coverage == HudCoverage::OneTile ? 1 : 0;
     const auto colorBytes = session.linearColorBytes + session.hudMaskBytes() + dirtyTiles * ColorTileBytes;
-    require(rows == 1 && profile.front() == sequence && profile[GpuProfileFields - 2] == colorBytes,
-            "Sparse RGB24 profile did not report the actual number of copied bytes");
-    queueDiscard(session, index, sequence);
-    require(waitForFence(session.completed.Get(), sequence), "Shared-input frame did not retire");
+    const auto denseBytes = session.linearColorBytes + session.hudMaskBytes() + session.colorTileCount() * ColorTileBytes;
+    const auto reported = static_cast<UINT64>(profile[GpuProfileFields - 3]);
+    const auto route = static_cast<HudCopyRoute>(profile[GpuProfileFields - 1]);
+    require(rows == 1 && profile.front() == sequence && (reported == colorBytes || reported == denseBytes),
+            "RGB24 profile disagreed with the tile or deadline fallback byte count");
+    if (delayedPublication) {
+        require(reported == colorBytes && route == HudCopyRoute::Sparse,
+                "Delayed GL publication caused a sparse HUD to fall back to full color");
+        std::puts("  Sparse RGB24 remained sparse after 24 ms of producer delay");
+    }
+    if (!present && colorBytes != denseBytes) {
+        // Validate the range plan with a completed mask even if the timed worker chose its dense fallback.
+        Commands recopy;
+        recopy.create(session.renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
+        require(session.copyChangedColor(recopy.begin(), slot.groups[Color], true).bytes == dirtyTiles * ColorTileBytes,
+                "A completed sparse mask did not select the expected tiles");
+        recopy.submit(session.copyQueue.Get());
+        ComPtr<ID3D12Fence> doneCopy;
+        check(session.renderGpu->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&doneCopy)), "Creating tile-plan fence");
+        check(session.copyQueue->Signal(doneCopy.Get(), 1), "Retiring tile-plan check");
+        require(waitForFence(doneCopy.Get(), 1), "Tile-plan check did not retire");
+    }
+    if (present) {
+        const auto frame = static_cast<uint32_t>(sequence);
+        markSyntheticFrame(session, frame);
+        Constants constants{};
+        for (unsigned i = 0; i < 16; i += 5) constants.view[i] = constants.projection[i] = 1;
+        constants.scaleX = constants.scaleY = 1;
+        constants.frameMs = 32;
+        constants.resetHistory = sequence == 1;
+        require(session.enqueue({static_cast<unsigned>(index), frame, sequence, true, true, false,
+                                 constants, static_cast<int64_t>(sequence), 0}), "Enqueuing synthetic proxy present");
+    } else {
+        queueDiscard(session, index, sequence);
+    }
+    const bool retired = waitForFence(session.completed.Get(), sequence);
+    session.checkPresenter();
+    require(retired, "Shared-input frame did not retire");
+}
+
+void verifyColorOnlyPresent(Session& session) {
+    const auto sequence = session.sequence + 1;
+    const int index = session.acquire(sequence, static_cast<int64_t>(sequence), true);
+    require(index == GeometrySlots, "Real-only presentation did not use its dedicated transfer slot");
+    const auto frame = static_cast<uint32_t>(sequence);
+    markSyntheticFrame(session, frame);
+    auto input = hostBuffer(session.renderGpu.Get(), session.linearColorBytes, D3D12_HEAP_TYPE_UPLOAD);
+    const D3D12_RANGE empty{0, 0};
+    void* mapped = nullptr;
+    check(input->Map(0, &empty, &mapped), "Mapping real-only probe color");
+    std::memset(mapped, 0x65, static_cast<size_t>(session.linearColorBytes));
+    input->Unmap(0, nullptr);
+    Commands copy;
+    copy.create(session.renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
+    copy.begin()->CopyBufferRegion(session.slots[index].groups[Color].glBuffer.Get(), 0, input.Get(), 0,
+                                   session.linearColorBytes);
+    copy.submit(session.copyQueue.Get());
+    check(session.copyQueue->Signal(session.glWritten.Get(), transferToken(sequence, Color)), "Publishing real-only probe color");
+    session.submitColor(index, sequence, false);
+    require(session.enqueue({static_cast<unsigned>(index), frame, sequence, false, true, false, {},
+                             static_cast<int64_t>(sequence), 0}), "Enqueuing real-only proxy present");
+    const bool retired = waitForFence(session.completed.Get(), sequence);
+    session.checkPresenter();
+    require(retired, "Real-only presentation did not retire");
+    std::array<int64_t, GpuProfileFields * SlotCount> profile{};
+    require(session.pollProfile(profile.data()) == 1 && profile.front() == sequence, "Real-only profile did not retire");
 }
 
 void verifySaturation(Session& session) {
@@ -457,6 +579,8 @@ void verifyProducerBackpressure(Session& session) {
     require(fullSlot >= 0, "Acquiring a complete producer test frame");
     release.token = transferToken(full, Color);
     session.submitGeometry(fullSlot, full);
+    check(session.hudWritten->Signal(full), "Publishing synthetic HUD-less base for admission");
+    session.submitHudless(fullSlot, full);
     session.submitColor(fullSlot, full, true);
     queueDiscard(session, fullSlot, full);
     check(session.glWritten->Signal(transferToken(full, Geometry)), "Completing only OpenGL geometry");
@@ -473,14 +597,18 @@ void verifyProducerBackpressure(Session& session) {
     require(waitForFence(session.prepared.Get(), full + 1), "Deferred producer test did not retire its final slots");
 }
 
-void verifyPopup(jlong render, jlong arc) {
+void verifyPopup(jlong render, jlong arc, bool requireDisplay) {
     constexpr int width = 803, height = 611;
+    RECT workArea{};
+    require(SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0), "Reading the probe display work area");
+    const LONG left = std::max(workArea.left, workArea.right - width);
+    const LONG top = std::max(workArea.top, workArea.bottom - height);
     const auto owner = CreateWindowExW(WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, L"STATIC", L"XeSS-FG popup owner",
-        WS_POPUP | WS_VISIBLE, -20000, -20000, width, height, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
-    require(owner, "Creating off-screen popup owner");
+        WS_POPUP | WS_VISIBLE, left, top, width, height, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    require(owner, "Creating popup owner");
     try {
         Session session;
-        session.start(owner, render, arc, width, height, Rgb24, true);
+        session.start(owner, render, arc, width, height, Rgb24, true, true, true, (width + 1) / 2, (height + 1) / 2);
         const auto wnd = session.surface;
         const auto styles = GetWindowLongPtrW(wnd, GWL_STYLE);
         const auto extended = GetWindowLongPtrW(wnd, GWL_EXSTYLE);
@@ -489,14 +617,55 @@ void verifyPopup(jlong render, jlong arc) {
                 && GetWindow(wnd, GW_OWNER) == owner && GetAncestor(wnd, GA_ROOT) == wnd
                 && GetWindowThreadProcessId(wnd, nullptr) != GetCurrentThreadId(), "Popup style or input ownership mismatch");
         require(session.positionPopup(), "Showing a popup over its owner");
-        require(SetWindowPos(owner, nullptr, -19980, -19970, width, height, SWP_NOACTIVATE | SWP_NOZORDER),
+        require(SetWindowPos(owner, HWND_TOP, left - 8, top - 8, width, height, SWP_NOACTIVATE),
                 "Moving the popup owner");
         RECT actual{}, expected{};
         require(session.positionPopup() && GetWindowRect(wnd, &actual) && clientOnScreen(owner, expected)
                 && EqualRect(&actual, &expected), "Popup did not track its owner's client rectangle");
+        UpdateWindow(owner);
+        std::optional<int> quit;
+        Session::pumpMessages(quit);
+        if (requireDisplay) {
+            // Give an external PresentMon session time to attach to this process.
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            Session::pumpMessages(quit);
+        }
+        for (int i = 0; i < 3; ++i) verifySharedGeometry(session, true, HudCoverage::OneTile, true, true);
+        verifyColorOnlyPresent(session);
+        for (int i = 0; i < 2; ++i) verifySharedGeometry(session, true, HudCoverage::OneTile, true, true);
+        std::array<int64_t, ResultCapacity * PresentResultFields> results{};
+        int rows = 0;
+        for (int attempt = 0; rows < 6 && attempt < 50; ++attempt) {
+            rows += session.pollPresents(results.data() + rows * PresentResultFields);
+            session.checkPresenter();
+            if (rows < 6) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        require(rows == 6, "Missing synthetic proxy present results");
+        bool generated = false;
+        bool reset = true;
+        for (int i = 0; i < rows; ++i) {
+            const auto* row = results.data() + i * PresentResultFields;
+            require(row[0] == i + 1 && row[3 + SyncInterval] == 1, "Proxy present IDs or interval changed");
+            std::printf("  proxy frame %lld: queued %lld, DXGI %lld, FG result %lld\n", row[0], row[1],
+                        row[3 + DxgiResult], row[3 + FrameGenResult]);
+            const bool realOnly = i == 3;
+            require((row[2] != 0) == (!realOnly && reset), "XeSS-FG proxy history reset changed");
+            require(row[3 + DxgiResult] == S_OK || row[3 + DxgiResult] == DXGI_STATUS_OCCLUDED,
+                    "Synthetic proxy present returned an unexpected DXGI result");
+            if (realOnly) require(row[1] <= 1 && row[3 + GeometryBytes] == 0, "Real-only frame involved generation");
+            reset = realOnly || row[1] == 0;
+            generated |= row[1] == 2;
+        }
+        if (!generated) {
+            require(!requireDisplay && results[3 + DxgiResult] == DXGI_STATUS_OCCLUDED,
+                    "XeSS-FG did not queue an interpolated frame");
+            std::puts("Display coverage unavailable: DXGI marked the proxy window occluded");
+        }
+        if (requireDisplay) std::this_thread::sleep_for(std::chrono::milliseconds(250));
         require(SetWindowPos(owner, nullptr, 0, 0, width - 1, height, SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOZORDER),
                 "Resizing the popup owner");
         require(!session.positionPopup() && !IsWindowVisible(wnd), "Popup showed a stale size while its owner resized");
+        std::puts("PASS: proxy surface, synthetic input and ordered presentation");
     } catch (...) {
         DestroyWindow(owner);
         throw;
@@ -507,21 +676,23 @@ void verifyPopup(jlong render, jlong arc) {
 
 void verifyOffline() {
     FrameAdmission admission;
-    require(admission.update(true, false, false) == 0, "Brief transfer pressure triggered a skip");
-    require(admission.update(true, false, false) == 1, "Sustained transfer pressure did not trigger a skip");
-    require(admission.update(false, true, false) == 2, "Stale presentation was not reported");
+    require(admission.update(true, false, false, false) == 0, "Brief transfer pressure triggered a skip");
+    require(admission.update(true, false, false, false) == 1, "Sustained transfer pressure did not trigger a skip");
+    require(admission.update(false, true, false, false) == 2, "Stale presentation was not reported");
     for (unsigned i = 0; i < 7; ++i)
-        require(admission.update(false, false, false) == 2, "Resumed frame generation too early");
-    require(admission.update(false, false, true) == 2, "Producer pressure did not interrupt recovery");
+        require(admission.update(false, false, false, false) == 2, "Resumed frame generation too early");
+    require(admission.update(false, false, false, true) == 2, "Producer pressure did not interrupt recovery");
     for (unsigned i = 0; i < 7; ++i)
-        require(admission.update(false, false, false) == 2, "Resumed before eight clean frames");
-    require(admission.update(false, false, false) == 0, "Frame generation did not resume");
+        require(admission.update(false, false, false, false) == 2, "Resumed before eight clean frames");
+    require(admission.update(false, false, false, false) == 0, "Frame generation did not resume");
     require(ColorDecoder::compile(false) && ColorDecoder::compile(true), "Input shaders did not compile");
     require(ColorTileBytes == 3072, "RGB24 tile layout changed");
     std::puts("PASS: admission hysteresis and D3D12 input shaders");
 }
 
 int main(int argc, char** argv) {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    std::setvbuf(stderr, nullptr, _IONBF, 0);
     if (argc == 2 && std::strcmp(argv[1], "--offline") == 0) {
         try {
             verifyOffline();
@@ -531,6 +702,9 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    const bool requireDisplay = argc == 2 && std::string_view(argv[1]) == "--display";
+    const bool verifySdk = requireDisplay || (argc == 2 && std::string_view(argv[1]) == "--sdk");
+    std::puts("Creating the probe host window");
     HWND window = CreateWindowExW(0, L"STATIC", L"XeSS-FG pipeline probe", WS_OVERLAPPEDWINDOW,
                                  0, 0, 1400, 800, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     if (!window) return 1;
@@ -540,14 +714,16 @@ int main(int argc, char** argv) {
         const auto render = adapter(0x10de, L"RTX 4070 Laptop");
         const auto arc = adapter(0x8086, L"A750");
         std::printf("Dual-adapter probe: render LUID %llx, Arc LUID %llx\n", render, arc);
-        std::puts("Checking presentation surface");
-        verifyPopup(render, arc);
+        if (verifySdk) {
+            std::puts("Checking XeSS-FG proxy and presentation surface");
+            verifyPopup(render, arc, requireDisplay);
+            DestroyWindow(window);
+            return 0;
+        }
         {
             std::puts("Checking RGBA8 transfer and saturation");
             Session session;
-            session.start(window, render, arc, 1283, 719, Rgba8);
-            require(GetWindowThreadProcessId(session.surface, nullptr) != GetCurrentThreadId()
-                    && !IsWindowEnabled(session.surface), "Proxy window ownership or input routing is incorrect");
+            session.start(window, render, arc, 1283, 719, Rgba8, false, false, false, 0, 0, false);
             verifySaturation(session);
             const auto frame = session.sequence + 1;
             const int index = session.acquire(frame, 101);
@@ -572,15 +748,19 @@ int main(int argc, char** argv) {
         for (auto mode : {Rgb24, Ycbcr422}) {
             std::printf("Checking packed transport %u\n", static_cast<unsigned>(mode));
             Session packed;
-            packed.start(window, render, arc, 803, 611, mode, false, true);
+            std::puts("  initializing session");
+            packed.start(window, render, arc, 803, 611, mode, false, true, false, 0, 0, false);
             require(!packed.slots[0].groups[Geometry].local, "Direct geometry retained a staging buffer");
             require(packed.colorStride < packed.footprints[Final].Footprint.RowPitch, "Packed stride did not shrink");
             const int index = packed.acquire(1, 0);
             require(index >= 0, "Acquiring packed frame");
+            std::puts("  checking geometry copy");
             verifyTransfer(packed, index, Geometry, 0x3f340125);
+            std::puts("  checking packed color");
             verifyPackedColor(packed, index);
             queueDiscard(packed, index, 1);
             require(waitForFence(packed.completed.Get(), 1), "Packed frame did not retire");
+            std::puts("  checking input ring reuse");
             verifyInputReuse(packed);
             const auto partialFrame = packed.sequence + 1;
             const int partial = packed.acquire(partialFrame, 0);
@@ -588,14 +768,16 @@ int main(int argc, char** argv) {
             verifyTransfer(packed, partial, Geometry, 0x3f803abc);
             queueDiscard(packed, partial, partialFrame);
             require(waitForFence(packed.prepared.Get(), partialFrame), "Direct geometry did not retire without color");
+            std::puts("  closing packed session");
         }
         {
             std::puts("Checking Arc shared geometry and HUD tiles");
             Session shared;
-            shared.start(window, render, arc, 129, 73, Rgb24, false, true, true);
+            shared.start(window, render, arc, 129, 73, Rgb24, false, true, true, 0, 0, false);
             require(shared.sharedInputs && !shared.uploadQueue, "Arc shared-input path was not active");
+            verifyPresentAdmission(shared.generationGpu.Get());
             verifySharedGeometry(shared, true, HudCoverage::Dense);
-            verifySharedGeometry(shared, false, HudCoverage::OneTile);
+            verifySharedGeometry(shared, false, HudCoverage::OneTile, false, false, true);
             verifySharedGeometry(shared, true, HudCoverage::Empty);
             verifySharedGeometry(shared, true, HudCoverage::OneTile, true);
             verifyInputReuse(shared);
@@ -610,7 +792,7 @@ int main(int argc, char** argv) {
         {
             std::puts("Checking producer admission");
             Session paced;
-            paced.start(window, render, arc, 129, 73, Rgb24, false, true, true);
+            paced.start(window, render, arc, 129, 73, Rgb24, false, true, true, 0, 0, false);
             require(paced.sharedInputs, "Producer test requires shared inputs");
             verifyProducerBackpressure(paced);
         }
@@ -620,7 +802,7 @@ int main(int argc, char** argv) {
             UINT64 done;
             {
                 Session removed;
-                removed.start(window, render, arc, 803, 611, Rgb24, false, true, sharedInputs);
+                removed.start(window, render, arc, 803, 611, Rgb24, false, true, sharedInputs, 0, 0, false);
                 const int index = removed.acquire(1, 0);
                 require(index >= 0, "Acquiring frame for producer removal");
                 // No GL signal follows this submission. Arc must still release the blocked work.
@@ -638,7 +820,7 @@ int main(int argc, char** argv) {
         {
             std::puts("Checking resize and Arc device removal");
             Session resized;
-            resized.start(window, arc, arc, 803, 611, Rgba8);
+            resized.start(window, arc, arc, 803, 611, Rgba8, false, false, false, 0, 0, false);
             const int index = resized.acquire(1, 0);
             require(index >= 0, "Acquiring same-adapter frame after resize");
             verifyTransfer(resized, index, Geometry, 0x3f340125);

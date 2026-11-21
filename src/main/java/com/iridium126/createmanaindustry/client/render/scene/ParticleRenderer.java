@@ -169,6 +169,7 @@ public final class ParticleRenderer {
             RenderSystem.depthMask(true);
 
             gpu.bindDrawIndirect();
+            com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime.gpuParticleMotion(prog, gpu);
             gpu.drawModelSegments();
 
             RenderSystem.depthMask(true);
@@ -261,6 +262,7 @@ public final class ParticleRenderer {
                 RenderSystem.depthMask(false);
             }
 
+            com.iridium126.createmanaindustry.client.xessfg.XessFgRuntime.gpuParticleMotion(prog, gpu);
             if(!com.iridium126.createmanaindustry.client.gpu.profile.GpuTimingObserver.active())
                 gpu.drawIndirect(mode==0?0:mode==1?1:5);
             else if (mode == 0)
