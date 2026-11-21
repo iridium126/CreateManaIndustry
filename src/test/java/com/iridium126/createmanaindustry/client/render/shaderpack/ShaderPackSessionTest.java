@@ -45,6 +45,22 @@ class ShaderPackSessionTest {
         a.observe(pipeline,100,100);assertNotEquals(revision,a.revision());revision=a.revision();a.observe(pipeline,100,100);assertEquals(revision,a.revision());
         a.observe(pipeline,200,100);assertNotEquals(revision,a.revision());
     }
+    @Test void normalDlssTargetSwitchDoesNotChangeCapturePipelineIdentity() {
+        var inventory = ShaderPackInventory.of(ShaderPatchPlanTest.photon(48));
+        var session = ShaderPackSession.candidate(inventory);
+        Object pipeline = new Object();
+        session.observe(pipeline, 2560, 1600);
+        long pipelineRevision = session.pipelineRevision();
+        long targetRevision = session.revision();
+        session.observe(pipeline, 1707, 1067);
+        assertNotEquals(targetRevision, session.revision());
+        assertEquals(pipelineRevision, session.pipelineRevision());
+        session.observe(pipeline, 2560, 1600);
+        assertEquals(pipelineRevision, session.pipelineRevision());
+        session.observe(new Object(), 2560, 1600);
+        assertNotEquals(pipelineRevision, session.pipelineRevision());
+        assertNotEquals(session.pipelineRevision(), ShaderPackSession.candidate(inventory).pipelineRevision());
+    }
     @Test void disabledPlanNeverRewritesNativeMappings(){
         var session=ShaderPackSession.candidate(ShaderPackInventory.of(Map.of()));var context=new BlockIdMapContext(new Int2ObjectLinkedOpenHashMap<>(),new Object2IntOpenHashMap<>());
         assertSame(context,session.apply(context));assertFalse(session.requestUnmodifiedRetry());

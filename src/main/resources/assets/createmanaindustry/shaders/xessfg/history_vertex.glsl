@@ -8,6 +8,11 @@ layout(std430, binding = 33) buffer CmiFgCurrentVertices { CmiFgVertexEntry cmiF
 out vec4 cmiFgPriorClip;
 out float cmiFgMatched;
 
+vec4 cmiFgRemoveExternalJitter(vec4 clip) {
+    clip.xy -= cmiFgCameraFraction.w * clip.w * 2.0 * cmiFgSource.zw / cmiFgSource.xy;
+    return clip;
+}
+
 uint cmiFgHash(uvec3 key) {
     uint h = key.x * 0x9e3779b1u ^ key.y * 0x85ebca6bu ^ key.z * 0xc2b2ae35u;
     h ^= h >> 16;

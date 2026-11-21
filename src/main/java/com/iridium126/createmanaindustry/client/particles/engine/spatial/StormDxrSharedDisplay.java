@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuGlErrors;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL45;
@@ -44,11 +45,12 @@ final class StormDxrSharedDisplay implements AutoCloseable {
         var slot = slots[index];
         if (slot.acquired) throw new IllegalStateException("Storm DXR display already belongs to OpenGL");
         if (slot.buffer == 0) importSlot(worker, index, slot);
+        GpuGlErrors.begin("Acquiring shared Storm DXR display");
         try (var stack = MemoryStack.stackPush()) {
             glSemaphoreParameterui64EXT(slot.semaphore, GL_D3D12_FENCE_VALUE_EXT, sequence * 2 - 1);
             nglWaitSemaphoreEXT(slot.semaphore, 1, memAddress(stack.ints(slot.buffer)), 0, 0, 0);
         }
-        checkGl("Acquiring shared Storm DXR display");
+        GpuGlErrors.check("Acquiring shared Storm DXR display");
         slot.acquired = true;
         return slot.buffer;
     }
@@ -56,6 +58,7 @@ final class StormDxrSharedDisplay implements AutoCloseable {
     private static void importSlot(long worker, int index, Slot slot) {
         long[] handles = StormDxrNative.sharedDisplayHandles(worker, index);
         try {
+            GpuGlErrors.begin("Importing shared Storm DXR display");
             slot.memory = glCreateMemoryObjectsEXT();
             glMemoryObjectParameteriEXT(slot.memory, GL_DEDICATED_MEMORY_OBJECT_EXT, GL11.GL_TRUE);
             glImportMemoryWin32HandleEXT(slot.memory, handles[2], GL_HANDLE_TYPE_D3D12_RESOURCE_EXT, handles[0]);
@@ -63,7 +66,7 @@ final class StormDxrSharedDisplay implements AutoCloseable {
             glNamedBufferStorageMemEXT(slot.buffer, handles[3], slot.memory, 0);
             slot.semaphore = glGenSemaphoresEXT();
             glImportSemaphoreWin32HandleEXT(slot.semaphore, GL_HANDLE_TYPE_D3D12_FENCE_EXT, handles[1]);
-            checkGl("Importing shared Storm DXR display");
+            GpuGlErrors.check("Importing shared Storm DXR display");
         } catch (RuntimeException | LinkageError error) {
             slot.delete();
             throw error;
@@ -75,23 +78,18 @@ final class StormDxrSharedDisplay implements AutoCloseable {
     boolean recycle(long worker, int index, long sequence) {
         var slot = slots[index];
         if (slot.acquired && !slot.released) {
+            GpuGlErrors.begin("Releasing shared Storm DXR display");
             try (var stack = MemoryStack.stackPush()) {
                 glSemaphoreParameterui64EXT(slot.semaphore, GL_D3D12_FENCE_VALUE_EXT, sequence * 2);
                 nglSignalSemaphoreEXT(slot.semaphore, 1, memAddress(stack.ints(slot.buffer)), 0, 0, 0);
             }
-            checkGl("Releasing shared Storm DXR display");
+            GpuGlErrors.check("Releasing shared Storm DXR display");
             GL11.glFlush();
             slot.released = true;
         }
         if (!StormDxrNative.recycleStormDisplay(worker, index, sequence, slot.released ? 1 : 0)) return false;
         slot.acquired = slot.released = false;
         return true;
-    }
-
-    private static void checkGl(String operation) {
-        int error = GL11.glGetError();
-        if (error != GL11.GL_NO_ERROR)
-            throw new IllegalStateException(operation + " failed (GL 0x" + Integer.toHexString(error) + ")");
     }
 
     @Override public void close() {

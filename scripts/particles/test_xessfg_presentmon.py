@@ -56,6 +56,7 @@ class ProxyTimingTest(unittest.TestCase):
         self.assertEqual(fields[1], {"midpoint_error_ms": 1.0})
         self.assertNotIn(4, fields)
         self.assertEqual(summary["real_display_interval_ms"], {"samples": 3, "p50": 20, "p95": 40, "p99": 40})
+        self.assertEqual(summary["display_interval_ms"], {"samples": 5, "p50": 10, "p95": 31, "p99": 31})
         self.assertEqual(summary["counts"]["dropped"], 1)
         self.assertEqual(summary["counts"]["ambiguous_intervals"], 1)
         self.assertEqual(summary["generation_coverage"], 1/3)

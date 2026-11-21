@@ -1,5 +1,8 @@
 package com.iridium126.createmanaindustry.client.xessfg;
 
+import com.iridium126.createmanaindustry.client.dlss.DlssRuntime;
+import java.util.function.IntConsumer;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.StormGpuDevices;
@@ -49,7 +52,7 @@ public final class XessFgRuntime {
     private XessFgMotion motion;
     private XessFgGpuMotion gpuMotion;
     private XessFgFlywheelMotion flywheelMotion;
-    private boolean worldScope, geometryStaged, motionOverrides;
+    private boolean worldScope, geometryStaged, motionOverrides, dlssMotion, dlssMotionFinished;
     private ByteBuffer stagedReprojection;
     private record Hand(InteractionHand hand, Item item) {}
     public interface MotionScope extends AutoCloseable {
@@ -70,6 +73,9 @@ public final class XessFgRuntime {
     }
 
     public static void begin(Minecraft minecraft, boolean render) {
+        if (INSTANCE.dlssMotionFinished) INSTANCE.dlssMotionFinished = false;
+        if (!ClientConfig.dlss().enabled() && INSTANCE.session == 0 && INSTANCE.motion != null)
+            INSTANCE.close();
         if (!ClientConfig.xessFg().enabled()) return;
         if (INSTANCE.servicingWindow) {
             INSTANCE.windowInterrupted = true;
@@ -281,14 +287,81 @@ public final class XessFgRuntime {
 
     public static void worldView(Camera camera, Matrix4fc view, Matrix4fc projection) {
         var owner = INSTANCE;
-        if (owner.canCapture() && !RiftRenderFrame.auxiliary()) {
+        if ((owner.canCapture() || owner.dlssMotion) && !RiftRenderFrame.auxiliary()) {
             owner.worldScope = true;
-            if (!owner.iris) owner.current = new XessFgView(view, projection, camera.getPosition());
+            var coordinates = DlssRuntime.coordinates();
+            if (!owner.iris) owner.current = new XessFgView(new Matrix4f(view), new Matrix4f(projection),
+                    camera.getPosition(), coordinates);
+            if (!owner.dlssMotion && owner.gpuMotion != null) owner.restoreFgMotionGrid();
             if (owner.gpuMotion != null && (!CreateManaIndustry.IRIS_ACTIVE || !IrisShadows.packActive())) {
                 var target = Minecraft.getInstance().getMainRenderTarget();
-                owner.gpuMotion.begin(camera.getPosition(), target.width, target.height, XessFgCoordinates.VANILLA);
+                owner.gpuMotion.begin(camera.getPosition(), target.width, target.height, coordinates);
             }
         }
+    }
+
+    public static void beginDlssMotion(ClientLevel level, int width, int height) {
+        var owner = INSTANCE;
+        owner.dlssMotion = true;
+        owner.level = level;
+        if (owner.motion == null) owner.motion = new XessFgMotion();
+        if (owner.flywheelMotion == null) owner.flywheelMotion = new XessFgFlywheelMotion();
+        owner.motion.begin();
+        owner.motionGrid(width, height);
+    }
+
+    private void restoreFgMotionGrid() {
+        motionGrid((int) (geometrySize >>> 32), (int) geometrySize);
+    }
+
+    private void motionGrid(int width, int height) {
+        if (width <= 0 || height <= 0) return;
+        if (gpuMotion != null && (gpuMotion.width() != width || gpuMotion.height() != height)) {
+            gpuMotion.close();
+            gpuMotion = null;
+        }
+        if (gpuMotion == null && XessFgGpuMotion.shaderSupport()) gpuMotion = new XessFgGpuMotion(width, height);
+    }
+
+    public static void dlssWorldMotion(boolean reset, int depth, int width, int height, XessFgCoordinates coords,
+                                       IntConsumer object, IntConsumer gpu) {
+        var owner = INSTANCE;
+        owner.emitDlssMotion(XessFgMotion.Layer.WORLD, reset, depth, width, height, coords, object);
+        if (owner.gpuMotion != null && owner.gpuMotion.hasWinners(reset)) gpu.accept(owner.gpuMotion.winners());
+        owner.emitDlssMotion(XessFgMotion.Layer.TRANSLUCENT, reset, depth, width, height, coords, object);
+    }
+
+    public static void dlssHandMotion(boolean reset, int depth, int width, int height, XessFgCoordinates coords,
+                                      IntConsumer object) {
+        var owner = INSTANCE;
+        owner.emitDlssMotion(XessFgMotion.Layer.HAND, reset, depth, width, height,
+                owner.iris && !DlssRuntime.externalJitter() ? IrisShadows.handCoordinates(coords) : coords, object);
+    }
+
+    private void emitDlssMotion(XessFgMotion.Layer layer, boolean reset, int depth, int width, int height,
+                                XessFgCoordinates coords, IntConsumer object) {
+        if (motion == null) return;
+        int vectors = motion.draw(layer, reset, depth, width, height, coords);
+        if (vectors != 0) object.accept(vectors);
+    }
+
+    public static void finishDlssHand(RenderTarget scene) {
+        var owner = INSTANCE;
+        if (!owner.iris && owner.canCapture()) owner.finishGeometry(scene.getDepthTextureId());
+    }
+
+    public static void resetDlssFrameGeneration() {
+        var owner = INSTANCE;
+        owner.depthReady = false;
+        owner.previous = null;
+    }
+
+    public static void finishDlssMotion(boolean keep) {
+        var owner = INSTANCE;
+        owner.dlssMotion = owner.worldScope = false;
+        owner.dlssMotionFinished = true;
+        if (owner.motion != null) owner.motion.finish(keep);
+        if (owner.gpuMotion != null) owner.gpuMotion.finish(keep);
     }
 
     public static MotionScope entityMotion(Object entity) {
@@ -341,7 +414,7 @@ public final class XessFgRuntime {
     }
 
     private boolean captureObjects() {
-        return worldScope && canCapture() && !RiftRenderFrame.auxiliary()
+        return worldScope && (canCapture() || dlssMotion) && !RiftRenderFrame.auxiliary()
                 && (!CreateManaIndustry.IRIS_ACTIVE || !IrisShadows.active());
     }
 
@@ -386,7 +459,7 @@ public final class XessFgRuntime {
     public static void irisBegin(long generation, XessFgCoordinates coordinates, Camera camera, int width, int height,
                                  boolean terrainHistory) {
         var owner = INSTANCE;
-        if (!owner.canCapture()) return;
+        if (!owner.canCapture() && !owner.dlssMotion) return;
         owner.iris = true;
         owner.irisGeneration = generation;
         owner.current = null;
@@ -443,7 +516,7 @@ public final class XessFgRuntime {
             stagedReprojection = reprojection;
             applyObjectMotion(XessFgMotion.Layer.WORLD, texture);
             if (gpuMotion != null && gpuMotion.hasWinners(reset)) {
-                capture.applyGpuMotion(slots[slot], texture, w, h, gpuMotion.winners(),
+                capture.applyGpuMotion(slots[slot], texture, w, h, gpuMotion,
                         stagedReprojection != null && !motionOverrides);
                 motionOverrides = true;
             }
@@ -609,8 +682,10 @@ public final class XessFgRuntime {
                 profile.enqueued(sessionId, interpolate, slots[slot].color.transportMode, wait != 0);
             }
             slot = -1;
-            motion.finish(interpolate);
-            if (gpuMotion != null) gpuMotion.finish(interpolate);
+            if (!dlssMotionFinished) {
+                motion.finish(interpolate);
+                if (gpuMotion != null) gpuMotion.finish(interpolate);
+            }
             previous = interpolate ? current : null;
             previousLevel = interpolate ? level : null;
             previousCameraMode = cameraMode;

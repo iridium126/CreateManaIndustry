@@ -1,4 +1,9 @@
 {
+  "createmanaindustry.configuration.dlss": "NVIDIA DLSS 超分辨率",
+  "createmanaindustry.configuration.dlss.enabled": "启用 DLSS",
+  "createmanaindustry.configuration.dlss.enabled.tooltip": "在渲染 Minecraft 的 NVIDIA RTX 显卡上运行 DLSS。",
+  "createmanaindustry.configuration.dlss.renderScale": "DLSS 渲染比例",
+  "createmanaindustry.configuration.dlss.renderScale.tooltip": "场景每轴的渲染比例。1.00 使用 DLAA。HUD 始终以原生分辨率绘制。",
   "createmanaindustry.great_trick.ectoplasmic_inversion": "灵质反转",
   "createmanaindustry.great_trick.book_cost": "消耗 %s Anima",
   "createmanaindustry.great_trick.unknown": "未知的卓越戏法",

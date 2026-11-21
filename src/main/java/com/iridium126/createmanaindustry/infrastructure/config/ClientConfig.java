@@ -61,6 +61,9 @@ public final class ClientConfig {
     private static final ModConfigSpec.ConfigValue<String> XESS_FG_GPU;
     private static final ModConfigSpec.ConfigValue<String> XESS_FG_TRANSPORT;
     private static final ModConfigSpec.ConfigValue<String> XESS_FG_SURFACE;
+    private static final ModConfigSpec.BooleanValue DLSS_ENABLED;
+    private static final ModConfigSpec.DoubleValue DLSS_RENDER_SCALE;
+    private static final double DEFAULT_DLSS_RENDER_SCALE = 0.6666667;
     private static ModConfigSpec.BooleanValue RT_CAMERA_OCCLUSION, PARTICLE_RECEIVE_SHADOWS;
     private static ModConfigSpec.IntValue ALLAY_FEATHER_RATE, ALLAY_GOLD_RATE, STORM_LOD_1_DISTANCE, STORM_LOD_DISTANCE;
     private static ModConfigSpec.BooleanValue PARTICLE_HEX_REDIRECT, PARTICLE_HEX_PATTERN_REDIRECT;
@@ -105,6 +108,14 @@ public final class ClientConfig {
         XESS_FG_SURFACE = BUILDER.comment("Presentation surface: child, borderless_child, or borderless_popup.")
                 .translation("createmanaindustry.configuration.xessFg.surface")
                 .gameRestart().define("surface", XessFgSurfaceMode.CHILD.value(), XessFgSurfaceMode::valid);
+        BUILDER.pop();
+
+        BUILDER.push("dlss");
+        DLSS_ENABLED = BUILDER.comment("Enable NVIDIA DLSS Super Resolution on supported Windows RTX render adapters.")
+                .translation("createmanaindustry.configuration.dlss.enabled").define("enabled", false);
+        DLSS_RENDER_SCALE = BUILDER.comment("Scene render scale per axis. 1.0 uses DLAA; the GUI stays at full resolution.")
+                .translation("createmanaindustry.configuration.dlss.renderScale")
+                .defineInRange("renderScale", DEFAULT_DLSS_RENDER_SCALE, 0.50, 1.0);
         BUILDER.pop();
 
         BUILDER.comment("Shared GPU particle engine: capacity, frame budget, fade distance and shader integration.").push("particles");
@@ -201,6 +212,13 @@ public final class ClientConfig {
     public static XessFg xessFg() {
         return xessFg;
     }
+
+    public record Dlss(boolean enabled, double renderScale) {}
+    private static volatile Dlss dlss = new Dlss(false, DEFAULT_DLSS_RENDER_SCALE);
+
+    public static Dlss dlss() {
+        return dlss;
+    }
     public static volatile boolean rtCameraOcclusion = DEFAULT_RT_CAMERA_OCCLUSION, particleReceiveShadows = DEFAULT_PARTICLE_RECEIVE_SHADOWS;
     public static int allayFeatherMaxSpawnPerSecond = DEFAULT_ALLAY_FEATHER_RATE, allayGoldMaxSpawnPerSecond = DEFAULT_ALLAY_GOLD_RATE;
     public static int stormLod1Distance = DEFAULT_STORM_LOD_1_DISTANCE, stormLodDistance = DEFAULT_STORM_LOD_DISTANCE;
@@ -220,6 +238,7 @@ public final class ClientConfig {
     static void onLoad(ModConfigEvent event) {
         if (event.getConfig().getSpec() == SPEC
                 && (event instanceof ModConfigEvent.Loading || event instanceof ModConfigEvent.Reloading)) {
+            dlss = new Dlss(DLSS_ENABLED.get(), DLSS_RENDER_SCALE.get());
             if (event instanceof ModConfigEvent.Loading) {
                 xessFg = new XessFg(XESS_FG_ENABLED.get(), XessFgGpu.parse(XESS_FG_GPU.get()),
                         XessFgTransportMode.parse(XESS_FG_TRANSPORT.get()), XessFgSurfaceMode.parse(XESS_FG_SURFACE.get()));

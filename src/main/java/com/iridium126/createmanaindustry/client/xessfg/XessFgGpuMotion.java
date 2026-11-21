@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.xessfg;
 
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms;
+import com.iridium126.createmanaindustry.client.dlss.DlssRuntime;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import java.nio.ByteBuffer;
 import net.minecraft.world.phys.Vec3;
@@ -26,7 +27,7 @@ public final class XessFgGpuMotion implements AutoCloseable {
 
     /** Decoration requires the atomic feature and storage bindings beyond the particle engine namespace. */
     public static boolean shaderSupport() {
-        if (!ClientConfig.xessFg().enabled()) return false;
+        if (!ClientConfig.xessFg().enabled() && !ClientConfig.dlss().enabled()) return false;
         GLCapabilities caps = GL.getCapabilities();
         if (shaderContext != caps) {
             shaderContext = caps;
@@ -50,6 +51,9 @@ public final class XessFgGpuMotion implements AutoCloseable {
         history[1] = storage((long) VERTEX_BYTES * HISTORY_ENTRIES);
         winners = storage((long) width * height * 16);
     }
+
+    int width() { return width; }
+    int height() { return height; }
 
     private static int storage(long bytes) {
         int buffer = glCreateBuffers();
@@ -82,7 +86,8 @@ public final class XessFgGpuMotion implements AutoCloseable {
             data.putFloat(sourceWidth * coords.scaleX()).putFloat(sourceHeight * coords.scaleY());
             data.putFloat(coords.jitterX()).putFloat(coords.jitterY());
             data.putInt(x).putInt(y).putInt(z).putInt(0);
-            data.putFloat((float) (camera.x - x)).putFloat((float) (camera.y - y)).putFloat((float) (camera.z - z)).putFloat(0);
+            data.putFloat((float) (camera.x - x)).putFloat((float) (camera.y - y)).putFloat((float) (camera.z - z))
+                    .putFloat(DlssRuntime.externalJitter() ? 1 : 0);
             glNamedBufferSubData(grid, 0, data.flip());
             glBindBuffersBase(GL_SHADER_STORAGE_BUFFER, PREVIOUS, stack.ints(history[lastSlot], history[1 - lastSlot], winners));
             bind(GL_UNIFORM_BUFFER, GRID, grid);

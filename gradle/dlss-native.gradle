@@ -1,0 +1,35 @@
+def nativeBundle = file('src/main/native/prebuilt/windows-x86_64/dlss')
+def nativeManifest = new File(nativeBundle, 'release.properties')
+def resourceOutput = layout.buildDirectory.dir('generated/dlssNativeResources')
+def bundleMembers = ['CmiDlssSr.dll', 'nvngx_dlss.dll', 'LICENSE.txt', 'release.properties']
+def prepareDlssNativeResources = tasks.register('prepareDlssNativeResources') {
+    inputs.files(bundleMembers.collect { new File(nativeBundle, it) })
+    outputs.dir(resourceOutput)
+    doLast {
+        def release = new Properties()
+        nativeManifest.withInputStream { release.load(it) }
+        if (release.getProperty('sdk') != '310.6.0') throw new GradleException('Unexpected NVIDIA DLSS SDK version')
+        def target = resourceOutput.get().dir('native/dlss/windows-x86_64').asFile.toPath()
+        java.nio.file.Files.createDirectories(target)
+        bundleMembers.each { member ->
+            def source = new File(nativeBundle, member)
+            if (member != 'release.properties') {
+                def digest = java.security.MessageDigest.getInstance('SHA-256')
+                source.withInputStream { input ->
+                    byte[] chunk = new byte[64 * 1024]
+                    for (int read = input.read(chunk); read != -1; read = input.read(chunk)) digest.update(chunk, 0, read)
+                }
+                if (digest.digest().encodeHex().toString() != release.getProperty(member)) {
+                    throw new GradleException("Invalid DLSS bundle member: ${member}")
+                }
+            }
+            java.nio.file.Files.copy(source.toPath(), target.resolve(member), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+}
+tasks.named('processResources') {
+    if (nativeManifest.isFile() || providers.gradleProperty('requireDlssBundle').isPresent()) {
+        dependsOn(prepareDlssNativeResources)
+        from(resourceOutput)
+    }
+}

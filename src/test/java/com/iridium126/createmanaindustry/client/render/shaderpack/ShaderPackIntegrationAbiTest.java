@@ -19,6 +19,30 @@ class ShaderPackIntegrationAbiTest {
         int event=-1,hand=-1,index=0;for(var i:render.instructions){if(i instanceof MethodInsnNode m&&m.name.equals("dispatchRenderStage"))event=index;if(i instanceof FieldInsnNode f&&f.name.equals("renderHand"))hand=index;index++;}
         assertTrue(event>=0&&hand>event,"world effects must follow AFTER_LEVEL and run even with the hand disabled");
     }
+    @Test void dlssCutPrecedesDispatchAndHistoryRestoreFollowsFinalDraw() throws Exception {
+        var composite = read("net/irisshaders/iris/pipeline/CompositeRenderer");
+        var renderAll = composite.methods.stream().filter(m -> m.name.equals("renderAll")).findFirst().orElseThrow();
+        int lookup = call(renderAll, "com/google/common/collect/ImmutableList", "get", "(I)Ljava/lang/Object;");
+        int dispatch = call(renderAll, "net/irisshaders/iris/gl/program/ComputeProgram", "dispatch", "(FF)V");
+        assertTrue(lookup < dispatch, "DLSS must switch grids before the selected pass dispatches work");
+        var finals = read("net/irisshaders/iris/pipeline/FinalPassRenderer");
+        var renderFinal = finals.methods.stream().filter(m -> m.name.equals("renderFinalPass")).findFirst().orElseThrow();
+        int draw = call(renderFinal, "net/irisshaders/iris/pathways/FullScreenQuadRenderer", "renderQuad", "()V");
+        int restore = call(renderFinal, "net/irisshaders/iris/targets/RenderTargets", "getRenderTargetCount", "()I");
+        int swap = call(renderFinal, "com/google/common/collect/ImmutableList", "iterator",
+                "()Lcom/google/common/collect/UnmodifiableIterator;");
+        assertTrue(draw < restore && restore < swap, "History must return to the low grid before Iris swaps buffers");
+        var constructor = finals.methods.stream().filter(m -> m.name.equals("<init>")).findFirst().orElseThrow();
+        assertEquals("Lcom/google/common/collect/ImmutableSet;", Type.getArgumentTypes(constructor.desc)[6].getDescriptor());
+    }
+    private static int call(MethodNode method, String owner, String name, String descriptor) {
+        var positions = new java.util.ArrayList<Integer>();
+        for (int i = 0; i < method.instructions.size(); i++)
+            if (method.instructions.get(i) instanceof MethodInsnNode call
+                    && call.owner.equals(owner) && call.name.equals(name) && call.desc.equals(descriptor)) positions.add(i);
+        assertEquals(1, positions.size(), method.name + " " + owner + "." + name);
+        return positions.getFirst();
+    }
     @Test void sessionConstructorHooksSelectOneOverloadAndAreSafeBeforeInitialization()throws Exception{
         var pack=read("net/irisshaders/iris/shaderpack/ShaderPack");
         var mixin=read("com/iridium126/createmanaindustry/mixin/iris/ShaderPackSessionMixin");

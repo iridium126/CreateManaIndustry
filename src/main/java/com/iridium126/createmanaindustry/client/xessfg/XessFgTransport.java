@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.client.xessfg;
 
+import com.iridium126.createmanaindustry.client.gpu.state.GpuGlErrors;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.system.MemoryStack;
 
@@ -35,11 +36,6 @@ final class XessFgTransport implements AutoCloseable {
                 && gl.glNamedBufferStorageMemEXT != 0;
     }
 
-    static void checkError(String call) {
-        int code = glGetError();
-        if (code != GL_NO_ERROR) throw new IllegalStateException(call + " (OpenGL 0x" + Integer.toHexString(code) + ")");
-    }
-
     @Override
     public void close() {
         if (geometry != null) geometry.close();
@@ -58,6 +54,7 @@ final class XessFgTransport implements AutoCloseable {
             this.phase = phase;
             var handles = XessFgNative.exportGroup(session, index, phase);
             try {
+                GpuGlErrors.begin("Importing XeSS-FG shared storage");
                 memory = glCreateMemoryObjectsEXT();
                 glMemoryObjectParameteriEXT(memory, GL_DEDICATED_MEMORY_OBJECT_EXT, GL_TRUE);
                 glImportMemoryWin32HandleEXT(memory, handles[3], GL_HANDLE_TYPE_D3D12_RESOURCE_EXT, handles[0]);
@@ -67,7 +64,7 @@ final class XessFgTransport implements AutoCloseable {
                 released = glGenSemaphoresEXT();
                 glImportSemaphoreWin32HandleEXT(produced, GL_HANDLE_TYPE_D3D12_FENCE_EXT, handles[1]);
                 glImportSemaphoreWin32HandleEXT(released, GL_HANDLE_TYPE_D3D12_FENCE_EXT, handles[2]);
-                checkError("Importing XeSS-FG shared storage");
+                GpuGlErrors.check("Importing XeSS-FG shared storage");
                 rowWords = Math.toIntExact(handles[5] / Integer.BYTES);
                 secondOffset = Math.toIntExact(handles[6] / Integer.BYTES);
                 transportMode = Math.toIntExact(handles[7]);
@@ -84,20 +81,22 @@ final class XessFgTransport implements AutoCloseable {
 
         void acquire() {
             if (lastToken == 0) return;
+            GpuGlErrors.begin("Acquiring XeSS-FG transport slot");
             try (var stack = MemoryStack.stackPush()) {
                 glSemaphoreParameterui64EXT(released, GL_D3D12_FENCE_VALUE_EXT, lastToken);
                 nglWaitSemaphoreEXT(released, 1, memAddress(stack.ints(buffer)), 0, 0, 0);
             }
-            checkError("Acquiring XeSS-FG transport slot");
+            GpuGlErrors.check("Acquiring XeSS-FG transport slot");
         }
 
         void publish(long sequence) {
             long token = phase == XessFgNative.HUD_BASE ? sequence : 2 * sequence + phase;
+            GpuGlErrors.begin("Publishing XeSS-FG transport slot");
             try (var stack = MemoryStack.stackPush()) {
                 glSemaphoreParameterui64EXT(produced, GL_D3D12_FENCE_VALUE_EXT, token);
                 nglSignalSemaphoreEXT(produced, 1, memAddress(stack.ints(buffer)), 0, 0, 0);
             }
-            checkError("Publishing XeSS-FG transport slot");
+            GpuGlErrors.check("Publishing XeSS-FG transport slot");
             glFlush();
             lastToken = token;
         }

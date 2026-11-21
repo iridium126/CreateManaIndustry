@@ -103,9 +103,9 @@ public final class ParticleDiagnostics {
         if(!(active instanceof net.irisshaders.iris.pipeline.IrisRenderingPipeline))
             return "pack=(off); source=none; options=unavailable";
         if(!session.ownsPipeline(active))return "pack=pending; source=none; options=unavailable";
-        if(optionsRevision!=session.revision()||optionsShadowQuality!=ShadowQualityFrame.current()){
+        if(optionsRevision!=session.pipelineRevision()||optionsShadowQuality!=ShadowQualityFrame.current()){
             optionsShadowQuality=ShadowQualityFrame.current();
-            optionsRevision=session.revision();var options=session.options();
+            optionsRevision=session.pipelineRevision();var options=session.options();
             if(options==null)optionSummary="unavailable";
             else{
                 var values=new TreeMap<String,String>();
@@ -118,7 +118,7 @@ public final class ParticleDiagnostics {
             if(com.iridium126.createmanaindustry.CreateManaIndustry.IRISVEIL_ACTIVE)
                 com.iridium126.createmanaindustry.client.particles.shaderpack.ParticleProfileSnapshot.write(session,active);
         }
-        return "pack="+net.irisshaders.iris.Iris.getCurrentPackName()+"; source="+session.inventory().digest().substring(0,12)+"; options="+optionSummary+"; session="+session.revision();
+        return "pack="+net.irisshaders.iris.Iris.getCurrentPackName()+"; source="+session.inventory().digest().substring(0,12)+"; options="+optionSummary+"; session="+session.pipelineRevision();
     }
     /** Explicit opt-in export, tied to the current owning pack session. */
     public String exportActiveProfileContext(){
@@ -126,7 +126,37 @@ public final class ParticleDiagnostics {
         var path=com.iridium126.createmanaindustry.client.particles.shaderpack.ParticleProfileSnapshot.write(com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession.current(),net.irisshaders.iris.Iris.getPipelineManager().getPipelineNullable());return path==null?"unavailable":path.toString();
     }
     /** Active pipeline identity for opt-in whole-frame captures; optional Iris remains guarded. */
-    public String measurementContext(){return (com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE?irisCaptureContext():"pack=none; source=none; options=unavailable")+"; backend="+com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.identity()+"; engine="+ParticlePrograms.INSTANCE.diagnosticSourceDigest()+"; shadow_quality="+ShadowQualityFrame.current().label()+"; auto_throttle="+com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle;}
+    MeasurementContext measurementSnapshot() {
+        var dlss = com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.dlss();
+        return new MeasurementContext(
+                com.iridium126.createmanaindustry.CreateManaIndustry.IRIS_ACTIVE
+                        ? irisCaptureContext() : "pack=none; source=none; options=unavailable",
+                com.iridium126.createmanaindustry.client.particles.engine.spatial.SpatialQueryRuntime.INSTANCE.identity(),
+                ParticlePrograms.INSTANCE.diagnosticSourceDigest(), ShadowQualityFrame.current().label(),
+                com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle,
+                com.iridium126.createmanaindustry.client.dlss.DlssRuntime.measurementContext(),
+                dlss.enabled() ? dlss.renderScale() : 0);
+    }
+
+    public String measurementContext() { return measurementSnapshot().description(); }
+
+    record MeasurementContext(String iris, String backend, String engine, String shadowQuality,
+                              boolean autoThrottle, String dlss, double dlssScale) {
+        String description() {
+            return iris+"; backend="+backend+"; engine="+engine+"; shadow_quality="+shadowQuality
+                    +"; auto_throttle="+autoThrottle+"; dlss="+dlss;
+        }
+
+        String changeFrom(MeasurementContext previous) {
+            if (!iris.equals(previous.iris)) return "shader session/options changed";
+            if (!backend.equals(previous.backend)) return "spatial backend changed";
+            if (!engine.equals(previous.engine)) return "particle shader sources changed";
+            if (!shadowQuality.equals(previous.shadowQuality)) return "shadow quality changed";
+            if (autoThrottle != previous.autoThrottle) return "particle auto-throttle changed";
+            if (!dlss.equals(previous.dlss) || dlssScale != previous.dlssScale) return "DLSS configuration or route changed";
+            return "";
+        }
+    }
     private Frame current;
     private long start, allocatedStart, cpuNanos, allocatedBytes, uploads, calls, draws, readbackLag;
     private long lastUploads, lastCalls, lastDraws, lastReadbackLag;

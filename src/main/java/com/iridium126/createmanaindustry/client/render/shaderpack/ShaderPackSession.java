@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.render.shaderpack;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
+import com.iridium126.createmanaindustry.client.dlss.DlssPack;
 import com.iridium126.createmanaindustry.client.xessfg.XessFgPack;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.shaderpack.option.ShaderPackOptions;
@@ -25,12 +26,13 @@ public final class ShaderPackSession {
     private final StormCloudDensityPatchPlan clouds;
     private final PackCapabilities capabilities;
     private final XessFgPack xessFgPack;
+    private final DlssPack dlssPack;
     private final boolean xessFgHandDeformation;
     private boolean terrainMotion;
     private ShaderPackOptions options;
     private Object pipeline;
     private int width=-1,height=-1;
-    private long revision;
+    private long revision, pipelineRevision;
     private boolean mapsApplied, retryUsed;
     private String failure="";
     private long nativeRevision=-1;
@@ -84,8 +86,10 @@ public final class ShaderPackSession {
         rift=bypass?NativeRiftPatchPlan.disabled("unmodified retry"):NativeRiftPatchPlan.prepare(ShaderPackInventory.of(combined));
         combined.putAll(rift.edits());
         clouds=(bypass||omitClouds)?StormCloudDensityPatchPlan.disabled(omitClouds?"density candidate excluded after compilation failure; sky retained":"unmodified retry"):StormCloudDensityPatchPlan.prepare(ShaderPackInventory.of(combined),rift.family());
+        combined.putAll(clouds.edits());
         capabilities=PackCapabilities.detect(inventory,patch);
         xessFgPack = XessFgPack.detect(inventory, rift.family());
+        dlssPack = bypass ? null : DlssPack.detect(ShaderPackInventory.of(combined), xessFgPack);
         xessFgHandDeformation = xessFgPack != null && xessFgPack.hasHandDeformation(inventory);
     }
     private static ShaderPackSession empty(){return new ShaderPackSession(null,ShaderPackInventory.of(Map.of()),true);}
@@ -104,6 +108,7 @@ public final class ShaderPackSession {
     public static void options(ShaderPackOptions options){current.options=options;}
     public long generation(){return generation;}
     public long revision(){return generation*1_000_003L+revision;}
+    public long pipelineRevision(){return generation*1_000_003L+pipelineRevision;}
     public ShaderPackInventory inventory(){return inventory;}
     public ShaderPatchPlan patch(){return patch;}
     public NativeRiftPatchPlan rift(){return rift;}
@@ -129,6 +134,7 @@ public final class ShaderPackSession {
     public PackCapabilities capabilities(){return capabilities;}
     public ShaderPackOptions options(){return options;}
     public XessFgPack xessFgPack() { return xessFgPack; }
+    public DlssPack dlssPack() { return dlssPack; }
     public boolean xessFgHandDeformation() { return xessFgHandDeformation; }
     public void terrainMotionPatched() { terrainMotion = true; }
     public boolean terrainMotion() { return terrainMotion; }
@@ -138,6 +144,7 @@ public final class ShaderPackSession {
                 &&(!(active instanceof RiftIrisPipeline iris)||iris.cmi$riftGeneration()==generation);
     }
     public void observe(Object pipeline,int width,int height) {
+        if(this.pipeline!=pipeline)pipelineRevision++;
         if(this.pipeline!=pipeline||this.width!=width||this.height!=height){this.pipeline=pipeline;this.width=width;this.height=height;revision++;}
     }
     public void verifyNativePrograms(net.irisshaders.iris.shaderpack.programs.ProgramSet programs){
@@ -160,7 +167,8 @@ public final class ShaderPackSession {
     public String transform(Path path,String original) {
         if(root==null||!path.getFileSystem().equals(root.getFileSystem())||!path.normalize().startsWith(root.normalize()))return original;
         String relative=root.relativize(path).toString();
-        return clouds.transform(relative,rift.transform(relative,patch.transform(relative,original)));
+        String effective = clouds.transform(relative,rift.transform(relative,patch.transform(relative,original)));
+        return dlssPack == null ? effective : dlssPack.transform(relative, effective);
     }
     /** Copies maps before validation. A rejection aborts this candidate, never publishes a partial map. */
     public BlockIdMapContext apply(BlockIdMapContext original) {
@@ -175,7 +183,7 @@ public final class ShaderPackSession {
     }
     private IllegalStateException reject(String reason){failure=reason;return new IllegalStateException("CMI shader patch rejected: "+reason);}
     public boolean requestUnmodifiedRetry() {
-        if((!patch.enabled()&&!rift.enabled()&&!clouds.enabled())||retryUsed)return false;
+        if((!patch.enabled()&&!rift.enabled()&&!clouds.enabled()&&dlssPack==null)||retryUsed)return false;
         retryUsed=true;bypassNext=true;retryCause="candidate source/material loading failed; see Iris log";return true;
     }
     public static void finishRetry(){bypassNext=omitCloudsNext=false;retryCause="";}
@@ -210,7 +218,7 @@ public final class ShaderPackSession {
     /** Iris calls this factory later than source loading; compiled-program failure retries the original pack once. */
     public static void pipelineFailed() {
         ShaderPackSession failed=current;
-        if((!failed.patch.enabled()&&!failed.rift.enabled()&&!failed.clouds.enabled())||failed.retryUsed)return;
+        if((!failed.patch.enabled()&&!failed.rift.enabled()&&!failed.clouds.enabled()&&failed.dlssPack==null)||failed.retryUsed)return;
         failed.retryUsed=true;
         net.minecraft.client.Minecraft.getInstance().tell(()->{
             if(current!=failed||Iris.getCurrentPack().isEmpty())return;

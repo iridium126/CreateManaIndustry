@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.mixin.iris;
 
 import com.iridium126.createmanaindustry.client.allaystorm.rift.RiftRenderFrame;
+import com.iridium126.createmanaindustry.client.dlss.DlssRuntime;
 import com.iridium126.createmanaindustry.client.render.shaderpack.ShaderPackSession;
 import com.iridium126.createmanaindustry.client.xessfg.XessFgIrisOptions;
 import com.iridium126.createmanaindustry.client.xessfg.XessFgCoordinates;
@@ -22,33 +23,36 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class XessFgIrisMixin {
     @Inject(method = "beginLevelRendering", at = @At("HEAD"))
     private void cmi$beginXessFgIris(CallbackInfo ci) {
-        if (XessFgRuntime.requested() && !RiftRenderFrame.auxiliary()) {
+        if ((XessFgRuntime.requested() || DlssRuntime.irisActive()) && !RiftRenderFrame.auxiliary()) {
             var client = Minecraft.getInstance();
             var camera = client.gameRenderer.getMainCamera();
             var target = client.getMainRenderTarget();
             var pack = ShaderPackSession.current();
-            XessFgRuntime.irisBegin(pack.generation(), cmi$coordinates(pack, client, camera, target.width, target.height),
+            var coordinates = cmi$coordinates(pack, client, camera, target.width, target.height);
+            XessFgRuntime.irisBegin(pack.generation(), DlssRuntime.irisCoordinates(coordinates),
                     camera, target.width, target.height, pack.terrainMotion());
         }
     }
 
     @Inject(method = "finalizeLevelRendering", at = @At("HEAD"))
     private void cmi$captureXessFgIris(CallbackInfo ci) {
-        if (!XessFgRuntime.requested() || RiftRenderFrame.auxiliary() || IrisVideoSettings.colorSpace != ColorSpace.SRGB) return;
+        if ((!XessFgRuntime.requested() && !DlssRuntime.irisActive())
+                || RiftRenderFrame.auxiliary() || IrisVideoSettings.colorSpace != ColorSpace.SRGB) return;
         var pack = ShaderPackSession.current();
         var client = Minecraft.getInstance();
         if (client.level == null) return;
         var target = client.getMainRenderTarget();
         var state = CapturedRenderingState.INSTANCE;
         var camera = client.gameRenderer.getMainCamera();
-        var coordinates = cmi$coordinates(pack, client, camera, target.width, target.height);
+        var coordinates = DlssRuntime.irisCoordinates(cmi$coordinates(pack, client, camera, target.width, target.height));
         if (coordinates == null) return;
         var targets = ((NativeSkyPipelineAccess) this).cmi$targets();
         int depth = client.options.getCameraType().isFirstPerson()
                 ? targets.getDepthTextureNoHand().getTextureId() : targets.getDepthTexture();
         int handDepth = depth == targets.getDepthTexture() ? 0 : targets.getDepthTexture();
+        DlssRuntime.irisDepth(depth, handDepth, camera, state.getGbufferModelView(), state.getGbufferProjection(), coordinates);
         XessFgRuntime.irisDepth(depth, handDepth, target.width, target.height, camera,
-                state.getGbufferModelView(), state.getGbufferProjection(), coordinates);
+                state.getGbufferModelView(), DlssRuntime.stableProjection(state.getGbufferProjection()), coordinates);
     }
 
     @Unique

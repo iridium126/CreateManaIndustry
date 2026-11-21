@@ -1,4 +1,9 @@
 {
+  "createmanaindustry.configuration.dlss": "NVIDIA DLSS Super Resolution",
+  "createmanaindustry.configuration.dlss.enabled": "Enable DLSS",
+  "createmanaindustry.configuration.dlss.enabled.tooltip": "Run DLSS on the NVIDIA RTX adapter rendering Minecraft.",
+  "createmanaindustry.configuration.dlss.renderScale": "DLSS render scale",
+  "createmanaindustry.configuration.dlss.renderScale.tooltip": "Scale of each scene axis. 1.00 uses DLAA. The HUD stays at full resolution.",
   "createmanaindustry.great_trick.ectoplasmic_inversion": "Ectoplasmic Inversion",
   "createmanaindustry.great_trick.book_cost": "Costs %s Anima",
   "createmanaindustry.great_trick.unknown": "Unknown Great Trick",

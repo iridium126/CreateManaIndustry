@@ -19,6 +19,7 @@ public final class ClientFrameCapture {
     public static final ClientFrameCapture INSTANCE=new ClientFrameCapture();
     private static final int CAPACITY=300_000;
     private volatile int requestedSeconds;
+    private final StartGate startGate = new StartGate();
     private Window window;
     private long captureGeneration;
     private GpuTimestampRing timer;
@@ -27,9 +28,30 @@ public final class ClientFrameCapture {
     private boolean timing;
     private boolean stopAfterFrame;
     private Object level;
-    private String context;
+    private ParticleDiagnostics.MeasurementContext context;
     private int width,height,limit;
     private boolean vsync;
+    static final class StartGate {
+        private boolean priming, presented;
+
+        boolean canStart(boolean playable) {
+            if (!playable) reset();
+            priming = playable && !presented;
+            return playable && presented;
+        }
+
+        void beforeDisplay(boolean playable) {
+            presented = priming && playable;
+        }
+
+        void reset() {
+            priming = presented = false;
+        }
+    }
+
+    private static boolean playable(Minecraft mc) {
+        return mc.level != null && mc.isWindowActive() && mc.screen == null && mc.getOverlay() == null && !mc.isPaused();
+    }
     private static String buildIdentity(){
         try(var input=ClientFrameCapture.class.getResourceAsStream("/cmi-performance-build.sha256")){
             return input==null?"unavailable":new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8).trim();
@@ -91,6 +113,7 @@ public final class ClientFrameCapture {
     public synchronized boolean request(int seconds){
         if(seconds<1||seconds>900)throw new IllegalArgumentException("Capture seconds: 1..900");
         if(window!=null||requestedSeconds!=0||ParticleChainCapture.INSTANCE.busy())return false;
+        startGate.reset();
         requestedSeconds=seconds;return true;
     }
     public boolean collecting(){return window!=null&&window.collecting;}
@@ -140,13 +163,14 @@ public final class ClientFrameCapture {
     public boolean cancel() {
         if (requestedSeconds != 0) {
             requestedSeconds = 0;
+            startGate.reset();
             return true;
         }
         if (!collecting()) return false;
         invalidate("cancelled by command");
         return true;
     }
-    public void close(){requestedSeconds=0;if(window!=null){window.invalid="client shutdown";finish();}}
+    public void close(){requestedSeconds=0;startGate.reset();if(window!=null){window.invalid="client shutdown";finish();}}
     public void begin(){
         if(window==null&&requestedSeconds==0)return;
         frameId++;head=System.nanoTime();active=-1;
@@ -165,16 +189,20 @@ public final class ClientFrameCapture {
                 &&window.stormTickets.isEmpty()&&!window.xess.hasPending())||head-window.stopped>5_000_000_000L))finish();
         var mc=Minecraft.getInstance();
         if(requestedSeconds!=0&&window==null){
-            if(mc.level==null||!mc.isWindowActive()){requestedSeconds=0;CreateManaIndustry.LOGGER.warn(CMILog.FRAMES + "capture requires an active world window");return;}
+            if(mc.level==null||!mc.isWindowActive()){requestedSeconds=0;startGate.reset();CreateManaIndustry.LOGGER.warn(CMILog.FRAMES + "capture requires an active world window");return;}
+            // The first frame after chat closes may still be restoring DLSS and Iris targets.
+            if (!startGate.canStart(playable(mc))) return;
+            startGate.reset();
             window=new Window();captureGeneration++;window.seconds=requestedSeconds;requestedSeconds=0;
             window.bindingsStart=GpuBindings.submitted();window.bindingsAvoidedStart=GpuBindings.avoided();
             var uniformCounters=com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.currentCache();
             window.uniformsStart=uniformCounters.submissions();window.uniformsAvoidedStart=uniformCounters.avoided();
             level=mc.level;width=mc.getWindow().getWidth();height=mc.getWindow().getHeight();
             limit=mc.options.framerateLimit().get();vsync=mc.options.enableVsync().get();
-            context=ParticleDiagnostics.INSTANCE.measurementContext();
+            context=ParticleDiagnostics.INSTANCE.measurementSnapshot();
             window.copiedStateStart=com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers.INSTANCE.copiedStateBytes();
-            var m=window.metadata;m.put("auto_throttle",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle);m.put("schema",7);m.put("started",Instant.now().toString());m.put("context",context);
+            var m=window.metadata;m.put("auto_throttle",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.particleAutoThrottle);m.put("schema",7);m.put("started",Instant.now().toString());m.put("context",context.description());
+            if (context.dlssScale() > 0) m.put("dlss_render_scale", context.dlssScale());
             m.put("camera_scope","current primary level camera and projection; FOV is vertical degrees derived from the actual projection; unavailable values are NaN; compare each orientation independently");
             m.put("build_sha256",buildIdentity());
             m.put("measurement_mode","instrumented-frame-window");
@@ -217,10 +245,17 @@ public final class ClientFrameCapture {
         if(window==null||!window.collecting)return;
         String reason="";
         if(mc.level!=level)reason="world changed";
-        else if(!mc.isWindowActive()||mc.screen!=null)reason="unfocused or menu open";
+        else if(!playable(mc))reason="unfocused or menu open";
         else if(width!=mc.getWindow().getWidth()||height!=mc.getWindow().getHeight())reason="window size changed";
         else if(limit!=mc.options.framerateLimit().get()||vsync!=mc.options.enableVsync().get())reason="limiter changed";
-        else if(!context.equals(ParticleDiagnostics.INSTANCE.measurementContext()))reason="shader session/options changed";
+        else {
+            var next = ParticleDiagnostics.INSTANCE.measurementSnapshot();
+            reason = next.changeFrom(context);
+            if (!reason.isEmpty()) {
+                window.metadata.put("context_at_invalidation", next.description());
+                if (next.dlssScale() > 0) window.metadata.put("dlss_render_scale_at_invalidation", next.dlssScale());
+            }
+        }
         if(!reason.isEmpty()){window.invalid=reason;stop();return;}
         if(previousHead==0){start=previousHead=head;return;}
         if(window.size==CAPACITY){window.invalid="sample capacity exhausted";stop();return;}
@@ -237,6 +272,7 @@ public final class ClientFrameCapture {
         timing=timer.begin(false,active,-1);if(!timing)window.skippedGpu++;
     }
     public void beforeDisplay(){
+        if (window == null && requestedSeconds != 0) startGate.beforeDisplay(playable(Minecraft.getInstance()));
         if(active<0)return;
         window.riftVisibility.put(active,com.iridium126.createmanaindustry.client.allaystorm.rift.RiftVisibility.metadata());
         if(!window.metadata.get("rift_config").equals(Map.of("clipping",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftSkyClipping,"culling",com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.riftCulling.name())))invalidate("rift configuration changed during capture");
@@ -244,6 +280,7 @@ public final class ClientFrameCapture {
         if(timing){timer.end(true,false);timing=false;}
     }
     public void end(boolean success){
+        if (!success && window == null) startGate.reset();
         if(window!=null)window.xess.endFrame();
         if(timing){timer.end(false,false);timing=false;}
         if(!success&&collecting()){window.invalid="runTick failed";stop();}

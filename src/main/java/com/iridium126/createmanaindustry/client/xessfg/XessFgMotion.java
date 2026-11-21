@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.xessfg;
 
+import com.iridium126.createmanaindustry.client.dlss.DlssRuntime;
+
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
@@ -86,7 +88,7 @@ final class XessFgMotion implements AutoCloseable {
 
     XessFgRuntime.MotionScope track(Object object, boolean hand, Consumer<Vector4f> deformation) {
         var prior = selection;
-        var matrices = new Matrix4f(RenderSystem.getProjectionMatrix()).mul(RenderSystem.getModelViewMatrix());
+        var matrices = DlssRuntime.stableProjection(RenderSystem.getProjectionMatrix()).mul(RenderSystem.getModelViewMatrix());
         selection = new Selection(object, hand, matrices, deformation);
         return () -> selection = prior;
     }
@@ -100,7 +102,7 @@ final class XessFgMotion implements AutoCloseable {
 
     VertexConsumer particle(VertexConsumer source, Object particle, Object type, boolean transparent) {
         return track(source, new Key(particle, type, transparent ? Layer.TRANSLUCENT : Layer.WORLD),
-                new Matrix4f(RenderSystem.getProjectionMatrix()).mul(RenderSystem.getModelViewMatrix()), null);
+                DlssRuntime.stableProjection(RenderSystem.getProjectionMatrix()).mul(RenderSystem.getModelViewMatrix()), null);
     }
 
     private VertexConsumer track(VertexConsumer source, Key key, Matrix4f matrices, Consumer<Vector4f> deformation) {

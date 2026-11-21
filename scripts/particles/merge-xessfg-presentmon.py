@@ -104,17 +104,23 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
     counts["unmatched_real"] = sum((frame, "Application") not in known for frame in range(len(app)))
     counts["unmatched_display_rows"] = sum(index not in matches for index in range(len(presents)))
 
-    intervals, midpoint, annotations = [], [], {}
+    intervals, display_intervals, input_latencies, midpoint, annotations = [], [], [], [], {}
     period = frequency / refresh_hz if refresh_hz is not None else None
     refresh_splits = Counter()
     for events in timelines.values():
+        events.sort()
+        display_intervals.extend(milliseconds(b[0] - a[0], frequency) for a, b in zip(events, events[1:])
+                                 if b[0] > a[0])
         preceding = None
         generated = []
-        for event in sorted(events):
+        for event in events:
             time, frame, kind, index = event
             if kind == "Intel XeSS-FG":
                 generated.append(event)
                 continue
+            latency = presents[index].get("input_latency_ms")
+            if latency is not None:
+                input_latencies.append(latency)
             if preceding is not None:
                 last_time, last_frame, _, _ = preceding
                 gap = milliseconds(time - last_time, frequency)
@@ -163,7 +169,9 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
         if samples:
             gpu[key.removesuffix("_ns") + "_ms"] = {"samples": len(samples), **percentiles(samples)}
     summary = {
+        "display_interval_ms": {"samples": len(display_intervals), **percentiles(display_intervals)},
         "real_display_interval_ms": {"samples": len(intervals), **percentiles(intervals)},
+        "real_input_to_display_ms": {"samples": len(input_latencies), **percentiles(input_latencies)},
         "midpoint_error_ms": {"samples": len(midpoint), **percentiles(midpoint)},
         "absolute_midpoint_error_ms": percentiles([abs(value) for value in midpoint]),
         "generation_coverage": counts["covered_intervals"] / eligible if eligible else None,
@@ -286,9 +294,12 @@ def merge(metadata_path, presentmon_path, refresh_hz=None):
         display = None
         if dropped != "1" and until and until.upper() != "NA" and Decimal(until) > 0:
             display = qpc + round(Decimal(until) * frequency / 1000)
+        latency = row.get("MsAllInputToPhotonLatency", "")
+        input_latency = float(latency) if latency and latency.upper() != "NA" else None
         presents.append(dict(qpc=qpc, address=int(row["SwapChainAddress"], 16), app_id=app_id,
                              frame_id=row.get("FrameId", ""), type=row.get("FrameType") or "Unknown",
-                             mode=row.get("PresentMode", ""), display=display, dropped=dropped, api_ticks=api_ticks))
+                             mode=row.get("PresentMode", ""), display=display, dropped=dropped, api_ticks=api_ticks,
+                             input_latency_ms=input_latency if input_latency is not None and input_latency > 0 else None))
 
     matched, verified = associate(app, presents)
     pacing_fields, pacing = display_pacing(app, presents, matched, frequency, refresh_hz)

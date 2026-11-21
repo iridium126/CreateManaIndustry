@@ -2,6 +2,7 @@ package com.iridium126.createmanaindustry.client.render.shaderpack;
 
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.allaystorm.visual.StormVisualProbe;
+import com.iridium126.createmanaindustry.client.dlss.DlssRuntime;
 import com.iridium126.createmanaindustry.client.render.scene.ClientGpuScene;
 import foundry.veil.api.client.render.VeilLevelPerspectiveRenderer;
 import net.minecraft.client.Minecraft;
@@ -38,7 +39,9 @@ public final class IrisWorldEffects {
         if(frame<=0)return;
         boolean iris=shaderPackActive();
         Object pipeline=iris?Iris.getPipelineManager().getPipelineNullable():null;
-        ShaderPackSession.current().observe(pipeline,mc.getMainRenderTarget().width,mc.getMainRenderTarget().height);
+        var sceneTarget = DlssRuntime.irisSceneTarget();
+        var size = sceneTarget != null ? sceneTarget : mc.getMainRenderTarget();
+        ShaderPackSession.current().observe(pipeline, size.width, size.height);
         if(pipeline instanceof IrisRenderingPipelineAccessor bridge)ShaderPackSession.current().verifyNativePrograms(bridge.getProgramSet());
         var capability=ShaderPackSession.current().capabilities();
         for(Entry entry:passes.values()){

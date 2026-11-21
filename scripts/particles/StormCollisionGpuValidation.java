@@ -9,6 +9,20 @@ import static com.iridium126.createmanaindustry.client.allaystorm.StormCollision
 
 /** Production page uploader / hash lookup and growth; no game client. */
 public class StormCollisionGpuValidation extends StarfallGpuValidation {
+ static void inheritedGlError(){
+  try(var gpu=new StormCollisionGpu()){
+   gpu.offer(Map.of(new Section(0,0,0),new Page(1,SOLID,null)));
+   long deadline=System.nanoTime()+5_000_000_000L;
+   while(!gpu.settled()&&System.nanoTime()<deadline){
+    GL11.glEnable(0);
+    gpu.pump(131072,50_000_000);
+    GL11.glGetError();
+    Thread.yield();
+   }
+   check(gpu.settled()&&gpu.revision()>=0,"stale OpenGL errors must not disable collision atlas or page table allocation");
+   System.out.println("PASS Storm collision atlas and page table with pre-existing OpenGL errors");
+  }
+ }
  static void atlas()throws Exception{
   int p=compileText("storm bit atlas",source("chunks/storm_collision.glsl")+"""
    layout(local_size_x=64) in;layout(std430,binding=10) buffer Output{int values[];} result;
@@ -88,7 +102,7 @@ public class StormCollisionGpuValidation extends StarfallGpuValidation {
  }
  public static void main(String[] args)throws Exception{
   long window=GpuValidationSupport.open(128,128,"Storm collision validation",false);
-  try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));atlas();production();check(GL11.glGetError()==0,"storm collision GL state");System.out.println("Storm collision GPU: "+checks+" assertions passed");}
+  try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));inheritedGlError();atlas();production();check(GL11.glGetError()==0,"storm collision GL state");System.out.println("Storm collision GPU: "+checks+" assertions passed");}
   finally{GpuValidationSupport.close(window);}
  }
 }

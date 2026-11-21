@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.allaystorm;
 
 import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
+import com.iridium126.createmanaindustry.client.gpu.state.GpuGlErrors;
 
 import java.nio.*;
 import java.util.*;
@@ -41,11 +42,21 @@ public final class StormCollisionGpu implements AutoCloseable {
     private static int texture(int pages){
         int depth=((pages+1023)/1024)*8;
         if(depth>GL11.glGetInteger(GL12.GL_MAX_3D_TEXTURE_SIZE))throw new IllegalStateException("Storm collision atlas exceeds device 3D texture limit");
+        GpuGlErrors.begin("Allocating Storm collision atlas");
+        int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
         int texture=GL11.glGenTextures();GL13.glActiveTexture(GL13.GL_TEXTURE1);GL11.glBindTexture(GL12.GL_TEXTURE_3D,texture);
-        GL11.glTexParameteri(GL12.GL_TEXTURE_3D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);GL11.glTexParameteri(GL12.GL_TEXTURE_3D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);
-        GL42.glTexStorage3D(GL12.GL_TEXTURE_3D,1,GL30.GL_R32UI,128,128,depth);
-        if(GL11.glGetError()!=GL11.GL_NO_ERROR){com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(texture);throw new IllegalStateException("Storm collision atlas allocation failed");}
-        return texture;
+        try {
+            GL11.glTexParameteri(GL12.GL_TEXTURE_3D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);
+            GL11.glTexParameteri(GL12.GL_TEXTURE_3D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);
+            GL42.glTexStorage3D(GL12.GL_TEXTURE_3D,1,GL30.GL_R32UI,128,128,depth);
+            GpuGlErrors.check("Allocating Storm collision atlas");
+            return texture;
+        } catch(RuntimeException|LinkageError failure) {
+            com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames.deleteTexture(texture);
+            throw failure;
+        } finally {
+            GL13.glActiveTexture(active);
+        }
     }
     public void offer(Map<Section,Page> ready){
         residents.keySet().removeIf(key->{if(ready.containsKey(key))return false;changed(key);return true;});pending.keySet().removeIf(key->!ready.containsKey(key));
@@ -98,12 +109,17 @@ public final class StormCollisionGpu implements AutoCloseable {
             if(bank.staging==null)bank.staging=MemoryUtil.memAlloc(capacity).order(ByteOrder.nativeOrder());
             else if(bank.staging.capacity()<bytes)bank.staging=MemoryUtil.memRealloc(bank.staging,capacity).order(ByteOrder.nativeOrder());
             bank.staging.clear().limit(bytes);bank.staging.asIntBuffer().put(index.words());
+            int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
             try{
+                GpuGlErrors.begin("Allocating Storm collision page table");
                 GpuBindings.bind(GL31.GL_TEXTURE_BUFFER,bank.buffer);
-                if(bank.storageBytes<bytes){GpuTransfers.allocate(GL31.GL_TEXTURE_BUFFER,capacity,GL15.GL_STREAM_DRAW);bank.storageBytes=capacity;}
+                boolean grow=bank.storageBytes<bytes;
+                if(grow)GpuTransfers.allocate(GL31.GL_TEXTURE_BUFFER,capacity,GL15.GL_STREAM_DRAW);
                 GL13.glActiveTexture(GL13.GL_TEXTURE2);GL11.glBindTexture(GL31.GL_TEXTURE_BUFFER,bank.texture);GL31.glTexBuffer(GL31.GL_TEXTURE_BUFFER,GL30.GL_RGBA32I,bank.buffer);
-                if(GL11.glGetError()!=GL11.GL_NO_ERROR)throw new IllegalStateException("Storm collision page-table allocation failed");
+                GpuGlErrors.check("Allocating Storm collision page table");
+                if(grow)bank.storageBytes=capacity;
             }catch(RuntimeException|LinkageError failure){MemoryUtil.memFree(bank.staging);bank.staging=null;throw failure;}
+            finally{GL13.glActiveTexture(active);}
         }
         return true;
     }

@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 
 import com.iridium126.createmanaindustry.client.gpu.state.GpuObjectNames;
+import com.iridium126.createmanaindustry.client.gpu.state.GpuGlErrors;
 import java.nio.file.Path;
 import java.util.*;
 import org.lwjgl.opengl.*;
@@ -38,7 +39,9 @@ public final class OptixQueryWorker implements AutoCloseable {
         this.view=view;
         try{
             if(!RETIRING.isEmpty())throw new IllegalStateException("Prior OptiX resources are still retiring");
-            SpatialNative.load(modules);bridge=SpatialNative.createBuffers(128L+(capacity+terrainCapacity)*64L,3);
+            SpatialNative.load(modules);
+            GpuGlErrors.begin("Importing OptiX render-query buffers");
+            bridge=SpatialNative.createBuffers(128L+(capacity+terrainCapacity)*64L,3);
             worker=SpatialNative.create(bridge,capacity,terrainCapacity,probes,epoch,modules.toAbsolutePath().toString());
             for(int i=0;i<3;i++){int[] buffers=SpatialNative.buffers(bridge,i);var s=slots[i];s.input=buffers[0];s.output=buffers[1];s.texture=GL45.glCreateTextures(GL31.GL_TEXTURE_BUFFER);GL45.glTextureBuffer(s.texture,GL30.GL_RGBA32UI,s.output);}
         }catch(RuntimeException|LinkageError failure){close();throw failure;}

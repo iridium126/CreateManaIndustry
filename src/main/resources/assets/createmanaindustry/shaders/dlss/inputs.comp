@@ -1,0 +1,87 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D source;
+layout(rgba16f, binding = 0) writeonly uniform image2D sceneColor;
+layout(r32f, binding = 1) uniform image2D sceneDepth;
+layout(rg16f, binding = 2) writeonly uniform image2D sceneMotion;
+layout(std430, binding = 0) readonly buffer Winners { uvec2 winningMotion[]; };
+
+uniform ivec2 extent;
+uniform vec2 jitter;
+uniform mat4 toPrevious;
+uniform mat4 skyToPrevious;
+uniform int mode;
+uniform vec2 colorEncoding;
+uniform vec4 water;
+
+vec2 waterScene(vec2 uv, vec2 parameters) {
+    vec2 mapped = uv + parameters.y * vec2(cos(uv.y * 32.0 + parameters.x * 3.0),
+                                           sin(uv.x * 32.0 + parameters.x * 1.7));
+    return all(greaterThan(mapped, vec2(0.0))) && all(lessThan(mapped, vec2(1.0))) ? mapped : uv;
+}
+
+vec2 waterDisplay(vec2 uv, vec2 parameters) {
+    if (parameters.y == 0.0) return uv;
+    vec2 estimate = uv;
+    for (int i = 0; i < 4; ++i) estimate += uv - waterScene(estimate, parameters);
+    return estimate;
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(p, extent))) return;
+    ivec2 q = ivec2(p.x, extent.y - 1 - p.y);
+    if (mode == 0) {
+        vec4 color = texelFetch(source, q, 0);
+        if (colorEncoding.x != 1.0) color.rgb /= colorEncoding.x;
+        if (colorEncoding.y != 1.0) color.rgb = pow(max(vec3(0.0), color.rgb), vec3(1.0 / colorEncoding.y));
+        imageStore(sceneColor, p, color);
+        return;
+    }
+    vec2 size = vec2(extent);
+    vec2 units = vec2(extent.x, -extent.y);
+    vec2 display = (vec2(q) + 0.5) / size;
+    vec2 raster = water.y == 0.0 ? display : waterScene(display, water.xy);
+    vec2 scene = raster - jitter / size;
+    ivec2 depthPixel = clamp(ivec2(raster * size), ivec2(0), extent - 1);
+    ivec2 motionPixel = clamp(ivec2(scene * size), ivec2(0), extent - 1);
+    float depth;
+    vec2 velocity = vec2(0);
+    if (mode == 1) {
+        depth = texelFetch(source, depthPixel, 0).r;
+        vec4 clip = vec4(scene * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+        vec4 previous = depth == 1.0 ? skyToPrevious * clip : toPrevious * clip;
+        if (previous.w > 0.00001) {
+            vec2 delta = previous.xy / previous.w * 0.5 + 0.5 - scene;
+            velocity = delta * units;
+        }
+    } else if (mode == 4) {
+        depth = texelFetch(source, depthPixel, 0).r;
+        // The complete depth texture also contains all world geometry. Only a
+        // nearer fragment identifies a hand sample and replaces world motion.
+        if (depth >= imageLoad(sceneDepth, p).r - 0.000002) return;
+    } else if (mode == 2) {
+        vec4 sampleMotion = texelFetch(source, motionPixel, 0);
+        if (sampleMotion.a < 0.5) return;
+        velocity = sampleMotion.xy;
+        depth = sampleMotion.z;
+    } else {
+        int index = motionPixel.y * extent.x + motionPixel.x;
+        uvec2 opaque = winningMotion[index];
+        uvec2 transparent = winningMotion[index + extent.x * extent.y];
+        depth = texelFetch(source, depthPixel, 0).r;
+        float transparentDepth = float(0xffffffu - (transparent.y >> 8)) / 16777215.0;
+        float opaqueDepth = float(0xffffffu - (opaque.y >> 8)) / 16777215.0;
+        if (transparent.y != 0u && transparentDepth <= depth + 0.000002)
+            velocity = unpackHalf2x16(transparent.x);
+        else if (opaque.y != 0u && abs(opaqueDepth - depth) <= 0.000002)
+            velocity = unpackHalf2x16(opaque.x);
+        else return;
+    }
+    if (water.y != 0.0 || water.w != 0.0) {
+        vec2 previousScene = scene + velocity / units;
+        velocity = (waterDisplay(previousScene, water.zw) - (display - jitter / size)) * units;
+    }
+    imageStore(sceneDepth, p, vec4(depth));
+    imageStore(sceneMotion, p, vec4(clamp(velocity, -size, size), 0, 0));
+}

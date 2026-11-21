@@ -27,10 +27,13 @@ final class XessFgCapture implements AutoCloseable {
     private static final int APPLY_GPU_MOTION = 8, INITIALIZE_GPU_MOTION = 9;
     private final int program;
     private final int sourceSize, extent, rowWords, offsets, mode, currentToPrevious, skyToPrevious;
-    private final int sourceScale, currentJitter, warpTypes, warpParameters, transportMode;
+    private final int sourceScale, currentJitter, warpTypes, warpParameters, transportMode, winnerSize;
 
     XessFgCapture() {
-        String shader = GpuShaderResources.loader(CreateManaIndustry.MODID, "shaders/xessfg/").apply("export.comp");
+        this(GpuShaderResources.loader(CreateManaIndustry.MODID, "shaders/xessfg/").apply("export.comp"));
+    }
+
+    XessFgCapture(String shader) {
         program = GpuShaderCompiler.compute("XeSS-FG GPU transport", shader);
         sourceSize = glGetUniformLocation(program, "sourceSize");
         extent = glGetUniformLocation(program, "extent");
@@ -44,6 +47,7 @@ final class XessFgCapture implements AutoCloseable {
         currentJitter = glGetUniformLocation(program, "currentJitter");
         warpTypes = glGetUniformLocation(program, "warpTypes");
         warpParameters = glGetUniformLocation(program, "warpParameters");
+        winnerSize = glGetUniformLocation(program, "winnerSize");
     }
 
     void color(XessFgTransport slot, int texture, int sourceWidth, int sourceHeight, int plane, boolean full) {
@@ -69,9 +73,10 @@ final class XessFgCapture implements AutoCloseable {
     }
 
     void applyGpuMotion(XessFgTransport slot, int sceneDepth, int sourceWidth, int sourceHeight,
-                        int winners, boolean initialize) {
+                        XessFgGpuMotion motion, boolean initialize) {
+        glProgramUniform2i(program, winnerSize, motion.width(), motion.height());
         dispatch(slot.geometry, sceneDepth, sourceWidth, sourceHeight,
-                initialize ? INITIALIZE_GPU_MOTION : APPLY_GPU_MOTION, winners);
+                initialize ? INITIALIZE_GPU_MOTION : APPLY_GPU_MOTION, motion.winners());
     }
 
     void depthAndMotion(XessFgTransport slot, int texture, int sourceWidth, int sourceHeight,

@@ -179,7 +179,7 @@ try {
     Write-Host "Recording Minecraft PID $GamePid for $Seconds seconds."
     Write-Host 'In Minecraft, run /cmi particle profile frames 10 now, then close chat.'
     & $PresentMonExe --process_id $GamePid --session_name "CMI-XeSSFG-$stamp-$GamePid" --qpc_time `
-        --track_frame_type --track_app_timing --write_frame_id --no_track_input --no_console_stats `
+        --track_frame_type --track_app_timing --write_frame_id --no_console_stats `
         --timed $Seconds --terminate_after_timed --output_file $csv
     $presentMonStatus = $LASTEXITCODE
 } finally {

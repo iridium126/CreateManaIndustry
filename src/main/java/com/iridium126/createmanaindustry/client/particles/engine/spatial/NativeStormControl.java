@@ -6,6 +6,7 @@ import com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnSnapsh
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest;
 import com.iridium126.createmanaindustry.client.particles.engine.ClientFrameCapture;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleFrameStages;
+import com.iridium126.createmanaindustry.client.gpu.state.GpuGlErrors;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -137,6 +138,7 @@ final class NativeStormControl {
                 worker=StormDxrNative.create(capacity,selection.id(),null,probes,
                         selection.renderer().luid(),selection.renderer().nodes());
             }else if(selection.shared()){
+                GpuGlErrors.begin("Importing OptiX Storm display buffers");
                 displayBridge=SpatialNative.createStormDisplayBuffers(STORM_DISPLAY_HEADER_BYTES+
                         (long)capacity*STORM_DISPLAY_RECORD_BYTES+(long)STORM_COLUMN_SLOTS*STORM_COLUMN_MEMBERS*STORM_DISPLAY_COLUMN_BYTES,RT_SLOTS);
                 for(int slot=0;slot<RT_SLOTS;slot++)displaySlots[slot]=new DisplaySlot(slot,SpatialNative.buffers(displayBridge,slot)[1]);

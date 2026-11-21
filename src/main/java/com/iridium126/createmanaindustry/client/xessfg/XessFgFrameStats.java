@@ -20,7 +20,8 @@ public final class XessFgFrameStats implements AutoCloseable {
             + "color_submit_qpc,color_fence_token,color_gl_fence_at_submit,color_gl_fence_at_enter,color_gl_fence_at_exit,"
             + "color_transfer_fence_at_enter,color_transfer_fence_at_exit,arc_color_fence_observed_qpc,"
             + "present_queue_delay_ns,worker_present_duration_ns,proxy_present_thread_cpu_ns,presenter_thread_id,proxy_top_level";
-    private static final int NATIVE_FIELDS = 38, NATIVE_QUERY_MASK = 14, WORKER_PRESENT_DURATION = 34;
+    static final int NATIVE_FIELDS = 38;
+    private static final int NATIVE_QUERY_MASK = 14, WORKER_PRESENT_DURATION = 34;
     private static final int DMA_TICK = 5, INPUTS_TICK = 6;
     private static final int RTX_START_TICK = 7, RTX_END_TICK = 8, DMA_START_TICK = 9;
     private static final int RTX_GEOMETRY_START_TICK = 10, RTX_GEOMETRY_END_TICK = 11;

@@ -98,6 +98,20 @@ allprojects {
             classpath = validationClasspath
             mainClass = 'scripts/particles/XessFgMotionGpuValidation.java'
         }
+        def dlssHarness = tasks.register('compileDlssGpuHarness', JavaCompile) {
+            dependsOn tasks.named('classes')
+            source = files('scripts/particles/DlssGpuValidation.java', 'scripts/particles/XessFgDlssValidation.java')
+            classpath = validationClasspath
+            destinationDirectory = layout.buildDirectory.dir('dlss-gpu-harness')
+            options.encoding = 'UTF-8'
+        }
+        tasks.register('validateDlssGpu', JavaExec) {
+            dependsOn dlssHarness
+            classpath = files(dlssHarness.flatMap { it.destinationDirectory }) + validationClasspath
+            mainClass = 'com.iridium126.createmanaindustry.client.dlss.DlssGpuValidation'
+            if (project.hasProperty('dlssArc')) args '--arc'
+            if (project.hasProperty('dlssOptix')) args '--optix'
+        }
         tasks.register('validateSceneFrameGpu', JavaExec) {
             dependsOn tasks.named('classes')
             classpath = validationClasspath
@@ -631,7 +645,8 @@ allprojects {
                 !it.name.startsWith('glsl-transformer-')
             } + files(packageIrisTransformer, layout.buildDirectory.file('package-iris-validation/jcpp-1.4.14.jar'))
             mainClass = 'scripts/particles/NativeRiftPackValidation.java'
-            if (project.hasProperty('xessTerrain')) args '--xess-terrain'
+            if (project.hasProperty('dlssIris')) args '--dlss'
+            else if (project.hasProperty('xessTerrain')) args '--xess-terrain'
         }
         tasks.register('validateHexSharedIrisGpu', JavaExec) {
             dependsOn tasks.named('classes'), tasks.named('extractPackageIrisTransformer'), 'compilePackageIrisHarness', 'compileHexNativeHarness'

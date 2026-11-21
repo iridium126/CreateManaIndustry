@@ -1,5 +1,7 @@
 import com.google.common.collect.ImmutableList;
+import com.iridium126.createmanaindustry.client.dlss.DlssPack;
 import com.iridium126.createmanaindustry.client.render.shaderpack.*;
+import com.iridium126.createmanaindustry.client.xessfg.XessFgPack;
 import io.github.douira.glsl_transformer.ast.query.RootSupplier;
 import io.github.douira.glsl_transformer.ast.transform.ASTParser;
 import net.irisshaders.iris.helpers.StringPair;
@@ -293,6 +295,91 @@ public final class NativeRiftPackValidation {
         return shader;
     }
 
+    static void dlssPacks() throws Exception {
+        var families = EnumSet.noneOf(XessFgPack.class);
+        List<Path> samples;
+        try (var files = Files.list(Path.of("run/shaderpacks"))) {
+            samples = files.filter(p -> p.toString().endsWith(".zip")).sorted().toList();
+        }
+        int programs = 0;
+        for (Path sample : samples) {
+            var stock = ShaderPackInventory.readPack(sample);
+            var sources = new TreeMap<>(stock.sources());
+            sources.putAll(ShaderPatchPlan.prepare(stock).edits());
+            var rift = NativeRiftPatchPlan.prepare(ShaderPackInventory.of(sources));
+            var family = XessFgPack.detect(stock, rift.family());
+            if (family == null) continue;
+            sources.putAll(rift.edits());
+            sources.putAll(StormCloudDensityPatchPlan.prepare(ShaderPackInventory.of(sources), rift.family()).edits());
+            var plan = DlssPack.detect(ShaderPackInventory.of(sources), family);
+            check(plan != null, family + " reconstruction source contract");
+            sources.putAll(plan.sources());
+            programs += dlssPrograms(family, plan, sources, "default");
+            if (family == XessFgPack.BLISS)
+                programs += dlssPrograms(family, plan, configure(sources, Map.of("TAA_UPSCALING", "")), "taau");
+            if (family == XessFgPack.PHOTON)
+                programs += dlssPrograms(family, plan, configure(sources, Map.of("TAAU", "")), "taau");
+            families.add(family);
+        }
+        check(families.equals(EnumSet.allOf(XessFgPack.class)), "Eight DLSS families: " + families);
+        System.out.println("DLSS Iris validation: " + programs + " linked programs, " + checks + " assertions");
+    }
+
+    static int dlssPrograms(XessFgPack family, DlssPack plan, Map<String, String> sources, String variant) throws Exception {
+        Path root = Path.of("build/dlss-iris-validation", family.name(), variant);
+        for (var entry : sources.entrySet()) {
+            Path file = root.resolve(entry.getKey());
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, entry.getValue());
+        }
+        int linked = 0;
+        for (String dimension : List.of("", "world0/", "world-1/", "world1/")) {
+            String base = dimension + plan.pass();
+            if (!sources.containsKey(base + ".fsh")) continue;
+            check(depends(sources, base + ".fsh", plan.sources().keySet(), new HashSet<>()),
+                    family + " effective reconstruction entry " + base);
+            String fragment = preprocess(root, base + ".fsh");
+            String vertex = preprocess(root, base + ".vsh");
+            String geometry = sources.containsKey(base + ".gsh") ? preprocess(root, base + ".gsh") : null;
+            var transformed = net.irisshaders.iris.pipeline.transform.TransformPatcher.patchComposite(
+                    "cmi-dlss-" + base, vertex, geometry, fragment,
+                    net.irisshaders.iris.shaderpack.texture.TextureStage.COMPOSITE_AND_FINAL,
+                    new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>());
+            int program = GL20.glCreateProgram();
+            var shaders = new ArrayList<Integer>();
+            try {
+                for (var stage : transformed.entrySet()) {
+                    if (stage.getValue() == null) continue;
+                    int type = switch (stage.getKey()) {
+                        case VERTEX -> GL20.GL_VERTEX_SHADER;
+                        case FRAGMENT -> GL20.GL_FRAGMENT_SHADER;
+                        case GEOMETRY -> GL32.GL_GEOMETRY_SHADER;
+                        default -> throw new IllegalStateException("Unexpected composite stage " + stage.getKey());
+                    };
+                    int id = compile(stage.getValue(), type, family + " " + base,
+                            root.resolve(base.replace('/', '_') + "-" + stage.getKey() + ".glsl"));
+                    shaders.add(id);
+                    GL20.glAttachShader(program, id);
+                }
+                GL20.glLinkProgram(program);
+                check(GL20.glGetProgrami(program, GL20.GL_LINK_STATUS) != 0,
+                        family + " " + base + ": " + GL20.glGetProgramInfoLog(program));
+                int uniform = GL20.glGetUniformLocation(program, DlssPack.RESOLVE);
+                check(uniform >= 0, family + " active reconstruction switch");
+                check(GL20.glGetUniformi(program, uniform) == 0, family + " original reconstruction is the default");
+                GL41.glProgramUniform1i(program, uniform, 1);
+                check(GL20.glGetUniformi(program, uniform) == 1, family + " reconstruction switch");
+                System.out.println(family + "/" + variant + " " + base + " linked");
+            } finally {
+                shaders.forEach(GL20::glDeleteShader);
+                GL20.glDeleteProgram(program);
+            }
+            linked++;
+        }
+        check(linked >= 3, family + " all dimension programs");
+        return linked;
+    }
+
     public static void main(String[] args)throws Exception{
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_COMPAT_PROFILE);
         long window=GLFW.glfwCreateWindow(32,32,"Native rift pack validation",0,0);check(window!=0,"OpenGL context");
@@ -300,7 +387,8 @@ public final class NativeRiftPackValidation {
             GLFW.glfwMakeContextCurrent(window);
             GL.createCapabilities();
             System.out.println(GL11.glGetString(GL11.GL_RENDERER));
-            if (Arrays.asList(args).contains("--xess-terrain")) xessTerrain();
+            if (Arrays.asList(args).contains("--dlss")) dlssPacks();
+            else if (Arrays.asList(args).contains("--xess-terrain")) xessTerrain();
             else run();
         }
         finally{GpuValidationSupport.close(window);}

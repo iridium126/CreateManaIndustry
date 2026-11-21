@@ -7,7 +7,7 @@ uniform vec2 cmiFgLodDepth;
 void cmiFgPublishDepth(float coverage, bool translucent, bool jittered, float depthValue) {
     if (cmiFgFrame.x == 0u || cmiFgMatched < 0.999 || cmiFgPriorClip.w <= 0.0 || coverage < 0.10) return;
     vec2 extent = vec2(cmiFgFrame.zw);
-    vec2 jitter = jittered ? cmiFgSource.zw : vec2(0.0);
+    vec2 jitter = jittered || cmiFgCameraFraction.w != 0.0 ? cmiFgSource.zw : vec2(0.0);
     // At a half-pixel tie the export's floor picks the right source pixel.
     // The inverse mapping must assign that pixel to the left geometry cell.
     ivec2 cell = clamp(ivec2(ceil((gl_FragCoord.xy - jitter) * extent / cmiFgSource.xy)) - 1,

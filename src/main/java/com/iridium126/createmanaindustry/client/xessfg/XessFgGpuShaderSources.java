@@ -32,13 +32,13 @@ public final class XessFgGpuShaderSources {
                 cmiFgIsLod = cmi_LodPass;
                 if (cmiFgFrame.x != 0u && cmi_LodPass != 0 && abs(gl_Position.z) <= gl_Position.w) {
                     cmiFgRecord(uvec3(cmi_FgSlot, uint(gl_VertexID), cmi_FgMember ^ (0x91a29b00u + uint(cmi_LodPass))),
-                                gl_Position, true);
+                                cmiFgRemoveExternalJitter(gl_Position), true);
                 } else if (cmiFgFrame.x != 0u && cmi_FgSlot != 0xffffffffu && abs(gl_Position.z) <= gl_Position.w) {
                     uint id = cmi_FgMember != 0u ? cmi_FgMember : cmiFgParticleToken[cmiFgIdentityBase + cmi_FgSlot];
                     if (id != 0u) {
                         uint domain = 16u | uint(cmi_FeatherPass != 0) | (uint(cmi_FgMember != 0u) << 1);
                         uint localVertex = uint(gl_VertexID) | (uint(cmi_FeatherPass == 2) << 31);
-                        cmiFgRecord(uvec3(id, localVertex, (cmi_FgEmitter << 5) | domain), gl_Position, true);
+                        cmiFgRecord(uvec3(id, localVertex, (cmi_FgEmitter << 5) | domain), cmiFgRemoveExternalJitter(gl_Position), true);
                     }
                 }
                 """);
@@ -58,7 +58,7 @@ public final class XessFgGpuShaderSources {
                         uint id = order[(cmi_LodPass == 1 ? 0u : 131072u) + uint(gl_InstanceID)].x;
                         uint stormSeed = floatBitsToUint(records[id * 2u + 1u].w);
                         cmiFgRecord(uvec3(id, uint(gl_VertexID), stormSeed ^ (0x91a29b00u + uint(cmi_LodPass))),
-                                    gl_Position, true);
+                                    cmiFgRemoveExternalJitter(gl_Position), true);
                     }
                     """);
             String surface = fragment(fragment, "cmiFgPublishLod(fragColor.a);");
@@ -69,7 +69,7 @@ public final class XessFgGpuShaderSources {
                     if (cmiFgFrame.x != 0u && abs(gl_Position.z) <= gl_Position.w) {
                         uint slot = uint(feather.words[CMI_FEATHER_VISIBLE + uint(gl_InstanceID)]);
                         uint id = cmiFgParticleToken[cmiFgIdentityBase + slot];
-                        if (id != 0u) cmiFgRecord(uvec3(id, uint(gl_VertexID), 4u), gl_Position, true);
+                        if (id != 0u) cmiFgRecord(uvec3(id, uint(gl_VertexID), 4u), cmiFgRemoveExternalJitter(gl_Position), true);
                     }
                     """);
             String surface = fragment(fragment, "cmiFgPublish(fragColor.a, false, false);");
@@ -92,7 +92,7 @@ public final class XessFgGpuShaderSources {
         vertex = vertex.replace(PARTICLE_RECORD, PARTICLE_RECORD + "\n    if (cmiFgFrame.x != 0u) {\n" + identity + "}\n");
         String decoratedVertex = vertex(vertex, PARTICLE_TOKENS + "uvec3 cmiFgKey = uvec3(0u);\n", """
                 if (cmiFgKey.x != 0u && abs(gl_Position.z) <= gl_Position.w)
-                    cmiFgRecord(cmiFgKey, gl_Position, true);
+                    cmiFgRecord(cmiFgKey, cmiFgRemoveExternalJitter(gl_Position), true);
                 """);
         String coverage = spark ? "max(max(fragColor.r, fragColor.g), fragColor.b)" : "fragColor.a";
         String translucent = spark ? "true" : sprite ? "uMode == 0" : "vSeg > 0.5";

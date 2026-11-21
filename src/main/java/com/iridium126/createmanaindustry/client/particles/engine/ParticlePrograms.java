@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.function.ObjIntConsumer;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
+import com.iridium126.createmanaindustry.client.xessfg.XessFgGpuMotion;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.ARBParallelShaderCompile;
@@ -104,6 +105,7 @@ public final class ParticlePrograms {
 
     private static final class Reload implements AutoCloseable {
         final Map<String,String> sources;
+        final boolean motionCapture;
         final Map<String,Integer> completed=new HashMap<>();
         final long started=System.nanoTime();
         final boolean parallel=GL.getCapabilities().GL_ARB_parallel_shader_compile;
@@ -113,8 +115,9 @@ public final class ParticlePrograms {
         int index;
         long programStarted,progress;
         boolean closed;
-        Reload(Map<String,String> sources){
+        Reload(Map<String,String> sources, boolean motionCapture){
             this.sources=sources;
+            this.motionCapture=motionCapture;
             if(parallel)ARBParallelShaderCompile.glMaxShaderCompilerThreadsARB(2);
             else LOGGER.warn(CMILog.PARTICLES + "background shader compilation unavailable; compiling one stage per frame synchronously");
         }
@@ -128,7 +131,7 @@ public final class ParticlePrograms {
                     current = GpuShaderCompiler.beginCompute(specification.path(), vertex);
                 } else {
                     String fragment = VERSION + PRELUDE + sources.get(GLSL_DIR + specification.fragment);
-                    if (com.iridium126.createmanaindustry.client.xessfg.XessFgGpuMotion.shaderSupport()) {
+                    if (motionCapture) {
                         var decorated = com.iridium126.createmanaindustry.client.xessfg.XessFgGpuShaderSources.particle(
                                 specification.path().substring(GLSL_DIR.length()), vertex, fragment);
                         if (decorated != null) {
@@ -354,11 +357,13 @@ public final class ParticlePrograms {
         if(committedSources.isEmpty())return "unavailable";
         if(committedDigest!=null)return committedDigest;
         try{var digest=java.security.MessageDigest.getInstance("SHA-256");digest.update((VERSION+PRELUDE).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            digest.update((byte)(committedMotionCapture?1:0));
             for(var entry:new java.util.TreeMap<>(committedSources).entrySet()){digest.update(entry.getKey().getBytes(java.nio.charset.StandardCharsets.UTF_8));digest.update((byte)0);digest.update(entry.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));digest.update((byte)0);}
             return committedDigest=java.util.HexFormat.of().formatHex(digest.digest());
         }catch(java.security.NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}
     }
     private Reload pendingReload;
+    private boolean committedMotionCapture, requestedMotionCapture;
 
     /** Marks the programs stale; {@link #rebuild()} is safe to call any time. */
     public void requestRebuild() {
@@ -369,7 +374,16 @@ public final class ParticlePrograms {
     }
 
     public boolean needsRebuild() {
+        boolean target = XessFgGpuMotion.shaderSupport();
+        if (target != requestedMotionCapture) {
+            requestedMotionCapture = target;
+            dirty = true;
+        }
         return this.dirty||this.pendingReload!=null;
+    }
+
+    public boolean motionCaptureReady() {
+        return ready() && committedMotionCapture;
     }
 
     /** Advances the pending compilation; returns true only on atomic publication. Render-thread only. */
@@ -383,17 +397,19 @@ public final class ParticlePrograms {
                 dirty=false;var sources=new LinkedHashMap<String,String>();
                 for(var specification:SPECIFICATIONS){sources.computeIfAbsent(specification.path(),loader);if(specification.fragment!=null)sources.computeIfAbsent(GLSL_DIR+specification.fragment,loader);}
                 for(var specification:SPECIFICATIONS)if(!sources.containsKey(specification.path())||specification.fragment!=null&&!sources.containsKey(GLSL_DIR+specification.fragment))throw new IllegalStateException("Missing particle shader: "+specification.path());
-                if(pendingReload==null||!pendingReload.sources.equals(sources)){
+                boolean motionCapture = XessFgGpuMotion.shaderSupport();
+                requestedMotionCapture = motionCapture;
+                if(pendingReload==null||pendingReload.motionCapture!=motionCapture||!pendingReload.sources.equals(sources)){
                     if(pendingReload!=null){pendingReload.close();pendingReload=null;}
-                    if(ready()&&committedSources.equals(sources)){LOGGER.info(CMILog.PARTICLES + "shader sources unchanged; reusing active programs");return false;}
-                    pendingReload=new Reload(Map.copyOf(sources));
+                    if(ready()&&committedMotionCapture==motionCapture&&committedSources.equals(sources)){LOGGER.info(CMILog.PARTICLES + "shader sources unchanged; reusing active programs");return false;}
+                    pendingReload=new Reload(Map.copyOf(sources), motionCapture);
                 }
             }
             if(pendingReload==null||!pendingReload.advance())return false;
             Reload finished=pendingReload;pendingReload=null;
             try {
                 boolean published=rebuildWithCompiler(finished::take,(vertex,fragment)->finished.take(vertex+"|"+fragment));
-                if(published){updateInterface=finished.updateInterface;committedSources=finished.sources;committedDigest=null;LOGGER.info(CMILog.PARTICLES + "shader set published atomically ({}ms)",(System.nanoTime()-finished.started)/1_000_000L);}
+                if(published){updateInterface=finished.updateInterface;committedSources=finished.sources;committedMotionCapture=finished.motionCapture;committedDigest=null;LOGGER.info(CMILog.PARTICLES + "shader set published atomically ({}ms)",(System.nanoTime()-finished.started)/1_000_000L);}
                 return published;
             } finally {finished.close();}
         } catch(RuntimeException failure){
