@@ -20,9 +20,11 @@ DXGI 默认使用 Minecraft 窗口客户区里的子呈现表面，原 GLFW 窗�
 
 NVIDIA 渲染、Arc A750 生成并使用 RGB24 时，`Arc shared inputs=true` 表示 Arc 从共享缓冲直接准备本地纹理。无扭曲时 Arc 重建相机运动，RTX 只需传输原始深度和可选局部运动覆盖。2560×1600 的半尺寸几何组为 4.096 MB，仅在有覆盖时需要 8.192 MB。对照旧版的 16.384 MB 仅深度路径。传输的实际字节量见 `cross_geometry_bytes`。已识别的屏幕扭曲由 OpenGL 产生两张低分辨率输入。
 
-HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差分以 128×8 像素 tile 存放，块遮罩精确到四个像素。复制 worker 提前提交遮罩回读，在 OpenGL 发布颜色后才启动半个刷新周期的回读预算，期间可处理已发布的几何。超过回读预算、遮罩映射失败、差分稠密或复制范围过多时使用整面差分复制。Arc 复用无差异区域的基底 RGB。
+HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差分以 128×8 像素 tile 存放，块遮罩精确到四个像素。复制 worker 提前提交遮罩回读，在 OpenGL 发布颜色后才启动半个刷新周期的回读预算，期间可处理已发布的几何。差分区段多于 64 个时，合并最短的空档，在 64 条复制命令内尽量少搬运未变化的 tile。Arc 按原始遮罩复用无差异区域的基底 RGB。复制计划覆盖至少八分之七的 tile、超过回读预算或遮罩映射失败时，使用整面差分复制。
 
-原生呈现线程按顺序呈现真实帧，最多一个待呈现作业。可选传输槽连续两帧满载、待呈现作业跨过一个刷新周期，或连续两帧观察到入队受阻或补帧作业执行超龄时，下一帧使用仅最终色的输入。共享 RGB24 的仅真实帧路径最多允许两份尚未完成 OpenGL 发布的最终色。恢复时按 Arc fence 上实际退役的呈现计数，观察到八次进展且待呈现作业未超龄后重置补帧历史，再恢复 2×。实际入队受阻、传输槽满载或待呈现作业超龄且退役停滞会重置恢复计数。`fg_skip_reason` 区分容量压力（1）、待呈现作业超龄（2）、持续呈现背压（3）和上一张颜色等待预算耗尽（4）。ETW 的 `FrameAdmission` 记录恢复计数、退役序列和队列压力。
+原生呈现线程按顺序呈现真实帧，最多一个待呈现作业。可选传输槽连续两帧满载、待呈现补帧作业跨过一个刷新周期，或连续两帧观察到入队受阻或补帧作业执行超龄时，下一帧使用仅最终色的输入。共享 RGB24 路径每次按 4 ms 超时等待 OpenGL 发布颜色，仅真实帧路径最多允许两份尚未完成发布的最终色。降级期间观察到八次 Arc 呈现退役进展后重建补帧历史，再恢复 2×。仅真实帧和用于重建历史的作业可以跨过多个刷新周期。实际入队受阻、传输槽满载或待呈现补帧作业超龄且退役停滞会重置恢复计数。`fg_skip_reason` 区分容量压力（1）、待呈现补帧作业超龄（2）和持续呈现背压（3）。ETW 的 `FrameAdmission` 记录恢复计数、退役序列和队列压力。
+
+每次入队前复核窗口焦点和游戏界面状态。若已经导出完整输入，仍可使用其中的最终色呈现真实帧。
 
 ### 独立翻转对照
 
@@ -36,7 +38,7 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 2. 用 XeSS Inspector 检查每个呈现 ID 的颜色、无 HUD 颜色、深度、运动矢量和矩阵。检查序列是否为真实帧 A、中间帧、真实帧 B。观察准星、文字、半透明 HUD 和快速转视角时的前景轮廓。
 3. 在 Sodium 无光影及八款现有光影包中重复测试。额外覆盖 Photon TAAU、Bliss 包内缩放、BSL 和 Complementary 水下、Sildur 水下及雨滴、Sundial 镜头畸变。验证切包、传送、最小化、恢复和调整窗口尺寸。
 4. 用 `/cmi particle profile frames 10` 分别采集关闭和开启补帧的整帧数据。设置生效后，在相同场景、视角、分辨率、光影和风暴模拟配置下等待渲染稳定，再关掉聊天和菜单开始采样。
-5. 比较合并生成的 `*-xessfg-pacing.json`。以 `real_display_interval_ms.p99` 为主指标，使用 `midpoint_error_ms` 的正负值分辨生成帧偏早或偏晚。固定刷新稳态目标为绝对中点误差 P95 不超过半个刷新周期加 0.5 ms，生成覆盖率较基线下降不超过 1 个百分点。客户端帧循环 P99 用于定位 GPU 和排队问题。[PresentMon](https://github.com/GameTechDev/PresentMon)
+5. 比较合并生成的 `*-xessfg-pacing.json`。以所有实际上屏帧间隔的 `display_interval_ms.p99` 为主指标，用真实帧间隔和 `midpoint_error_ms` 定位长间隔及插帧时机。固定刷新稳态目标为绝对中点误差 P95 不超过半个刷新周期加 0.5 ms，生成覆盖率较基线下降不超过 1 个百分点。客户端帧循环 P99 用于定位 GPU 和排队问题。[PresentMon](https://github.com/GameTechDev/PresentMon)
 6. 用同一构建测试关闭补帧、RGBA8、RGB24 和 YCbCr 4:2:2。三种开启组合比较传输格式。旧版同步 RGBA8 可用于匹配场景的跨构建对照。4:2:2 检查细字、准星、半透明 HUD 和高对比彩色边缘。
 
 ## XeSS-FG 逐帧数据
@@ -58,7 +60,7 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 - 格式 9 增加 `proxy_top_level`，记录每帧使用子窗口（0）或顶层窗口（1）。合并脚本按实际显示的真实帧与生成帧统计各自的 `pm_present_mode`。
 - 格式 10 增加 `producer_wait_ns`，记录渲染线程在帧开始等待先前 OpenGL 颜色完成的时间。`slot_wait_ns` 继续记录传输槽等待。
 - 格式 11 增加 `fg_gameplay_eligible`、`fg_skip_reason`、几何尺寸及 `producer_hudless_gpu_ns`，分别记录跳补帧与独立颜色基底复制。
-- 格式 12 增加 `hud_copy_route`，记录稀疏复制（`sparse`）及整面回落原因（`deadline`、`dense`、`range_limit`、`map_failed`）。合并摘要中的 `hud_copy_routes` 按真实帧统计各路径。
+- 格式 12 增加 `hud_copy_route`，记录稀疏复制（`sparse`）及整面回落原因（`deadline`、`dense`、`map_failed`）。历史采集中的 `range_limit` 表示旧版超过区段上限后整面回退。合并摘要中的 `hud_copy_routes` 按真实帧统计各路径。
 - 格式 13 对共享 RGB24 在 HUD-less fence 就绪后提前解包基底，并在最终色 fence 就绪后仅更新有差异的 RGB24 块。`arc_hud_base_unpack_gpu_ns` 和 `arc_hud_base_ready_qpc` 记录基底阶段，`arc_color_unpack_gpu_ns` 记录最终色阶段。`arc_inputs_ready_qpc` 仍对应完整输入就绪。`fixed_refresh.four_refresh_midpoint_fraction` 的分母包括所有四刷新真实帧区间，也计入期间未显示生成帧的区间。
 - `-TracePresent` 启用 Intel XeSS-FG ETW provider。CMI 的 `ArcProxyColorCopy` 记录按 Present ID 校准的 Arc 背缓冲 GPU 拷贝首尾。呈现命令分配器退役并再次使用时读取，采集尾部未再次使用的槽可能缺失。
 
@@ -78,9 +80,9 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 
 时间线用同 ID 且落在代理 `Present` 区间内的真实或生成帧验证实际交换链，再按 `AppFrameId` 分别匹配真实帧和生成帧。真实帧的底层 DXGI 调用可以在下一个代理调用期间出现。歧义行保留为 `unmatched_app` 或 `unmatched_display`，脚本打印匹配覆盖率与生成帧显示比例。 `inputs_minus_present_ms` 为正表示 Arc 本地输入在进入 `Present` 后才就绪。显示侧没有报告显示时刻的帧保留空值。 [PresentMon CSV 字段](https://github.com/GameTechDev/PresentMon/blob/main/README-ConsoleApplication.md)
 
-启用插帧时，代理交换链用 `SyncInterval=1` 呈现生成帧和真实帧，避免较新的翻转按间隔 0 的规则替换排队帧。复测时保留上次的 Minecraft 垂直同步设置，验证 XeSS-FG CSV 的 `dxgi_sync_interval=1`，再比较脚本报告的生成帧显示比例、实际显示 FPS 和真实帧 P95。同步呈现的节奏受当前显示刷新率约束。 [Microsoft DXGI Present](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present)
+启用插帧时，代理交换链用 `SyncInterval=1` 呈现生成帧和真实帧，避免较新的翻转按间隔 0 的规则替换排队帧。只呈现真实帧时，间隔遵循 Minecraft 垂直同步设置。复测时在 XeSS-FG CSV 检查 `interpolate` 和 `dxgi_sync_interval`，并比较所有上屏帧间隔 P99、生成帧显示比例和真实帧 P95。 [Microsoft DXGI Present](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present)
 
-在本机配置原生构建时传入 `-DCMI_XESSFG_BUILD_PROBE=ON`。运行 `ctest --test-dir build/xessfg-native -C Release -R '^xessfg_' --output-on-failure -V`。调度探针检查背压进入及八帧恢复，传输探针检查双卡低分辨率输入、运动覆盖合并、HUD tile、槽位退役、尺寸变化和设备丢失。代理探针独立启动 XeSS SDK，在交互桌面提交六张合成真实帧，检查固定刷新间隔、顺序、真实帧直通和重建历史。交互桌面上可在 SDK `bin` 已加入 PATH 的环境运行 `CmiXessFgPipelineProbe.exe --display`，此模式要求至少一帧实际进入生成队列。
+在本机配置原生构建时传入 `-DCMI_XESSFG_BUILD_PROBE=ON`。运行 `ctest --test-dir build/xessfg-native -C Release -R '^xessfg_' --output-on-failure -V`。调度探针检查背压进入及八次退役进展后的恢复，传输探针检查双卡低分辨率输入、运动覆盖合并、HUD tile、槽位退役、尺寸变化和设备丢失。代理探针独立启动 XeSS SDK，检查呈现顺序、两种 VSync 设置下的真实帧直通、完整输入直通和历史重建。交互桌面上可在 SDK `bin` 已加入 PATH 的环境运行 `CmiXessFgPipelineProbe.exe --display`，此模式要求至少一帧实际进入生成队列。
 
 ### 客户端 A/B 与画质
 

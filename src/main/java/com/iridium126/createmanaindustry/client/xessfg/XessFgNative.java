@@ -76,7 +76,7 @@ final class XessFgNative {
     static native int acquire(long session, long sequence, long captureFrame, boolean colorOnly);
     static native int slotsInUse(long session);
     static native void waitForSlot(long session, boolean colorOnly);
-    static native void waitForProducer(long session, long remainingNanos, boolean colorOnly);
+    static native void waitForProducer(long session, boolean colorOnly);
     static native void submitGeometry(long session, int slot, long sequence, ByteBuffer reprojection, boolean overrides);
     static native void submitHudless(long session, int slot, long sequence);
     static native void submitColor(long session, int slot, long sequence, boolean full);

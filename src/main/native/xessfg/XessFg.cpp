@@ -30,6 +30,7 @@ constexpr unsigned GeometrySlots = 4, SlotCount = GeometrySlots + 1;
 constexpr unsigned InputCount = 4;
 constexpr unsigned BackBufferCount = 3;
 constexpr int NoTransferSlot = -1, ProducerBackpressure = -2;
+constexpr DWORD WindowWaitMs = 4;
 constexpr UINT64 DrainValue = UINT64_MAX - 1;
 
 void traceProbe(const char* message) {
@@ -201,7 +202,7 @@ struct CopyJob {
     bool timed, countBytes;
 };
 
-enum class HudCopyRoute { Sparse, Deadline, Dense, RangeLimit, MapFailed };
+enum class HudCopyRoute { Sparse, Deadline, Dense, MapFailed = 4 };
 struct HudCopy {
     UINT64 bytes;
     HudCopyRoute route;
@@ -554,9 +555,11 @@ struct PresentJob {
     int64_t captureFrame, enqueuedAt;
     unsigned recordedQueries = 0;
     UINT64 geometryBytes = 0;
-    UINT64 hudBytes = 0;
+    bool fullColor = false;
     int64_t colorSubmitQpc = Unavailable;
     UINT64 glFenceAtSubmit = 0;
+
+    bool canInterpolate() const { return interpolate && !constants.resetHistory; }
 };
 
 constexpr unsigned PresentResultFields = 3 + ProfileCount;
@@ -610,22 +613,19 @@ struct FrameAdmission {
     int reason = 0;
     std::optional<UINT64> lastRetired;
 
-    int update(bool full, bool stale, bool rejected, bool activeAged, UINT64 retired) {
+    int update(bool full, bool staleInterpolation, bool rejected, bool activeAged, UINT64 retired) {
         if (reason) {
             const bool progressed = lastRetired && retired > *lastRetired;
             lastRetired = retired;
-            // A real-only Present can span several refreshes while the GPU keeps
-            // retiring frames. Count progress and reset on actual queue pressure.
-            if (full || rejected || (stale && !progressed)) recoveredFrames = 0;
-            else if (progressed && recoveredFrames < 8) ++recoveredFrames;
-            if (recoveredFrames == 8 && !stale) *this = {};
+            if (full || rejected || (staleInterpolation && !progressed)) recoveredFrames = 0;
+            else if (progressed && ++recoveredFrames == 8) *this = {};
             return reason;
         }
         consecutiveFull = full ? std::min(consecutiveFull + 1, 2u) : 0;
         const bool presentPressure = rejected || activeAged;
         consecutivePresentPressure = presentPressure ? std::min(consecutivePresentPressure + 1, 2u) : 0;
-        if (stale || consecutivePresentPressure == 2 || consecutiveFull == 2)
-            reason = stale ? 2 : consecutivePresentPressure == 2 ? 3 : 1;
+        if (staleInterpolation || consecutivePresentPressure == 2 || consecutiveFull == 2)
+            reason = staleInterpolation ? 2 : consecutivePresentPressure == 2 ? 3 : 1;
         return reason;
     }
 };
@@ -659,7 +659,7 @@ struct Session {
     ComPtr<IDXGISwapChain4> swap;
     std::unique_ptr<TimestampProbes> profileProbes;
     std::array<ComPtr<ID3D12Resource>, BackBufferCount> backBuffers;
-    Handle slotReady, producerReady, producerWaitTimer, presentAllocatorReady;
+    Handle slotReady, producerReady, presentAllocatorReady;
     Handle workReady, queueSpace, initialized, stopped;
     std::thread presenter;
     std::mutex workMutex, xellMutex;
@@ -684,14 +684,17 @@ struct Session {
         const auto finished = preparedSequence();
         const bool full = std::all_of(slots.begin(), slots.begin() + GeometrySlots,
                                      [&](const Slot& slot) { return slot.reuseAfter > finished; });
-        bool rejected, activeInterpolation;
+        bool rejected, activeInterpolation, waitingInterpolation = false;
         int64_t waitingAge = 0, activeAge = 0;
         {
             std::lock_guard guard(workMutex);
             if (failure) std::rethrow_exception(failure);
             const auto now = qpc();
             const auto activeSince = presentingSince.load(std::memory_order_acquire);
-            if (waiting && !waiting->discard) waitingAge = now - waiting->enqueuedAt;
+            if (waiting && !waiting->discard) {
+                waitingAge = now - waiting->enqueuedAt;
+                waitingInterpolation = waiting->canInterpolate();
+            }
             if (activeSince != 0) activeAge = now - activeSince;
             activeInterpolation = presentingInterpolation;
             rejected = std::exchange(presentRejected, false);
@@ -707,13 +710,15 @@ struct Session {
             }
             retired = std::max(retired, retiredAcceptedThrough.load(std::memory_order_acquire));
         }
-        const int reason = admissionPolicy.update(full, waitingAge >= refreshTicks, rejected,
+        // Real-only and history-reset jobs can span several refreshes without generating a frame.
+        const int reason = admissionPolicy.update(full, waitingInterpolation && waitingAge >= refreshTicks, rejected,
                 activeInterpolation && activeAge >= refreshTicks, retired);
         if (recovering || reason) {
             TraceLoggingWrite(presentTrace, "FrameAdmission",
                 TraceLoggingUInt64(sequence + 1, "Sequence"), TraceLoggingUInt64(retired, "RetiredThrough"),
                 TraceLoggingUInt32(admissionPolicy.recoveredFrames, "RecoveryFrames"),
                 TraceLoggingInt64(waitingAge, "WaitingQpcTicks"), TraceLoggingInt64(activeAge, "ActiveQpcTicks"),
+                TraceLoggingBool(waitingInterpolation, "WaitingInterpolation"),
                 TraceLoggingBool(activeInterpolation, "ActiveInterpolation"),
                 TraceLoggingBool(rejected, "Rejected"), TraceLoggingBool(full, "TransferFull"),
                 TraceLoggingInt32(reason, "SkipReason"));
@@ -844,12 +849,12 @@ struct Session {
             return false;
         }
         auto& slot = active(job.slot, job.sequence);
-        if (!job.discard && (!slot.colorSubmitted || slot.fullColor != job.interpolate))
+        if (!job.discard && (!slot.colorSubmitted || (job.interpolate && !slot.fullColor)))
             throw std::logic_error("Missing XeSS-FG inputs for presentation");
         job.enqueuedAt = qpc();
         if (!slot.colorSubmitted) discardTransfer(slot, job.sequence);
         job.geometryBytes = slot.geometryBytes;
-        job.hudBytes = slot.hudSubmitted ? linearColorBytes : 0;
+        job.fullColor = slot.fullColor;
         job.recordedQueries = slot.recordedQueries;
         if (slot.captureFrame > 0 && slot.colorSubmitted) {
             job.colorSubmitQpc = slot.colorSubmitQpc;
@@ -879,7 +884,7 @@ struct Session {
                     job = waiting;
                     waiting.reset();
                     if (!job->discard) {
-                        presentingInterpolation = job->interpolate;
+                        presentingInterpolation = job->canInterpolate() && !resetNext;
                         presentingSince.store(qpc(), std::memory_order_release);
                     }
                     SetEvent(queueSpace.value);
@@ -1006,8 +1011,6 @@ struct Session {
         if (sharedInputs) {
             producerReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
             if (!producerReady.value) throw std::runtime_error("Creating XeSS-FG producer fence event");
-            producerWaitTimer.value = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
-                                                            TIMER_MODIFY_STATE | SYNCHRONIZE);
             hudQueue = queue(renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
             check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&hudWritten)),
                   "Creating OpenGL HUD-less fence");
@@ -1259,7 +1262,7 @@ struct Session {
     }
 
     UINT64 producerFenceTarget(bool colorOnly) const {
-        // A real-only frame can bypass one unfinished color, including a timed-out FG frame.
+        // A real-only frame can bypass one unfinished color.
         return !colorOnly && latestColorHadGeometry ? latestProducerColor : previousProducerColor;
     }
 
@@ -1270,25 +1273,17 @@ struct Session {
         return finished < target;
     }
 
-    void waitForProducer(int64_t remainingNanos, bool colorOnly) {
+    void waitForProducer(bool colorOnly) {
         checkPresenter();
         const auto target = producerFenceTarget(colorOnly);
-        if (remainingNanos <= 0 || !producerBehind(target)) return;
+        if (!producerBehind(target)) return;
         if (producerWaitToken != target) {
             if (!ResetEvent(producerReady.value)) throw std::runtime_error("Resetting XeSS-FG producer fence event");
             check(glWritten->SetEventOnCompletion(target, producerReady.value),
                   "Waiting for a prior OpenGL color publication");
             producerWaitToken = target;
         }
-        LARGE_INTEGER due{};
-        due.QuadPart = -std::max<int64_t>(1, remainingNanos / 100);
-        const HANDLE events[] = {producerReady.value, producerWaitTimer.value};
-        const bool timed = producerWaitTimer.value
-            && SetWaitableTimer(producerWaitTimer.value, &due, 0, nullptr, nullptr, FALSE);
-        const auto timeout = timed ? INFINITE : static_cast<DWORD>(std::clamp<int64_t>(remainingNanos / 1000000, 1, 4));
-        const auto result = MsgWaitForMultipleObjectsEx(timed ? 2 : 1, events, timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-        if (timed) CancelWaitableTimer(producerWaitTimer.value);
-        if (result == WAIT_FAILED)
+        if (MsgWaitForMultipleObjectsEx(1, &producerReady.value, WindowWaitMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE) == WAIT_FAILED)
             throw std::runtime_error("Waiting for XeSS-FG producer or window event");
         check(renderGpu->GetDeviceRemovedReason(), "Checking XeSS-FG producer during frame admission");
     }
@@ -1312,7 +1307,7 @@ struct Session {
             slotWaitSequence = oldest;
         }
         // Give GLFW time to handle e.g. resize or iconify if the GPU is still busy.
-        if (MsgWaitForMultipleObjectsEx(1, &slotReady.value, 4, QS_ALLINPUT, MWMO_INPUTAVAILABLE) == WAIT_FAILED)
+        if (MsgWaitForMultipleObjectsEx(1, &slotReady.value, WindowWaitMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE) == WAIT_FAILED)
             throw std::runtime_error("Waiting for XeSS-FG slot or window event");
         check(renderGpu->GetDeviceRemovedReason(), "Checking XeSS-FG producer during slot wait");
     }
@@ -1583,37 +1578,58 @@ struct Session {
         if (FAILED(transfer.hudMaskReadback->Map(0, &read, &data))) return full(HudCopyRoute::MapFailed);
         const auto* masks = static_cast<const uint32_t*>(data);
         const auto across = colorTilesAcross();
-        std::array<std::pair<UINT64, UINT64>, 64> ranges{};
-        unsigned rangeCount = 0;
-        UINT64 tiles = 0;
-        bool rangeLimit = false;
         const auto count = colorTileCount();
+        constexpr unsigned MaxCopyRanges = 64;
+        using TileGap = std::pair<UINT64, UINT64>;
+        std::array<TileGap, MaxCopyRanges - 1> gaps{};
+        const auto gapSize = [](const TileGap& gap) { return gap.second - gap.first; };
+        const auto largerGap = [&](const TileGap& a, const TileGap& b) { return gapSize(a) > gapSize(b); };
+        unsigned gapCount = 0;
+        UINT64 first = count, end = 0;
+        bool gapHeap = false;
         for (UINT64 tile = 0; tile < count; ++tile) {
             const UINT firstRow = static_cast<UINT>(tile / across) * ColorTileHeight;
             const UINT endRow = std::min(height, firstRow + ColorTileHeight);
             bool dirty = false;
             for (UINT row = firstRow; row < endRow && !dirty; ++row) dirty = masks[UINT64(row) * across + tile % across] != 0;
             if (!dirty) continue;
-            if (rangeCount && ranges[rangeCount - 1].second == tile) {
-                ++ranges[rangeCount - 1].second;
-            } else if (rangeCount < ranges.size()) {
-                ranges[rangeCount++] = {tile, tile + 1};
-            } else {
-                rangeLimit = true;
-                break;
+            if (end && end < tile) {
+                const TileGap gap{end, tile};
+                if (gapCount < gaps.size()) {
+                    gaps[gapCount++] = gap;
+                } else {
+                    // Keeping the largest gaps skips the most bytes within the COPY budget.
+                    if (!gapHeap) {
+                        std::make_heap(gaps.begin(), gaps.end(), largerGap);
+                        gapHeap = true;
+                    }
+                    if (gapSize(gap) > gapSize(gaps.front())) {
+                        std::pop_heap(gaps.begin(), gaps.end(), largerGap);
+                        gaps.back() = gap;
+                        std::push_heap(gaps.begin(), gaps.end(), largerGap);
+                    }
+                }
             }
-            ++tiles;
+            first = std::min(first, tile);
+            end = tile + 1;
         }
         const D3D12_RANGE written{0, 0};
         transfer.hudMaskReadback->Unmap(0, &written);
-        if (rangeLimit) return full(HudCopyRoute::RangeLimit);
-        if (tiles >= count - count / 8) return full(HudCopyRoute::Dense);
-        for (unsigned i = 0; i < rangeCount; ++i) {
-            const auto [first, end] = ranges[i];
-            commands->CopyBufferRegion(destination, first * ColorTileBytes, source, first * ColorTileBytes,
-                                       (end - first) * ColorTileBytes);
+        if (!end) return {0, HudCopyRoute::Sparse};
+        UINT64 copiedTiles = end - first;
+        for (unsigned i = 0; i < gapCount; ++i) copiedTiles -= gapSize(gaps[i]);
+        if (copiedTiles >= count - count / 8) return full(HudCopyRoute::Dense);
+        if (gapHeap) std::sort(gaps.begin(), gaps.end());
+        const auto copyTiles = [&](UINT64 begin, UINT64 limit) {
+            commands->CopyBufferRegion(destination, begin * ColorTileBytes, source, begin * ColorTileBytes,
+                                       (limit - begin) * ColorTileBytes);
+        };
+        for (unsigned i = 0; i < gapCount; ++i) {
+            copyTiles(first, gaps[i].first);
+            first = gaps[i].second;
         }
-        return {tiles * ColorTileBytes, HudCopyRoute::Sparse};
+        copyTiles(first, end);
+        return {copiedTiles * ColorTileBytes, HudCopyRoute::Sparse};
     }
 
     bool sparseColor(const CopyJob& job) const {
@@ -1930,12 +1946,11 @@ struct Session {
         const auto frame = job.frame;
         const auto interpolate = job.interpolate;
         const auto& input = job.constants;
-        const auto colorBytes = (interpolate ? groupBytes[Color] : linearColorBytes) + job.hudBytes;
         if (profile) {
             profile->fields[CompletedBefore] = completed->GetCompletedValue();
             profile->fields[GeometryBytes] = job.geometryBytes;
-            if (!sharedInputs || !interpolate) {
-                profile->fields[ColorBytes] = cross ? colorBytes : 0;
+            if (!sharedInputs || !job.fullColor) {
+                profile->fields[ColorBytes] = cross ? (job.fullColor ? groupBytes[Color] : linearColorBytes) : 0;
                 profile->fields[CrossBytes] = profile->fields[ColorBytes] + job.geometryBytes;
             }
             profile->fields[GpuMask] = 0;
@@ -2189,8 +2204,8 @@ JNIEXPORT void JNICALL JAVA(waitForSlot)(JNIEnv* env, jclass, jlong ptr, jboolea
     catch (const std::exception& error) { report(env, error); }
 }
 
-JNIEXPORT void JNICALL JAVA(waitForProducer)(JNIEnv* env, jclass, jlong ptr, jlong remainingNanos, jboolean colorOnly) {
-    try { session(ptr).waitForProducer(remainingNanos, colorOnly != 0); }
+JNIEXPORT void JNICALL JAVA(waitForProducer)(JNIEnv* env, jclass, jlong ptr, jboolean colorOnly) {
+    try { session(ptr).waitForProducer(colorOnly != 0); }
     catch (const std::exception& error) { report(env, error); }
 }
 
@@ -2257,7 +2272,7 @@ JNIEXPORT jboolean JNICALL JAVA(enqueuePresent)(JNIEnv* env, jclass, jlong ptr, 
 JNIEXPORT void JNICALL JAVA(waitForPresentSpace)(JNIEnv* env, jclass, jlong ptr) {
     try {
         auto& s = session(ptr);
-        if (MsgWaitForMultipleObjectsEx(1, &s.queueSpace.value, 4, QS_ALLINPUT, MWMO_INPUTAVAILABLE) == WAIT_FAILED)
+        if (MsgWaitForMultipleObjectsEx(1, &s.queueSpace.value, WindowWaitMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE) == WAIT_FAILED)
             throw std::runtime_error("Waiting for XeSS-FG presenter slot");
         s.checkPresenter();
         check(s.renderGpu->GetDeviceRemovedReason(), "Checking XeSS-FG producer during present queue wait");
