@@ -43,6 +43,7 @@ public final class DlssGpuValidation {
             verify(adapter.luid(), directory, cache, 1707, 1067, 2560, 1600, null);
             verify(adapter.luid(), directory, cache, 640, 360, 960, 540, null, DlssPack.Encoding.SILDUR);
             verifyIrisTargets();
+            verifyIrisHistoryOverwrite();
             verifyIrisMutableDepth(GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, GL_DEPTH_ATTACHMENT);
             verifyIrisMutableDepth(GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, GL_DEPTH_STENCIL_ATTACHMENT);
             if (flags.contains("--optix")) verifyOptixInterop();
@@ -252,6 +253,51 @@ public final class DlssGpuValidation {
         float[] result = new float[channels];
         glGetTextureSubImage(texture, 0, x, y, 0, 1, 1, 1, format, GL_FLOAT, result);
         return result;
+    }
+
+    private static void verifyIrisHistoryOverwrite() {
+        int width = 1707, height = 1067, outputWidth = 2560, outputHeight = 1600;
+        int main = glCreateTextures(GL_TEXTURE_2D), alt = glCreateTextures(GL_TEXTURE_2D);
+        int query = glGenQueries();
+        var overwritten = java.util.Set.of(main);
+        double[][] samples = new double[2][40];
+        try (var targets = new DlssIrisTargets()) {
+            glTextureStorage2D(main, 1, GL_RGBA16F, width, height);
+            glTextureStorage2D(alt, 1, GL_RGBA16F, width, height);
+            targets.register(main, outputWidth, outputHeight, false, true);
+            targets.register(alt, outputWidth, outputHeight, false, true);
+            for (int frame = -10; frame < samples[0].length; frame++) {
+                for (int route = 0; route < samples.length; route++) {
+                    boolean skipMain = route == ((frame & 1) == 0 ? 1 : 0);
+                    targets.nextFrame();
+                    int expandedMain = targets.texture(main), expandedAlt = targets.texture(alt);
+                    glClearTexImage(expandedMain, 0, GL_RGBA, GL_FLOAT, new float[]{1, 0, 0, 1});
+                    glClearTexImage(expandedAlt, 0, GL_RGBA, GL_FLOAT, new float[]{0, 1, 0, 1});
+                    targets.markImageWrite(expandedMain);
+                    targets.markImageWrite(expandedAlt);
+                    glBeginQuery(GL_TIME_ELAPSED, query);
+                    if (skipMain) targets.finish(overwritten);
+                    else targets.finish();
+                    glEndQuery(GL_TIME_ELAPSED);
+                    if (frame >= 0) samples[skipMain ? 1 : 0][frame] = glGetQueryObjectui64(query, GL_QUERY_RESULT) / 1e6;
+                    else glGetQueryObjectui64(query, GL_QUERY_RESULT);
+                    require(read(main, width / 2, height / 2, GL_RGBA, 4)[0] == (skipMain ? 0 : 1),
+                            "History writeback did not respect the pending Iris swap");
+                    glCopyImageSubData(alt, GL_TEXTURE_2D, 0, 0, 0, 0,
+                            main, GL_TEXTURE_2D, 0, 0, 0, 0, width, height, 1);
+                    require(read(main, width / 2, height / 2, GL_RGBA, 4)[1] == 1,
+                            "The final copy must see the restored alt history on both paths");
+                }
+            }
+            require(glGetError() == GL_NO_ERROR, "Unexpected GL error in Iris history overwrite");
+            for (var durations : samples) java.util.Arrays.sort(durations);
+            System.out.printf("PASS Iris history before stock alt-to-main swap. GPU P50 %.3f -> %.3f ms, P95 %.3f -> %.3f ms%n",
+                    samples[0][19], samples[1][19], samples[0][37], samples[1][37]);
+        } finally {
+            glDeleteQueries(query);
+            glDeleteTextures(main);
+            glDeleteTextures(alt);
+        }
     }
 
     private static void verifyIrisMutableDepth(int format, int type, int attachment) {

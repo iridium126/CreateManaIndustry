@@ -4,8 +4,10 @@ import com.iridium126.createmanaindustry.client.gpu.shader.GpuShaderCompiler;
 import com.iridium126.createmanaindustry.client.gpu.state.GpuGlErrors;
 import com.iridium126.createmanaindustry.client.xessfg.XessFgPack;
 import com.iridium126.createmanaindustry.mixin.iris.DlssIrisAccess;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import net.irisshaders.iris.gl.framebuffer.GlFramebuffer;
 import net.irisshaders.iris.targets.RenderTargets;
 import org.joml.Vector2i;
@@ -18,18 +20,18 @@ final class DlssIrisTargets implements AutoCloseable {
     private final Map<Integer, Plane> planes = new HashMap<>();
     private final Map<Integer, Plane> highPlanes = new HashMap<>();
     private final Map<Integer, Map<Integer, Integer>> substitutions = new HashMap<>();
-    private final int source = glCreateFramebuffers();
-    private final int destination = glCreateFramebuffers();
     private int program, vao;
     private int frame;
     private RenderTargets owner;
     private Vector2i[] outputSizes;
+    private Set<Integer> finalFlips;
+    private final IntOpenHashSet overwrittenMainTextures = new IntOpenHashSet();
 
     private static final class Plane {
         final int low, width, height, outputWidth, outputHeight, format, attachment, copyMask;
         final boolean persistent;
         final int[] metadata;
-        int high, initialized, written;
+        int high, initialized, written, lowFramebuffer, highFramebuffer;
 
         Plane(int low, int width, int height, int outputWidth, int outputHeight, boolean depth, boolean persistent,
               int[] metadata) {
@@ -67,6 +69,27 @@ final class DlssIrisTargets implements AutoCloseable {
                 throw failure;
             }
         }
+
+        int transferFramebuffer(int texture) {
+            boolean input = texture == low;
+            int framebuffer = input ? lowFramebuffer : highFramebuffer;
+            if (framebuffer != 0) return framebuffer;
+            framebuffer = glCreateFramebuffers();
+            glNamedFramebufferTexture(framebuffer, attachment, texture, 0);
+            if (attachment != GL_COLOR_ATTACHMENT0) {
+                glNamedFramebufferReadBuffer(framebuffer, GL_NONE);
+                glNamedFramebufferDrawBuffer(framebuffer, GL_NONE);
+            }
+            if (input) lowFramebuffer = framebuffer;
+            else highFramebuffer = framebuffer;
+            return framebuffer;
+        }
+
+        void close() {
+            if (highFramebuffer != 0) glDeleteFramebuffers(highFramebuffer);
+            if (lowFramebuffer != 0) glDeleteFramebuffers(lowFramebuffer);
+            if (high != 0) glDeleteTextures(high);
+        }
     }
 
     private static int storageFormat(int texture) {
@@ -94,6 +117,7 @@ final class DlssIrisTargets implements AutoCloseable {
             deletePlanes();
             owner = targets;
             outputSizes = new Vector2i[targets.getRenderTargetCount()];
+            finalFlips = null;
         }
         nextFrame();
         var access = (DlssIrisAccess.Targets) targets;
@@ -238,7 +262,7 @@ final class DlssIrisTargets implements AutoCloseable {
                     """);
             vao = glCreateVertexArrays();
         }
-        attach(destination, plane, plane.high);
+        int destination = plane.transferFramebuffer(plane.high);
         int framebuffer = glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING);
         int previousProgram = glGetInteger(GL_CURRENT_PROGRAM);
         int previousVao = glGetInteger(GL_VERTEX_ARRAY_BINDING);
@@ -298,9 +322,13 @@ final class DlssIrisTargets implements AutoCloseable {
     }
 
     void finish() {
+        finish(Set.of());
+    }
+
+    void finish(Set<Integer> overwrittenMainTextures) {
         try {
             for (var plane : planes.values()) {
-                if (plane.persistent && plane.written == frame)
+                if (plane.persistent && plane.written == frame && !overwrittenMainTextures.contains(plane.low))
                     copy(plane, plane.high, plane.low, plane.outputWidth, plane.outputHeight, plane.width, plane.height, GL_NEAREST);
                 if (plane.initialized == frame) glTextureParameteri(plane.high, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             }
@@ -311,9 +339,26 @@ final class DlssIrisTargets implements AutoCloseable {
         }
     }
 
+    void finishBeforeIrisSwaps(Set<Integer> flipped) {
+        if (finalFlips != flipped) {
+            finalFlips = flipped;
+            overwrittenMainTextures.clear();
+            for (int attachment : flipped) {
+                var target = owner.get(attachment);
+                if (target == null) continue;
+                int main = target.getMainTexture();
+                var plane = planes.get(main);
+                // Iris copies every flipped, uncleared attachment from alt
+                // to main immediately after the history restore.
+                if (plane != null && plane.persistent) overwrittenMainTextures.add(main);
+            }
+        }
+        finish(overwrittenMainTextures);
+    }
+
     private void copy(Plane plane, int from, int to, int width, int height, int outputWidth, int outputHeight, int filter) {
-        attach(source, plane, from);
-        attach(destination, plane, to);
+        int source = plane.transferFramebuffer(from);
+        int destination = plane.transferFramebuffer(to);
         boolean scissor = glIsEnabled(GL_SCISSOR_TEST);
         boolean srgb = glIsEnabled(GL_FRAMEBUFFER_SRGB);
         if (scissor) glDisable(GL_SCISSOR_TEST);
@@ -334,17 +379,8 @@ final class DlssIrisTargets implements AutoCloseable {
         }
     }
 
-    private static void attach(int framebuffer, Plane plane, int texture) {
-        glNamedFramebufferTexture(framebuffer, GL_COLOR_ATTACHMENT0, 0, 0);
-        glNamedFramebufferTexture(framebuffer, GL_DEPTH_STENCIL_ATTACHMENT, 0, 0);
-        glNamedFramebufferTexture(framebuffer, plane.attachment, texture, 0);
-        int buffer = plane.attachment == GL_COLOR_ATTACHMENT0 ? GL_COLOR_ATTACHMENT0 : GL_NONE;
-        glNamedFramebufferReadBuffer(framebuffer, buffer);
-        glNamedFramebufferDrawBuffer(framebuffer, buffer);
-    }
-
     private void deletePlanes() {
-        planes.values().forEach(plane -> glDeleteTextures(plane.high));
+        planes.values().forEach(Plane::close);
         planes.clear();
         highPlanes.clear();
     }
@@ -352,8 +388,6 @@ final class DlssIrisTargets implements AutoCloseable {
     @Override
     public void close() {
         deletePlanes();
-        glDeleteFramebuffers(source);
-        glDeleteFramebuffers(destination);
         if (vao != 0) glDeleteVertexArrays(vao);
         if (program != 0) {
             GpuShaderCompiler.forget(program);

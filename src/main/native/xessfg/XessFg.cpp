@@ -648,7 +648,7 @@ struct Session {
     ComPtr<IDXGISwapChain4> swap;
     std::unique_ptr<TimestampProbes> profileProbes;
     std::array<ComPtr<ID3D12Resource>, BackBufferCount> backBuffers;
-    Handle slotReady, producerReady, presentAllocatorReady;
+    Handle slotReady, producerReady, producerWaitTimer, presentAllocatorReady;
     Handle workReady, queueSpace, initialized, stopped;
     std::thread presenter;
     std::mutex workMutex, xellMutex;
@@ -965,6 +965,8 @@ struct Session {
         if (sharedInputs) {
             producerReady.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
             if (!producerReady.value) throw std::runtime_error("Creating XeSS-FG producer fence event");
+            producerWaitTimer.value = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                                            TIMER_MODIFY_STATE | SYNCHRONIZE);
             hudQueue = queue(renderGpu.Get(), D3D12_COMMAND_LIST_TYPE_COPY);
             check(renderGpu->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(&hudWritten)),
                   "Creating OpenGL HUD-less fence");
@@ -1219,16 +1221,24 @@ struct Session {
         return finished < oldestProducerColor;
     }
 
-    void waitForProducer() {
+    void waitForProducer(int64_t remainingNanos) {
         checkPresenter();
-        if (!producerBehind()) return;
+        if (remainingNanos <= 0 || !producerBehind()) return;
         if (producerWaitToken != oldestProducerColor) {
             if (!ResetEvent(producerReady.value)) throw std::runtime_error("Resetting XeSS-FG producer fence event");
             check(glWritten->SetEventOnCompletion(oldestProducerColor, producerReady.value),
                   "Waiting for a prior OpenGL color publication");
             producerWaitToken = oldestProducerColor;
         }
-        if (MsgWaitForMultipleObjectsEx(1, &producerReady.value, 4, QS_ALLINPUT, MWMO_INPUTAVAILABLE) == WAIT_FAILED)
+        LARGE_INTEGER due{};
+        due.QuadPart = -std::max<int64_t>(1, remainingNanos / 100);
+        const HANDLE events[] = {producerReady.value, producerWaitTimer.value};
+        const bool timed = producerWaitTimer.value
+            && SetWaitableTimer(producerWaitTimer.value, &due, 0, nullptr, nullptr, FALSE);
+        const auto timeout = timed ? INFINITE : static_cast<DWORD>(std::clamp<int64_t>(remainingNanos / 1000000, 1, 4));
+        const auto result = MsgWaitForMultipleObjectsEx(timed ? 2 : 1, events, timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        if (timed) CancelWaitableTimer(producerWaitTimer.value);
+        if (result == WAIT_FAILED)
             throw std::runtime_error("Waiting for XeSS-FG producer or window event");
         check(renderGpu->GetDeviceRemovedReason(), "Checking XeSS-FG producer during frame admission");
     }
@@ -2074,8 +2084,8 @@ JNIEXPORT void JNICALL JAVA(waitForSlot)(JNIEnv* env, jclass, jlong ptr, jboolea
     catch (const std::exception& error) { report(env, error); }
 }
 
-JNIEXPORT void JNICALL JAVA(waitForProducer)(JNIEnv* env, jclass, jlong ptr) {
-    try { session(ptr).waitForProducer(); }
+JNIEXPORT void JNICALL JAVA(waitForProducer)(JNIEnv* env, jclass, jlong ptr, jlong remainingNanos) {
+    try { session(ptr).waitForProducer(remainingNanos); }
     catch (const std::exception& error) { report(env, error); }
 }
 

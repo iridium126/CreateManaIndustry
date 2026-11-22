@@ -37,6 +37,8 @@ public final class XessFgRuntime {
     private static final XessFgRuntime INSTANCE = new XessFgRuntime();
     private static final int SIMULATION_START = 0, SIMULATION_END = 1, RENDER_START = 2;
     private static final float MAX_CONTIGUOUS_FRAME_MS = 120;
+    private static final long PRODUCER_WAIT_BUDGET_NS = 16_000_000;
+    private static final int SKIP_PRODUCER_DEADLINE = 4;
     private enum WaitFor { TRANSFER_SLOT, OPENGL_PRODUCER, PRESENT_QUEUE }
     private final XessFgTransport[] slots = new XessFgTransport[XessFgNative.SLOT_COUNT];
     private ByteBuffer constants, reprojectionConstants;
@@ -174,11 +176,26 @@ public final class XessFgRuntime {
         if (profile != null) profile.slotsInUse = XessFgNative.slotsInUse(session);
         boolean colorOnly = !eligible || skipReason != 0;
         slot = XessFgNative.acquire(session, next, captureFrame, colorOnly);
+        long producerWaitStart = 0;
         if (slot < 0 && slotDeferred) glFlush();
         while (slot < 0) {
             boolean producer = slot == XessFgNative.PRODUCER_BACKPRESSURE;
+            long remainingNanos = 0;
+            if (producer) {
+                long now = System.nanoTime();
+                if (producerWaitStart == 0) producerWaitStart = now;
+                remainingNanos = PRODUCER_WAIT_BUDGET_NS - (now - producerWaitStart);
+                if (remainingNanos <= 0) {
+                    skipReason = SKIP_PRODUCER_DEADLINE;
+                    if (profile != null) profile.skipReason = skipReason;
+                    colorOnly = true;
+                    slot = XessFgNative.acquire(session, next, captureFrame, true);
+                    continue;
+                }
+            }
             long waitStart = XessFgFrameStats.Frame.start(profile);
-            boolean active = waitForWindow(minecraft, producer ? WaitFor.OPENGL_PRODUCER : WaitFor.TRANSFER_SLOT);
+            boolean active = waitForWindow(minecraft, producer ? WaitFor.OPENGL_PRODUCER : WaitFor.TRANSFER_SLOT,
+                    remainingNanos);
             if (profile != null) profile.accumulate(producer ? PRODUCER_WAIT : SLOT_WAIT, waitStart);
             if (!active) return false;
             slot = XessFgNative.acquire(session, next, captureFrame, colorOnly);
@@ -491,7 +508,7 @@ public final class XessFgRuntime {
         if (texture <= 0 || w <= 0 || h <= 0 || current == null || geometryStaged) return;
         var profile = XessFgFrameStats.current();
         try {
-            if (!ensureSlot(Minecraft.getInstance(), profile)) return;
+            if (!ensureSlot(Minecraft.getInstance(), profile) || skipReason != 0) return;
         } catch (RuntimeException | LinkageError failure) {
             fail(failure);
             return;
@@ -699,13 +716,17 @@ public final class XessFgRuntime {
     }
 
     private boolean waitForWindow(Minecraft minecraft, WaitFor wait) {
+        return waitForWindow(minecraft, wait, 0);
+    }
+
+    private boolean waitForWindow(Minecraft minecraft, WaitFor wait, long remainingNanos) {
         // GLFW can run a nested display tick while handling a world or window transition.
         windowInterrupted = false;
         servicingWindow = true;
         try {
             switch (wait) {
                 case TRANSFER_SLOT -> XessFgNative.waitForSlot(session, !eligible || skipReason != 0);
-                case OPENGL_PRODUCER -> XessFgNative.waitForProducer(session);
+                case OPENGL_PRODUCER -> XessFgNative.waitForProducer(session, remainingNanos);
                 case PRESENT_QUEUE -> XessFgNative.waitForPresentSpace(session);
             }
             GLFW.glfwPollEvents();

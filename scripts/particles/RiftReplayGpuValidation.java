@@ -70,15 +70,26 @@ public final class RiftReplayGpuValidation {
         com.mojang.blaze3d.systems.RenderSystem.activeTexture(GL13.GL_TEXTURE2);com.mojang.blaze3d.systems.RenderSystem.bindTexture(t);
         com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(2,t);IrisRenderSystem.bindSamplerToUnit(2,sampler);
         GL13.glActiveTexture(GL13.GL_TEXTURE5);GL11.glBindTexture(GL12.GL_TEXTURE_3D,lut);
-        try(var state=savedTextures()){
+        var replayState=savedTextures();
+        try(var state=replayState){
             IrisRenderSystem.unbindAllSamplers();
             for(int unit=0;unit<12;unit++){GL13.glActiveTexture(GL13.GL_TEXTURE0+unit);GL11.glBindTexture(GL11.GL_TEXTURE_2D,0);GL11.glBindTexture(GL12.GL_TEXTURE_3D,0);}
             com.mojang.blaze3d.systems.RenderSystem.setShaderTexture(2,0);
         }
         check(GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)==GL13.GL_TEXTURE5,"replay active texture restored");check(GL11.glGetInteger(GL12.GL_TEXTURE_BINDING_3D)==lut,"3D LUT binding restored");
         GL13.glActiveTexture(GL13.GL_TEXTURE2);check(GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D)==t,"external lightmap restored");check(GL30.glGetIntegeri(GL33.GL_SAMPLER_BINDING,2)==sampler,"external sampler restored");check(com.mojang.blaze3d.systems.RenderSystem.getShaderTexture(2)==t,"engine texture table restored");
+        GL13.glActiveTexture(GL13.GL_TEXTURE5);
+        GL11.glBindTexture(GL12.GL_TEXTURE_3D,0);
+        var capture=SkyTextureState.class.getDeclaredMethod("capture");
+        capture.setAccessible(true);
+        try(var state=(SkyTextureState)capture.invoke(replayState)){
+            GL11.glBindTexture(GL12.GL_TEXTURE_3D,lut);
+            GL13.glActiveTexture(GL13.GL_TEXTURE2);
+        }
+        check(GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE)==GL13.GL_TEXTURE5,"reused snapshot restores its current active unit");
+        check(GL11.glGetInteger(GL12.GL_TEXTURE_BINDING_3D)==0,"reused snapshot clears a formerly bound target");
         IrisRenderSystem.unbindAllSamplers();GL33.glDeleteSamplers(sampler);GL11.glDeleteTextures(t);GL11.glDeleteTextures(lut);
-        long start=System.nanoTime();for(int i=0;i<120;i++)try(var state=savedTextures()){}System.out.println("Native replay texture guard CPU mean="+((System.nanoTime()-start)/120_000.0)+" us / 12 units (idle hidden GL context; not client frame timing)");
+        long start=System.nanoTime();for(int i=0;i<120;i++)try(var state=(SkyTextureState)capture.invoke(replayState)){}System.out.println("Native replay texture guard CPU mean="+((System.nanoTime()-start)/120_000.0)+" us / 12 units (idle hidden GL context; not client frame timing)");
     }
     static void frames()throws Exception{
         var inputs=new net.irisshaders.iris.uniforms.custom.CustomUniformFixedInputUniformsHolder.Builder();RiftIrisUniforms.bind(inputs);
@@ -118,6 +129,6 @@ public final class RiftReplayGpuValidation {
     public static void main(String[] args)throws Exception{
         check(GLFW.glfwInit(),"GLFW");GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE,GLFW.GLFW_FALSE);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MAJOR,4);GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR,5);GLFW.glfwWindowHint(GLFW.GLFW_OPENGL_PROFILE,GLFW.GLFW_OPENGL_COMPAT_PROFILE);
         long w=GLFW.glfwCreateWindow(SIZE,SIZE,"Rift replay GPU validation",0,0);check(w!=0,"GL context");
-        try{GLFW.glfwMakeContextCurrent(w);GL.createCapabilities();com.mojang.blaze3d.systems.RenderSystem.initRenderThread();IrisRenderSystem.initRenderer();sundial();textures();frames();attachments();check(GL11.glGetError()==0,"no GL errors");System.out.println("Rift replay GPU: "+checks+" assertions passed");}finally{GpuValidationSupport.close(w);}
+        try{GLFW.glfwMakeContextCurrent(w);GL.createCapabilities();com.mojang.blaze3d.systems.RenderSystem.initRenderThread();IrisRenderSystem.initRenderer();sundial();textures();frames();attachments();check(GL11.glGetError()==0,"no GL errors");System.out.println("Rift replay GPU: "+checks+" assertions passed");}finally{GLFW.glfwDestroyWindow(w);GLFW.glfwTerminate();}
     }
 }

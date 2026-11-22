@@ -207,6 +207,7 @@ public final class DlssRuntime {
             throw new IllegalStateException("Iris scene color and depth must share the DLSS input grid");
         int color = flipped.contains(pack.color()) ? input.getAltTexture() : input.getMainTexture();
         glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        long evaluation = 0;
         int rebuilt = 0;
         try {
             prepareDepth(irisDepth);
@@ -220,17 +221,28 @@ public final class DlssRuntime {
                     pass.dispatch(slots[slot], configured.width, configured.height, color, COLOR, 0, jitterX, jitterY,
                             null, null, pack.encoding());
                 }
-                evaluate();
-                rebuilt = slots[slot].textures[DlssInterop.OUTPUT];
+                evaluation = submitEvaluation();
             }
         } catch (RuntimeException | LinkageError failure) {
             fail(failure);
         }
-        try (var timing = ParticleFrameStages.begin("dlss.iris.promote")) {
+        try (var timing = ParticleFrameStages.begin("dlss.iris.prepare_output")) {
             if (irisTargets == null) irisTargets = new DlssIrisTargets();
             irisTargets.begin(targets, output.width, output.height, ShaderPackSession.current().xessFgPack());
-            irisTargets.resolve(color, rebuilt, configured.width, configured.height, pack.encoding());
+            // This blit touches GL-owned depth only. Queue it before the NGX
+            // output fence so it can run while D3D12 reconstructs the color.
             copyDepth(output, configured.width, configured.height);
+        }
+        if (evaluation != 0) {
+            try {
+                acquireEvaluation(evaluation);
+                rebuilt = slots[slot].textures[DlssInterop.OUTPUT];
+            } catch (RuntimeException | LinkageError failure) {
+                fail(failure);
+            }
+        }
+        try (var timing = ParticleFrameStages.begin("dlss.iris.promote")) {
+            irisTargets.resolve(color, rebuilt, configured.width, configured.height, pack.encoding());
         }
         if (irisCut.uniform >= 0) {
             irisResolveProgram = irisCut.program;
@@ -273,11 +285,15 @@ public final class DlssRuntime {
         return INSTANCE.irisTargets.outputSize(attachment);
     }
 
-    public static void finishIrisPost() {
-        if (irisPost()) INSTANCE.endIrisTargets();
+    public static void finishIrisPost(Set<Integer> flipped) {
+        if (irisPost()) INSTANCE.endIrisTargets(flipped);
     }
 
     private void endIrisTargets() {
+        endIrisTargets(null);
+    }
+
+    private void endIrisTargets(Set<Integer> flipped) {
         if (irisPostTiming != null) {
             irisPostTiming.close();
             irisPostTiming = null;
@@ -289,7 +305,8 @@ public final class DlssRuntime {
         if (irisPost) {
             irisPost = false;
             try (var timing = ParticleFrameStages.begin("dlss.iris.history")) {
-                irisTargets.finish();
+                if (flipped == null) irisTargets.finish();
+                else irisTargets.finishBeforeIrisSwaps(flipped);
             }
         }
     }
@@ -511,14 +528,14 @@ public final class DlssRuntime {
             }
             dispatch(scene.getColorTextureId(), COLOR, 0);
         }
-        evaluate();
+        acquireEvaluation(submitEvaluation());
         try (var timing = ParticleFrameStages.begin("dlss.scene.output")) {
             blitScene(output, outputFramebuffers[slot]);
         }
         return true;
     }
 
-    private void evaluate() {
+    private long submitEvaluation() {
         try (var timing = ParticleFrameStages.begin("dlss.submit")) {
             var input = slots[slot];
             long stamp = ++token;
@@ -527,7 +544,13 @@ public final class DlssRuntime {
             DlssNative.evaluate(session, slot, stamp, jitterX, -jitterY,
                     reset ? 0 : (now - previousTime) * 1e-6f, reset, profile);
             profileFrames[slot] = profile ? ClientGpuScene.INSTANCE.renderFrameToken() : 0;
-            input.acquire(stamp);
+            return stamp;
+        }
+    }
+
+    private void acquireEvaluation(long stamp) {
+        try (var timing = ParticleFrameStages.begin("dlss.output.wait")) {
+            slots[slot].acquire(stamp);
         }
     }
 

@@ -36,6 +36,7 @@ public final class NativeSkyView {
     private final Map<ShaderKey,ShaderInstance> skyShaders=new EnumMap<>(ShaderKey.class);
     private final List<CompositeRenderer> renderers=new ArrayList<>();
     private final TargetVanillaClouds clouds=new TargetVanillaClouds();
+    private final SkyTextureState textureState;
     private int deferredCount;
     private boolean vanillaClouds;
     private record Clear(int buffer,boolean main,GlFramebuffer framebuffer,boolean integer,boolean unsigned,org.joml.Vector4f color) {}
@@ -98,7 +99,8 @@ public final class NativeSkyView {
         for(var key:cloudKeys)for(int buffer:resolver.resolve(key.getProgram()).orElseThrow().getDirectives().getDrawBuffers()){writes.add(buffer);skyWrites.add(buffer);}
         var flipper=new BufferFlipper();
         skyFlips.forEach(flipper::flip);
-        try(var textureState=new SkyTextureState();var state=new SkyRenderState()) {
+        textureState=new SkyTextureState();
+        try(var savedTextures=textureState;var state=new SkyRenderState()) {
         depth=new DepthTexture("cmi_target_sky_depth",width,height,DepthBufferFormat.DEPTH24);
         targets=new NativeSkyTargets(width,height,depth.getTextureId(),programs.getPackDirectives(),access.cmi$targets(),skyFlips,writes);
         conditionalTransfersSafe=family.equals("complementary");
@@ -167,7 +169,7 @@ public final class NativeSkyView {
             int depthFunction=GL11.glGetInteger(GL11.GL_DEPTH_FUNC);
             var phase=pipeline.getPhase();
             float[] shaderColor=RenderSystem.getShaderColor().clone();
-            var textureState=new SkyTextureState();
+            var savedTextures=textureState.capture();
             // Start before automatic resource closure so the restoration range includes it.
             ParticleFrameStages.Scope restoration=null;
             try(var state=new SkyRenderState()) {
@@ -240,7 +242,7 @@ public final class NativeSkyView {
                     RenderSystem.depthMask(mask);RenderSystem.depthFunc(depthFunction);
                     if(depthTest)RenderSystem.enableDepthTest();else RenderSystem.disableDepthTest();
                     if(cull)RenderSystem.enableCull();else RenderSystem.disableCull();
-                    textureState.close();
+                    savedTextures.close();
                 } finally {if(restoration!=null)restoration.close();}
             }
         }

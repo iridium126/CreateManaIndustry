@@ -564,7 +564,7 @@ void verifyProducerBackpressure(Session& session) {
     }
     require(session.slotsInUse() == 3 && session.acquire(blocked, 0) == ProducerBackpressure,
             "Third OpenGL color was admitted before either of the first two completed");
-    session.waitForProducer();
+    session.waitForProducer(4000000);
     require(session.producerWaitToken == transferToken(first, Color), "Wait targeted a discarded frame or the newest color");
     check(session.glWritten->Signal(transferToken(first, Color)), "Completing the oldest OpenGL color");
     require(WaitForSingleObject(session.producerReady.value, 2000) == WAIT_OBJECT_0, "Producer event did not wake");
@@ -586,15 +586,19 @@ void verifyProducerBackpressure(Session& session) {
     check(session.glWritten->Signal(transferToken(full, Geometry)), "Completing only OpenGL geometry");
     require(session.acquire(full + 1, 0) == ProducerBackpressure,
             "A new export was admitted before the previous complete frame's OpenGL color");
-    session.waitForProducer();
+    session.waitForProducer(16000000);
     require(session.producerWaitToken == release.token, "The deferred wait targeted the wrong color");
+    require(session.producerBehind(), "Waiting for the producer deadline completed a blocked GPU fence");
+    const int realOnly = session.acquire(full + 1, 0, true);
+    require(realOnly >= 0, "A deadline miss prevented the real-only frame from acquiring a slot");
+    queueDiscard(session, realOnly, full + 1);
     check(session.glWritten->Signal(release.token), "Completing the preceding OpenGL color");
     require(WaitForSingleObject(session.producerReady.value, 2000) == WAIT_OBJECT_0,
             "Deferred producer wait did not wake on the preceding color");
-    const int nextSlot = session.acquire(full + 1, 0);
+    const int nextSlot = session.acquire(full + 2, 0);
     require(nextSlot >= 0, "Deferred export failed to acquire its slot after color completion");
-    queueDiscard(session, nextSlot, full + 1);
-    require(waitForFence(session.prepared.Get(), full + 1), "Deferred producer test did not retire its final slots");
+    queueDiscard(session, nextSlot, full + 2);
+    require(waitForFence(session.prepared.Get(), full + 2), "Deferred producer test did not retire its final slots");
 }
 
 void verifyPopup(jlong render, jlong arc, bool requireDisplay) {

@@ -33,6 +33,6 @@ abstract class DlssIrisFinalMixin {
     @Inject(method = "renderFinalPass", at = @At(value = "INVOKE",
             target = "Lnet/irisshaders/iris/targets/RenderTargets;getRenderTargetCount()I", ordinal = 0))
     private void cmi$restoreHistoryTargets(CallbackInfo ci) {
-        DlssRuntime.finishIrisPost();
+        DlssRuntime.finishIrisPost(cmi$finalReadsFromAlt);
     }
 }
