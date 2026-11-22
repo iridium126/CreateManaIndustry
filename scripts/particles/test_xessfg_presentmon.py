@@ -88,9 +88,21 @@ class ProxyTimingTest(unittest.TestCase):
         fields, summary = merge.display_pacing(app, rows, matches, 1000, 100)
         self.assertEqual(summary["fixed_refresh"]["splits"], {"3:1": 1, "2:2": 1})
         self.assertEqual(summary["fixed_refresh"]["unquantized_intervals"], 1)
+        self.assertEqual(summary["fixed_refresh"]["four_refresh_intervals"], 2)
+        self.assertEqual(summary["fixed_refresh"]["four_refresh_midpoint_fraction"], 0.5)
         self.assertEqual(fields[1]["arc_inputs_to_midpoint_ms"], 3)
         self.assertEqual(fields[1]["arc_inputs_to_generated_ms"], 13)
         self.assertNotIn("refresh_split", fields[5])
+
+    def test_four_refresh_midpoint_fraction_counts_intervals_without_generation(self):
+        app = [{"session_id": "a"} for _ in range(3)]
+        rows = [dict(type=kind, display=display, address=42) for kind, display in [
+            ("Application", 0), ("Intel XeSS-FG", 20), ("Application", 40), ("Application", 80),
+        ]]
+        matches = {index: (frame, "verified") for index, frame in enumerate((0, 1, 1, 2))}
+        _, summary = merge.display_pacing(app, rows, matches, 1000, 100)
+        self.assertEqual(summary["fixed_refresh"]["four_refresh_intervals"], 2)
+        self.assertEqual(summary["fixed_refresh"]["four_refresh_midpoint_fraction"], 0.5)
 
 
 if __name__ == "__main__":

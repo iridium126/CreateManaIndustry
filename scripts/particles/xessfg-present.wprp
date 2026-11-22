@@ -6,12 +6,14 @@
       <Buffers Value="16"/>
     </EventCollector>
     <EventProvider Id="CmiPresentProvider" Name="2DD7D232-E6B6-45D9-9C9C-B61AE7671BC1" Level="5" Strict="true"/>
+    <EventProvider Id="IntelXeSSFgProvider" Name="87F2230C-53B5-43B5-8EE0-106D7A6A62DD" Level="5"/>
     <Profile Id="CmiPresent.Verbose.File" Name="CmiPresent" Description="CMI XeSS-FG proxy Present boundaries"
              LoggingMode="File" DetailLevel="Verbose">
       <Collectors>
         <EventCollectorId Value="CmiPresentCollector">
           <EventProviders>
             <EventProviderId Value="CmiPresentProvider"/>
+            <EventProviderId Value="IntelXeSSFgProvider"/>
           </EventProviders>
         </EventCollectorId>
       </Collectors>

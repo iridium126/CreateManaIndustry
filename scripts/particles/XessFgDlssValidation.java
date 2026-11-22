@@ -22,7 +22,8 @@ public final class XessFgDlssValidation implements AutoCloseable {
     private final int output = glCreateTextures(GL_TEXTURE_2D), depth = glCreateTextures(GL_TEXTURE_2D);
     private long session;
     private XessFgCapture capture;
-    private int submitted, retired, generated, sparse;
+    private static final int REAL_ONLY_FRAME = 4;
+    private int submitted, retired, generated, generatedAfterReset, sparse;
 
     public XessFgDlssValidation(long window, long render, int width, int height) throws Exception {
         this.width = width;
@@ -52,9 +53,10 @@ public final class XessFgDlssValidation implements AutoCloseable {
 
     public void present(int dlssColor, boolean reset) throws InterruptedException {
         int frame = ++submitted;
+        boolean interpolate = frame != REAL_ONLY_FRAME;
         long deadline = System.nanoTime() + 5_000_000_000L;
         int index;
-        while ((index = XessFgNative.acquire(session, frame, frame, false)) < 0) {
+        while ((index = XessFgNative.acquire(session, frame, frame, !interpolate)) < 0) {
             require(System.nanoTime() < deadline, "Waiting for an Arc transfer slot");
             glfwPollEvents();
             poll();
@@ -63,25 +65,29 @@ public final class XessFgDlssValidation implements AutoCloseable {
         XessFgNative.sleep(session, frame);
         for (int marker = 0; marker < 3; marker++) XessFgNative.marker(session, frame, marker);
         var slot = slots[index];
-        slot.geometry.acquire();
-        capture.depthAndMotion(slot, depth, width, height, view, view, reprojection);
-        slot.geometry.publish(frame);
-        XessFgNative.submitGeometry(session, index, frame, reprojection, false);
+        if (interpolate) {
+            slot.geometry.acquire();
+            capture.depthAndMotion(slot, depth, width, height, view, view, reprojection);
+            slot.geometry.publish(frame);
+            XessFgNative.submitGeometry(session, index, frame, reprojection, false);
+        }
 
         glNamedFramebufferTexture(src, GL_COLOR_ATTACHMENT0, dlssColor, 0);
         glBlitNamedFramebuffer(src, dst, 0, height, width, 0, 0, 0, width, height,
                 GL_COLOR_BUFFER_BIT, GL_NEAREST);
-        capture.color(slot, output, width, height, XessFgCapture.HUDLESS, true);
-        slot.hudBase.publish(frame);
-        XessFgNative.submitHudless(session, index, frame);
+        if (interpolate) {
+            capture.color(slot, output, width, height, XessFgCapture.HUDLESS, true);
+            slot.hudBase.publish(frame);
+            XessFgNative.submitHudless(session, index, frame);
+        }
         glClearTexSubImage(output, 0, 0, 0, 0, 32, 8, 1, GL_RGBA, GL_FLOAT, new float[]{1, 1, 1, 1});
         slot.color.acquire();
-        capture.color(slot, output, width, height, XessFgCapture.FINAL, true);
+        capture.color(slot, output, width, height, XessFgCapture.FINAL, interpolate);
         if (frame == 4) glEnable(0);
         slot.color.publish(frame);
-        XessFgNative.submitColor(session, index, frame, true);
+        XessFgNative.submitColor(session, index, frame, interpolate);
         constants.putInt(144, reset ? 1 : 0);
-        while (!XessFgNative.enqueuePresent(session, index, frame, frame, true, true, constants, frame)) {
+        while (!XessFgNative.enqueuePresent(session, index, frame, frame, interpolate, true, constants, frame)) {
             require(System.nanoTime() < deadline, "Waiting for Arc proxy presentation");
             glfwPollEvents();
             poll();
@@ -98,9 +104,11 @@ public final class XessFgDlssValidation implements AutoCloseable {
             Thread.sleep(1);
         }
         poll();
-        require(retired == submitted && generated > 0 && sparse > 0, "Incomplete Arc proxy or sparse HUD coverage");
-        System.out.printf("PASS RTX DLSS → Arc XeSS-FG, %d real submissions in order, %d with 2 presents, %d sparse HUD transfers%n",
-                retired, generated, sparse);
+        require(retired == submitted && generatedAfterReset > 0 && sparse > 0,
+                "Incomplete Arc coverage (submitted=" + submitted + ", retired=" + retired
+                        + ", generated after reset=" + generatedAfterReset + ", sparse=" + sparse + ")");
+        System.out.printf("PASS RTX DLSS → Arc XeSS-FG, %d real submissions in order, %d with 2 presents (%d after recovery), %d sparse HUD transfers%n",
+                retired, generated, generatedAfterReset, sparse);
     }
 
     private void poll() {
@@ -108,11 +116,18 @@ public final class XessFgDlssValidation implements AutoCloseable {
         for (int i = 0; i < count; i++) {
             int offset = i * (3 + XessFgFrameStats.NATIVE_FIELDS) * Long.BYTES;
             require(presents.getLong(offset) == ++retired, "Unexpected Arc presentation order");
-            if (presents.getLong(offset + Long.BYTES) == 2) ++generated;
+            long queued = presents.getLong(offset + Long.BYTES);
+            long reset = presents.getLong(offset + 2 * Long.BYTES);
+            if (retired == REAL_ONLY_FRAME) require(queued == 1, "Real-only frame did not queue exactly one image");
+            if (retired == REAL_ONLY_FRAME + 1) require(reset == 1 && queued == 1, "First frame after recovery did not reset history");
+            if (queued == 2) {
+                ++generated;
+                if (retired > REAL_ONLY_FRAME + 1) ++generatedAfterReset;
+            }
         }
         int measured = XessFgNative.pollGpuProfile(session, gpu);
         for (int i = 0; i < measured; ++i) {
-            long route = gpu.getLong(((i + 1) * XessFgNative.GPU_PROFILE_FIELDS - 1) * Long.BYTES);
+            long route = gpu.getLong((i * XessFgNative.GPU_PROFILE_FIELDS + XessFgNative.GPU_HUD_COPY_ROUTE) * Long.BYTES);
             if (route == 0) ++sparse;
         }
     }

@@ -31,6 +31,8 @@ void verifyPendingCapacity() {
     require(session.waiting->sequence == 1 && session.activeSlot == 1, "Overwrote an older pending frame");
 }
 
+bool waitForFence(ID3D12Fence* fence, UINT64 value, DWORD timeout = 5000);
+
 void verifyPresentAdmission(ID3D12Device* arc) {
     Session session;
     session.workReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -38,6 +40,9 @@ void verifyPresentAdmission(ID3D12Device* arc) {
     require(session.workReady.value && session.queueSpace.value, "Creating presentation admission events");
     check(arc->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&session.prepared)),
           "Creating presentation admission fence");
+    check(arc->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&session.completed)),
+          "Creating presentation retirement fence");
+    session.presentQueue = queue(arc, D3D12_COMMAND_LIST_TYPE_DIRECT);
     session.refreshTicks = INT64_MAX;
     auto submit = [&](UINT64 sequence) {
         return session.enqueue({0, static_cast<uint32_t>(sequence), sequence, false, true, false, {}, 0, 0});
@@ -56,14 +61,40 @@ void verifyPresentAdmission(ID3D12Device* arc) {
         require(reason == (sequence == 3 ? 3 : 0), "Presentation backpressure was not counted once per real frame");
     }
     session.waiting.reset();
-    for (int frame = 0; frame < 7; ++frame)
-        require(session.admission(true) == 3, "Resumed before eight clean presentation frames");
-    require(session.admission(true) == 0, "Clean presentation frames did not restore generation");
-
     session.refreshTicks = 1;
     session.presentingSince.store(qpc() - 2);
+    require(session.admission(true) == 3, "Expected initial recovery sample");
+    session.retirePresentation(3);
+    require(waitForFence(session.completed.Get(), 3), "Discard did not retire on Arc");
+    require(session.admission(true) == 3 && session.admissionPolicy.recoveredFrames == 0,
+            "A discarded job advanced presentation recovery");
+
+    ComPtr<ID3D12Fence> gate;
+    check(arc->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&gate)), "Creating recovery probe gate");
+    check(session.presentQueue->Wait(gate.Get(), 1), "Holding Arc presentation retirement");
+    bool stayedPaused = true;
+    try {
+        session.retirePresentation(4, true);
+        for (int i = 0; i < 10; ++i)
+            stayedPaused &= session.admission(true) == 3 && session.admissionPolicy.recoveredFrames == 0;
+    } catch (...) {
+        gate->Signal(1);
+        throw;
+    }
+    check(gate->Signal(1), "Releasing Arc presentation retirement");
+    require(stayedPaused && waitForFence(session.completed.Get(), 4), "Recovery advanced while Arc was blocked");
+    for (UINT64 frame = 4; frame < 12; ++frame) {
+        if (frame > 4) session.retirePresentation(frame, true);
+        require(waitForFence(session.completed.Get(), frame), "Waiting for a real frame to retire on Arc");
+        require(session.admission(true) == (frame == 11 ? 0 : 3), "Recovery must follow eight advancing retirements");
+        if (frame < 11) require(session.admission(true) == 3, "Repeated sampling counted the same retirement twice");
+    }
+    require(session.admission(true) == 0 && session.admission(true) == 0,
+            "An aging real-only presentation re-entered overload after recovery");
+    session.presentingInterpolation = true;
     require(session.admission(true) == 0 && session.admission(true) == 3,
             "An aged in-flight presentation escaped admission after leaving the waiting slot");
+    std::puts("  Eight Arc retirements restored interpolation despite a long-running real-only Present");
 }
 
 jlong adapter(UINT vendor, std::wstring_view model) {
@@ -91,7 +122,7 @@ ComPtr<ID3D12Resource> hostBuffer(ID3D12Device* gpu, UINT64 length, D3D12_HEAP_T
     return result;
 }
 
-bool waitForFence(ID3D12Fence* fence, UINT64 value, DWORD timeout = 5000) {
+bool waitForFence(ID3D12Fence* fence, UINT64 value, DWORD timeout) {
     Handle event;
     event.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     require(event.value, "Creating probe fence event");
@@ -269,11 +300,17 @@ void verifyPackedColor(Session& session, unsigned index, HudCoverage coverage = 
     fill.submit(session.copyQueue.Get());
     const auto token = transferToken(session.sequence, Color);
     if (delayedPublication) {
-        ComPtr<ID3D12Fence> filled;
+        ComPtr<ID3D12Fence> filled, basePrepared;
         check(session.renderGpu->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&filled)),
               "Creating delayed color upload fence");
+        check(session.generationGpu->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&basePrepared)),
+              "Creating early Arc color preparation fence");
         check(session.copyQueue->Signal(filled.Get(), 1), "Finishing the simulated producer upload");
+        check(session.prepareQueue->Signal(basePrepared.Get(), 1), "Finishing early Arc color preparation");
         require(waitForFence(filled.Get(), 1), "Simulated producer upload did not retire");
+        require(waitForFence(basePrepared.Get(), 1) && session.glWritten->GetCompletedValue() < token
+                && session.prepared->GetCompletedValue() < session.sequence,
+                "Arc HUD-less preparation depended on final color or published the frame early");
         session.submitColor(index, session.sequence, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(24));
         const bool maskUnpublished = session.copyBaseDone->GetCompletedValue() < token;
@@ -409,14 +446,16 @@ void verifySharedGeometry(Session& session, bool reconstruct, HudCoverage covera
         : coverage == HudCoverage::OneTile ? 1 : 0;
     const auto colorBytes = session.linearColorBytes + session.hudMaskBytes() + dirtyTiles * ColorTileBytes;
     const auto denseBytes = session.linearColorBytes + session.hudMaskBytes() + session.colorTileCount() * ColorTileBytes;
-    const auto reported = static_cast<UINT64>(profile[GpuProfileFields - 3]);
-    const auto route = static_cast<HudCopyRoute>(profile[GpuProfileFields - 1]);
+    const auto reported = static_cast<UINT64>(profile[GpuProfileFields - 5]);
+    const auto route = static_cast<HudCopyRoute>(profile[GpuProfileFields - 3]);
     require(rows == 1 && profile.front() == sequence && (reported == colorBytes || reported == denseBytes),
             "RGB24 profile disagreed with the tile or deadline fallback byte count");
     if (delayedPublication) {
         require(reported == colorBytes && route == HudCopyRoute::Sparse,
                 "Delayed GL publication caused a sparse HUD to fall back to full color");
-        std::puts("  Sparse RGB24 remained sparse after 24 ms of producer delay");
+        const auto earlyEnd = profile[GpuProfileFields - 1];
+        require(earlyEnd > 0 && earlyEnd < profile[7], "Arc seed did not finish before the final patch");
+        std::puts("  Arc HUD-less preparation completed before final color; RGB24 stayed sparse after a 24 ms producer delay");
     }
     if (!present && colorBytes != denseBytes) {
         // Validate the range plan with a completed mask even if the timed worker chose its dense fallback.
@@ -564,7 +603,8 @@ void verifyProducerBackpressure(Session& session) {
     }
     require(session.slotsInUse() == 3 && session.acquire(blocked, 0) == ProducerBackpressure,
             "Third OpenGL color was admitted before either of the first two completed");
-    session.waitForProducer(4000000);
+    require(session.acquire(blocked, 0, true) == ProducerBackpressure, "Real-only bypassed the two-color limit");
+    session.waitForProducer(4000000, true);
     require(session.producerWaitToken == transferToken(first, Color), "Wait targeted a discarded frame or the newest color");
     check(session.glWritten->Signal(transferToken(first, Color)), "Completing the oldest OpenGL color");
     require(WaitForSingleObject(session.producerReady.value, 2000) == WAIT_OBJECT_0, "Producer event did not wake");
@@ -586,19 +626,26 @@ void verifyProducerBackpressure(Session& session) {
     check(session.glWritten->Signal(transferToken(full, Geometry)), "Completing only OpenGL geometry");
     require(session.acquire(full + 1, 0) == ProducerBackpressure,
             "A new export was admitted before the previous complete frame's OpenGL color");
-    session.waitForProducer(16000000);
+    session.waitForProducer(16000000, false);
     require(session.producerWaitToken == release.token, "The deferred wait targeted the wrong color");
-    require(session.producerBehind(), "Waiting for the producer deadline completed a blocked GPU fence");
+    require(session.producerBehind(session.producerFenceTarget(false)),
+            "Waiting for the producer deadline completed a blocked GPU fence");
     const int realOnly = session.acquire(full + 1, 0, true);
     require(realOnly >= 0, "A deadline miss prevented the real-only frame from acquiring a slot");
+    release.token = transferToken(full + 1, Color);
+    session.submitColor(realOnly, full + 1, false);
     queueDiscard(session, realOnly, full + 1);
-    check(session.glWritten->Signal(release.token), "Completing the preceding OpenGL color");
+    require(session.acquire(full + 2, 0, true) == ProducerBackpressure,
+            "A deadline miss let real-only queue more than two colors");
+    check(session.glWritten->Signal(transferToken(full, Color)), "Completing the preceding OpenGL color");
     require(WaitForSingleObject(session.producerReady.value, 2000) == WAIT_OBJECT_0,
             "Deferred producer wait did not wake on the preceding color");
-    const int nextSlot = session.acquire(full + 2, 0);
+    const int nextSlot = session.acquire(full + 2, 0, true);
     require(nextSlot >= 0, "Deferred export failed to acquire its slot after color completion");
     queueDiscard(session, nextSlot, full + 2);
+    check(session.glWritten->Signal(release.token), "Completing the real-only OpenGL color");
     require(waitForFence(session.prepared.Get(), full + 2), "Deferred producer test did not retire its final slots");
+    std::puts("  A real-only export could use the reserved slot, with at most two unfinished OpenGL colors");
 }
 
 void verifyPopup(jlong render, jlong arc, bool requireDisplay) {
@@ -680,15 +727,22 @@ void verifyPopup(jlong render, jlong arc, bool requireDisplay) {
 
 void verifyOffline() {
     FrameAdmission admission;
-    require(admission.update(true, false, false, false) == 0, "Brief transfer pressure triggered a skip");
-    require(admission.update(true, false, false, false) == 1, "Sustained transfer pressure did not trigger a skip");
-    require(admission.update(false, true, false, false) == 2, "Stale presentation was not reported");
-    for (unsigned i = 0; i < 7; ++i)
-        require(admission.update(false, false, false, false) == 2, "Resumed frame generation too early");
-    require(admission.update(false, false, false, true) == 2, "Producer pressure did not interrupt recovery");
-    for (unsigned i = 0; i < 7; ++i)
-        require(admission.update(false, false, false, false) == 2, "Resumed before eight clean frames");
-    require(admission.update(false, false, false, false) == 0, "Frame generation did not resume");
+    require(admission.update(true, false, false, false, 0) == 0, "Brief transfer pressure triggered a skip");
+    require(admission.update(true, false, false, false, 0) == 1, "Sustained transfer pressure did not trigger a skip");
+    admission = {};
+    require(admission.update(false, true, false, false, 0) == 2, "Stale presentation was not reported");
+    require(admission.update(false, false, false, true, 10) == 2, "Initial recovery sample was not retained");
+    for (UINT64 retired = 11; retired <= 17; ++retired)
+        require(admission.update(false, false, false, true, retired) == 2, "Resumed frame generation too early");
+    require(admission.update(false, true, false, true, 17) == 2 && admission.recoveredFrames == 0,
+            "An aged pending frame without progress did not interrupt recovery");
+    for (UINT64 retired = 18; retired <= 24; ++retired)
+        require(admission.update(false, false, false, true, retired) == 2, "Resumed before eight advancing retirements");
+    require(admission.update(false, false, true, true, 25) == 2 && admission.recoveredFrames == 0,
+            "An actual failed enqueue did not interrupt recovery");
+    for (UINT64 retired = 26; retired <= 33; ++retired)
+        require(admission.update(false, false, false, true, retired) == (retired == 33 ? 0 : 2),
+                "Frame generation did not resume after eight advancing retirements");
     require(ColorDecoder::compile(false) && ColorDecoder::compile(true), "Input shaders did not compile");
     require(ColorTileBytes == 3072, "RGB24 tile layout changed");
     std::puts("PASS: admission hysteresis and D3D12 input shaders");

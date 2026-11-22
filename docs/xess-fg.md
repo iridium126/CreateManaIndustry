@@ -22,7 +22,7 @@ NVIDIA 渲染、Arc A750 生成并使用 RGB24 时，`Arc shared inputs=true` �
 
 HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差分以 128×8 像素 tile 存放，块遮罩精确到四个像素。复制 worker 提前提交遮罩回读，在 OpenGL 发布颜色后才启动半个刷新周期的回读预算，期间可处理已发布的几何。超过回读预算、遮罩映射失败、差分稠密或复制范围过多时使用整面差分复制。Arc 复用无差异区域的基底 RGB。
 
-原生呈现线程按顺序呈现真实帧，最多一个待呈现作业。可选传输槽连续两帧满载、待呈现作业跨过一个刷新周期，或连续两帧观察到入队受阻或执行中的呈现超龄时，下一帧使用仅最终色的输入。连续八帧无背压后重置补帧历史，再恢复 2×。`fg_skip_reason` 区分容量压力（1）、待呈现作业超龄（2）和持续呈现背压（3）。
+原生呈现线程按顺序呈现真实帧，最多一个待呈现作业。可选传输槽连续两帧满载、待呈现作业跨过一个刷新周期，或连续两帧观察到入队受阻或补帧作业执行超龄时，下一帧使用仅最终色的输入。共享 RGB24 的仅真实帧路径最多允许两份尚未完成 OpenGL 发布的最终色。恢复时按 Arc fence 上实际退役的呈现计数，观察到八次进展且待呈现作业未超龄后重置补帧历史，再恢复 2×。实际入队受阻、传输槽满载或待呈现作业超龄且退役停滞会重置恢复计数。`fg_skip_reason` 区分容量压力（1）、待呈现作业超龄（2）、持续呈现背压（3）和上一张颜色等待预算耗尽（4）。ETW 的 `FrameAdmission` 记录恢复计数、退役序列和队列压力。
 
 ### 独立翻转对照
 
@@ -59,7 +59,8 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 - 格式 10 增加 `producer_wait_ns`，记录渲染线程在帧开始等待先前 OpenGL 颜色完成的时间。`slot_wait_ns` 继续记录传输槽等待。
 - 格式 11 增加 `fg_gameplay_eligible`、`fg_skip_reason`、几何尺寸及 `producer_hudless_gpu_ns`，分别记录跳补帧与独立颜色基底复制。
 - 格式 12 增加 `hud_copy_route`，记录稀疏复制（`sparse`）及整面回落原因（`deadline`、`dense`、`range_limit`、`map_failed`）。合并摘要中的 `hud_copy_routes` 按真实帧统计各路径。
-- Arc 直接读取共享输入时，Arc DMA 字段留空。`arc_color_unpack_gpu_ns` 记录颜色重建，`arc_texture_upload_gpu_ns` 记录几何纹理写入及运动矢量重建，`arc_inputs_ready_qpc` 对应两组输出就绪。
+- 格式 13 对共享 RGB24 在 HUD-less fence 就绪后提前解包基底，并在最终色 fence 就绪后仅更新有差异的 RGB24 块。`arc_hud_base_unpack_gpu_ns` 和 `arc_hud_base_ready_qpc` 记录基底阶段，`arc_color_unpack_gpu_ns` 记录最终色阶段。`arc_inputs_ready_qpc` 仍对应完整输入就绪。`fixed_refresh.four_refresh_midpoint_fraction` 的分母包括所有四刷新真实帧区间，也计入期间未显示生成帧的区间。
+- `-TracePresent` 启用 Intel XeSS-FG ETW provider。CMI 的 `ArcProxyColorCopy` 记录按 Present ID 校准的 Arc 背缓冲 GPU 拷贝首尾。呈现命令分配器退役并再次使用时读取，采集尾部未再次使用的槽可能缺失。
 
 ## PresentMon 联合采集
 

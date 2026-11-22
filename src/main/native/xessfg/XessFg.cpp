@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <TraceLoggingProvider.h>
+#include <evntrace.h>
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include <dxgi1_6.h>
@@ -218,7 +219,7 @@ struct Slot {
     std::array<Transfer, GroupCount> groups;
     Transfer hudBase;
     bool hudSubmitted = false;
-    Commands prepare, prepareGeometry;
+    Commands prepare, prepareGeometry, prepareHudBase;
     UINT64 reuseAfter = 0;
     UINT64 profileSequence = 0;
     int64_t captureFrame = 0, profileFrame = 0;
@@ -239,11 +240,13 @@ struct PreparedInput {
     D3D12_GPU_DESCRIPTOR_HANDLE colorUavs{};
     UINT64 preparedAfter = 0; // Producer thread owns the texture reuse sequence.
     UINT64 submittedAfter = 0; // Presenter thread owns the command allocator reuse sequence.
+    uint32_t tracedPresentId = 0;
+    int64_t tracedCaptureFrame = 0;
 };
 
 constexpr unsigned ProducerGeometry = 1, ProducerColor = 2, UploadGeometry = 4, UploadColor = 8, LocalTextures = 16,
-                   ColorUnpack = 32, CopiedColorBytes = 64, ProducerHud = 128;
-constexpr unsigned GpuProfileFields = 20;
+                   ColorUnpack = 32, CopiedColorBytes = 64, ProducerHud = 128, HudBaseUnpack = 256;
+constexpr unsigned GpuProfileFields = 22;
 constexpr unsigned ClockProfileFields = 10;
 
 constexpr int64_t Unavailable = std::numeric_limits<int64_t>::min();
@@ -341,7 +344,7 @@ struct TimestampProbe {
 };
 
 struct TimestampProbes {
-    TimestampProbe producer, upload, local, unpack, hud;
+    TimestampProbe producer, upload, local, unpack, hud, hudBaseUnpack, proxyCopy;
     unsigned mask = 0;
 };
 
@@ -365,7 +368,6 @@ ByteAddressBuffer packed : register(t0);
 RWTexture2D<unorm float4> finalImage : register(u0);
 RWTexture2D<unorm float4> hudlessImage : register(u1);
 #if SHARED_INPUTS
-ByteAddressBuffer packedHud : register(t1);
 RWTexture2D<float> depthImage : register(u2);
 RWTexture2D<float2> motionImage : register(u3);
 
@@ -448,24 +450,27 @@ void main(uint3 pixel : SV_DispatchThreadID) {
         motionImage[pixel.xy] = f16tof32(uint2(motion & 65535, motion >> 16));
         return;
     }
-    if (mode == 4) {
+    if (mode == 4 || mode == 8) {
         const uint block = pixel.x;
         const uint2 origin = uint2(block * 4, pixel.y);
         if (origin.x >= width || origin.y >= height) return;
-        uint row = origin.y * packedStride + block * 12;
-        uint mask = packed.Load(packedPlane + 4 * (origin.y * ((width + 127) / 128) + block / 32));
-        uint4 hudlessColors = expandRgb(packedHud.Load3(row));
-        uint4 finalColors = hudlessColors;
-        if ((mask & (1u << (block % 32))) != 0) {
-            const uint tile = (origin.y / 8) * ((width + 127) / 128) + block / 32;
-            const uint address = tile * 3072 + (origin.y % 8) * 384 + (block % 32) * 12;
-            finalColors = expandRgb(packed.Load3(address));
+        const bool base = mode == 8;
+        uint address = origin.y * packedStride + block * 12;
+        if (!base) {
+            const uint tilesAcross = (width + 127) / 128;
+            const uint tileColumn = block / 32;
+            const uint mask = packed.Load(packedPlane + 4 * (origin.y * tilesAcross + tileColumn));
+            if ((mask & (1u << (block % 32))) == 0) return;
+            const uint tile = (origin.y / 8) * tilesAcross + tileColumn;
+            address = tile * 3072 + (origin.y % 8) * 384 + (block % 32) * 12;
         }
+        const uint4 colors = expandRgb(packed.Load3(address));
         [unroll] for (uint i = 0; i < 4; ++i) {
             if (origin.x + i < width) {
                 uint2 p = origin + uint2(i, 0);
-                finalImage[p] = rgba(finalColors[i]);
-                hudlessImage[p] = rgba(hudlessColors[i]);
+                const float4 color = rgba(colors[i]);
+                finalImage[p] = color;
+                if (base) hudlessImage[p] = color;
             }
         }
         return;
@@ -489,7 +494,7 @@ void main(uint3 pixel : SV_DispatchThreadID) {
     }
 
     void initialize(ID3D12Device* gpu, bool sharedInputs) {
-        D3D12_ROOT_PARAMETER parameters[4]{};
+        D3D12_ROOT_PARAMETER parameters[3]{};
         parameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
         parameters[0].Constants.Num32BitValues = sharedInputs ? 8 + ReprojectionWords : 5;
         parameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
@@ -498,9 +503,7 @@ void main(uint3 pixel : SV_DispatchThreadID) {
         parameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         parameters[2].DescriptorTable = {1, &colors};
         D3D12_ROOT_SIGNATURE_DESC desc{};
-        parameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
-        parameters[3].Descriptor.ShaderRegister = 1;
-        desc.NumParameters = sharedInputs ? 4 : 3;
+        desc.NumParameters = static_cast<UINT>(std::size(parameters));
         desc.pParameters = parameters;
         ComPtr<ID3DBlob> signature;
         check(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, nullptr),
@@ -605,17 +608,24 @@ HWND createPresentationSurface(HWND owner, bool topLevel) {
 struct FrameAdmission {
     unsigned consecutiveFull = 0, consecutivePresentPressure = 0, recoveredFrames = 0;
     int reason = 0;
+    std::optional<UINT64> lastRetired;
 
-    int update(bool full, bool stale, bool presentPressure, bool producerBehind) {
-        consecutiveFull = full ? std::min(consecutiveFull + 1, 2u) : 0;
-        consecutivePresentPressure = presentPressure ? std::min(consecutivePresentPressure + 1, 2u) : 0;
-        if (stale || consecutivePresentPressure == 2 || consecutiveFull == 2) {
-            recoveredFrames = 0;
-            reason = stale ? 2 : consecutivePresentPressure == 2 ? 3 : 1;
-        } else if (reason) {
-            recoveredFrames = full || presentPressure || producerBehind ? 0 : recoveredFrames + 1;
-            if (recoveredFrames == 8) reason = 0;
+    int update(bool full, bool stale, bool rejected, bool activeAged, UINT64 retired) {
+        if (reason) {
+            const bool progressed = lastRetired && retired > *lastRetired;
+            lastRetired = retired;
+            // A real-only Present can span several refreshes while the GPU keeps
+            // retiring frames. Count progress and reset on actual queue pressure.
+            if (full || rejected || (stale && !progressed)) recoveredFrames = 0;
+            else if (progressed && recoveredFrames < 8) ++recoveredFrames;
+            if (recoveredFrames == 8 && !stale) *this = {};
+            return reason;
         }
+        consecutiveFull = full ? std::min(consecutiveFull + 1, 2u) : 0;
+        const bool presentPressure = rejected || activeAged;
+        consecutivePresentPressure = presentPressure ? std::min(consecutivePresentPressure + 1, 2u) : 0;
+        if (stale || consecutivePresentPressure == 2 || consecutiveFull == 2)
+            reason = stale ? 2 : consecutivePresentPressure == 2 ? 3 : 1;
         return reason;
     }
 };
@@ -623,7 +633,8 @@ struct FrameAdmission {
 struct Session {
     UINT width = 0, height = 0, geometryWidth = 0, geometryHeight = 0;
     UINT64 sequence = 0, slotWaitSequence = 0;
-    UINT64 oldestProducerColor = 0, latestProducerColor = 0, producerWaitToken = 0;
+    UINT64 previousProducerColor = 0, latestProducerColor = 0, producerWaitToken = 0;
+    bool latestColorHadGeometry = false;
     std::array<UINT64, GroupCount> groupBytes{};
     Transport transport = Rgba8;
     UINT colorStride = 0;
@@ -654,6 +665,9 @@ struct Session {
     std::mutex workMutex, xellMutex;
     std::optional<PresentJob> waiting;
     std::atomic<int64_t> presentingSince{0};
+    std::array<std::atomic<UINT64>, InputCount> acceptedPresentations{};
+    std::atomic<UINT64> retiredAcceptedThrough{0};
+    bool presentingInterpolation = false;
     bool presentRejected = false;
     bool closing = false, resetNext = false;
     FrameAdmission admissionPolicy;
@@ -670,17 +684,41 @@ struct Session {
         const auto finished = preparedSequence();
         const bool full = std::all_of(slots.begin(), slots.begin() + GeometrySlots,
                                      [&](const Slot& slot) { return slot.reuseAfter > finished; });
-        bool stale, presentPressure;
+        bool rejected, activeInterpolation;
+        int64_t waitingAge = 0, activeAge = 0;
         {
             std::lock_guard guard(workMutex);
             if (failure) std::rethrow_exception(failure);
             const auto now = qpc();
             const auto activeSince = presentingSince.load(std::memory_order_acquire);
-            stale = waiting && now - waiting->enqueuedAt >= refreshTicks;
-            presentPressure = std::exchange(presentRejected, false)
-                || (activeSince != 0 && now - activeSince >= refreshTicks);
+            if (waiting && !waiting->discard) waitingAge = now - waiting->enqueuedAt;
+            if (activeSince != 0) activeAge = now - activeSince;
+            activeInterpolation = presentingInterpolation;
+            rejected = std::exchange(presentRejected, false);
         }
-        return admissionPolicy.update(full, stale, presentPressure, admissionPolicy.reason && producerBehind());
+        const bool recovering = admissionPolicy.reason != 0;
+        UINT64 retired = 0;
+        if (recovering) {
+            const auto done = completed->GetCompletedValue();
+            if (done == UINT64_MAX) throw std::runtime_error("XeSS-FG presentation device removed");
+            for (const auto& stamp : acceptedPresentations) {
+                const auto accepted = stamp.load(std::memory_order_acquire);
+                if (accepted <= done) retired = std::max(retired, accepted);
+            }
+            retired = std::max(retired, retiredAcceptedThrough.load(std::memory_order_acquire));
+        }
+        const int reason = admissionPolicy.update(full, waitingAge >= refreshTicks, rejected,
+                activeInterpolation && activeAge >= refreshTicks, retired);
+        if (recovering || reason) {
+            TraceLoggingWrite(presentTrace, "FrameAdmission",
+                TraceLoggingUInt64(sequence + 1, "Sequence"), TraceLoggingUInt64(retired, "RetiredThrough"),
+                TraceLoggingUInt32(admissionPolicy.recoveredFrames, "RecoveryFrames"),
+                TraceLoggingInt64(waitingAge, "WaitingQpcTicks"), TraceLoggingInt64(activeAge, "ActiveQpcTicks"),
+                TraceLoggingBool(activeInterpolation, "ActiveInterpolation"),
+                TraceLoggingBool(rejected, "Rejected"), TraceLoggingBool(full, "TransferFull"),
+                TraceLoggingInt32(reason, "SkipReason"));
+        }
+        return reason;
     }
     std::exception_ptr failure;
     std::array<PresentResult, ResultCapacity> results{};
@@ -840,7 +878,10 @@ struct Session {
                 if (!failure && waiting) {
                     job = waiting;
                     waiting.reset();
-                    if (!job->discard) presentingSince.store(qpc(), std::memory_order_release);
+                    if (!job->discard) {
+                        presentingInterpolation = job->interpolate;
+                        presentingSince.store(qpc(), std::memory_order_release);
+                    }
                     SetEvent(queueSpace.value);
                 }
             }
@@ -870,7 +911,7 @@ struct Session {
             profile->fields[PresentQueueDelay] = (profile->previous - job.enqueuedAt) * 1.0e9 / profile->frequency;
         }
         const int queued = present(job, profile ? &*profile : nullptr);
-        retirePresentation(job.sequence);
+        retirePresentation(job.sequence, queued > 0);
         resetNext = !queued || !job.interpolate;
         if (!profile) return;
         std::lock_guard guard(workMutex);
@@ -963,7 +1004,7 @@ struct Session {
             && generationAdapter.VendorId == 0x8086 && generationAdapter.DeviceId == 0x56a1
             && supportsUavStore(Formats[Depth]) && supportsUavStore(Formats[Motion]);
         if (sharedInputs) {
-            producerReady.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            producerReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
             if (!producerReady.value) throw std::runtime_error("Creating XeSS-FG producer fence event");
             producerWaitTimer.value = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
                                                             TIMER_MODIFY_STATE | SYNCHRONIZE);
@@ -1102,7 +1143,10 @@ struct Session {
     void allocate(Slot& slot, bool colorOnly) {
         auto memory = defaultMemory();
         slot.prepare.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
-        if (sharedInputs && !colorOnly) slot.prepareGeometry.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
+        if (sharedInputs && !colorOnly) {
+            slot.prepareGeometry.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
+            slot.prepareHudBase.create(generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_COMPUTE);
+        }
         for (unsigned i = colorOnly ? Color : Geometry; i < GroupCount; ++i) {
             auto& transfer = slot.groups[i];
             auto storage = allocateGlBuffer(transfer, groupBytes[i]);
@@ -1194,7 +1238,7 @@ struct Session {
         if (failure) std::rethrow_exception(failure);
         if (activeSlot >= 0 || next <= sequence) throw std::logic_error("XeSS-FG frame acquisition out of order");
         const auto finished = preparedSequence();
-        if (!colorOnly && producerBehind()) return ProducerBackpressure;
+        if (producerBehind(producerFenceTarget(colorOnly))) return ProducerBackpressure;
         for (unsigned i = 0; i < (colorOnly ? SlotCount : GeometrySlots); ++i) {
             const unsigned index = colorOnly && i == 0 ? GeometrySlots
                 : (cursor + i - (colorOnly ? 1 : 0)) % GeometrySlots;
@@ -1214,21 +1258,27 @@ struct Session {
         return NoTransferSlot;
     }
 
-    bool producerBehind() {
-        if (!oldestProducerColor) return false;
-        const UINT64 finished = glWritten->GetCompletedValue();
-        if (finished == UINT64_MAX) throw std::runtime_error("XeSS-FG OpenGL producer device removed");
-        return finished < oldestProducerColor;
+    UINT64 producerFenceTarget(bool colorOnly) const {
+        // A real-only frame can bypass one unfinished color, including a timed-out FG frame.
+        return !colorOnly && latestColorHadGeometry ? latestProducerColor : previousProducerColor;
     }
 
-    void waitForProducer(int64_t remainingNanos) {
+    bool producerBehind(UINT64 target) {
+        if (!target) return false;
+        const UINT64 finished = glWritten->GetCompletedValue();
+        if (finished == UINT64_MAX) throw std::runtime_error("XeSS-FG OpenGL producer device removed");
+        return finished < target;
+    }
+
+    void waitForProducer(int64_t remainingNanos, bool colorOnly) {
         checkPresenter();
-        if (remainingNanos <= 0 || !producerBehind()) return;
-        if (producerWaitToken != oldestProducerColor) {
+        const auto target = producerFenceTarget(colorOnly);
+        if (remainingNanos <= 0 || !producerBehind(target)) return;
+        if (producerWaitToken != target) {
             if (!ResetEvent(producerReady.value)) throw std::runtime_error("Resetting XeSS-FG producer fence event");
-            check(glWritten->SetEventOnCompletion(oldestProducerColor, producerReady.value),
+            check(glWritten->SetEventOnCompletion(target, producerReady.value),
                   "Waiting for a prior OpenGL color publication");
-            producerWaitToken = oldestProducerColor;
+            producerWaitToken = target;
         }
         LARGE_INTEGER due{};
         due.QuadPart = -std::max<int64_t>(1, remainingNanos / 100);
@@ -1278,7 +1328,6 @@ struct Session {
     }
 
     void discardTransfer(Slot& slot, UINT64 next) {
-        if (slot.hudSubmitted) check(prepareQueue->Wait(hudReady.Get(), next), "Retiring HUD-less storage");
         if (slot.geometrySubmitted) {
             const auto token = transferToken(next, Geometry);
             waitForTransfer(token);
@@ -1287,8 +1336,16 @@ struct Session {
         retireTransfer(slot, next);
     }
 
-    void retirePresentation(UINT64 next) {
+    void retirePresentation(UINT64 next, bool accepted = false) {
         check(presentQueue->Signal(completed.Get(), next), "Retiring XeSS-FG SDK inputs");
+        if (accepted) {
+            auto& stamp = acceptedPresentations[(next - 1) % InputCount];
+            const auto previous = stamp.load(std::memory_order_relaxed);
+            // The presenter already waited for the previous use of this input.
+            if (previous > retiredAcceptedThrough.load(std::memory_order_relaxed))
+                retiredAcceptedThrough.store(previous, std::memory_order_release);
+            stamp.store(next, std::memory_order_release);
+        }
     }
 
     static bool copyTimestamps(TimestampProbe& probe, ID3D12Device* gpu, ID3D12CommandQueue* queue) {
@@ -1312,6 +1369,10 @@ struct Session {
             profileProbes->mask |= LocalTextures;
         if (transport != Rgba8 && profileProbes->unpack.initialize(generationGpu.Get(), prepareQueue.Get(),
                 D3D12_QUERY_HEAP_TYPE_TIMESTAMP)) profileProbes->mask |= ColorUnpack;
+        if (sharedInputs && profileProbes->hudBaseUnpack.initialize(generationGpu.Get(), prepareQueue.Get(),
+                D3D12_QUERY_HEAP_TYPE_TIMESTAMP)) profileProbes->mask |= HudBaseUnpack;
+        if (swap) profileProbes->proxyCopy.initialize(generationGpu.Get(), presentQueue.Get(),
+                D3D12_QUERY_HEAP_TYPE_TIMESTAMP, InputCount);
     }
 
     int pollProfile(int64_t* output) {
@@ -1356,6 +1417,9 @@ struct Session {
             *output++ = mask & ProducerHud ? profileProbes->hud.read(i) : Unavailable;
             *output++ = mask & CopiedColorBytes
                 ? static_cast<int64_t>(slot.hudCopyRoute.load(std::memory_order_acquire)) : Unavailable;
+            int64_t hudBaseEnd = Unavailable;
+            *output++ = mask & HudBaseUnpack ? profileProbes->hudBaseUnpack.read(i, &hudBaseEnd) : Unavailable;
+            *output++ = hudBaseEnd;
             slot.pendingQueries = 0;
             ++rows;
         }
@@ -1656,6 +1720,18 @@ struct Session {
         }
         base.producer.submit(hudQueue.Get());
         check(hudQueue->Signal(hudCopied.Get(), next), "Publishing HUD-less input to Arc");
+        // Geometry has already acquired the SDK input slot on this queue. Seed both
+        // color images while OpenGL draws the HUD and the worker copies its changes.
+        check(prepareQueue->Wait(hudReady.Get(), next), "Acquiring HUD-less input on Arc");
+        auto* unpack = slot.prepareHudBase.begin();
+        const bool timedUnpack = slot.captureFrame > 0 && (profileProbes->mask & HudBaseUnpack);
+        if (timedUnpack) profileProbes->hudBaseUnpack.begin(unpack, index);
+        unpackColor(unpack, slot, inputsFor(next), true, true);
+        if (timedUnpack) {
+            profileProbes->hudBaseUnpack.end(unpack, index);
+            slot.recordedQueries |= HudBaseUnpack;
+        }
+        slot.prepareHudBase.submit(prepareQueue.Get());
         slot.hudSubmitted = true;
     }
 
@@ -1670,9 +1746,9 @@ struct Session {
         submitTransfer(index, slot, Color, full ? groupBytes[Color] : linearColorBytes);
         if (sharedInputs) {
             const auto color = transferToken(next, Color);
-            // The next frame can render up to its first export while this color is pending.
-            oldestProducerColor = full ? color : latestProducerColor;
+            previousProducerColor = latestProducerColor;
             latestProducerColor = color;
+            latestColorHadGeometry = full;
         }
         prepareInputs(index, slot, next, full);
         slot.colorSubmitted = true;
@@ -1695,26 +1771,26 @@ struct Session {
         return cross ? transfer.local.Get() : transfer.glBuffer.Get();
     }
 
-    void unpackColor(ID3D12GraphicsCommandList* cmd, Slot& slot, PreparedInput& input, bool full) {
+    void unpackColor(ID3D12GraphicsCommandList* cmd, Slot& slot, PreparedInput& input, bool full, bool seedBase = false) {
         auto* finalImage = input.planes[Final].Get();
         auto* hudless = input.planes[Hudless].Get();
+        const bool patch = sharedInputs && full && !seedBase;
+        const bool writesHudless = full && !patch;
         transition(cmd, finalImage, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        transition(cmd, hudless, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        const bool paired = sharedInputs && full;
-        constexpr UINT PairedRgb24 = 4;
+        if (writesHudless)
+            transition(cmd, hudless, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        constexpr UINT HudPatch = 4, HudBaseRgb24 = 8;
         const UINT layout[]{width, height, colorStride, static_cast<UINT>(colorPlaneBytes),
-                            paired ? PairedRgb24 : static_cast<UINT>(transport)};
+                            seedBase ? HudBaseRgb24 : patch ? HudPatch : static_cast<UINT>(transport)};
         decoder.bind(cmd, input);
         cmd->SetComputeRoot32BitConstants(0, 5, layout, 0);
-        cmd->SetComputeRootShaderResourceView(1, sourceFor(slot, Final)->GetGPUVirtualAddress());
-        if (sharedInputs) {
-            auto* base = paired ? slot.hudBase.destination.Get() : sourceFor(slot, Final);
-            cmd->SetComputeRootShaderResourceView(3, base->GetGPUVirtualAddress());
-        }
-        const UINT groupWidth = paired ? 64 : 16;
-        cmd->Dispatch((width + groupWidth - 1) / groupWidth, (height + 7) / 8, full && !paired ? 2 : 1);
+        auto* source = seedBase ? slot.hudBase.destination.Get() : sourceFor(slot, Final);
+        cmd->SetComputeRootShaderResourceView(1, source->GetGPUVirtualAddress());
+        const UINT groupWidth = patch || seedBase ? 64 : 16;
+        cmd->Dispatch((width + groupWidth - 1) / groupWidth, (height + 7) / 8, full && !sharedInputs ? 2 : 1);
         transition(cmd, finalImage, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
-        transition(cmd, hudless, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        if (writesHudless)
+            transition(cmd, hudless, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     }
 
     void unpackGeometry(ID3D12GraphicsCommandList* cmd, Slot& slot, PreparedInput& input) {
@@ -1731,7 +1807,6 @@ struct Session {
         if (slot.reprojection) cmd->SetComputeRoot32BitConstants(0, ReprojectionWords, slot.reprojection->data(), 8);
         const auto address = sourceFor(slot, Depth)->GetGPUVirtualAddress();
         cmd->SetComputeRootShaderResourceView(1, address);
-        cmd->SetComputeRootShaderResourceView(3, address);
         cmd->Dispatch((geometryWidth + 15) / 16, (geometryHeight + 7) / 8, 1);
         for (auto plane : {Depth, Motion}) {
             transition(cmd, input.planes[plane].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -1788,7 +1863,6 @@ struct Session {
         auto& input = inputsFor(next);
         const auto token = transferToken(next, Color);
         waitForTransfer(token);
-        if (slot.hudSubmitted) check(prepareQueue->Wait(hudReady.Get(), next), "Acquiring HUD-less input on Arc");
         // Shared geometry already waited on this input slot on the same prepare queue.
         if (!sharedInputs || !slot.geometrySubmitted) waitForInputReuse(input);
         auto* cmd = slot.prepare.begin();
@@ -1828,6 +1902,27 @@ struct Session {
         if (finished == UINT64_MAX) throw std::runtime_error("XeSS-FG presentation device removed");
     }
 
+    void traceProxyCopy(PreparedInput& input, unsigned index) {
+        if (!input.tracedCaptureFrame) return;
+        int64_t start = Unavailable, end = Unavailable;
+        const auto duration = profileProbes->proxyCopy.read(index, &end, &start);
+        UINT64 gpu = 0, cpu = 0;
+        const auto frequency = profileProbes->proxyCopy.frequency;
+        if (duration != Unavailable && SUCCEEDED(presentQueue->GetClockCalibration(&gpu, &cpu))) {
+            const auto toQpc = [&](int64_t tick) {
+                return static_cast<int64_t>(cpu) + static_cast<int64_t>((tick - static_cast<int64_t>(gpu))
+                        * (double(qpcFrequency) / frequency));
+            };
+            TraceLoggingWrite(presentTrace, "ArcProxyColorCopy",
+                TraceLoggingUInt32(input.tracedPresentId, "PresentId"),
+                TraceLoggingInt64(input.tracedCaptureFrame, "CaptureFrame"),
+                TraceLoggingUInt64(input.submittedAfter, "Sequence"),
+                TraceLoggingInt64(toQpc(start), "StartQpc"), TraceLoggingInt64(toQpc(end), "EndQpc"),
+                TraceLoggingInt64(duration, "GpuNs"));
+        }
+        input.tracedCaptureFrame = 0;
+    }
+
     int present(const PresentJob& job, PresentProfile* profile = nullptr) {
         if (profile) profile->fields[ProxyTopLevel] = topLevel;
         if (topLevel && !positionPopup()) return 0;
@@ -1847,6 +1942,8 @@ struct Session {
             profile->split(ProfileSetup);
         }
         waitForPresentAllocator(local.submittedAfter);
+        const auto inputIndex = static_cast<unsigned>((job.sequence - 1) % InputCount);
+        traceProxyCopy(local, inputIndex);
         const auto token = transferToken(job.sequence, Color);
         check(presentQueue->Wait(prepared.Get(), job.sequence), "Acquiring prepared XeSS-FG textures");
         if (profile) profile->split(InputWaitEnqueue);
@@ -1860,9 +1957,17 @@ struct Session {
         const UINT backBufferIndex = swap->GetCurrentBackBufferIndex();
         if (profile) profile->fields[BackBufferIndex] = backBufferIndex;
         auto* backBuffer = backBuffers.at(backBufferIndex).Get();
+        const bool traceCopy = profile && profileProbes->proxyCopy.heap
+            && TraceLoggingProviderEnabled(presentTrace, TRACE_LEVEL_VERBOSE, 0);
+        if (traceCopy) profileProbes->proxyCopy.begin(cmd, inputIndex);
         transition(cmd, backBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
         cmd->CopyResource(backBuffer, local.planes[Final].Get());
         transition(cmd, backBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+        if (traceCopy) {
+            profileProbes->proxyCopy.end(cmd, inputIndex);
+            local.tracedPresentId = frame;
+            local.tracedCaptureFrame = job.captureFrame;
+        }
         if (interpolate) {
             constexpr xefg_swapchain_resource_type_t types[]{XEFG_SWAPCHAIN_RES_HUDLESS_COLOR,
                 XEFG_SWAPCHAIN_RES_DEPTH, XEFG_SWAPCHAIN_RES_MOTION_VECTOR};
@@ -2084,8 +2189,8 @@ JNIEXPORT void JNICALL JAVA(waitForSlot)(JNIEnv* env, jclass, jlong ptr, jboolea
     catch (const std::exception& error) { report(env, error); }
 }
 
-JNIEXPORT void JNICALL JAVA(waitForProducer)(JNIEnv* env, jclass, jlong ptr, jlong remainingNanos) {
-    try { session(ptr).waitForProducer(remainingNanos); }
+JNIEXPORT void JNICALL JAVA(waitForProducer)(JNIEnv* env, jclass, jlong ptr, jlong remainingNanos, jboolean colorOnly) {
+    try { session(ptr).waitForProducer(remainingNanos, colorOnly != 0); }
     catch (const std::exception& error) { report(env, error); }
 }
 

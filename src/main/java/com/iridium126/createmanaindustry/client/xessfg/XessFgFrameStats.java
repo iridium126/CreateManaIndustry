@@ -27,7 +27,8 @@ public final class XessFgFrameStats implements AutoCloseable {
     private static final int RTX_GEOMETRY_START_TICK = 10, RTX_GEOMETRY_END_TICK = 11;
     private static final int ARC_GEOMETRY_START_TICK = 12, ARC_GEOMETRY_END_TICK = 13;
     private static final int PREPARE_START_TICK = 15, COPIED_COLOR_BYTES = 16;
-    private static final int HUD_COPY = 17, HUD_COPY_ROUTE = 18;
+    private static final int HUD_COPY = 17, HUD_COPY_ROUTE = XessFgNative.GPU_HUD_COPY_ROUTE - 1;
+    private static final int HUD_BASE_UNPACK = 19, HUD_BASE_END_TICK = 20;
     private static final int CROSS_BYTES = 7, GEOMETRY_BYTES = 19, COLOR_BYTES = 20;
     private static Frame current;
     private final Map<Long, Frame> frames = new LinkedHashMap<>();
@@ -237,7 +238,8 @@ public final class XessFgFrameStats implements AutoCloseable {
                 + "arc_color_dma_start_qpc,rtx_geometry_copy_start_qpc,rtx_geometry_copy_end_qpc,"
                 + "arc_geometry_dma_start_qpc,arc_geometry_dma_end_qpc,arc_input_prepare_start_qpc,"
                 + "transport,pending_present_at_enqueue,fg_gameplay_eligible,fg_skip_reason,"
-                + "fg_geometry_width,fg_geometry_height,producer_hudless_gpu_ns,hud_copy_route\n");
+                + "fg_geometry_width,fg_geometry_height,producer_hudless_gpu_ns,hud_copy_route,"
+                + "arc_hud_base_unpack_gpu_ns,arc_hud_base_ready_qpc\n");
         for (Frame frame : frames.values()) {
             out.write(frame.id + "," + frame.route);
             column(out, frame.nextTickIntervalNs);
@@ -287,6 +289,8 @@ public final class XessFgFrameStats implements AutoCloseable {
                 case 4 -> "map_failed";
                 default -> "";
             });
+            column(out, frame.nativeGpu[HUD_BASE_UNPACK]);
+            column(out, calibratedTick(clock, frame, HUD_BASE_END_TICK, XessFgClockTimeline.ARC_PREPARE));
             out.newLine();
         }
     }

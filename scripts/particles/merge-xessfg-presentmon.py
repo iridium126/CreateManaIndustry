@@ -107,6 +107,7 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
     intervals, display_intervals, input_latencies, midpoint, annotations = [], [], [], [], {}
     period = frequency / refresh_hz if refresh_hz is not None else None
     refresh_splits = Counter()
+    four_refresh_intervals = 0
     for events in timelines.values():
         events.sort()
         display_intervals.extend(milliseconds(b[0] - a[0], frequency) for a, b in zip(events, events[1:])
@@ -125,6 +126,8 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
                 last_time, last_frame, _, _ = preceding
                 gap = milliseconds(time - last_time, frequency)
                 intervals.append(gap)
+                if period is not None and refresh_steps(time - last_time, period) == 4:
+                    four_refresh_intervals += 1
                 annotations[index] = {"real_display_interval_ms": gap}
                 # Count every gameplay-eligible interval, including intentional overload skips.
                 current = app[frame]
@@ -164,7 +167,7 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
     gpu = {}
     for key in ("depth_motion_gl_ns", "hudless_gl_ns", "final_color_gl_ns", "producer_geometry_gpu_ns",
                 "producer_hudless_gpu_ns", "producer_color_gpu_ns", "arc_texture_upload_gpu_ns",
-                "arc_color_unpack_gpu_ns"):
+                "arc_color_unpack_gpu_ns", "arc_hud_base_unpack_gpu_ns"):
         samples = [int(frame[key]) / 1_000_000 for frame in app if frame.get(key)]
         if samples:
             gpu[key.removesuffix("_ns") + "_ms"] = {"samples": len(samples), **percentiles(samples)}
@@ -185,6 +188,9 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
             "refresh_hz": refresh_hz,
             "splits": dict(refresh_splits),
             "unquantized_intervals": len(midpoint) - sum(refresh_splits.values()),
+            "four_refresh_intervals": four_refresh_intervals,
+            "four_refresh_midpoint_fraction": refresh_splits["2:2"] / four_refresh_intervals
+            if four_refresh_intervals else None,
         }
     return annotations, summary
 
@@ -328,7 +334,7 @@ def merge(metadata_path, presentmon_path, refresh_hz=None):
               "present_exit_to_display_ms", "real_display_interval_ms", "midpoint_error_ms",
               "refresh_split", "arc_inputs_to_generated_ms", "arc_inputs_to_midpoint_ms",
               "fg_gameplay_eligible", "fg_skip_reason", "fg_geometry_width", "fg_geometry_height",
-              "producer_hudless_gpu_ns", "hud_copy_route")
+              "producer_hudless_gpu_ns", "hud_copy_route", "arc_hud_base_unpack_gpu_ns", "arc_hud_base_ready_qpc")
     with output.open("w", encoding="utf-8", newline="") as target:
         writer = csv.DictWriter(target, fields)
         writer.writeheader()
