@@ -10,7 +10,7 @@ import static org.lwjgl.opengl.GL45.*;
 
 final class DlssPass implements AutoCloseable {
     private static final int[] FORMATS = {GL_RGBA16F, GL_R32F, GL_RG16F};
-    private final int program, extent, jitter, toPrevious, skyToPrevious, mode, colorEncoding, water;
+    private final int program, extent, jitter, toPrevious, skyToPrevious, mode, colorEncoding, water, motionLayers;
 
     DlssPass() {
         this(GpuShaderResources.loader(CreateManaIndustry.MODID, "shaders/dlss/").apply("inputs.comp"));
@@ -25,6 +25,7 @@ final class DlssPass implements AutoCloseable {
         mode = glGetUniformLocation(program, "mode");
         colorEncoding = glGetUniformLocation(program, "colorEncoding");
         water = glGetUniformLocation(program, "water");
+        motionLayers = glGetUniformLocation(program, "motionLayers");
     }
 
     void dispatch(DlssInterop slot, int width, int height, int colorOrDepth, int operation, int winners,
@@ -41,15 +42,32 @@ final class DlssPass implements AutoCloseable {
     void dispatch(DlssInterop slot, int width, int height, int colorOrDepth, int operation, int winners,
                   float jitterX, float jitterY, Matrix4fc previous, Matrix4fc sky, DlssPack.Encoding encoding,
                   XessFgCoordinates now, XessFgCoordinates prior) {
+        dispatch(slot, width, height, colorOrDepth, operation, winners, jitterX, jitterY, previous, sky, encoding,
+                now, prior, 0, 0);
+    }
+
+    void world(DlssInterop slot, int width, int height, int depth, float jitterX, float jitterY,
+               Matrix4fc previous, Matrix4fc sky, XessFgCoordinates now, XessFgCoordinates prior,
+               int opaque, int winners, int translucent) {
+        dispatch(slot, width, height, depth, 1, winners, jitterX, jitterY, previous, sky, DlssPack.Encoding.SDR,
+                now, prior, opaque, translucent);
+    }
+
+    private void dispatch(DlssInterop slot, int width, int height, int colorOrDepth, int operation, int winners,
+                          float jitterX, float jitterY, Matrix4fc previous, Matrix4fc sky, DlssPack.Encoding encoding,
+                          XessFgCoordinates now, XessFgCoordinates prior, int opaque, int translucent) {
         int previousProgram = glGetInteger(GL_CURRENT_PROGRAM);
         int previousActiveTexture = glGetInteger(GL_ACTIVE_TEXTURE);
-        int ssbo = glGetInteger(GL_SHADER_STORAGE_BUFFER_BINDING);
-        int base = glGetIntegeri(GL_SHADER_STORAGE_BUFFER_BINDING, 0);
-        long offset = glGetInteger64i(GL_SHADER_STORAGE_BUFFER_START, 0);
-        long length = glGetInteger64i(GL_SHADER_STORAGE_BUFFER_SIZE, 0);
+        int ssbo = winners != 0 ? glGetInteger(GL_SHADER_STORAGE_BUFFER_BINDING) : 0;
+        int base = winners != 0 ? glGetIntegeri(GL_SHADER_STORAGE_BUFFER_BINDING, 0) : 0;
+        long offset = winners != 0 ? glGetInteger64i(GL_SHADER_STORAGE_BUFFER_START, 0) : 0;
+        long length = winners != 0 ? glGetInteger64i(GL_SHADER_STORAGE_BUFFER_SIZE, 0) : 0;
         glActiveTexture(GL_TEXTURE0);
         int texture = glGetInteger(GL_TEXTURE_BINDING_2D);
         int sampler = glGetInteger(GL_SAMPLER_BINDING);
+        long oldOpaque = bindMotionTexture(1, opaque);
+        long oldTranslucent = bindMotionTexture(2, translucent);
+        if (opaque != 0 || translucent != 0) glActiveTexture(GL_TEXTURE0);
         try (var stack = MemoryStack.stackPush()) {
             var imageState = stack.mallocInt(FORMATS.length * 6);
             for (int i = 0; i < FORMATS.length; ++i) {
@@ -69,6 +87,10 @@ final class DlssPass implements AutoCloseable {
                     glProgramUniformMatrix4fv(program, skyToPrevious, false, sky.get(stack.mallocFloat(16)));
                 }
                 glProgramUniform1i(program, mode, operation);
+                if (operation == 1) {
+                    int layers = (opaque != 0 ? 1 : 0) | (winners != 0 ? 2 : 0) | (translucent != 0 ? 4 : 0);
+                    glProgramUniform1i(program, motionLayers, layers);
+                }
                 if (operation == 0)
                     glProgramUniform2f(program, colorEncoding, encoding.scale, encoding.gamma);
                 glProgramUniform4f(program, water, now.time(), bslWater(now), prior.time(), bslWater(prior));
@@ -92,9 +114,28 @@ final class DlssPass implements AutoCloseable {
             }
             glBindTexture(GL_TEXTURE_2D, texture);
             glBindSampler(0, sampler);
+            restoreMotionTexture(1, oldOpaque);
+            restoreMotionTexture(2, oldTranslucent);
             glActiveTexture(previousActiveTexture);
             glUseProgram(previousProgram);
         }
+    }
+
+    private static long bindMotionTexture(int unit, int texture) {
+        if (texture == 0) return -1;
+        glActiveTexture(GL_TEXTURE0 + unit);
+        int previous = glGetInteger(GL_TEXTURE_BINDING_2D);
+        int sampler = glGetInteger(GL_SAMPLER_BINDING);
+        glBindSampler(unit, 0);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        return (long) sampler << 32 | Integer.toUnsignedLong(previous);
+    }
+
+    private static void restoreMotionTexture(int unit, long binding) {
+        if (binding == -1) return;
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glBindTexture(GL_TEXTURE_2D, (int) binding);
+        glBindSampler(unit, (int) (binding >>> 32));
     }
 
     private static float bslWater(XessFgCoordinates coords) {

@@ -1,6 +1,8 @@
 #version 450
 layout(local_size_x = 16, local_size_y = 8) in;
 layout(binding = 0) uniform sampler2D source;
+layout(binding = 1) uniform sampler2D opaqueMotion;
+layout(binding = 2) uniform sampler2D translucentMotion;
 layout(rgba16f, binding = 0) writeonly uniform image2D sceneColor;
 layout(r32f, binding = 1) uniform image2D sceneDepth;
 layout(rg16f, binding = 2) writeonly uniform image2D sceneMotion;
@@ -11,6 +13,7 @@ uniform vec2 jitter;
 uniform mat4 toPrevious;
 uniform mat4 skyToPrevious;
 uniform int mode;
+uniform int motionLayers;
 uniform vec2 colorEncoding;
 uniform vec4 water;
 
@@ -25,6 +28,46 @@ vec2 waterDisplay(vec2 uv, vec2 parameters) {
     vec2 estimate = uv;
     for (int i = 0; i < 4; ++i) estimate += uv - waterScene(estimate, parameters);
     return estimate;
+}
+
+bool readGpuMotion(ivec2 motionPixel, float depth, out vec2 velocity) {
+    int index = motionPixel.y * extent.x + motionPixel.x;
+    uvec2 opaque = winningMotion[index];
+    uvec2 transparent = winningMotion[index + extent.x * extent.y];
+    float transparentDepth = float(0xffffffu - (transparent.y >> 8)) / 16777215.0;
+    float opaqueDepth = float(0xffffffu - (opaque.y >> 8)) / 16777215.0;
+    if (transparent.y != 0u && transparentDepth <= depth + 0.000002) {
+        velocity = unpackHalf2x16(transparent.x);
+        return true;
+    }
+    if (opaque.y != 0u && abs(opaqueDepth - depth) <= 0.000002) {
+        velocity = unpackHalf2x16(opaque.x);
+        return true;
+    }
+    return false;
+}
+
+vec3 worldDepthMotion(ivec2 depthPixel, ivec2 motionPixel, vec2 scene, vec2 units) {
+    // Match the separate passes' last writer: translucent, GPU winner, opaque, then camera.
+    if ((motionLayers & 4) != 0) {
+        vec4 motion = texelFetch(translucentMotion, motionPixel, 0);
+        if (motion.a >= 0.5) return motion.xyz;
+    }
+    float depth = texelFetch(source, depthPixel, 0).r;
+    vec2 velocity;
+    if ((motionLayers & 2) != 0 && readGpuMotion(motionPixel, depth, velocity)) return vec3(velocity, depth);
+    if ((motionLayers & 1) != 0) {
+        vec4 motion = texelFetch(opaqueMotion, motionPixel, 0);
+        if (motion.a >= 0.5) return motion.xyz;
+    }
+    vec4 clip = vec4(scene * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    vec4 previous = depth == 1.0 ? skyToPrevious * clip : toPrevious * clip;
+    velocity = vec2(0);
+    if (previous.w > 0.00001) {
+        vec2 delta = previous.xy / previous.w * 0.5 + 0.5 - scene;
+        velocity = delta * units;
+    }
+    return vec3(velocity, depth);
 }
 
 void main() {
@@ -48,13 +91,9 @@ void main() {
     float depth;
     vec2 velocity = vec2(0);
     if (mode == 1) {
-        depth = texelFetch(source, depthPixel, 0).r;
-        vec4 clip = vec4(scene * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
-        vec4 previous = depth == 1.0 ? skyToPrevious * clip : toPrevious * clip;
-        if (previous.w > 0.00001) {
-            vec2 delta = previous.xy / previous.w * 0.5 + 0.5 - scene;
-            velocity = delta * units;
-        }
+        vec3 result = worldDepthMotion(depthPixel, motionPixel, scene, units);
+        velocity = result.xy;
+        depth = result.z;
     } else if (mode == 4) {
         depth = texelFetch(source, depthPixel, 0).r;
         // The complete depth texture also contains all world geometry. Only a
@@ -66,17 +105,8 @@ void main() {
         velocity = sampleMotion.xy;
         depth = sampleMotion.z;
     } else {
-        int index = motionPixel.y * extent.x + motionPixel.x;
-        uvec2 opaque = winningMotion[index];
-        uvec2 transparent = winningMotion[index + extent.x * extent.y];
         depth = texelFetch(source, depthPixel, 0).r;
-        float transparentDepth = float(0xffffffu - (transparent.y >> 8)) / 16777215.0;
-        float opaqueDepth = float(0xffffffu - (opaque.y >> 8)) / 16777215.0;
-        if (transparent.y != 0u && transparentDepth <= depth + 0.000002)
-            velocity = unpackHalf2x16(transparent.x);
-        else if (opaque.y != 0u && abs(opaqueDepth - depth) <= 0.000002)
-            velocity = unpackHalf2x16(opaque.x);
-        else return;
+        if (!readGpuMotion(motionPixel, depth, velocity)) return;
     }
     if (water.y != 0.0 || water.w != 0.0) {
         vec2 previousScene = scene + velocity / units;

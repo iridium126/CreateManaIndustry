@@ -233,7 +233,7 @@ public final class ClientFrameCapture {
             m.put("interval_scope","successive runTick HEAD; includes swap and frame limiter");
             var xess = com.iridium126.createmanaindustry.infrastructure.config.ClientConfig.xessFg();
             m.put("xessfg_config",Map.of("enabled",xess.enabled(),"gpu",xess.gpu().value(),
-                    "transport",xess.transport().value(),"surface",xess.surface().value()));
+                    "transport",xess.transport().value(),"surface",xess.surface().value(),"multiplier",xess.multiplier()));
             m.put("xessfg_real_frame_p95_max_increase_percent",5);
             m.put("xessfg_csv_schema",13);
             m.put("xessfg_csv_key","frame joins the main frame CSV; next_tick_interval_ns aligns the interval with the work that produced it");

@@ -58,6 +58,8 @@ public final class ClientConfig {
     private static ModConfigSpec.EnumValue<StormSimulationBackend> STORM_BACKEND;
     private static ModConfigSpec.ConfigValue<String> STORM_GPU;
     private static final ModConfigSpec.BooleanValue XESS_FG_ENABLED;
+    public static final java.util.List<Integer> XESS_FG_MULTIPLIERS = java.util.List.of(2, 3, 4);
+    private static final ModConfigSpec.IntValue XESS_FG_MULTIPLIER;
     private static final ModConfigSpec.ConfigValue<String> XESS_FG_GPU;
     private static final ModConfigSpec.ConfigValue<String> XESS_FG_TRANSPORT;
     private static final ModConfigSpec.ConfigValue<String> XESS_FG_SURFACE;
@@ -99,6 +101,10 @@ public final class ClientConfig {
         XESS_FG_ENABLED = BUILDER.comment("Enable Intel XeSS Frame Generation on supported Windows clients.")
                 .translation("createmanaindustry.configuration.xessFg.enabled")
                 .gameRestart().define("enabled", false);
+        XESS_FG_MULTIPLIER = BUILDER.comment("Frame generation multiplier: 2x, 3x, or 4x.")
+                .translation("createmanaindustry.configuration.xessFg.multiplier")
+                .gameRestart().defineInRange("multiplier", 2, XESS_FG_MULTIPLIERS.getFirst(),
+                        XESS_FG_MULTIPLIERS.getLast());
         XESS_FG_GPU = BUILDER.comment("Use auto or a PnP device ID with an optional |model label.")
                 .translation("createmanaindustry.configuration.xessFg.gpu")
                 .gameRestart().define("gpu", XessFgGpu.AUTO, XessFgGpu::valid);
@@ -205,9 +211,9 @@ public final class ClientConfig {
     public record StormSimulation(StormSimulationBackend backend, StormSimulationGpu gpu) {}
     public static volatile StormSimulation stormSimulation = new StormSimulation(
             StormSimulationBackend.AUTO, StormSimulationGpu.FOLLOW_MINECRAFT);
-    public record XessFg(boolean enabled, XessFgGpu gpu, XessFgTransportMode transport, XessFgSurfaceMode surface) {}
+    public record XessFg(boolean enabled, XessFgGpu gpu, XessFgTransportMode transport, XessFgSurfaceMode surface, int multiplier) {}
     private static volatile XessFg xessFg = new XessFg(false, XessFgGpu.parse(XessFgGpu.AUTO), XessFgTransportMode.RGB24,
-            XessFgSurfaceMode.CHILD);
+            XessFgSurfaceMode.CHILD, 2);
 
     public static XessFg xessFg() {
         return xessFg;
@@ -241,7 +247,8 @@ public final class ClientConfig {
             dlss = new Dlss(DLSS_ENABLED.get(), DLSS_RENDER_SCALE.get());
             if (event instanceof ModConfigEvent.Loading) {
                 xessFg = new XessFg(XESS_FG_ENABLED.get(), XessFgGpu.parse(XESS_FG_GPU.get()),
-                        XessFgTransportMode.parse(XESS_FG_TRANSPORT.get()), XessFgSurfaceMode.parse(XESS_FG_SURFACE.get()));
+                        XessFgTransportMode.parse(XESS_FG_TRANSPORT.get()), XessFgSurfaceMode.parse(XESS_FG_SURFACE.get()),
+                        XESS_FG_MULTIPLIER.get());
             }
             allvrLod = ALLVR_LOD.get();
             mistGlowStrength = MIST_GLOW_STRENGTH.get();

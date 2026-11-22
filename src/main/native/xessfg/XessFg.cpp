@@ -16,6 +16,7 @@
 #include <memory>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -559,7 +560,7 @@ struct PresentJob {
     int64_t colorSubmitQpc = Unavailable;
     UINT64 glFenceAtSubmit = 0;
 
-    bool canInterpolate() const { return interpolate && !constants.resetHistory; }
+    bool canInterpolate() const { return !discard && interpolate && !constants.resetHistory; }
 };
 
 constexpr unsigned PresentResultFields = 3 + ProfileCount;
@@ -608,27 +609,38 @@ HWND createPresentationSurface(HWND owner, bool topLevel) {
     return surface;
 }
 
-struct FrameAdmission {
-    unsigned consecutiveFull = 0, consecutivePresentPressure = 0, recoveredFrames = 0;
-    int reason = 0;
-    std::optional<UINT64> lastRetired;
-
-    int update(bool full, bool staleInterpolation, bool rejected, bool activeAged, UINT64 retired) {
-        if (reason) {
-            const bool progressed = lastRetired && retired > *lastRetired;
-            lastRetired = retired;
-            if (full || rejected || (staleInterpolation && !progressed)) recoveredFrames = 0;
-            else if (progressed && ++recoveredFrames == 8) *this = {};
-            return reason;
-        }
-        consecutiveFull = full ? std::min(consecutiveFull + 1, 2u) : 0;
-        const bool presentPressure = rejected || activeAged;
-        consecutivePresentPressure = presentPressure ? std::min(consecutivePresentPressure + 1, 2u) : 0;
-        if (staleInterpolation || consecutivePresentPressure == 2 || consecutiveFull == 2)
-            reason = staleInterpolation ? 2 : consecutivePresentPressure == 2 ? 3 : 1;
-        return reason;
-    }
+struct UnsupportedMultiplier : std::runtime_error {
+    using std::runtime_error::runtime_error;
 };
+
+UINT interpolationCount(UINT multiplier, UINT supported) {
+    if (multiplier < 2 || multiplier > 4)
+        throw std::invalid_argument("XeSS-FG multiplier must be 2x, 3x, or 4x");
+    if (multiplier - 1 > supported)
+        throw UnsupportedMultiplier("XeSS-FG " + std::to_string(multiplier) + "x is unavailable on this driver (maximum "
+                          + std::to_string(supported + 1) + "x). Select a supported multiplier.");
+    return multiplier - 1;
+}
+
+struct PresentOutcome {
+    bool accepted = false;
+    int queued = 0;
+};
+
+// Low bits of the JNI snapshot. The remaining bits carry the latest retired presentation.
+enum AdmissionState : UINT64 {
+    TransferFull = 1, WaitingStale = 2, PresentPressure = 4, AdmissionStateBits = 3
+};
+
+template<class Present, class Wait>
+HRESULT retryPresent(Present present, Wait wait) {
+    HRESULT status = present();
+    for (unsigned retries = 0; status == DXGI_ERROR_WAS_STILL_DRAWING && retries < 2; ++retries) {
+        if (!wait()) return DXGI_STATUS_OCCLUDED;
+        status = present();
+    }
+    return status;
+}
 
 struct Session {
     UINT width = 0, height = 0, geometryWidth = 0, geometryHeight = 0;
@@ -664,67 +676,15 @@ struct Session {
     std::thread presenter;
     std::mutex workMutex, xellMutex;
     std::optional<PresentJob> waiting;
-    std::atomic<int64_t> presentingSince{0};
+    std::atomic<int64_t> activeInterpolationSince{0};
     std::array<std::atomic<UINT64>, InputCount> acceptedPresentations{};
     std::atomic<UINT64> retiredAcceptedThrough{0};
-    bool presentingInterpolation = false;
     bool presentRejected = false;
     bool closing = false, resetNext = false;
-    FrameAdmission admissionPolicy;
     int64_t refreshTicks = 0;
     int64_t qpcFrequency = 0;
+    UINT interpolatedFrames = 1;
 
-    int admission(bool gameplay) {
-        if (!gameplay) {
-            std::lock_guard guard(workMutex);
-            presentRejected = false;
-            admissionPolicy = {};
-            return 0;
-        }
-        const auto finished = preparedSequence();
-        const bool full = std::all_of(slots.begin(), slots.begin() + GeometrySlots,
-                                     [&](const Slot& slot) { return slot.reuseAfter > finished; });
-        bool rejected, activeInterpolation, waitingInterpolation = false;
-        int64_t waitingAge = 0, activeAge = 0;
-        {
-            std::lock_guard guard(workMutex);
-            if (failure) std::rethrow_exception(failure);
-            const auto now = qpc();
-            const auto activeSince = presentingSince.load(std::memory_order_acquire);
-            if (waiting && !waiting->discard) {
-                waitingAge = now - waiting->enqueuedAt;
-                waitingInterpolation = waiting->canInterpolate();
-            }
-            if (activeSince != 0) activeAge = now - activeSince;
-            activeInterpolation = presentingInterpolation;
-            rejected = std::exchange(presentRejected, false);
-        }
-        const bool recovering = admissionPolicy.reason != 0;
-        UINT64 retired = 0;
-        if (recovering) {
-            const auto done = completed->GetCompletedValue();
-            if (done == UINT64_MAX) throw std::runtime_error("XeSS-FG presentation device removed");
-            for (const auto& stamp : acceptedPresentations) {
-                const auto accepted = stamp.load(std::memory_order_acquire);
-                if (accepted <= done) retired = std::max(retired, accepted);
-            }
-            retired = std::max(retired, retiredAcceptedThrough.load(std::memory_order_acquire));
-        }
-        // Real-only and history-reset jobs can span several refreshes without generating a frame.
-        const int reason = admissionPolicy.update(full, waitingInterpolation && waitingAge >= refreshTicks, rejected,
-                activeInterpolation && activeAge >= refreshTicks, retired);
-        if (recovering || reason) {
-            TraceLoggingWrite(presentTrace, "FrameAdmission",
-                TraceLoggingUInt64(sequence + 1, "Sequence"), TraceLoggingUInt64(retired, "RetiredThrough"),
-                TraceLoggingUInt32(admissionPolicy.recoveredFrames, "RecoveryFrames"),
-                TraceLoggingInt64(waitingAge, "WaitingQpcTicks"), TraceLoggingInt64(activeAge, "ActiveQpcTicks"),
-                TraceLoggingBool(waitingInterpolation, "WaitingInterpolation"),
-                TraceLoggingBool(activeInterpolation, "ActiveInterpolation"),
-                TraceLoggingBool(rejected, "Rejected"), TraceLoggingBool(full, "TransferFull"),
-                TraceLoggingInt32(reason, "SkipReason"));
-        }
-        return reason;
-    }
     std::exception_ptr failure;
     std::array<PresentResult, ResultCapacity> results{};
     unsigned resultStart = 0, resultCount = 0;
@@ -744,6 +704,7 @@ struct Session {
                 std::lock_guard guard(workMutex);
                 closing = true;
                 SetEvent(workReady.value);
+                SetEvent(queueSpace.value);
             }
             unblockFailedProducer();
             waitWithMessages(stopped.value);
@@ -805,7 +766,7 @@ struct Session {
 
     void start(HWND hwnd, jlong render, jlong generate, UINT w, UINT h, Transport requested,
                bool popup = false, bool copyGeometryToTextures = false, bool allowSharedInputs = false,
-               UINT gw = 0, UINT gh = 0, bool initializeProxy = true) {
+               UINT gw = 0, UINT gh = 0, bool initializeProxy = true, UINT multiplier = 2) {
         workReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
         queueSpace.value = CreateEventW(nullptr, TRUE, TRUE, nullptr);
         initialized.value = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -816,7 +777,7 @@ struct Session {
             SetThreadDescription(GetCurrentThread(), L"CMI XeSS-FG Presenter");
             try {
                 initialize(hwnd, render, generate, w, h, requested, popup, copyGeometryToTextures, allowSharedInputs,
-                           gw, gh, initializeProxy);
+                           gw, gh, initializeProxy, multiplier);
             } catch (...) {
                 recordFailure();
             }
@@ -840,25 +801,67 @@ struct Session {
         if (failure) std::rethrow_exception(failure);
     }
 
+    int64_t interpolationBudget() const {
+        return refreshTicks * (interpolatedFrames > 1 ? interpolatedFrames + 3 : 1);
+    }
+
+    UINT64 presentationPressure(int64_t now, int64_t activeSince) const {
+        const auto budget = interpolationBudget();
+        UINT64 state = 0;
+        if (waiting && waiting->canInterpolate() && now - waiting->enqueuedAt >= budget)
+            state |= WaitingStale;
+        if (presentRejected || (activeSince && now - activeSince >= budget))
+            state |= PresentPressure;
+        return state;
+    }
+
+    UINT64 admissionState(bool recovering) {
+        UINT64 state;
+        {
+            std::lock_guard guard(workMutex);
+            if (failure) std::rethrow_exception(failure);
+            const auto active = activeInterpolationSince.load(std::memory_order_relaxed);
+            const auto now = active || (waiting && waiting->canInterpolate()) ? qpc() : 0;
+            state = presentationPressure(now, active);
+            presentRejected = false;
+        }
+        const auto preparedThrough = preparedSequence();
+        if (std::all_of(slots.begin(), slots.begin() + GeometrySlots,
+                        [preparedThrough](const Slot& slot) { return slot.reuseAfter > preparedThrough; }))
+            state |= TransferFull;
+        if (recovering || state) state |= retiredPresentation() << AdmissionStateBits;
+        return state;
+    }
+
+    void resetAdmission() {
+        std::lock_guard guard(workMutex);
+        presentRejected = false;
+    }
+
     bool enqueue(PresentJob job) {
         std::lock_guard guard(workMutex);
         if (failure) std::rethrow_exception(failure);
         if (closing) throw std::runtime_error("XeSS-FG presenter is closing");
         if (waiting) {
-            if (!job.discard) presentRejected = true;
+            // Normal multi-frame pacing can keep the single waiting slot occupied.
+            const auto active = activeInterpolationSince.load(std::memory_order_relaxed);
+            if (!job.discard && (interpolatedFrames <= 1 || !active || qpc() - active >= interpolationBudget()))
+                presentRejected = true;
             return false;
         }
         auto& slot = active(job.slot, job.sequence);
         if (!job.discard && (!slot.colorSubmitted || (job.interpolate && !slot.fullColor)))
             throw std::logic_error("Missing XeSS-FG inputs for presentation");
-        job.enqueuedAt = qpc();
         if (!slot.colorSubmitted) discardTransfer(slot, job.sequence);
-        job.geometryBytes = slot.geometryBytes;
         job.fullColor = slot.fullColor;
-        job.recordedQueries = slot.recordedQueries;
-        if (slot.captureFrame > 0 && slot.colorSubmitted) {
-            job.colorSubmitQpc = slot.colorSubmitQpc;
-            job.glFenceAtSubmit = slot.glFenceAtSubmit;
+        if (job.canInterpolate() || job.captureFrame > 0) job.enqueuedAt = qpc();
+        if (job.captureFrame > 0) {
+            job.geometryBytes = slot.geometryBytes;
+            job.recordedQueries = slot.recordedQueries;
+            if (slot.colorSubmitted) {
+                job.colorSubmitQpc = slot.colorSubmitQpc;
+                job.glFenceAtSubmit = slot.glFenceAtSubmit;
+            }
         }
         waiting = job;
         activeSlot = -1;
@@ -883,10 +886,8 @@ struct Session {
                 if (!failure && waiting) {
                     job = waiting;
                     waiting.reset();
-                    if (!job->discard) {
-                        presentingInterpolation = job->canInterpolate() && !resetNext;
-                        presentingSince.store(qpc(), std::memory_order_release);
-                    }
+                    if (job->canInterpolate() && !resetNext)
+                        activeInterpolationSince.store(qpc(), std::memory_order_relaxed);
                     SetEvent(queueSpace.value);
                 }
             }
@@ -899,7 +900,7 @@ struct Session {
             } catch (...) {
                 recordFailure();
             }
-            presentingSince.store(0, std::memory_order_release);
+            activeInterpolationSince.store(0, std::memory_order_relaxed);
         }
     }
 
@@ -915,16 +916,16 @@ struct Session {
             profile.emplace();
             profile->fields[PresentQueueDelay] = (profile->previous - job.enqueuedAt) * 1.0e9 / profile->frequency;
         }
-        const int queued = present(job, profile ? &*profile : nullptr);
-        retirePresentation(job.sequence, queued > 0);
-        resetNext = !queued || !job.interpolate;
+        const auto outcome = present(job, profile ? &*profile : nullptr);
+        retirePresentation(job.sequence, outcome.accepted && outcome.queued > 0);
+        resetNext = !outcome.accepted || !outcome.queued || !job.interpolate;
         if (!profile) return;
         std::lock_guard guard(workMutex);
         profile->fields[WorkerPresentDuration] = (qpc() - job.enqueuedAt) * 1.0e9 / profile->frequency
                                                  - profile->fields[PresentQueueDelay];
         auto& result = results[(resultStart + resultCount) % ResultCapacity];
         result[0] = job.captureFrame;
-        result[1] = queued;
+        result[1] = outcome.queued;
         result[2] = job.interpolate && job.constants.resetHistory;
         std::copy(profile->fields.begin(), profile->fields.end(), result.begin() + 3);
         if (resultCount == ResultCapacity) resultStart = (resultStart + 1) % ResultCapacity;
@@ -975,7 +976,7 @@ struct Session {
     }
 
     void initialize(HWND hwnd, jlong render, jlong generate, UINT w, UINT h, Transport requested, bool popup,
-                     bool copyGeometryToTextures, bool allowSharedInputs, UINT gw, UINT gh, bool initializeProxy) {
+                     bool copyGeometryToTextures, bool allowSharedInputs, UINT gw, UINT gh, bool initializeProxy, UINT multiplier) {
         width = w;
         height = h;
         geometryWidth = gw ? gw : (w + 1) / 2;
@@ -1093,7 +1094,10 @@ struct Session {
             "Installing XeSS-FG logging");
         sdk(xefgSwapChainSetLatencyReduction(fg, ll), "Connecting XeSS-FG with XeLL");
         xefg_swapchain_d3d12_init_params_t params{};
-        params.maxInterpolatedFrames = 1;
+        xefg_swapchain_properties_t properties{};
+        sdk(xefgSwapChainGetProperties(fg, &properties), "Querying supported XeSS-FG multiplier");
+        interpolatedFrames = interpolationCount(multiplier, properties.maxSupportedInterpolations);
+        params.maxInterpolatedFrames = interpolatedFrames;
         params.creationNodeMask = params.visibleNodeMask = 1;
         params.uiMode = XEFG_SWAPCHAIN_UI_MODE_BACKBUFFER_HUDLESS;
         ComPtr<IDXGIFactory5> factory5;
@@ -1119,6 +1123,11 @@ struct Session {
         sdk(xefgSwapChainD3D12InitFromSwapChainDesc(fg, surface, &desc, nullptr, presentQueue.Get(), factory.Get(), &params),
             "Creating Minecraft's XeSS-FG proxy swap chain");
         sdk(xefgSwapChainD3D12GetSwapChainPtr(fg, IID_PPV_ARGS(&swap)), "Opening XeSS-FG proxy swap chain");
+        xefg_swapchain_d3d12_init_params_t applied{};
+        sdk(xefgSwapChainD3D12GetInitializationParameters(fg, &applied),
+            "Reading XeSS-FG initialization parameters");
+        interpolationCount(multiplier, applied.maxInterpolatedFrames);
+        sdk(xefgSwapChainSetNumInterpolatedFrames(fg, interpolatedFrames), "Applying selected XeSS-FG multiplier");
         for (UINT i = 0; i < BackBufferCount; ++i)
             check(swap->GetBuffer(i, IID_PPV_ARGS(&backBuffers[i])), "Opening XeSS-FG proxy back buffer");
         sdk(xefgSwapChainSetUiCompositionState(fg, XEFG_SWAPCHAIN_UI_COMPOSITION_STATE_ENABLED),
@@ -1333,14 +1342,24 @@ struct Session {
 
     void retirePresentation(UINT64 next, bool accepted = false) {
         check(presentQueue->Signal(completed.Get(), next), "Retiring XeSS-FG SDK inputs");
-        if (accepted) {
-            auto& stamp = acceptedPresentations[(next - 1) % InputCount];
-            const auto previous = stamp.load(std::memory_order_relaxed);
-            // The presenter already waited for the previous use of this input.
-            if (previous > retiredAcceptedThrough.load(std::memory_order_relaxed))
-                retiredAcceptedThrough.store(previous, std::memory_order_release);
-            stamp.store(next, std::memory_order_release);
+        if (!accepted) return;
+        auto& stamp = acceptedPresentations[(next - 1) % InputCount];
+        const auto previous = stamp.load(std::memory_order_relaxed);
+        // Reusing this input already waited for its prior use on the completed fence.
+        if (previous > retiredAcceptedThrough.load(std::memory_order_relaxed))
+            retiredAcceptedThrough.store(previous, std::memory_order_release);
+        stamp.store(next, std::memory_order_release);
+    }
+
+    UINT64 retiredPresentation() const {
+        const auto done = completed->GetCompletedValue();
+        if (done == UINT64_MAX) throw std::runtime_error("XeSS-FG presentation device removed");
+        UINT64 retired = 0;
+        for (const auto& stamp : acceptedPresentations) {
+            const auto sequence = stamp.load(std::memory_order_acquire);
+            if (sequence <= done) retired = std::max(retired, sequence);
         }
+        return std::max(retired, retiredAcceptedThrough.load(std::memory_order_acquire));
     }
 
     static bool copyTimestamps(TimestampProbe& probe, ID3D12Device* gpu, ID3D12CommandQueue* queue) {
@@ -1715,7 +1734,7 @@ struct Session {
         slot.motionOverrides = overrides;
         const auto bytes = reprojection && !overrides ? footprints[Motion].Offset : groupBytes[Geometry];
         submitTransfer(index, slot, Geometry, bytes);
-        slot.geometryBytes = cross ? bytes : 0;
+        if (slot.captureFrame > 0) slot.geometryBytes = cross ? bytes : 0;
         slot.geometrySubmitted = true;
         if (sharedInputs) prepareSharedGeometry(index, slot, next);
     }
@@ -1939,9 +1958,19 @@ struct Session {
         input.tracedCaptureFrame = 0;
     }
 
-    int present(const PresentJob& job, PresentProfile* profile = nullptr) {
+    bool waitToRetryPresent() {
+        const DWORD result = MsgWaitForMultipleObjectsEx(1, &workReady.value, WindowWaitMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        if (result == WAIT_FAILED) throw std::runtime_error("Waiting to retry XeSS-FG Present");
+        std::optional<int> quit;
+        pumpMessages(quit);
+        if (quit) PostQuitMessage(*quit);
+        std::lock_guard guard(workMutex);
+        return !closing && !quit;
+    }
+
+    PresentOutcome present(const PresentJob& job, PresentProfile* profile = nullptr) {
         if (profile) profile->fields[ProxyTopLevel] = topLevel;
-        if (topLevel && !positionPopup()) return 0;
+        if (topLevel && !positionPopup()) return {};
         auto& local = inputsFor(job.sequence);
         const auto frame = job.frame;
         const auto interpolate = job.interpolate;
@@ -1958,7 +1987,8 @@ struct Session {
         }
         waitForPresentAllocator(local.submittedAfter);
         const auto inputIndex = static_cast<unsigned>((job.sequence - 1) % InputCount);
-        traceProxyCopy(local, inputIndex);
+        if (profile) traceProxyCopy(local, inputIndex);
+        else local.tracedCaptureFrame = 0;
         const auto token = transferToken(job.sequence, Color);
         check(presentQueue->Wait(prepared.Get(), job.sequence), "Acquiring prepared XeSS-FG textures");
         if (profile) profile->split(InputWaitEnqueue);
@@ -2050,7 +2080,8 @@ struct Session {
             profile->split(BeforePresent);
             profile->fields[PresentEnterQpc] = profile->previous;
         }
-        const HRESULT status = swap->Present(syncInterval, presentFlags);
+        const HRESULT status = retryPresent([&] { return swap->Present(syncInterval, presentFlags); },
+                                            [&] { return waitToRetryPresent(); });
         if (profile) {
             profile->split(DxgiPresent);
             profile->fields[PresentExitQpc] = profile->previous;
@@ -2077,8 +2108,8 @@ struct Session {
             profile->split(Retire);
         }
         check(status, "Presenting through XeSS-FG");
-        if (status == DXGI_STATUS_OCCLUDED) return 0;
-        if (!interpolate) return 1;
+        if (status == DXGI_STATUS_OCCLUDED) return {};
+        if (!interpolate) return {true, 1};
         xefg_swapchain_present_status_t presentStatus{};
         const auto sdkResult = xefgSwapChainGetLastPresentStatus(fg, &presentStatus);
         if (profile) {
@@ -2089,15 +2120,18 @@ struct Session {
                 profile->fields[FgEnabled] = presentStatus.isFrameGenEnabled;
             }
         }
-        if (sdkResult < 0) return 1;
-        return static_cast<int>(presentStatus.framesPresented);
+        if (sdkResult < 0) return {true, 1};
+        return {true, static_cast<int>(presentStatus.framesPresented)};
     }
 };
 
 Session& session(jlong pointer) { return *reinterpret_cast<Session*>(pointer); }
 
 void report(JNIEnv* env, const std::exception& error) {
-    if (auto type = env->FindClass("java/lang/IllegalStateException")) env->ThrowNew(type, error.what());
+    const char* name = dynamic_cast<const UnsupportedMultiplier*>(&error)
+        ? "com/iridium126/createmanaindustry/client/xessfg/XessFgNative$Unavailable"
+        : "java/lang/IllegalStateException";
+    if (auto type = env->FindClass(name)) env->ThrowNew(type, error.what());
 }
 
 void* directBuffer(JNIEnv* env, jobject buffer, size_t bytes) {
@@ -2129,7 +2163,7 @@ JNIEXPORT jint JNICALL JAVA(adapter)(JNIEnv*, jclass, jlong id) {
 }
 
 JNIEXPORT jlong JNICALL JAVA(create)(JNIEnv* env, jclass, jlong hwnd, jlong render, jlong generate, jint w, jint h,
-                                    jint transport, jboolean topLevel, jint geometryWidth, jint geometryHeight) {
+                                    jint transport, jboolean topLevel, jint geometryWidth, jint geometryHeight, jint multiplier) {
     try {
         if (!hwnd || !render || !generate || w <= 0 || h <= 0 || transport < Rgba8 || transport > Ycbcr422
                 || geometryWidth <= 0 || geometryHeight <= 0 || geometryWidth > w || geometryHeight > h)
@@ -2137,7 +2171,7 @@ JNIEXPORT jlong JNICALL JAVA(create)(JNIEnv* env, jclass, jlong hwnd, jlong rend
         auto owner = std::make_unique<Session>();
         const auto mode = static_cast<Transport>(transport);
         owner->start(reinterpret_cast<HWND>(hwnd), render, generate, w, h, mode, topLevel != 0, mode != Rgba8, true,
-                     geometryWidth, geometryHeight);
+                     geometryWidth, geometryHeight, true, multiplier);
         return reinterpret_cast<jlong>(owner.release());
     } catch (const std::exception& error) { report(env, error); return 0; }
 }
@@ -2184,11 +2218,6 @@ JNIEXPORT void JNICALL JAVA(closeHandle)(JNIEnv*, jclass, jlong handle) {
     if (handle) CloseHandle(reinterpret_cast<HANDLE>(handle));
 }
 
-JNIEXPORT jint JNICALL JAVA(admission)(JNIEnv* env, jclass, jlong ptr, jboolean gameplay) {
-    try { return session(ptr).admission(gameplay != 0); }
-    catch (const std::exception& error) { report(env, error); return 0; }
-}
-
 JNIEXPORT jint JNICALL JAVA(acquire)(JNIEnv* env, jclass, jlong ptr, jlong sequence, jlong captureFrame, jboolean colorOnly) {
     try { return session(ptr).acquire(sequence, captureFrame, colorOnly != 0); }
     catch (const std::exception& error) { report(env, error); return -1; }
@@ -2197,6 +2226,20 @@ JNIEXPORT jint JNICALL JAVA(acquire)(JNIEnv* env, jclass, jlong ptr, jlong seque
 JNIEXPORT jint JNICALL JAVA(slotsInUse)(JNIEnv* env, jclass, jlong ptr) {
     try { return session(ptr).slotsInUse(); }
     catch (const std::exception& error) { report(env, error); return 0; }
+}
+
+JNIEXPORT jlong JNICALL JAVA(admissionState)(JNIEnv* env, jclass, jlong ptr, jboolean eligible, jboolean recovering) {
+    try {
+        auto& s = session(ptr);
+        if (eligible) return static_cast<jlong>(s.admissionState(recovering != 0));
+        s.resetAdmission();
+        return 0;
+    } catch (const std::exception& error) { report(env, error); return 0; }
+}
+
+JNIEXPORT jint JNICALL JAVA(interpolatedFrames)(JNIEnv* env, jclass, jlong ptr) {
+    try { return static_cast<jint>(session(ptr).interpolatedFrames); }
+    catch (const std::exception& error) { report(env, error); return 1; }
 }
 
 JNIEXPORT void JNICALL JAVA(waitForSlot)(JNIEnv* env, jclass, jlong ptr, jboolean colorOnly) {

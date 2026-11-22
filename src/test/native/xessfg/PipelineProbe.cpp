@@ -24,84 +24,54 @@ void verifyPendingCapacity() {
     session.sequence = 1;
     session.activeSlot = 0;
     session.slots[0].colorSubmitted = true;
-    require(session.enqueue({0, 0, 1, false, false, true, {}, 0, 0}), "Submitting first pending frame");
+    session.slots[0].fullColor = true;
+    require(session.enqueue({0, 1, 1, true, true, false, {}, 0, 0}), "Submitting first pending frame");
     session.sequence = 2;
     session.activeSlot = 1;
-    require(!session.enqueue({1, 0, 2, false, false, true, {}, 0, 0}), "Accepted two pending frames");
-    require(session.waiting->sequence == 1 && session.activeSlot == 1, "Overwrote an older pending frame");
+    session.slots[1].colorSubmitted = true;
+    session.slots[1].fullColor = true;
+    PresentJob second{1, 2, 2, true, true, false, {}, 0, 0};
+    require(!session.enqueue(second) && !session.enqueue(second), "Accepted two pending frames");
+    require(session.waiting->sequence == 1 && session.waiting->interpolate && session.activeSlot == 1,
+            "Overwrote or downgraded an older pending frame");
+    require(!session.profileProbes && session.resultCount == 0,
+            "An uncaptured frame recorded profiling data");
+    session.resetAdmission();
+    session.refreshTicks = 10;
+    const auto enqueued = session.waiting->enqueuedAt;
+    require(session.presentationPressure(enqueued + 9, 0) == 0
+            && session.presentationPressure(enqueued + 10, 0) == WaitingStale,
+            "A pending interpolation was not aged from its own enqueue");
+    session.interpolatedFrames = 3;
+    require(session.presentationPressure(enqueued + 50, enqueued) == 0,
+            "Normal multi-frame pacing was counted as pressure");
+    session.waiting->constants.resetHistory = 1;
+    require(session.presentationPressure(enqueued + 100, 0) == 0, "A history reset triggered stale interpolation");
+    session.waiting.reset();
+    require(session.presentationPressure(enqueued + 100, 0) == 0,
+            "The time since a removed job was counted as queue age");
+    require(session.presentationPressure(enqueued + 100, enqueued) == PresentPressure,
+            "An active interpolation blocked beyond its budget was ignored");
+    require(session.enqueue(second) && session.waiting->interpolate, "Queue pressure downgraded the next frame");
 }
 
 bool waitForFence(ID3D12Fence* fence, UINT64 value, DWORD timeout = 5000);
 
-void verifyPresentAdmission(ID3D12Device* arc) {
+void verifyRetirementProgress(ID3D12Device* gpu) {
     Session session;
-    session.workReady.value = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    session.queueSpace.value = CreateEventW(nullptr, TRUE, TRUE, nullptr);
-    require(session.workReady.value && session.queueSpace.value, "Creating presentation admission events");
-    check(arc->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&session.prepared)),
-          "Creating presentation admission fence");
-    check(arc->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&session.completed)),
-          "Creating presentation retirement fence");
-    session.presentQueue = queue(arc, D3D12_COMMAND_LIST_TYPE_DIRECT);
-    session.refreshTicks = INT64_MAX;
-    auto submit = [&](UINT64 sequence) {
-        return session.enqueue({0, static_cast<uint32_t>(sequence), sequence, false, true, false, {}, 0, 0});
-    };
-    for (UINT64 sequence : {1u, 2u, 3u}) {
-        session.sequence = sequence;
-        session.activeSlot = 0;
-        session.slots[0].colorSubmitted = true;
-        if (sequence > 1) {
-            require(!submit(sequence) && !submit(sequence), "Expected a blocked real frame while the presenter was busy");
-            session.waiting.reset();
-        }
-        require(submit(sequence), "Failed to enqueue an unblocked real frame");
-        require(session.slotsInUse() == 0, "Admission probe must have free transfer slots");
-        const int reason = session.admission(true);
-        require(reason == (sequence == 3 ? 3 : 0), "Presentation backpressure was not counted once per real frame");
-    }
-    session.refreshTicks = 1;
-    session.waiting->enqueuedAt = qpc() - 2;
-    session.presentingSince.store(qpc() - 2);
-    require(session.admission(true) == 3, "Expected initial recovery sample");
-    session.retirePresentation(3);
-    require(waitForFence(session.completed.Get(), 3), "Discard did not retire on Arc");
-    require(session.admission(true) == 3 && session.admissionPolicy.recoveredFrames == 0,
-            "A discarded job advanced presentation recovery");
-
+    session.presentQueue = queue(gpu, D3D12_COMMAND_LIST_TYPE_DIRECT);
+    check(gpu->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&session.completed)),
+          "Creating retirement probe fence");
     ComPtr<ID3D12Fence> gate;
-    check(arc->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&gate)), "Creating recovery probe gate");
-    check(session.presentQueue->Wait(gate.Get(), 1), "Holding Arc presentation retirement");
-    bool stayedPaused = true;
-    try {
-        session.retirePresentation(4, true);
-        for (int i = 0; i < 10; ++i)
-            stayedPaused &= session.admission(true) == 3 && session.admissionPolicy.recoveredFrames == 0;
-    } catch (...) {
-        gate->Signal(1);
-        throw;
-    }
-    check(gate->Signal(1), "Releasing Arc presentation retirement");
-    require(stayedPaused && waitForFence(session.completed.Get(), 4), "Recovery advanced while Arc was blocked");
-    for (UINT64 frame = 4; frame < 12; ++frame) {
-        if (frame > 4) session.retirePresentation(frame, true);
-        require(waitForFence(session.completed.Get(), frame), "Waiting for a real frame to retire on Arc");
-        require(session.admission(true) == (frame == 11 ? 0 : 3), "Recovery must follow eight advancing retirements");
-        if (frame < 11) require(session.admission(true) == 3, "Repeated sampling counted the same retirement twice");
-    }
-    require(session.admission(true) == 0 && session.admission(true) == 0,
-            "An aging real-only job re-entered overload after recovery");
-    session.waiting->interpolate = true;
-    session.waiting->constants.resetHistory = 1;
-    require(session.admission(true) == 0, "The history-reset frame re-entered overload before interpolation could resume");
-    session.waiting->constants.resetHistory = 0;
-    require(session.admission(true) == 2, "An aged pending interpolation job escaped admission");
-    session.waiting.reset();
-    session.admission(false);
-    session.presentingInterpolation = true;
-    require(session.admission(true) == 0 && session.admission(true) == 3,
-            "An aged in-flight presentation escaped admission after leaving the waiting slot");
-    std::puts("  Eight Arc retirements restored interpolation despite aged pending and running real-only jobs");
+    check(gpu->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&gate)), "Creating retirement probe gate");
+    check(session.presentQueue->Wait(gate.Get(), 1), "Holding retirement probe");
+    session.retirePresentation(1, true);
+    session.retirePresentation(2);
+    const auto blocked = session.retiredPresentation();
+    check(gate->Signal(1), "Releasing retirement probe");
+    require(blocked == 0, "Submitting presentation work advanced recovery before the GPU retired it");
+    require(waitForFence(session.completed.Get(), 2) && session.retiredPresentation() == 1,
+            "A discarded job was counted as an accepted presentation");
 }
 
 jlong adapter(UINT vendor, std::wstring_view model) {
@@ -667,7 +637,7 @@ void verifyProducerBackpressure(Session& session) {
     std::puts("  A real-only export could use the reserved slot, with at most two unfinished OpenGL colors");
 }
 
-void verifyPopup(jlong render, jlong arc, bool requireDisplay) {
+void verifyPopup(jlong render, jlong arc, bool requireDisplay, UINT multiplier) {
     constexpr int width = 803, height = 611;
     RECT workArea{};
     require(SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0), "Reading the probe display work area");
@@ -678,7 +648,10 @@ void verifyPopup(jlong render, jlong arc, bool requireDisplay) {
     require(owner, "Creating popup owner");
     try {
         Session session;
-        session.start(owner, render, arc, width, height, Rgb24, true, true, true, (width + 1) / 2, (height + 1) / 2);
+        session.start(owner, render, arc, width, height, Rgb24, true, true, true,
+                      (width + 1) / 2, (height + 1) / 2, true, multiplier);
+        require(session.interpolatedFrames == multiplier - 1, "The proxy did not apply the requested multiplier");
+        std::printf("  proxy initialized at %ux\n", multiplier);
         const auto wnd = session.surface;
         const auto styles = GetWindowLongPtrW(wnd, GWL_STYLE);
         const auto extended = GetWindowLongPtrW(wnd, GWL_EXSTYLE);
@@ -736,11 +709,12 @@ void verifyPopup(jlong render, jlong arc, bool requireDisplay) {
             if (lateBypass) require(row[3 + GeometryBytes] > 0 && row[3 + ColorBytes] == Unavailable,
                                     "Late bypass lost the shared-input transfer accounting");
             reset = !interpolate || row[1] == 0;
-            generated |= row[1] == 2;
+            require(row[1] <= multiplier, "Present reported more frames than the selected multiplier");
+            generated |= row[1] == multiplier;
         }
         if (!generated) {
             require(!requireDisplay && results[3 + DxgiResult] == DXGI_STATUS_OCCLUDED,
-                    "XeSS-FG did not queue an interpolated frame");
+                    "XeSS-FG did not queue a complete generated group at the requested multiplier");
             std::puts("Display coverage unavailable: DXGI marked the proxy window occluded");
         }
         if (requireDisplay) std::this_thread::sleep_for(std::chrono::milliseconds(250));
@@ -757,26 +731,28 @@ void verifyPopup(jlong render, jlong arc, bool requireDisplay) {
 }
 
 void verifyOffline() {
-    FrameAdmission admission;
-    require(admission.update(true, false, false, false, 0) == 0, "Brief transfer pressure triggered a skip");
-    require(admission.update(true, false, false, false, 0) == 1, "Sustained transfer pressure did not trigger a skip");
-    admission = {};
-    require(admission.update(false, true, false, false, 0) == 2, "Stale presentation was not reported");
-    require(admission.update(false, false, false, true, 10) == 2, "Initial recovery sample was not retained");
-    for (UINT64 retired = 11; retired <= 17; ++retired)
-        require(admission.update(false, false, false, true, retired) == 2, "Resumed frame generation too early");
-    require(admission.update(false, true, false, true, 17) == 2 && admission.recoveredFrames == 0,
-            "An aged pending frame without progress did not interrupt recovery");
-    for (UINT64 retired = 18; retired <= 24; ++retired)
-        require(admission.update(false, false, false, true, retired) == 2, "Resumed before eight advancing retirements");
-    require(admission.update(false, false, true, true, 25) == 2 && admission.recoveredFrames == 0,
-            "An actual failed enqueue did not interrupt recovery");
-    for (UINT64 retired = 26; retired <= 33; ++retired)
-        require(admission.update(false, true, false, true, retired) == (retired == 33 ? 0 : 2),
-                "Frame generation did not resume after eight advancing retirements");
+    verifyPendingCapacity();
+    require(interpolationCount(2, 1) == 1 && interpolationCount(3, 3) == 2 && interpolationCount(4, 3) == 3,
+            "Multiplier did not map to the configured number of generated frames");
+    bool unavailable = false;
+    try { interpolationCount(4, 1); }
+    catch (const UnsupportedMultiplier&) { unavailable = true; }
+    require(unavailable, "Unsupported multiplier was accepted");
+
+    unsigned calls = 0;
+    require(retryPresent([&] { return ++calls < 3 ? DXGI_ERROR_WAS_STILL_DRAWING : S_OK; }, [] { return true; })
+            == S_OK && calls == 3, "Transient backpressure did not retry the same Present");
+    calls = 0;
+    require(retryPresent([&] { ++calls; return DXGI_ERROR_WAS_STILL_DRAWING; }, [] { return true; })
+            == DXGI_ERROR_WAS_STILL_DRAWING && calls == 3,
+            "Persistent Present backpressure was not handed back to the fallback path");
+    require(retryPresent([] { return DXGI_ERROR_WAS_STILL_DRAWING; }, [] { return false; })
+            == DXGI_STATUS_OCCLUDED, "A stopping presenter did not leave its retry wait");
+    require(retryPresent([] { return DXGI_ERROR_DEVICE_REMOVED; }, [] { return false; })
+            == DXGI_ERROR_DEVICE_REMOVED, "Device removal was masked as a transient condition");
     require(ColorDecoder::compile(false) && ColorDecoder::compile(true), "Input shaders did not compile");
     require(ColorTileBytes == 3072, "RGB24 tile layout changed");
-    std::puts("PASS: admission hysteresis and D3D12 input shaders");
+    std::puts("PASS: queue ordering, multiplier selection, bounded Present retry and D3D12 input shaders");
 }
 
 int main(int argc, char** argv) {
@@ -791,8 +767,18 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    const bool requireDisplay = argc == 2 && std::string_view(argv[1]) == "--display";
-    const bool verifySdk = requireDisplay || (argc == 2 && std::string_view(argv[1]) == "--sdk");
+    const std::string_view mode = argc > 1 ? argv[1] : "";
+    const bool requireDisplay = mode == "--display";
+    const bool verifySdk = requireDisplay || mode == "--sdk";
+    UINT multiplier = 2;
+    if (verifySdk && argc == 3) {
+        const std::string_view selection = argv[2];
+        if (selection != "2" && selection != "3" && selection != "4") {
+            std::fputs("Expected a XeSS-FG multiplier of 2, 3, or 4\n", stderr);
+            return 1;
+        }
+        multiplier = static_cast<UINT>(selection.front() - '0');
+    }
     std::puts("Creating the probe host window");
     HWND window = CreateWindowExW(0, L"STATIC", L"XeSS-FG pipeline probe", WS_OVERLAPPEDWINDOW,
                                  0, 0, 1400, 800, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
@@ -805,7 +791,7 @@ int main(int argc, char** argv) {
         std::printf("Dual-adapter probe: render LUID %llx, Arc LUID %llx\n", render, arc);
         if (verifySdk) {
             std::puts("Checking XeSS-FG proxy and presentation surface");
-            verifyPopup(render, arc, requireDisplay);
+            verifyPopup(render, arc, requireDisplay, multiplier);
             DestroyWindow(window);
             return 0;
         }
@@ -864,7 +850,7 @@ int main(int argc, char** argv) {
             Session shared;
             shared.start(window, render, arc, 1921, 161, Rgb24, false, true, true, 0, 0, false);
             require(shared.sharedInputs && !shared.uploadQueue, "Arc shared-input path was not active");
-            verifyPresentAdmission(shared.generationGpu.Get());
+            verifyRetirementProgress(shared.generationGpu.Get());
             verifySharedGeometry(shared, true, HudCoverage::Dense);
             verifySharedGeometry(shared, false, HudCoverage::OneTile, false, ProbePresent::Discard, true);
             verifySharedGeometry(shared, true, HudCoverage::Empty);

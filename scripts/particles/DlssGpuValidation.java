@@ -32,6 +32,7 @@ public final class DlssGpuValidation {
             glfwMakeContextCurrent(window);
             GL.createCapabilities();
             System.out.println(glGetString(GL_RENDERER));
+            XessFgDlssValidation.verifyMotionTargets();
             require(DlssInterop.supported(), "GL shared textures or fences unavailable");
             var adapter = StormGpuDevices.renderAdapter();
             require(adapter.luid() != 0 && adapter.nodes() == 1, "Invalid OpenGL adapter LUID");
@@ -89,6 +90,7 @@ public final class DlssGpuValidation {
             for (int i = 0; i < imports.length; ++i)
                 imports[i] = new DlssInterop(session, i, width, height, outputWidth, outputHeight);
             verifyWarp(pass, imports[0], width, height, depth);
+            if (width == 642) verifyFusedInputs(pass, imports[0], width, height, depth);
             var shifted = new Matrix4f().translation(4f / width, 2f / height, 0);
             var stationary = new Matrix4f();
             double totalGpuMs = 0;
@@ -159,6 +161,66 @@ public final class DlssGpuValidation {
             glDeleteTextures(color);
             glDeleteTextures(depth);
             glDeleteTextures(handDepth);
+        }
+    }
+
+    private static void verifyFusedInputs(DlssPass pass, DlssInterop slot, int width, int height, int depth) {
+        int opaque = glCreateTextures(GL_TEXTURE_2D);
+        int translucent = glCreateTextures(GL_TEXTURE_2D);
+        int winners = glCreateBuffers();
+        try {
+            for (int texture : new int[]{opaque, translucent}) {
+                glTextureStorage2D(texture, 1, GL_RGBA32F, width, height);
+                glClearTexImage(texture, 0, GL_RGBA, GL_FLOAT, new float[4]);
+            }
+            glClearTexSubImage(opaque, 0, 0, 0, 0, width * 2 / 3, height, 1, GL_RGBA, GL_FLOAT,
+                    new float[]{1.25f, -0.5f, 0.4f, 1});
+            glClearTexSubImage(translucent, 0, 0, 0, 0, width / 4, height / 2, 1, GL_RGBA, GL_FLOAT,
+                    new float[]{-0.25f, 1.75f, 0.3f, 0.75f});
+            int[] marks = new int[width * height * 4];
+            int rankedDepth = ((0xffffff - Math.round(0xffffff * 0.5f)) << 8) | 1;
+            int motion = Short.toUnsignedInt(Float.floatToFloat16(-2f))
+                    | Short.toUnsignedInt(Float.floatToFloat16(4f)) << 16;
+            for (int y = 0; y < height; y++) {
+                for (int x = width / 5; x < width / 2; x++) {
+                    int index = 2 * (y * width + x);
+                    marks[index] = motion;
+                    marks[index + 1] = rankedDepth;
+                }
+                for (int x = width / 6; x < width / 3; x++) {
+                    int index = 2 * ((height + y) * width + x);
+                    marks[index] = motion >>> 16 | motion << 16;
+                    marks[index + 1] = rankedDepth;
+                }
+            }
+            glNamedBufferData(winners, marks, GL_STATIC_DRAW);
+            var shift = new Matrix4f().translation(4f / width, 2f / height, 0);
+            var now = new XessFgCoordinates(1, 1, .31f, -.2f, XessFgCoordinates.Warp.BSL_WATER, 3, .0005f);
+            var prior = new XessFgCoordinates(1, 1, -.15f, .12f, XessFgCoordinates.Warp.BSL_WATER, 4, .0005f);
+            int[] inputs = {depth, opaque, depth, translucent};
+            int[] modes = {1, 2, 3, 2};
+            for (int i = 0; i < inputs.length; i++) {
+                pass.dispatch(slot, width, height, inputs[i], modes[i], i == 2 ? winners : 0,
+                        now.jitterX(), now.jitterY(), i == 0 ? shift : null, i == 0 ? shift : null,
+                        DlssPack.Encoding.SDR, now, prior);
+            }
+            float[] expectedDepth = new float[width * height];
+            float[] expectedMotion = new float[2 * width * height];
+            glGetTextureImage(slot.textures[DlssInterop.DEPTH], 0, GL_RED, GL_FLOAT, expectedDepth);
+            glGetTextureImage(slot.textures[DlssInterop.MOTION], 0, GL_RG, GL_FLOAT, expectedMotion);
+            pass.world(slot, width, height, depth, now.jitterX(), now.jitterY(), shift, shift, now, prior,
+                    opaque, winners, translucent);
+            float[] actualDepth = new float[expectedDepth.length];
+            float[] actualMotion = new float[expectedMotion.length];
+            glGetTextureImage(slot.textures[DlssInterop.DEPTH], 0, GL_RED, GL_FLOAT, actualDepth);
+            glGetTextureImage(slot.textures[DlssInterop.MOTION], 0, GL_RG, GL_FLOAT, actualMotion);
+            require(java.util.Arrays.equals(expectedDepth, actualDepth), "Fused DLSS inputs changed depth");
+            require(java.util.Arrays.equals(expectedMotion, actualMotion), "Fused DLSS inputs changed motion or layer order");
+            System.out.println("PASS fused DLSS depth and motion match separate passes");
+        } finally {
+            glDeleteBuffers(winners);
+            glDeleteTextures(opaque);
+            glDeleteTextures(translucent);
         }
     }
 

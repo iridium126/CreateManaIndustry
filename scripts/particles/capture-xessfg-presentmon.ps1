@@ -7,6 +7,7 @@ param(
     [string]$FrameCapture = '',
     [string]$PresentMonCsv = '',
     [ValidateRange(1, 10000)][double]$RefreshHz,
+    [ValidateRange(2, 4)][int]$Multiplier,
     [switch]$TracePresent,
     [string]$WprExe = '',
     [ValidatePattern('^\d{8}-\d{6}-\d{3}-[1-9]\d*$')][string[]]$RecoverTrace
@@ -23,6 +24,7 @@ $pacingArgs = @()
 if ($RefreshHz) {
     $pacingArgs = @('--refresh-hz', $RefreshHz.ToString([Globalization.CultureInfo]::InvariantCulture))
 }
+if ($Multiplier) { $pacingArgs += @('--multiplier', $Multiplier) }
 
 if ($FrameCapture -or $PresentMonCsv) {
     if (!$FrameCapture -or !$PresentMonCsv) { throw 'Pass both -FrameCapture (JSON) and -PresentMonCsv to merge existing captures.' }

@@ -51,8 +51,13 @@ abstract class XessFgWorldMixin {
         var minecraft = Minecraft.getInstance();
         var target = minecraft.getMainRenderTarget();
         boolean firstPersonHand = renderHand && minecraft.options.getCameraType().isFirstPerson();
-        DlssRuntime.worldDepth(target, firstPersonHand);
-        XessFgRuntime.vanillaDepth(target, firstPersonHand);
+        XessFgRuntime.beginSharedMotionDepth();
+        try {
+            DlssRuntime.worldDepth(target, firstPersonHand);
+            XessFgRuntime.vanillaDepth(target, firstPersonHand);
+        } finally {
+            XessFgRuntime.endSharedMotionDepth();
+        }
     }
 
     @Inject(method = "render", at = @At(value = "INVOKE",

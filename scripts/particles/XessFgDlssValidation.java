@@ -25,6 +25,32 @@ public final class XessFgDlssValidation implements AutoCloseable {
     private static final int REAL_ONLY_FRAME = 4;
     private int submitted, retired, generated, generatedAfterReset, sparse;
 
+    public static void verifyMotionTargets() {
+        try (var targets = new XessFgMotion.RasterTargets()) {
+            var layer = XessFgMotion.Layer.WORLD;
+            var dlss = targets.forSize(17, 11);
+            var xess = targets.forSize(13, 9);
+            var a = dlss.layer(layer);
+            var b = xess.layer(layer);
+            dlss.attach(a);
+            xess.attach(b);
+            int dlssTexture = a.texture, xessTexture = b.texture;
+            for (int frame = 0; frame < 4; ++frame) {
+                require(targets.forSize(17, 11) == dlss && targets.forSize(13, 9) == xess,
+                        "Alternating input grids evicted a motion target");
+                dlss.attach(a);
+                xess.attach(b);
+            }
+            require(dlssTexture != xessTexture && a.texture == dlssTexture && b.texture == xessTexture
+                            && glIsTexture(dlssTexture) && glIsTexture(xessTexture),
+                    "Motion textures were recreated while alternating grids");
+            var third = targets.forSize(19, 15);
+            require((!glIsTexture(dlssTexture) || third.depthTexture == dlssTexture) && glIsTexture(xessTexture),
+                    "A third grid did not evict only the least recently used target");
+        }
+        System.out.println("PASS XeSS-FG and DLSS motion grids retain independent textures");
+    }
+
     public XessFgDlssValidation(long window, long render, int width, int height) throws Exception {
         this.width = width;
         this.height = height;
@@ -33,7 +59,7 @@ public final class XessFgDlssValidation implements AutoCloseable {
             long arc = XessFgAdapters.discover(root).stream().filter(XessFgAdapters.Adapter::arcA750)
                     .findFirst().orElseThrow(() -> new IllegalStateException("Arc A750 is unavailable")).luid();
             session = XessFgNative.create(GLFWNativeWin32.glfwGetWin32Window(window), render, arc, width, height, 1,
-                    true, (width + 1) / 2, (height + 1) / 2);
+                    true, (width + 1) / 2, (height + 1) / 2, 2);
             for (int i = 0; i < slots.length; i++) slots[i] = new XessFgTransport(session, i);
             require(slots[0].color.sharedInputs, "Arc shared RGB24 transport is unavailable");
             capture = new XessFgCapture(Files.readString(Path.of(

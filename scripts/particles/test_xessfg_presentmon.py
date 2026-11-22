@@ -62,6 +62,21 @@ class ProxyTimingTest(unittest.TestCase):
         self.assertEqual(summary["generation_coverage"], 1/3)
         self.assertEqual(summary["hud_copy_routes"], {"sparse": 1, "deadline": 1})
 
+    def test_generated_presents_can_precede_the_proxy_call(self):
+        app, rows = [], []
+        for index in range(3):
+            stamp = 100 + index * 100
+            app.append({"session_id": "1", "present_id": str(index + 10),
+                        "present_enter_qpc": str(stamp), "present_exit_qpc": str(stamp + 40),
+                        "proxy_swap_chain_address": "42"})
+            rows.append({"type": "Application", "qpc": stamp + 20, "address": 42, "app_id": 10 + index})
+        rows.append({"type": "Intel XeSS-FG", "qpc": 250, "address": 42, "app_id": 12})
+        rows.append({"type": "Intel XeSS-FG", "qpc": 255, "address": 42, "app_id": 12})
+        matches, verified = merge.associate(app, rows)
+        self.assertEqual(verified, {"1": 42})
+        self.assertEqual(matches[3], (2, "verified_app_frame_id"))
+        self.assertEqual(matches[4], (2, "verified_app_frame_id"))
+
     def test_reused_present_id_and_swap_chain_do_not_merge_sessions(self):
         app = []
         rows = []
@@ -94,6 +109,21 @@ class ProxyTimingTest(unittest.TestCase):
         self.assertEqual(fields[1]["arc_inputs_to_generated_ms"], 13)
         self.assertNotIn("refresh_split", fields[5])
 
+    def test_multiple_generated_frames_report_closest_to_midpoint(self):
+        app = [{"session_id": "a", "fg_gameplay_eligible": "true"} for _ in range(2)]
+        rows = [dict(type=kind, display=display, address=42) for kind, display in [
+            ("Application", 0), ("Intel XeSS-FG", 20), ("Intel XeSS-FG", 30),
+            ("Intel XeSS-FG", 40), ("Application", 60),
+        ]]
+        matches = {index: (frame, "verified") for index, frame in enumerate((0, 1, 1, 1, 1))}
+        fields, summary = merge.display_pacing(app, rows, matches, 1000, 100)
+        self.assertEqual(summary["midpoint_error_ms"]["samples"], 0)
+        self.assertEqual(summary["interval_generated_frames"], {"3": 1})
+        self.assertEqual(summary["interval_midpoint_error_ms"], {"samples": 1, "p50": 0, "p95": 0, "p99": 0})
+        self.assertEqual(summary["interval_generation_coverage"], 1)
+        self.assertEqual(summary["fixed_refresh"]["interval_splits"], {"3:3": 1})
+        self.assertEqual(fields[2]["midpoint_error_ms"], 0)
+
     def test_four_refresh_midpoint_fraction_counts_intervals_without_generation(self):
         app = [{"session_id": "a"} for _ in range(3)]
         rows = [dict(type=kind, display=display, address=42) for kind, display in [
@@ -103,6 +133,27 @@ class ProxyTimingTest(unittest.TestCase):
         _, summary = merge.display_pacing(app, rows, matches, 1000, 100)
         self.assertEqual(summary["fixed_refresh"]["four_refresh_intervals"], 2)
         self.assertEqual(summary["fixed_refresh"]["four_refresh_midpoint_fraction"], 0.5)
+
+    def test_full_group_sequences_and_phase_distinguish_midpoint_from_uniformity(self):
+        app = [{"session_id": "a", "fg_gameplay_eligible": "true"} for _ in range(4)]
+        generated = "Intel XeSS-FG"
+        rows = [dict(type=kind, display=display, address=42) for kind, display in [
+            ("Application", 0), (generated, 30), (generated, 40), (generated, 50), ("Application", 60),
+            (generated, 70), (generated, 80), (generated, 90), ("Application", 100),
+            (generated, 120), ("Application", 140),
+        ]]
+        rows[-1]["input_latency_ms"] = 9
+        matches = {index: (frame, "verified") for index, frame in enumerate((0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3))}
+        fields, summary = merge.display_pacing(app, rows, matches, 1000, 100, expected_generated=3)
+        self.assertEqual(summary["fixed_refresh"]["interval_sequences"], {"3:1:1:1": 1, "1:1:1:1": 1, "2:2": 1})
+        self.assertEqual(summary["fixed_refresh"]["single_refresh_per_frame_fraction"], 0.5)
+        self.assertEqual(summary["full_generation_coverage"], 2/3)
+        self.assertEqual(summary["display_fps"], 1000 * 10 / 140)
+        self.assertEqual(fields[1]["midpoint_error_ms"], 0)
+        self.assertEqual(fields[1]["generated_phase_error_ms"], 15)
+        self.assertEqual(fields[3]["generated_ordinal"], 3)
+        self.assertNotIn("generated_ordinal", fields[9])
+        self.assertEqual(fields[10]["real_input_to_display_ms"], 9)
 
 
 if __name__ == "__main__":

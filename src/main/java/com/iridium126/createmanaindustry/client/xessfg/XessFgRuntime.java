@@ -39,13 +39,14 @@ public final class XessFgRuntime {
     private static final float MAX_CONTIGUOUS_FRAME_MS = 120;
     private enum WaitFor { TRANSFER_SLOT, OPENGL_PRODUCER, PRESENT_QUEUE }
     private final XessFgTransport[] slots = new XessFgTransport[XessFgNative.SLOT_COUNT];
+    private final XessFgAdmission admission = new XessFgAdmission();
     private ByteBuffer constants, reprojectionConstants;
     private long session, sessionId, window, sequence, frameStart, previousFrameStart;
+    private int skipReason;
     private int frame, width, height, slot = -1, cameraMode, previousCameraMode;
     private long irisGeneration, previousIrisGeneration;
     private boolean failed, eligible, slotDeferred, depthReady, hudReady, reset, iris, fullInputs;
     private boolean reportedSleepRejection;
-    private int skipReason;
     private boolean servicingWindow, windowInterrupted;
     private boolean topLevel;
     private XessFgCapture capture;
@@ -121,6 +122,9 @@ public final class XessFgRuntime {
                 if (!open(minecraft, handle, w, h, usePopup(target), geometry)) return;
                 if (profile != null) profile.complete(SESSION_OPEN, start);
             }
+            long state = XessFgNative.admissionState(session, eligible, admission.pending());
+            skipReason = eligible ? admission.update(state) : admission.reset();
+            if (profile != null) profile.skipReason = skipReason;
             if (slot >= 0) {
                 while (!XessFgNative.discard(session, slot, sequence)) {
                     if (!waitForWindow(minecraft, WaitFor.PRESENT_QUEUE)) {
@@ -131,8 +135,6 @@ public final class XessFgRuntime {
                 slot = -1;
                 previous = null;
             }
-            // Queue independent world rendering before waiting for the previous OpenGL color.
-            skipReason = XessFgNative.admission(session, eligible);
             motion.begin();
             slotDeferred = eligible && slots[0].geometry.sharedInputs;
             if (!slotDeferred && !acquireSlot(minecraft, profile)) {
@@ -149,7 +151,6 @@ public final class XessFgRuntime {
                 profile.renderLuid = renderLuid;
                 profile.generationLuid = generationLuid;
                 profile.gameplayEligible = eligible;
-                profile.skipReason = skipReason;
                 profile.geometryWidth = (int) (geometrySize >>> 32);
                 profile.geometryHeight = (int) geometrySize;
                 if (!eligible) profile.disabledChecks |= 1;
@@ -241,12 +242,13 @@ public final class XessFgRuntime {
         generationLuid = adapter.luid();
         boolean crossAdapter = renderLuid != generationLuid;
         var transport = crossAdapter ? ClientConfig.xessFg().transport() : XessFgTransportMode.RGBA8;
+        int multiplier = ClientConfig.xessFg().multiplier();
         capture = new XessFgCapture();
         windowInterrupted = false;
         servicingWindow = true;
         try {
             session = XessFgNative.create(GLFWNativeWin32.glfwGetWin32Window(handle), renderAdapter.luid(), adapter.luid(), w, h,
-                    transport.nativeId(), popup, (int) (geometry >>> 32), (int) geometry);
+                    transport.nativeId(), popup, (int) (geometry >>> 32), (int) geometry, multiplier);
         } finally {
             servicingWindow = false;
         }
@@ -269,11 +271,12 @@ public final class XessFgRuntime {
             reprojectionConstants = ByteBuffer.allocateDirect(XessFgNative.REPROJECTION_BYTES).order(ByteOrder.nativeOrder());
         }
         reportedSleepRejection = false;
-        CreateManaIndustry.LOGGER.info("[CMI/XeSS-FG] render={} (LUID {}), generation={} (PCI {}, LUID {}), transport={} ({}), surface={}, Arc shared inputs={}, XMX-capable Arc={}",
+        CreateManaIndustry.LOGGER.info("[CMI/XeSS-FG] render={} (LUID {}), generation={} (PCI {}, LUID {}), transport={} ({}), surface={}, Arc shared inputs={}, XMX-capable Arc={}, requested multiplier={}x, interpolated frames={}",
                 StormGpuDevices.renderer(), Long.toUnsignedString(renderAdapter.luid(), 16), adapter.selection().label(),
                 String.format(Locale.ROOT, "%04x:%04x", adapter.vendor(), adapter.device()),
                 Long.toUnsignedString(adapter.luid(), 16), transport.value(), crossAdapter ? "cross-adapter" : "same-adapter",
-                popup ? "borderless_popup" : "child", slots[0].geometry.sharedInputs, adapter.xmxArc());
+                popup ? "borderless_popup" : "child", slots[0].geometry.sharedInputs, adapter.xmxArc(),
+                multiplier, XessFgNative.interpolatedFrames(session));
         return true;
     }
 
@@ -326,12 +329,28 @@ public final class XessFgRuntime {
         if (gpuMotion == null && XessFgGpuMotion.shaderSupport()) gpuMotion = new XessFgGpuMotion(width, height);
     }
 
+    public static void beginSharedMotionDepth() {
+        if (INSTANCE.motion != null) INSTANCE.motion.beginSharedDepth();
+    }
+
+    public static void endSharedMotionDepth() {
+        if (INSTANCE.motion != null) INSTANCE.motion.endSharedDepth();
+    }
+
+    @FunctionalInterface
+    public interface WorldMotionLayers {
+        void apply(int opaque, int gpuWinners, int translucent);
+    }
+
     public static void dlssWorldMotion(boolean reset, int depth, int width, int height, XessFgCoordinates coords,
-                                       IntConsumer object, IntConsumer gpu) {
+                                       WorldMotionLayers layers) {
         var owner = INSTANCE;
-        owner.emitDlssMotion(XessFgMotion.Layer.WORLD, reset, depth, width, height, coords, object);
-        if (owner.gpuMotion != null && owner.gpuMotion.hasWinners(reset)) gpu.accept(owner.gpuMotion.winners());
-        owner.emitDlssMotion(XessFgMotion.Layer.TRANSLUCENT, reset, depth, width, height, coords, object);
+        var motion = owner.motion;
+        var gpu = owner.gpuMotion;
+        int opaque = motion == null ? 0 : motion.draw(XessFgMotion.Layer.WORLD, reset, depth, width, height, coords);
+        int winners = gpu != null && gpu.width() == width && gpu.height() == height && gpu.hasWinners(reset) ? gpu.winners() : 0;
+        int translucent = motion == null ? 0 : motion.draw(XessFgMotion.Layer.TRANSLUCENT, reset, depth, width, height, coords);
+        layers.apply(opaque, winners, translucent);
     }
 
     public static void dlssHandMotion(boolean reset, int depth, int width, int height, XessFgCoordinates coords,
@@ -785,5 +804,7 @@ public final class XessFgRuntime {
         window = sequence = 0;
         topLevel = slotDeferred = false;
         slot = -1;
+        skipReason = admission.reset();
+        frameStart = previousFrameStart = 0;
     }
 }

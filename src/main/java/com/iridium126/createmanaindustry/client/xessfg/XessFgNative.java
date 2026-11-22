@@ -69,12 +69,17 @@ final class XessFgNative {
 
     static native int adapter(long luid);
     static native long create(long hwnd, long renderLuid, long generationLuid, int width, int height, int transport,
-                              boolean topLevel, int geometryWidth, int geometryHeight);
+                              boolean topLevel, int geometryWidth, int geometryHeight, int multiplier);
     static native long[] exportGroup(long session, int slot, int group);
     static native void closeHandle(long handle);
-    static native int admission(long session, boolean gameplay);
     static native int acquire(long session, long sequence, long captureFrame, boolean colorOnly);
     static native int slotsInUse(long session);
+    static native long admissionState(long session, boolean eligible, boolean recovering);
+    static native int interpolatedFrames(long session);
+
+    static final class Unavailable extends IllegalStateException {
+        Unavailable(String message) { super(message); }
+    }
     static native void waitForSlot(long session, boolean colorOnly);
     static native void waitForProducer(long session, boolean colorOnly);
     static native void submitGeometry(long session, int slot, long sequence, ByteBuffer reprojection, boolean overrides);

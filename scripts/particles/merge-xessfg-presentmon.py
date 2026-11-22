@@ -47,16 +47,26 @@ def associate(app, presents):
 
     candidates = defaultdict(list)
     for row_index, row in enumerate(presents):
-        if row["type"] in typed:
-            frames = [frame for frame in by_id[row["app_id"]] if starts[frame] <= row["qpc"]
-                      and verified.get(app[frame]["session_id"]) == row["address"]]
-            if frames:
-                candidates[frames[-1], row["type"]].append(row_index)
+        if row["type"] not in typed:
+            continue
+        frames = [frame for frame in by_id[row["app_id"]]
+                  if verified.get(app[frame]["session_id"]) == row["address"]]
+        if row["type"] == "Application":
+            frames = [frame for frame in frames if starts[frame] <= row["qpc"]]
+        elif len(frames) > 1:
+            # A reused present ID across sessions keeps the proxy-call window.
+            frames = [frame for frame in frames if starts[frame] <= row["qpc"] <= ends[frame]]
+        if frames:
+            candidates[frames[-1], row["type"]].append(row_index)
 
     matches = {}
-    for (frame, _), rows in candidates.items():
-        if len(rows) == 1:
-            matches[rows[0]] = (frame, "verified_app_frame_id")
+    for (frame, kind), rows in candidates.items():
+        # Several generated presents share one present ID when the proxy generates
+        # more than one interpolated frame; the SDK can submit them before the proxy
+        # call that owns the ID.
+        if kind == "Intel XeSS-FG" or len(rows) == 1:
+            for row_index in rows:
+                matches[row_index] = (frame, "verified_app_frame_id")
 
     direct = defaultdict(list)
     occupied = {frame for frame, _ in matches.values()}
@@ -86,7 +96,7 @@ def refresh_steps(ticks, period):
     return steps if steps > 0 and abs(ticks - steps * period) <= 0.1 * period else None
 
 
-def display_pacing(app, presents, matches, frequency, refresh_hz=None):
+def display_pacing(app, presents, matches, frequency, refresh_hz=None, expected_generated=None):
     """Measure display intervals and attribute each generated frame to its following real frame."""
     timelines = defaultdict(list)
     known = set()
@@ -108,6 +118,16 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
     period = frequency / refresh_hz if refresh_hz is not None else None
     refresh_splits = Counter()
     four_refresh_intervals = 0
+    # Multiple generated frames can occupy one interval when the proxy is initialized
+    # with more than one interpolated frame. Keep the single-frame fields above for
+    # compatibility and summarize every interval here.
+    interval_counts = Counter()
+    interval_errors = []
+    interval_eligible = interval_covered = 0
+    all_splits = Counter()
+    interval_sequences = Counter()
+    full_eligible = full_covered = quantified = uniform = 0
+    generated_phase = defaultdict(list)
     for events in timelines.values():
         events.sort()
         display_intervals.extend(milliseconds(b[0] - a[0], frequency) for a, b in zip(events, events[1:])
@@ -122,19 +142,80 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
             latency = presents[index].get("input_latency_ms")
             if latency is not None:
                 input_latencies.append(latency)
+                annotations.setdefault(index, {})["real_input_to_display_ms"] = latency
             if preceding is not None:
                 last_time, last_frame, _, _ = preceding
                 gap = milliseconds(time - last_time, frequency)
                 intervals.append(gap)
                 if period is not None and refresh_steps(time - last_time, period) == 4:
                     four_refresh_intervals += 1
-                annotations[index] = {"real_display_interval_ms": gap}
+                real_annotation = annotations.setdefault(index, {})
+                real_annotation["real_display_interval_ms"] = gap
                 # Count every gameplay-eligible interval, including intentional overload skips.
                 current = app[frame]
                 eligible = current.get("fg_gameplay_eligible", current.get("interpolate")) == "true"
                 reset = current.get("reset_history") == "true"
                 if eligible and (not reset or current.get("fg_skip_reason") not in {None, "", "0"}):
                     counts["eligible_intervals"] += 1
+                if frame == last_frame + 1:
+                    ordered = [(gen_time, gen_frame, gen_index) for gen_time, gen_frame, _, gen_index in generated
+                               if last_time < gen_time < time]
+                    steps = None
+                    if period is not None:
+                        timestamps = [last_time, *(gen_time for gen_time, _, _ in ordered), time]
+                        candidate = [refresh_steps(b - a, period) for a, b in zip(timestamps, timestamps[1:])]
+                        if all(step is not None for step in candidate):
+                            steps = candidate
+                            split = ":".join(map(str, steps))
+                            real_annotation["interval_refresh_sequence"] = split
+                            interval_sequences[split] += 1
+
+                    # A missing or mismatched generated frame makes the remaining ordinals ambiguous.
+                    expected = expected_generated
+                    if expected is None:
+                        queued = optional_int(current.get("queued"))
+                        expected = queued - 1 if queued is not None and queued > 1 else None
+                    complete = bool(expected and len(ordered) == expected
+                                    and all(gen_frame == frame for _, gen_frame, _ in ordered))
+                    if eligible and not reset and expected_generated is not None:
+                        full_eligible += 1
+                        if complete:
+                            full_covered += 1
+                            if steps:
+                                quantified += 1
+                                uniform += all(step == 1 for step in steps)
+                    if complete:
+                        for ordinal, (gen_time, _, gen_index) in enumerate(ordered, 1):
+                            error = milliseconds((expected + 1) * (gen_time - last_time)
+                                                 - ordinal * (time - last_time), (expected + 1) * frequency)
+                            annotations.setdefault(gen_index, {}).update(generated_ordinal=ordinal,
+                                                                        generated_phase_error_ms=error)
+                            generated_phase[ordinal].append(error)
+                    interval_counts[str(len(generated))] += 1
+                    if eligible and (not reset or current.get("fg_skip_reason") not in {None, "", "0"}):
+                        interval_eligible += 1
+                    displayed = [(gen_time, gen_index) for gen_time, _, _, gen_index in generated
+                                 if last_time < gen_time < time]
+                    if displayed:
+                        gen_time, gen_index = min(displayed, key=lambda gen: abs(2 * gen[0] - last_time - time))
+                        error = milliseconds(2 * gen_time - last_time - time, 2 * frequency)
+                        interval_errors.append(error)
+                        annotations.setdefault(gen_index, {})["midpoint_error_ms"] = error
+                        ready = optional_int(current.get("arc_inputs_ready_qpc"))
+                        if ready is not None:
+                            annotations[gen_index]["arc_inputs_to_generated_ms"] = milliseconds(
+                                gen_time - ready, frequency)
+                            annotations[gen_index]["arc_inputs_to_midpoint_ms"] = milliseconds(
+                                last_time + time - 2 * ready, 2 * frequency)
+                        if period is not None:
+                            before = refresh_steps(gen_time - last_time, period)
+                            after = refresh_steps(time - gen_time, period)
+                            if before is not None and after is not None:
+                                split = f"{before}:{after}"
+                                annotations[gen_index]["refresh_split"] = split
+                                all_splits[split] += 1
+                        if eligible and not reset:
+                            interval_covered += 1
                 if len(generated) == 1 and generated[0][1] == frame and frame == last_frame + 1:
                     gen_time, _, _, gen_index = generated[0]
                     if last_time < gen_time < time:
@@ -153,7 +234,7 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
                                 split = f"{before}:{after}"
                                 phase["refresh_split"] = split
                                 refresh_splits[split] += 1
-                        annotations[gen_index] = phase
+                        annotations.setdefault(gen_index, {}).update(phase)
                         if eligible and not reset:
                             counts["covered_intervals"] += 1
                     else:
@@ -174,10 +255,22 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
     summary = {
         "display_interval_ms": {"samples": len(display_intervals), **percentiles(display_intervals)},
         "real_display_interval_ms": {"samples": len(intervals), **percentiles(intervals)},
+        "display_fps": 1000 * len(display_intervals) / sum(display_intervals) if display_intervals else None,
+        "real_display_fps": 1000 * len(intervals) / sum(intervals) if intervals and sum(intervals) else None,
+        "expected_generated_frames": expected_generated,
+        "full_generation_coverage": full_covered / full_eligible if full_eligible else None,
+        "generated_phase_error_ms": {str(k): {"samples": len(v), **percentiles(v)}
+                                     for k, v in sorted(generated_phase.items())},
+        "absolute_generated_phase_error_ms": {str(k): {"samples": len(v), **percentiles([abs(error) for error in v])}
+                                              for k, v in sorted(generated_phase.items())},
         "real_input_to_display_ms": {"samples": len(input_latencies), **percentiles(input_latencies)},
         "midpoint_error_ms": {"samples": len(midpoint), **percentiles(midpoint)},
         "absolute_midpoint_error_ms": percentiles([abs(value) for value in midpoint]),
         "generation_coverage": counts["covered_intervals"] / eligible if eligible else None,
+        "interval_generated_frames": dict(interval_counts),
+        "interval_midpoint_error_ms": {"samples": len(interval_errors), **percentiles(interval_errors)},
+        "absolute_interval_midpoint_error_ms": percentiles([abs(value) for value in interval_errors]),
+        "interval_generation_coverage": interval_covered / interval_eligible if interval_eligible else None,
         "cross_bytes_per_frame": {"samples": len(bytes_written), **percentiles(bytes_written)},
         "hud_copy_routes": dict(Counter(frame["hud_copy_route"] for frame in app if frame.get("hud_copy_route"))),
         "gpu_stages": gpu,
@@ -187,6 +280,11 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None):
         summary["fixed_refresh"] = {
             "refresh_hz": refresh_hz,
             "splits": dict(refresh_splits),
+            "interval_splits": dict(all_splits),
+            "interval_sequences": dict(interval_sequences),
+            "complete_quantized_intervals": quantified,
+            "single_refresh_per_frame_intervals": uniform,
+            "single_refresh_per_frame_fraction": uniform / quantified if quantified else None,
             "unquantized_intervals": len(midpoint) - sum(refresh_splits.values()),
             "four_refresh_intervals": four_refresh_intervals,
             "four_refresh_midpoint_fraction": refresh_splits["2:2"] / four_refresh_intervals
@@ -263,7 +361,7 @@ def geometry_wait(frame, rtx_end, arc_start, frequency):
                 arc_wait_after_observed_fence_ms=milliseconds(after_fence, frequency))
 
 
-def merge(metadata_path, presentmon_path, refresh_hz=None):
+def merge(metadata_path, presentmon_path, refresh_hz=None, multiplier=None):
     metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig"))
     native_path = metadata_path.with_name(metadata_path.stem + "-xessfg.csv")
     app = sorted((row for row in read_rows(native_path) if row.get("present_enter_qpc")
@@ -308,7 +406,12 @@ def merge(metadata_path, presentmon_path, refresh_hz=None):
                              input_latency_ms=input_latency if input_latency is not None and input_latency > 0 else None))
 
     matched, verified = associate(app, presents)
-    pacing_fields, pacing = display_pacing(app, presents, matched, frequency, refresh_hz)
+    recorded_multiplier = metadata.get("xessfg_config", {}).get("multiplier")
+    if multiplier is not None and recorded_multiplier is not None and recorded_multiplier != multiplier:
+        raise ValueError(f"Requested {multiplier}x does not match the recorded {recorded_multiplier}x")
+    effective_multiplier = recorded_multiplier if recorded_multiplier is not None else multiplier
+    expected = effective_multiplier - 1 if effective_multiplier in (2, 3, 4) else None
+    pacing_fields, pacing = display_pacing(app, presents, matched, frequency, refresh_hz, expected)
     per_frame = defaultdict(list)
     for row, (frame, method) in matched.items():
         per_frame[frame].append((row, method))
@@ -331,7 +434,8 @@ def merge(metadata_path, presentmon_path, refresh_hz=None):
               "proxy_dxgi_overlap_ms", "proxy_outside_dxgi_ms",
               "pm_frame_type", "pm_swap_chain", "pm_frame_id", "pm_app_frame_id", "pm_present_mode",
               "pm_present_qpc", "pm_present_api_ms", "display_qpc", "pm_dropped",
-              "present_exit_to_display_ms", "real_display_interval_ms", "midpoint_error_ms",
+              "present_exit_to_display_ms", "real_display_interval_ms", "real_input_to_display_ms", "midpoint_error_ms",
+              "interval_refresh_sequence", "generated_ordinal", "generated_phase_error_ms",
               "refresh_split", "arc_inputs_to_generated_ms", "arc_inputs_to_midpoint_ms",
               "fg_gameplay_eligible", "fg_skip_reason", "fg_geometry_width", "fg_geometry_height",
               "producer_hudless_gpu_ns", "hud_copy_route", "arc_hud_base_unpack_gpu_ns", "arc_hud_base_ready_qpc")
@@ -400,7 +504,8 @@ if __name__ == "__main__":
     parser.add_argument("frame_capture", type=Path)
     parser.add_argument("presentmon_csv", type=Path)
     parser.add_argument("--refresh-hz", type=float, help="Fixed display refresh rate for the phase histogram")
+    parser.add_argument("--multiplier", type=int, choices=(2, 3, 4), help="Known multiplier of a legacy capture")
     args = parser.parse_args()
     if args.refresh_hz is not None and (not isfinite(args.refresh_hz) or args.refresh_hz <= 0):
         parser.error("--refresh-hz must be a finite positive number")
-    merge(args.frame_capture, args.presentmon_csv, args.refresh_hz)
+    merge(args.frame_capture, args.presentmon_csv, args.refresh_hz, args.multiplier)

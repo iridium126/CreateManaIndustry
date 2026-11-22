@@ -24,6 +24,7 @@ import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen.ConfigurationSectionScreen;
+import net.neoforged.neoforge.common.ModConfigSpec;
 
 public final class StormGpuConfigurationScreen {
     private static final String GPU = "simulationGpu";
@@ -108,6 +109,21 @@ public final class StormGpuConfigurationScreen {
                             v -> { target.accept(v); onChanged(key); }, source.get()));
             return new Element(Component.translatable(TRANSLATION),
                     Component.translatable(TRANSLATION + ".tooltip"), option);
+        }
+
+        @Override
+        protected Element createIntegerValue(String key, ModConfigSpec.ValueSpec spec, Supplier<Integer> source,
+                                             Consumer<Integer> target) {
+            if (!key.equals("multiplier")) return super.createIntegerValue(key, spec, source, target);
+            String translation = "createmanaindustry.configuration.xessFg.multiplier";
+            var option = new OptionInstance<>(getTranslationKey(key),
+                    value -> Tooltip.create(Component.translatable(translation + ".tooltip")),
+                    (caption, value) -> Component.literal(value + "×"),
+                    new Custom<>(ClientConfig.XESS_FG_MULTIPLIERS), source.get(),
+                    value -> undoManager.add(v -> { target.accept(v); onChanged(key); }, value,
+                            v -> { target.accept(v); onChanged(key); }, source.get()));
+            return new Element(Component.translatable(translation),
+                    Component.translatable(translation + ".tooltip"), option);
         }
     }
 

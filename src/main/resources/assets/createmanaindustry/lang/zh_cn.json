@@ -685,6 +685,7 @@
   "createmanaindustry.configuration.xessFg.button": "Intel XeSS 帧生成",
   "createmanaindustry.configuration.xessFg.tooltip": "配置补帧及其显卡。重启客户端后生效。",
   "createmanaindustry.configuration.xessFg.enabled": "启用 XeSS-FG",
+  "createmanaindustry.configuration.xessFg.multiplier": "插帧倍率",
   "createmanaindustry.configuration.xessFg.gpu": "补帧显卡",
   "createmanaindustry.configuration.xessFg.gpu.tooltip": "选择运行 XeSS-FG 的显卡。Minecraft 继续使用当前 OpenGL 显卡渲染。",
   "createmanaindustry.configuration.xessFg.gpu.auto": "自动",

@@ -33,7 +33,86 @@ final class XessFgMotion implements AutoCloseable {
     enum Layer { WORLD, HAND, TRANSLUCENT }
     private record Key(Object object, Object stream, Layer layer) {}
 
+    private static final class LayerBuffer {
+        boolean dirty = true;
+        int vbo, count;
+        long meshVersion;
+    }
+
+    static final class Raster {
+        int texture, sourceDepth;
+        long depthVersion, meshVersion;
+        XessFgCoordinates coordinates;
+    }
+
+    static final class RasterGrid implements AutoCloseable {
+        final int width, height, framebuffer, depthTexture;
+        private final Raster[] layers = {new Raster(), new Raster(), new Raster()};
+        private int attachedColor;
+
+        RasterGrid(int width, int height) {
+            this.width = width;
+            this.height = height;
+            framebuffer = glCreateFramebuffers();
+            depthTexture = texture(GL_DEPTH_COMPONENT32F, width, height);
+            glNamedFramebufferTexture(framebuffer, GL_DEPTH_ATTACHMENT, depthTexture, 0);
+        }
+
+        Raster layer(Layer layer) {
+            return layers[layer.ordinal()];
+        }
+
+        void attach(Raster raster) {
+            boolean allocate = raster.texture == 0;
+            if (allocate) raster.texture = texture(GL_RGBA32F, width, height);
+            if (attachedColor != raster.texture) {
+                glNamedFramebufferTexture(framebuffer, GL_COLOR_ATTACHMENT0, raster.texture, 0);
+                attachedColor = raster.texture;
+            }
+            if (allocate && glCheckNamedFramebufferStatus(framebuffer, GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+                throw new IllegalStateException("XeSS-FG motion framebuffer is incomplete");
+        }
+
+        boolean matches(int w, int h) {
+            return width == w && height == h;
+        }
+
+        @Override
+        public void close() {
+            glDeleteFramebuffers(framebuffer);
+            glDeleteTextures(depthTexture);
+            for (var layer : layers) if (layer.texture != 0) glDeleteTextures(layer.texture);
+        }
+    }
+
+    /** Keep the two most recent grids so DLSS and XeSS-FG can alternate in one rendered frame. */
+    static final class RasterTargets implements AutoCloseable {
+        private RasterGrid recent, other;
+
+        RasterGrid forSize(int width, int height) {
+            if (recent != null && recent.matches(width, height)) return recent;
+            if (other != null && other.matches(width, height)) {
+                var selected = other;
+                other = recent;
+                recent = selected;
+            } else {
+                if (other != null) other.close();
+                other = recent;
+                recent = new RasterGrid(width, height);
+            }
+            return recent;
+        }
+
+        @Override
+        public void close() {
+            if (recent != null) recent.close();
+            if (other != null) other.close();
+            recent = other = null;
+        }
+    }
+
     private static final class Stream {
+        final LayerBuffer layer;
         final Matrix4f clipFromVertex;
         final Matrix4f instancePose;
         final Consumer<Vector4f> deformation;
@@ -42,13 +121,15 @@ final class XessFgMotion implements AutoCloseable {
         int count;
         boolean complete = true;
 
-        Stream(Matrix4f clipFromVertex, Matrix4f instancePose, Consumer<Vector4f> deformation) {
+        Stream(LayerBuffer layer, Matrix4f clipFromVertex, Matrix4f instancePose, Consumer<Vector4f> deformation) {
+            this.layer = layer;
             this.clipFromVertex = clipFromVertex;
             this.instancePose = instancePose;
             this.deformation = deformation;
         }
 
         void append(float x, float y, float z) {
+            layer.dirty = true;
             if (count == vertices.length) vertices = Arrays.copyOf(vertices, count * 2);
             vertices[count++] = x;
             vertices[count++] = y;
@@ -59,8 +140,12 @@ final class XessFgMotion implements AutoCloseable {
     private Map<Key, Stream> previous = new HashMap<>(), current = new HashMap<>();
     private final boolean sodium = net.neoforged.fml.ModList.get().isLoaded("sodium");
     private Selection selection;
-    private int vertices, width, height;
-    private int program, vao, vbo, framebuffer, vectorTexture, depthTexture;
+    private int vertices;
+    private int program, vao, translucentLocation, extentLocation, scaleLocation, jitterLocation;
+    private final LayerBuffer[] layers = {new LayerBuffer(), new LayerBuffer(), new LayerBuffer()};
+    private final RasterTargets targets = new RasterTargets();
+    private long depthVersion;
+    private boolean sharedDepth;
     private final FloatBuffer upload = MemoryUtil.memAllocFloat(MAX_VERTICES * VERTEX_WORDS * 3 / 2);
     private final Vector4f now = new Vector4f(), then = new Vector4f();
     private record Selection(Object object, boolean hand, Matrix4f clipFromVertex, Consumer<Vector4f> deformation) {}
@@ -69,6 +154,8 @@ final class XessFgMotion implements AutoCloseable {
         current.clear();
         vertices = 0;
         selection = null;
+        sharedDepth = false;
+        invalidateMeshes();
     }
 
     void finish(boolean keep) {
@@ -80,6 +167,20 @@ final class XessFgMotion implements AutoCloseable {
             previous.clear();
         }
         current.clear();
+        invalidateMeshes();
+    }
+
+    private void invalidateMeshes() {
+        for (var layer : layers) layer.dirty = true;
+    }
+
+    void beginSharedDepth() {
+        sharedDepth = true;
+        ++depthVersion;
+    }
+
+    void endSharedDepth() {
+        sharedDepth = false;
     }
 
     XessFgRuntime.MotionScope track(Object object, boolean hand) {
@@ -108,7 +209,7 @@ final class XessFgMotion implements AutoCloseable {
     private VertexConsumer track(VertexConsumer source, Key key, Matrix4f matrices, Consumer<Vector4f> deformation) {
         if (vertices >= MAX_VERTICES) return source;
         var stream = current.computeIfAbsent(key, ignored -> {
-            var result = new Stream(matrices, null, deformation);
+            var result = new Stream(layers[key.layer.ordinal()], matrices, null, deformation);
             if (key.layer == Layer.TRANSLUCENT) result.coverage = new float[result.vertices.length];
             return result;
         });
@@ -118,7 +219,9 @@ final class XessFgMotion implements AutoCloseable {
     void mesh(Object instance, Object model, float[] positions, Matrix4fc camera, Matrix4f pose) {
         int count = positions.length / FLOATS_PER_POINT;
         if (count > MAX_VERTICES - vertices) return;
-        var stream = new Stream(new Matrix4f(camera).mul(pose), pose, null);
+        var layer = layers[Layer.WORLD.ordinal()];
+        layer.dirty = true;
+        var stream = new Stream(layer, new Matrix4f(camera).mul(pose), pose, null);
         stream.vertices = positions;
         stream.count = positions.length;
         current.put(new Key(instance, model, Layer.WORLD), stream);
@@ -145,18 +248,25 @@ final class XessFgMotion implements AutoCloseable {
                         stream.coverage = Arrays.copyOf(stream.coverage, stream.vertices.length);
                     stream.coverage[lastPoint + 2] = 1;
                 }
-            } else stream.complete = false;
+            } else {
+                stream.complete = false;
+                stream.layer.dirty = true;
+            }
         }
 
         final void uv(float u, float v) {
             if (lastPoint >= 0 && stream.coverage != null) {
+                stream.layer.dirty = true;
                 stream.coverage[lastPoint] = u;
                 stream.coverage[lastPoint + 1] = v;
             }
         }
 
         final void alpha(int alpha) {
-            if (lastPoint >= 0 && stream.coverage != null) stream.coverage[lastPoint + 2] = alpha / 255f;
+            if (lastPoint >= 0 && stream.coverage != null) {
+                stream.layer.dirty = true;
+                stream.coverage[lastPoint + 2] = alpha / 255f;
+            }
         }
 
         @Override
@@ -223,6 +333,27 @@ final class XessFgMotion implements AutoCloseable {
 
     int draw(Layer layer, boolean reset, int sceneDepth, int w, int h, XessFgCoordinates coordinates) {
         if (reset || sceneDepth == 0 || previous.isEmpty()) return 0;
+        var buffer = layers[layer.ordinal()];
+        if (buffer.dirty) uploadLayer(layer, buffer);
+        if (buffer.count == 0) return 0;
+        var grid = targets.forSize(w, h);
+        var raster = grid.layer(layer);
+        if (sharedDepth && raster.depthVersion == depthVersion && raster.meshVersion == buffer.meshVersion
+                && raster.sourceDepth == sceneDepth && coordinates.equals(raster.coordinates)) return raster.texture;
+        ensureProgram();
+        grid.attach(raster);
+        glVertexArrayVertexBuffer(vao, 0, buffer.vbo, 0, STRIDE);
+        int atlas = layer == Layer.TRANSLUCENT ? net.minecraft.client.Minecraft.getInstance().getTextureManager()
+                .getTexture(net.minecraft.resources.ResourceLocation.withDefaultNamespace("textures/atlas/particles.png")).getId() : 0;
+        render(grid, sceneDepth, buffer.count, coordinates, atlas);
+        raster.depthVersion = sharedDepth ? depthVersion : 0;
+        raster.meshVersion = buffer.meshVersion;
+        raster.sourceDepth = sceneDepth;
+        raster.coordinates = coordinates;
+        return raster.texture;
+    }
+
+    private void uploadLayer(Layer layer, LayerBuffer buffer) {
         upload.clear();
         current.forEach((key, stream) -> {
             if (key.layer != layer || !stream.complete) return;
@@ -244,14 +375,13 @@ final class XessFgMotion implements AutoCloseable {
                 point(stream, prior, offset);
             }
         });
-        if (upload.position() == 0) return 0;
         upload.flip();
-        ensureResources(w, h);
-        glNamedBufferData(vbo, upload, GL_STREAM_DRAW);
-        int atlas = layer == Layer.TRANSLUCENT ? net.minecraft.client.Minecraft.getInstance().getTextureManager()
-                .getTexture(net.minecraft.resources.ResourceLocation.withDefaultNamespace("textures/atlas/particles.png")).getId() : 0;
-        render(sceneDepth, upload.remaining() / VERTEX_WORDS, coordinates, atlas);
-        return vectorTexture;
+        buffer.count = upload.remaining() / VERTEX_WORDS;
+        buffer.dirty = false;
+        ++buffer.meshVersion;
+        if (buffer.count == 0) return;
+        if (buffer.vbo == 0) buffer.vbo = glCreateBuffers();
+        glNamedBufferData(buffer.vbo, upload, GL_STREAM_DRAW);
     }
 
     private void point(Stream current, Stream prior, int index) {
@@ -269,30 +399,21 @@ final class XessFgMotion implements AutoCloseable {
         else stream.clipFromVertex.transform(result);
     }
 
-    private void ensureResources(int w, int h) {
+    private void ensureProgram() {
         if (program == 0) {
             var shaders = GpuShaderResources.loader(CreateManaIndustry.MODID, "shaders/xessfg/");
             program = GpuShaderCompiler.graphics("XeSS-FG object motion", shaders.apply("motion.vert"), shaders.apply("motion.frag"));
+            translucentLocation = glGetUniformLocation(program, "translucent");
+            extentLocation = glGetUniformLocation(program, "extent");
+            scaleLocation = glGetUniformLocation(program, "sourceScale");
+            jitterLocation = glGetUniformLocation(program, "jitter");
             vao = glCreateVertexArrays();
-            vbo = glCreateBuffers();
-            glVertexArrayVertexBuffer(vao, 0, vbo, 0, STRIDE);
             for (int i = 0; i < 3; i++) {
                 glEnableVertexArrayAttrib(vao, i);
                 glVertexArrayAttribFormat(vao, i, i == 2 ? 3 : 4, GL_FLOAT, false, i * 4 * Float.BYTES);
                 glVertexArrayAttribBinding(vao, i, 0);
             }
-            framebuffer = glCreateFramebuffers();
         }
-        if (w == width && h == height) return;
-        deleteTargets();
-        width = w;
-        height = h;
-        vectorTexture = texture(GL_RGBA32F, w, h);
-        depthTexture = texture(GL_DEPTH_COMPONENT32F, w, h);
-        glNamedFramebufferTexture(framebuffer, GL_COLOR_ATTACHMENT0, vectorTexture, 0);
-        glNamedFramebufferTexture(framebuffer, GL_DEPTH_ATTACHMENT, depthTexture, 0);
-        if (glCheckNamedFramebufferStatus(framebuffer, GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-            throw new IllegalStateException("XeSS-FG motion framebuffer is incomplete");
     }
 
     private static int texture(int format, int w, int h) {
@@ -303,7 +424,7 @@ final class XessFgMotion implements AutoCloseable {
         return texture;
     }
 
-    private void render(int sceneDepth, int count, XessFgCoordinates coordinates, int atlas) {
+    private void render(RasterGrid grid, int sceneDepth, int count, XessFgCoordinates coordinates, int atlas) {
         int oldFramebuffer = glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING);
         int oldVao = glGetInteger(GL_VERTEX_ARRAY_BINDING);
         int oldProgram = glGetInteger(GL_CURRENT_PROGRAM);
@@ -327,7 +448,7 @@ final class XessFgMotion implements AutoCloseable {
             glGetIntegerv(GL_VIEWPORT, viewport);
             glGetBooleani_v(GL_COLOR_WRITEMASK, 0, colors);
             try {
-                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, grid.framebuffer);
                 glBindVertexArray(vao);
                 glUseProgram(program);
                 glBindTexture(GL_TEXTURE_2D, sceneDepth);
@@ -336,11 +457,11 @@ final class XessFgMotion implements AutoCloseable {
                     glBindTextureUnit(1, atlas);
                     glBindSampler(1, 0);
                 }
-                glUniform1i(glGetUniformLocation(program, "translucent"), atlas != 0 ? 1 : 0);
-                glUniform2f(glGetUniformLocation(program, "extent"), width, height);
-                glUniform2f(glGetUniformLocation(program, "sourceScale"), coordinates.scaleX(), coordinates.scaleY());
-                glUniform2f(glGetUniformLocation(program, "jitter"), coordinates.jitterX(), coordinates.jitterY());
-                glViewport(0, 0, width, height);
+                glUniform1i(translucentLocation, atlas != 0 ? 1 : 0);
+                glUniform2f(extentLocation, grid.width, grid.height);
+                glUniform2f(scaleLocation, coordinates.scaleX(), coordinates.scaleY());
+                glUniform2f(jitterLocation, coordinates.jitterX(), coordinates.jitterY());
+                glViewport(0, 0, grid.width, grid.height);
                 glDisablei(GL_BLEND, 0);
                 glDisable(GL_CULL_FACE);
                 glDisable(GL_SCISSOR_TEST);
@@ -382,18 +503,12 @@ final class XessFgMotion implements AutoCloseable {
         else glDisable(capability);
     }
 
-    private void deleteTargets() {
-        glDeleteTextures(vectorTexture);
-        glDeleteTextures(depthTexture);
-    }
-
     @Override
     public void close() {
         MemoryUtil.memFree(upload);
-        deleteTargets();
-        glDeleteFramebuffers(framebuffer);
+        targets.close();
         glDeleteVertexArrays(vao);
-        glDeleteBuffers(vbo);
+        for (var layer : layers) if (layer.vbo != 0) glDeleteBuffers(layer.vbo);
         if (program != 0) GpuPrograms.delete(program);
     }
 }

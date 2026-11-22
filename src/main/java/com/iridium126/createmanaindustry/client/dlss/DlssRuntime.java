@@ -36,7 +36,7 @@ import static org.lwjgl.opengl.GL45.*;
 /** Owns the primary scene target and the NGX history independently of presentation. */
 public final class DlssRuntime {
     private static final DlssRuntime INSTANCE = new DlssRuntime();
-    private static final int COLOR = 0, DEPTH = 1, OBJECT_MOTION = 2, GPU_MOTION = 3, HAND_DEPTH = 4;
+    private static final int COLOR = 0, OBJECT_MOTION = 2, HAND_DEPTH = 4;
     private final DlssInterop[] slots = new DlssInterop[DlssNative.SLOTS];
     private final int[] outputFramebuffers = new int[DlssNative.SLOTS];
     private final long[] profileFrames = new long[DlssNative.SLOTS];
@@ -428,10 +428,12 @@ public final class DlssRuntime {
                 XessFgRuntime.resetDlssFrameGeneration();
             }
             slot = -1;
+            boolean profiling = ParticleFrameStages.active();
             for (int i = 0; i < slots.length; ++i) {
                 int candidate = (int) ((token + i) % slots.length);
                 if (DlssNative.available(session, candidate)) {
                     if (slot < 0) slot = candidate;
+                    if (!profiling) break;
                     if (profileFrames[candidate] != 0) {
                         double elapsed = DlssNative.pollGpuTime(session, candidate);
                         if (elapsed >= 0) GpuTimingObserver.sample("dlss.ngx", profileFrames[candidate], -1, Double.NaN, elapsed);
@@ -507,11 +509,11 @@ public final class DlssRuntime {
         if (slot < 0 || current == null || depthPrepared || disableNext) return;
         try (var timing = ParticleFrameStages.begin("dlss.inputs.geometry")) {
             View prior = reset ? current : previous;
-            pass.dispatch(slots[slot], configured.width, configured.height, depth, DEPTH, 0, jitterX, jitterY,
-                    current.toPrevious(prior, true), current.toPrevious(prior, false),
-                    DlssPack.Encoding.SDR, irisCoordinates, historyCoordinates());
-            XessFgRuntime.dlssWorldMotion(reset, depth, configured.width, configured.height, irisActive() ? irisCoordinates : coordinates(),
-                    motion -> dispatch(motion, OBJECT_MOTION, 0), winners -> dispatch(depth, GPU_MOTION, winners));
+            XessFgRuntime.dlssWorldMotion(reset, depth, configured.width, configured.height,
+                    irisActive() ? irisCoordinates : coordinates(),
+                    (opaque, winners, translucent) -> pass.world(slots[slot], configured.width, configured.height,
+                            depth, jitterX, jitterY, current.toPrevious(prior, true), current.toPrevious(prior, false),
+                            irisCoordinates, historyCoordinates(), opaque, winners, translucent));
             depthPrepared = true;
         }
     }
@@ -543,7 +545,7 @@ public final class DlssRuntime {
             input.publish(stamp);
             DlssNative.evaluate(session, slot, stamp, jitterX, -jitterY,
                     reset ? 0 : (now - previousTime) * 1e-6f, reset, profile);
-            profileFrames[slot] = profile ? ClientGpuScene.INSTANCE.renderFrameToken() : 0;
+            if (profile) profileFrames[slot] = ClientGpuScene.INSTANCE.renderFrameToken();
             return stamp;
         }
     }

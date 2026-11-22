@@ -9,12 +9,13 @@ XeSS-FG 接入目前为实验功能。Windows x64 发行包内包含 XeSS SDK 3.
 ```toml
 [xessFg]
 enabled = true
+multiplier = 2
 gpu = "auto"
 transport = "rgb24"
 surface = "child"
 ```
 
-首次测试使用笔记本内屏、SDR 和窗口或无边框模式。启动日志应显示 OpenGL 渲染设备为 RTX 4070 Laptop，并在进入世界后出现 `[CMI/XeSS-FG]` 记录。默认配置下检查 `render=RTX 4070 Laptop`、`generation=Arc A750`、`PCI 8086:56a1`、`transport=rgb24 (cross-adapter)`。`XMX-capable Arc=true` 表示设备型号具备 XMX 能力。实际推理应配合 XeSS Inspector 的有效呈现记录和能够按适配器采样的 GPU 分析工具确认。[XeSS Inspector](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-xess-inspector.html)
+首次测试使用笔记本内屏、SDR 和窗口或无边框模式。进入世界后查看 [CMI/XeSS-FG] 日志，确认渲染卡、生成卡和跨卡 RGB24。`multiplier` 接受整数 2、3、4，分别对应 2×、3×、4×。默认 2，每张真实帧请求一张生成帧。修改后重启客户端。日志记录 requested multiplier 和 interpolated frames，后者为应用到 SDK 的生成帧数。驱动不支持所选倍率时，日志会报告可用上限，客户端回退到 OpenGL 呈现。实际生成数由显式采集时的 queued 和 PresentMon 上屏记录核对。 [XeSS Inspector](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-xess-inspector.html)
 
 DXGI 默认使用 Minecraft 窗口客户区里的子呈现表面，原 GLFW 窗口继续处理焦点、键盘和鼠标。深度与运动矢量按输出半宽半高生成。Bliss 和 Photon 的无扭曲包内超采样路径使用包的渲染尺寸和 jitter。XeSS-FG 负责上采样和膨胀，颜色继续按输出分辨率提交。
 
@@ -22,7 +23,7 @@ NVIDIA 渲染、Arc A750 生成并使用 RGB24 时，`Arc shared inputs=true` �
 
 HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差分以 128×8 像素 tile 存放，块遮罩精确到四个像素。复制 worker 提前提交遮罩回读，在 OpenGL 发布颜色后才启动半个刷新周期的回读预算，期间可处理已发布的几何。差分区段多于 64 个时，合并最短的空档，在 64 条复制命令内尽量少搬运未变化的 tile。Arc 按原始遮罩复用无差异区域的基底 RGB。复制计划覆盖至少八分之七的 tile、超过回读预算或遮罩映射失败时，使用整面差分复制。
 
-原生呈现线程按顺序呈现真实帧，最多一个待呈现作业。可选传输槽连续两帧满载、待呈现补帧作业跨过一个刷新周期，或连续两帧观察到入队受阻或补帧作业执行超龄时，下一帧使用仅最终色的输入。共享 RGB24 路径每次按 4 ms 超时等待 OpenGL 发布颜色，仅真实帧路径最多允许两份尚未完成发布的最终色。降级期间观察到八次 Arc 呈现退役进展后重建补帧历史，再恢复 2×。仅真实帧和用于重建历史的作业可以跨过多个刷新周期。实际入队受阻、传输槽满载或待呈现补帧作业超龄且退役停滞会重置恢复计数。`fg_skip_reason` 区分容量压力（1）、待呈现补帧作业超龄（2）和持续呈现背压（3）。ETW 的 `FrameAdmission` 记录恢复计数、退役序列和队列压力。
+原生呈现线程按序提交真实帧，最多保留一个待呈现作业。短暂 Present 冲突由原生层重试。`fg_skip_reason` 为 1 表示几何传输槽连续两帧满载，为 2 表示队列里的插帧作业超龄，为 3 表示连续两帧检测到入队受阻或正在执行的插帧作业超龄。2× 的时限为一个刷新周期，多帧生成的时限为每组生成帧数加三个刷新周期。以原生窗口所在显示器在会话初始化时的刷新率计算。降级期间使用仅最终色输入，观察到八次已接受呈现的 GPU 退役进展后重建插帧历史并恢复所选倍率。共享 RGB24 路径每次按 4 ms 超时等待 OpenGL 发布颜色，仅真实帧路径最多允许两份尚未完成发布的最终色。超过 120 ms 的不连续帧也会强制重置历史。窗口、设备或 SDK 异常会回退 OpenGL 呈现。CPU/GPU 性能计时、逐帧 ETW 性能事件和采集结果记录由显式采集开启。
 
 每次入队前复核窗口焦点和游戏界面状态。若已经导出完整输入，仍可使用其中的最终色呈现真实帧。
 
@@ -38,12 +39,35 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 2. 用 XeSS Inspector 检查每个呈现 ID 的颜色、无 HUD 颜色、深度、运动矢量和矩阵。检查序列是否为真实帧 A、中间帧、真实帧 B。观察准星、文字、半透明 HUD 和快速转视角时的前景轮廓。
 3. 在 Sodium 无光影及八款现有光影包中重复测试。额外覆盖 Photon TAAU、Bliss 包内缩放、BSL 和 Complementary 水下、Sildur 水下及雨滴、Sundial 镜头畸变。验证切包、传送、最小化、恢复和调整窗口尺寸。
 4. 用 `/cmi particle profile frames 10` 分别采集关闭和开启补帧的整帧数据。设置生效后，在相同场景、视角、分辨率、光影和风暴模拟配置下等待渲染稳定，再关掉聊天和菜单开始采样。
-5. 比较合并生成的 `*-xessfg-pacing.json`。以所有实际上屏帧间隔的 `display_interval_ms.p99` 为主指标，用真实帧间隔和 `midpoint_error_ms` 定位长间隔及插帧时机。固定刷新稳态目标为绝对中点误差 P95 不超过半个刷新周期加 0.5 ms，生成覆盖率较基线下降不超过 1 个百分点。客户端帧循环 P99 用于定位 GPU 和排队问题。[PresentMon](https://github.com/GameTechDev/PresentMon)
+5. 比较合并生成的 *-xessfg-pacing.json。以所有上屏帧间隔的 P99、完整刷新间隔序列、逐张生成帧相位误差和完整生成覆盖率验收。固定刷新要同时满足供帧和驱动呈现节拍。应用按原时机提交真实帧，组内生成帧呈现由 XeSS-FG 代理和 Arc 驱动控制。 [PresentMon](https://github.com/GameTechDev/PresentMon)
 6. 用同一构建测试关闭补帧、RGBA8、RGB24 和 YCbCr 4:2:2。三种开启组合比较传输格式。旧版同步 RGBA8 可用于匹配场景的跨构建对照。4:2:2 检查细字、准星、半透明 HUD 和高对比彩色边缘。
+
+### 插帧均匀性 A/B
+
+保持同一窗口模式、分辨率、视角路径、光影设置和场景负载。先对基线做两轮 A/A，再交替执行每档至少三轮基线与当前构建。基线需要验证实际使用同一倍率。旧版固定最大倍率的构建可作 4× 基线，2× 使用固定单生成帧的构建。每轮在场景稳定后执行下列采集，再在游戏里执行 /cmi particle profile frames 60，关闭聊天并重复相同的转视角和操作。
+
+```powershell
+.\scripts\particles\capture-xessfg-presentmon.ps1 -GamePid <PID> -Seconds 80 -RefreshHz 240
+```
+
+| 显示模式 | 满槽供帧条件 | 验收目标序列 |
+|---|---:|---|
+| 240 Hz、2× | 持续 120 真实 FPS | 1:1 |
+| 120 Hz、2× | 持续 60 真实 FPS | 1:1 |
+| 240 Hz、3× | 持续 80 真实 FPS | 1:1:1 |
+| 240 Hz、4× | 持续 60 真实 FPS | 1:1:1:1 |
+
+120 Hz 轮次将脚本参数改为 `-RefreshHz 120`。旧基线未记录倍率时，采集或重新合并时用 `-Multiplier` 指定已确认的倍率，可选值为 2、3、4。先测能达到供帧条件的轻负载，再测实际常用负载。满槽稳态要求至少 99% 的完整组为表中序列、上屏间隔 P99 不超过一个刷新周期加 0.5 ms、完整生成覆盖率较同倍率基线下降不超过 1 个百分点。供帧不足时报告长间隔和位置。VRR 单独采集，省略 `-RefreshHz`。
+
+比较 display_fps、real_display_fps、full_generation_coverage、real_input_to_display_ms 和实际延迟样本数。以相同真实帧率对照 RTX 每帧输入准备、复制和 NGX 的 GPU 耗时，以及渲染线程帧内 CPU P95。用 A/A 波动判断性能变化。画质使用同一视角路径检查准星和文字、手部、透明粒子、Create 动体、遮挡边缘和光影切换。现有 DLSS 超分设置和 RGB24 模式用于可比性，客户端验收由用户在游戏中完成。
 
 ## XeSS-FG 逐帧数据
 
 固定刷新采集或重新合并时，给 `capture-xessfg-presentmon.ps1` 传入显示器的实际刷新率，如 `-RefreshHz 240`。`fixed_refresh.splits` 统计真实帧 A 到生成帧再到真实帧 B 的刷新周期分布，`2:2` 和 `3:1` 对应四刷新区间。偏离整数刷新周期超过 10% 的间隔记入 `unquantized_intervals`。时间线中的 `arc_inputs_to_generated_ms` 和 `arc_inputs_to_midpoint_ms` 分别表示 Arc 输入就绪到生成帧上屏及到真实帧中点的时间。VRR 采集使用毫秒指标。
+
+合并摘要的 `interval_generated_frames` 按真实帧区间统计实际生成帧数量。`interval_midpoint_error_ms`、`absolute_interval_midpoint_error_ms` 和 `interval_generation_coverage` 取区间内最接近中点的一张生成帧，`fixed_refresh.interval_splits` 记录同一张帧的刷新分片，因此多插值帧时仍可判断中点是否被覆盖。`midpoint_error_ms`、`generation_coverage` 和 `fixed_refresh.splits` 只统计单生成帧区间，保留用于历史对照。
+
+固定刷新新增 fixed_refresh.interval_sequences，按上一真实帧到 G1、G1 到 G2，直到下一真实帧的顺序记录完整间隔。single_refresh_per_frame_fraction 以可量化、生成数完整且归属已核对的游戏区间为分母。full_generation_coverage 以游戏中有有效历史的相邻区间为分母。时间线的 generated_phase_error_ms 使用生成帧序号在两张真实帧间的等分时刻，缺失生成帧的区间保留间隔序列，此时序号与相位误差留空。real_input_to_display_ms 使用 PresentMon 有效的输入样本。旧采集没有倍率时可用 queued 解读完整组的相位，完整生成覆盖率留空。
 
 采集目录 `logs/cmi-particle-frames` 中的 `frames-…-xessfg.csv` 用 `frame` 列与整帧 CSV 对齐。`next_tick_interval_ns` 从本帧开始计到下一次客户端帧循环开始，包含呈现和限速。最后一行没有下一帧样本。空白表示阶段未执行或本次采样没有收到结果。
 
@@ -82,7 +106,7 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 
 启用插帧时，代理交换链用 `SyncInterval=1` 呈现生成帧和真实帧，避免较新的翻转按间隔 0 的规则替换排队帧。只呈现真实帧时，间隔遵循 Minecraft 垂直同步设置。复测时在 XeSS-FG CSV 检查 `interpolate` 和 `dxgi_sync_interval`，并比较所有上屏帧间隔 P99、生成帧显示比例和真实帧 P95。 [Microsoft DXGI Present](https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgiswapchain-present)
 
-在本机配置原生构建时传入 `-DCMI_XESSFG_BUILD_PROBE=ON`。运行 `ctest --test-dir build/xessfg-native -C Release -R '^xessfg_' --output-on-failure -V`。调度探针检查背压进入及八次退役进展后的恢复，传输探针检查双卡低分辨率输入、运动覆盖合并、HUD tile、槽位退役、尺寸变化和设备丢失。代理探针独立启动 XeSS SDK，检查呈现顺序、两种 VSync 设置下的真实帧直通、完整输入直通和历史重建。交互桌面上可在 SDK `bin` 已加入 PATH 的环境运行 `CmiXessFgPipelineProbe.exe --display`，此模式要求至少一帧实际进入生成队列。
+在本机配置原生构建时传入 `-DCMI_XESSFG_BUILD_PROBE=ON`。运行 `ctest --test-dir build/xessfg-native -C Release -R '^xessfg_' --output-on-failure -V`。离线探针检查队列顺序、倍率映射、关闭采集及有界的 Present 重试，传输探针检查双卡低分辨率输入、运动覆盖合并、HUD tile、槽位退役、尺寸变化和设备丢失。代理探针独立启动 XeSS SDK，检查呈现顺序、两种 VSync 设置下的真实帧直通、完整输入直通和历史重建。在交互桌面将 SDK `bin` 加入 PATH，分别运行 `CmiXessFgPipelineProbe.exe --display 2`、`--display 3` 和 `--display 4`。每档要求至少一个呈现组达到所选倍率。
 
 ### 客户端 A/B 与画质
 
