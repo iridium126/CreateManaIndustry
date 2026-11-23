@@ -5,3 +5,7 @@ src/generated/**/.cache/* text eol=lf
 src/generated/**/*.json text eol=lf
 # Preserve the exact reference model bytes used by the voxel validation harness.
 src/main/resources/data/createmanaindustry/markov/epic_redwood_3072.xml -text
+# Native vendor bundles are hashed byte-for-byte by the packaging tasks, whose manifests record LF digests.
+src/main/native/prebuilt/**/*.txt text eol=lf
+src/main/native/prebuilt/**/*.json text eol=lf
+src/main/native/prebuilt/**/*.properties text eol=lf
