@@ -16,6 +16,10 @@ public final class BatteryAnima {
         return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().equals("hexcasting:battery");
     }
     public static long get(ItemStack stack) { return Math.max(0, stack.getOrDefault(CMIComponents.ANIMA.get(), 0L)); }
+    /** Shared visibility rule for the Anima bar and its tooltip row. */
+    public static boolean shouldDisplay(ItemStack stack) {
+        return isBattery(stack) && get(stack) > 0 && capacity(stack) > 0;
+    }
     public static long capacity(ItemStack stack) {
         return isBattery(stack) ? AnimaMath.capacity(HexCompat.getMaxMedia(stack), HexCompat.getDustMediaAmount(),
                 ServerConfig.batteryAnimaCapacityRatio) : 0;

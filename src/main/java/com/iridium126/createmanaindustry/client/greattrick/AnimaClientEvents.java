@@ -32,10 +32,9 @@ public final class AnimaClientEvents {
         if (!CreateManaIndustry.HEX_ACTIVE) return;
         BuiltInRegistries.ITEM.getOptional(ResourceLocation.fromNamespaceAndPath("hexcasting", "battery"))
                 .ifPresent(battery -> event.register(battery, (graphics, font, stack, x, y) -> {
+                    if (!BatteryAnima.shouldDisplay(stack)) return false;
                     long current = BatteryAnima.get(stack);
-                    if (current <= 0) return false;
                     long capacity = BatteryAnima.capacity(stack);
-                    if (capacity <= 0) return false;
                     int width = Math.max(1, (int)Math.round(13.0 * Math.min(current, capacity) / capacity));
                     // Leave a one-pixel gap below the native media bar at y + 13.
                     int left = x + 2, top = y + 14;
@@ -47,10 +46,10 @@ public final class AnimaClientEvents {
     }
 
     @SubscribeEvent public static void tooltip(ItemTooltipEvent event) {
-        if(!CreateManaIndustry.HEX_ACTIVE||!BatteryAnima.isBattery(event.getItemStack()))return;
+        if(!CreateManaIndustry.HEX_ACTIVE||!BatteryAnima.shouldDisplay(event.getItemStack()))return;
         long current = BatteryAnima.get(event.getItemStack());
         long capacity = BatteryAnima.capacity(event.getItemStack());
-        float fullness = capacity == 0 ? 0 : (float)current / (float)capacity;
+        float fullness = (float)current / (float)capacity;
         var amount = Component.literal(AMOUNT.format(BigDecimal.valueOf(current, 3)))
                 .withColor(ANIMA_COLOR);
         var maximum = Component.translatable("createmanaindustry.anima.amount",
