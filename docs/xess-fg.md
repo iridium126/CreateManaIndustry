@@ -27,6 +27,10 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 
 每次入队前复核窗口焦点和游戏界面状态。若已经导出完整输入，仍可使用其中的最终色呈现真实帧。
 
+XeSS SDK 的输出由独立的 DXGI 线程逐张提交。固定刷新时，线程比较真实帧最早可用的刷新槽与后一槽。如果后一槽能减少本组生成帧相对等分位置的误差，真实帧可多等一个刷新周期。下一组图像提前就绪、队列饱和或刷新时钟失效时解除等待。生成帧在写者 fence 就绪后立即进入输出路径。
+
+输出组或纹理满载时，原生呈现线程等待输出推进并重试预留，同时继续处理窗口消息。预留受阻会解除真实帧的定时等待，GPU 拷贝退役后可继续提交。持续 500 ms 无法预留时进入现有错误恢复路径。
+
 ### 独立翻转对照
 
 - 在同一构建中，分别设置 `xessFg.surface = "borderless_child"` 和 `"borderless_popup"`，每次重启客户端。进入存档后从窗口模式按 F11 切至无边框全屏。两种模式都使用当前显示器的桌面分辨率。第一种沿用子窗口，第二种在相同位置使用由 GLFW 主窗口拥有的顶层呈现窗口。退出 F11 后使用子窗口。原 GLFW 窗口负责输入。
@@ -67,6 +71,8 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 
 合并摘要的 `interval_generated_frames` 按真实帧区间统计实际生成帧数量。`interval_midpoint_error_ms`、`absolute_interval_midpoint_error_ms` 和 `interval_generation_coverage` 取区间内最接近中点的一张生成帧，`fixed_refresh.interval_splits` 记录同一张帧的刷新分片，因此多插值帧时仍可判断中点是否被覆盖。`midpoint_error_ms`、`generation_coverage` 和 `fixed_refresh.splits` 只统计单生成帧区间，保留用于历史对照。
 
+时间线的 `pm_gpu_ready_qpc` 由 PresentMon 的 `TimeInQPC` 和 `MsRenderPresentLatency` 推算，`pm_gpu_ready_to_display_ms` 记录 GPU 工作完成到实际翻转的耗时。生成数量和归属均已核对的区间，取最接近中点的一张生成帧计算 `generated_gpu_ready_minus_midpoint_ms`，正值表示 GPU 工作在中点后才完成。摘要的 `generated_gpu_ready_after_midpoint` 与该指标的 `samples` 给出相应的次数和分母。 [PresentMon CSV 字段](https://github.com/GameTechDev/PresentMon/blob/main/README-ConsoleApplication.md)
+
 固定刷新新增 fixed_refresh.interval_sequences，按上一真实帧到 G1、G1 到 G2，直到下一真实帧的顺序记录完整间隔。single_refresh_per_frame_fraction 以可量化、生成数完整且归属已核对的游戏区间为分母。full_generation_coverage 以游戏中有有效历史的相邻区间为分母。时间线的 generated_phase_error_ms 使用生成帧序号在两张真实帧间的等分时刻，缺失生成帧的区间保留间隔序列，此时序号与相位误差留空。real_input_to_display_ms 使用 PresentMon 有效的输入样本。旧采集没有倍率时可用 queued 解读完整组的相位，完整生成覆盖率留空。
 
 采集目录 `logs/cmi-particle-frames` 中的 `frames-…-xessfg.csv` 用 `frame` 列与整帧 CSV 对齐。`next_tick_interval_ns` 从本帧开始计到下一次客户端帧循环开始，包含呈现和限速。最后一行没有下一帧样本。空白表示阶段未执行或本次采样没有收到结果。
@@ -87,6 +93,7 @@ HUD-less RGB24 基底通过独立的缓冲和 fence 提前发布。最终色差�
 - 格式 12 增加 `hud_copy_route`，记录稀疏复制（`sparse`）及整面回落原因（`deadline`、`dense`、`map_failed`）。历史采集中的 `range_limit` 表示旧版超过区段上限后整面回退。合并摘要中的 `hud_copy_routes` 按真实帧统计各路径。
 - 格式 13 对共享 RGB24 在 HUD-less fence 就绪后提前解包基底，并在最终色 fence 就绪后仅更新有差异的 RGB24 块。`arc_hud_base_unpack_gpu_ns` 和 `arc_hud_base_ready_qpc` 记录基底阶段，`arc_color_unpack_gpu_ns` 记录最终色阶段。`arc_inputs_ready_qpc` 仍对应完整输入就绪。`fixed_refresh.four_refresh_midpoint_fraction` 的分母包括所有四刷新真实帧区间，也计入期间未显示生成帧的区间。
 - `-TracePresent` 启用 Intel XeSS-FG ETW provider。CMI 的 `ArcProxyColorCopy` 记录按 Present ID 校准的 Arc 背缓冲 GPU 拷贝首尾。呈现命令分配器退役并再次使用时读取，采集尾部未再次使用的槽可能缺失。
+- `OutputFlip` 记录后台 DXGI 提交的 Present ID、组内序号、最早与目标刷新槽、提交 QPC 和取消原因。槽位为估算值，`-1` 表示当时无可用的固定刷新时钟。取消原因 1 为下一张图像就绪，2 为输出队列容量，3 为时钟变化。当前实现的 `proxy_swap_chain_address` 列记录实际输出交换链供合并使用。早于 SDK 确认的输出可按完整组的 AppFrameId 和 SDK 输出数恢复帧类型。
 
 ## PresentMon 联合采集
 

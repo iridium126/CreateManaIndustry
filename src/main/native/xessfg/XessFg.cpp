@@ -24,6 +24,7 @@
 #include <atomic>
 #include <deque>
 #include <utility>
+#include "PacingSwapChain.h"
 
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -43,6 +44,16 @@ void traceProbe(const char* message) {
 }
 TRACELOGGING_DEFINE_PROVIDER(presentTrace, "CreateManaIndustry.XeSSFG",
     (0x2dd7d232, 0xe6b6, 0x45d9, 0x9c, 0x9c, 0xb6, 0x1a, 0xe7, 0x67, 0x1b, 0xc1));
+
+void traceOutput(const cmi::xessfg::pacing::OutputEvent& event) {
+    TraceLoggingWrite(presentTrace, "OutputFlip",
+        TraceLoggingUInt64(event.sequence, "Sequence"), TraceLoggingUInt32(event.frameId, "PresentId"),
+        TraceLoggingUInt32(event.ordinal, "Ordinal"), TraceLoggingUInt32(event.count, "OutputCount"),
+        TraceLoggingBool(event.real, "ConfirmedReal"), TraceLoggingInt64(event.earliestSlot, "EarliestSlot"),
+        TraceLoggingInt64(event.targetSlot, "TargetSlot"), TraceLoggingInt64(event.submitted, "SubmitQpc"),
+        TraceLoggingUInt32(static_cast<UINT>(event.cancellation), "DelayCancellation"),
+        TraceLoggingHResult(event.result, "Result"));
+}
 enum Group { Geometry, Color, GroupCount, HudBase = GroupCount };
 enum Plane { Final, Hudless, Depth, Motion, PlaneCount };
 enum Transport { Rgba8, Rgb24, Ycbcr422 };
@@ -669,6 +680,8 @@ struct Session {
     ComPtr<ID3D12Fence> hudWritten, hudCopied, hudReady;
     ComPtr<ID3D12Fence> geometryReleased, geometryOut, geometryIn;
     ComPtr<IDXGISwapChain4> swap;
+    std::shared_ptr<cmi::xessfg::pacing::AsyncOutput> output;
+    ComPtr<cmi::xessfg::pacing::PacingFactory> outputFactory;
     std::unique_ptr<TimestampProbes> profileProbes;
     std::array<ComPtr<ID3D12Resource>, BackBufferCount> backBuffers;
     Handle slotReady, producerReady, presentAllocatorReady;
@@ -681,6 +694,7 @@ struct Session {
     std::atomic<UINT64> retiredAcceptedThrough{0};
     bool presentRejected = false;
     bool closing = false, resetNext = false;
+    uint64_t lastOutputOcclusion = 0;
     int64_t refreshTicks = 0;
     int64_t qpcFrequency = 0;
     UINT interpolatedFrames = 1;
@@ -725,6 +739,7 @@ struct Session {
         }
         hideSurface();
         unblockFailedProducer();
+        if (output) output->stop();
         drain(presentQueue.Get(), completed.Get());
         drain(prepareQueue.Get(), prepared.Get());
         drain(uploadQueue.Get(), uploadReady.Get());
@@ -733,6 +748,7 @@ struct Session {
         for (auto& image : backBuffers) image.Reset();
         swap.Reset();
         if (fg) xefgSwapChainDestroy(fg);
+        outputFactory.Reset();
         if (ll) xellDestroyContext(ll);
         if (IsWindow(surface)) DestroyWindow(surface);
     }
@@ -799,6 +815,7 @@ struct Session {
     void checkPresenter() {
         std::lock_guard guard(workMutex);
         if (failure) std::rethrow_exception(failure);
+        if (output) check(output->error(), "Forwarding XeSS-FG output");
     }
 
     int64_t interpolationBudget() const {
@@ -909,6 +926,10 @@ struct Session {
             retirePresentation(job.sequence);
             resetNext = true;
             return;
+        }
+        if (output && output->occludedThrough() > lastOutputOcclusion) {
+            lastOutputOcclusion = output->occludedThrough();
+            resetNext = true;
         }
         if (resetNext && job.interpolate) job.constants.resetHistory = 1;
         std::optional<PresentProfile> profile;
@@ -1119,9 +1140,11 @@ struct Session {
         // Give the proxy a separate surface while GLFW retains focus and input.
         traceProbe("Creating presentation surface");
         surface = createPresentationSurface(hwnd, topLevel);
+        output = std::make_shared<cmi::xessfg::pacing::AsyncOutput>(multiplier, refreshTicks, qpcFrequency, traceOutput);
+        outputFactory.Attach(new cmi::xessfg::pacing::PacingFactory(factory, output));
         traceProbe("Initializing proxy swap chain");
-        sdk(xefgSwapChainD3D12InitFromSwapChainDesc(fg, surface, &desc, nullptr, presentQueue.Get(), factory.Get(), &params),
-            "Creating Minecraft's XeSS-FG proxy swap chain");
+        sdk(xefgSwapChainD3D12InitFromSwapChainDesc(fg, surface, &desc, nullptr, presentQueue.Get(),
+            outputFactory.Get(), &params), "Creating Minecraft's XeSS-FG proxy swap chain");
         sdk(xefgSwapChainD3D12GetSwapChainPtr(fg, IID_PPV_ARGS(&swap)), "Opening XeSS-FG proxy swap chain");
         xefg_swapchain_d3d12_init_params_t applied{};
         sdk(xefgSwapChainD3D12GetInitializationParameters(fg, &applied),
@@ -1133,6 +1156,7 @@ struct Session {
         sdk(xefgSwapChainSetUiCompositionState(fg, XEFG_SWAPCHAIN_UI_COMPOSITION_STATE_ENABLED),
             "Enabling XeSS-FG HUD composition");
         sdk(xefgSwapChainSetEnabled(fg, 0), "Initializing XeSS-FG in passthrough mode");
+        output->start(factory.Get());
     }
 
     void startCopyWorker() {
@@ -1958,8 +1982,8 @@ struct Session {
         input.tracedCaptureFrame = 0;
     }
 
-    bool waitToRetryPresent() {
-        const DWORD result = MsgWaitForMultipleObjectsEx(1, &workReady.value, WindowWaitMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    bool waitToRetryPresent(HANDLE ready) {
+        const DWORD result = MsgWaitForMultipleObjectsEx(1, &ready, WindowWaitMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
         if (result == WAIT_FAILED) throw std::runtime_error("Waiting to retry XeSS-FG Present");
         std::optional<int> quit;
         pumpMessages(quit);
@@ -2057,7 +2081,7 @@ struct Session {
         if (profile) {
             profile->fields[SyncInterval] = syncInterval;
             profile->fields[PresentFlags] = presentFlags;
-            profile->fields[ProxySwapChainAddress] = reinterpret_cast<intptr_t>(swap.Get());
+            profile->fields[ProxySwapChainAddress] = static_cast<int64_t>(output->address());
             profile->fields[QpcFrequency] = profile->frequency;
             profile->fields[ColorFenceToken] = token;
             if (job.colorSubmitQpc != Unavailable) {
@@ -2067,6 +2091,10 @@ struct Session {
             profile->fields[GlFenceAtEnter] = glWritten->GetCompletedValue();
             if (cross) sampleColorTransferFence(*profile, TransferFenceAtEnter, token);
         }
+        const auto reservation = output->reserve(job.sequence, frame, interpolate, input.resetHistory != 0,
+            profile != nullptr, [&](HANDLE ready) { return waitToRetryPresent(ready); });
+        check(reservation, "Reserving XeSS-FG output");
+        if (reservation != S_OK) return {};
         {
             std::lock_guard guard(xellMutex);
             recordMarker(ll, frame, XELL_PRESENT_START);
@@ -2081,7 +2109,7 @@ struct Session {
             profile->fields[PresentEnterQpc] = profile->previous;
         }
         const HRESULT status = retryPresent([&] { return swap->Present(syncInterval, presentFlags); },
-                                            [&] { return waitToRetryPresent(); });
+                                            [&] { return waitToRetryPresent(workReady.value); });
         if (profile) {
             profile->split(DxgiPresent);
             profile->fields[PresentExitQpc] = profile->previous;
@@ -2107,9 +2135,16 @@ struct Session {
             profile->fields[CompletedAfter] = completed->GetCompletedValue();
             profile->split(Retire);
         }
+        if (FAILED(status)) output->abandon(status);
         check(status, "Presenting through XeSS-FG");
-        if (status == DXGI_STATUS_OCCLUDED) return {};
-        if (!interpolate) return {true, 1};
+        if (status != S_OK) {
+            output->confirm(job.sequence, 0);
+            return {};
+        }
+        if (!interpolate) {
+            output->confirm(job.sequence, 1);
+            return {true, 1};
+        }
         xefg_swapchain_present_status_t presentStatus{};
         const auto sdkResult = xefgSwapChainGetLastPresentStatus(fg, &presentStatus);
         if (profile) {
@@ -2120,7 +2155,12 @@ struct Session {
                 profile->fields[FgEnabled] = presentStatus.isFrameGenEnabled;
             }
         }
-        if (sdkResult < 0) return {true, 1};
+        if (sdkResult < 0) {
+            output->abandon(E_FAIL);
+            check(E_FAIL, "Confirming XeSS-FG output count");
+        }
+        output->confirm(job.sequence, presentStatus.framesPresented);
+        check(output->error(), "Confirming XeSS-FG output group");
         return {true, static_cast<int>(presentStatus.framesPresented)};
     }
 };

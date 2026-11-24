@@ -637,6 +637,62 @@ void verifyProducerBackpressure(Session& session) {
     std::puts("  A real-only export could use the reserved slot, with at most two unfinished OpenGL colors");
 }
 
+void verifyOutputBackpressure(HWND window, jlong arc, unsigned outputsPerGroup, unsigned groupsBeforePressure) {
+    ComPtr<IDXGIFactory4> factory;
+    check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)), "Creating probe output factory");
+    Session session;
+    session.generationGpu = device(factory.Get(), arc);
+    const auto writer = queue(session.generationGpu.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT);
+    LARGE_INTEGER frequency{};
+    QueryPerformanceFrequency(&frequency);
+    cmi::xessfg::pacing::AsyncOutput output(2, frequency.QuadPart / 240, frequency.QuadPart, nullptr);
+    DXGI_SWAP_CHAIN_DESC1 description{};
+    description.Width = description.Height = 64;
+    description.Format = Formats[Final];
+    description.SampleDesc.Count = 1;
+    description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    ComPtr<IDXGISwapChain4> swap;
+    check(output.create(factory.Get(), writer.Get(), window, description, nullptr, nullptr, swap), "Creating probe output");
+    output.start(factory.Get());
+    QueueGate gate;
+    gate.hold(session, writer.Get());
+
+    const bool interpolate = outputsPerGroup > 1;
+    const auto reserve = [&](unsigned id, auto wait) {
+        return output.reserve(id, id, interpolate, false, false, wait);
+    };
+    const auto capture = [&](unsigned id) {
+        for (unsigned i = 0; i < outputsPerGroup; ++i)
+            require(output.capture(1, 0) == S_OK, "Capturing a probe output image failed");
+        output.confirm(id, outputsPerGroup);
+    };
+    for (unsigned id = 1; id <= groupsBeforePressure; ++id) {
+        require(reserve(id, [](HANDLE) { return false; }) == S_OK, "Initial output reservation stalled");
+        capture(id);
+    }
+
+    const auto next = groupsBeforePressure + 1;
+    bool saturated = false;
+    require(reserve(next, [&](HANDLE) { saturated = true; return false; }) == DXGI_STATUS_OCCLUDED
+            && saturated && output.error() == S_OK, "Temporary output pressure poisoned the session");
+    bool released = false;
+    const auto status = reserve(next, [&](HANDLE ready) {
+        if (!released) {
+            check(gate.fence->Signal(1), "Releasing the output writer gate");
+            released = true;
+        }
+        if (MsgWaitForMultipleObjectsEx(1, &ready, 4, QS_ALLINPUT, MWMO_INPUTAVAILABLE) == WAIT_FAILED)
+            throw std::runtime_error("Waiting for probe output reservation");
+        std::optional<int> quit;
+        Session::pumpMessages(quit);
+        return !quit;
+    });
+    require(status == S_OK && released && output.error() == S_OK, "Output capacity did not recover after GPU progress");
+    capture(next);
+    require(output.count() == next * outputsPerGroup, "Output reservation recovery lost or duplicated a frame");
+}
+
 void verifyPopup(jlong render, jlong arc, bool requireDisplay, UINT multiplier) {
     constexpr int width = 803, height = 611;
     RECT workArea{};
@@ -701,7 +757,9 @@ void verifyPopup(jlong render, jlong arc, bool requireDisplay, UINT multiplier) 
                     "Proxy tearing flag did not follow the selected sync interval");
             std::printf("  proxy frame %lld: queued %lld, DXGI %lld, FG result %lld\n", row[0], row[1],
                         row[3 + DxgiResult], row[3 + FrameGenResult]);
-            require((row[2] != 0) == (interpolate && reset), "XeSS-FG proxy history reset changed");
+            const bool outputOccluded = session.output->occludedThrough() >= static_cast<uint64_t>(i);
+            require((row[2] != 0) == (interpolate && reset)
+                    || (interpolate && row[2] && outputOccluded), "XeSS-FG proxy history reset changed");
             require(row[3 + DxgiResult] == S_OK || row[3 + DxgiResult] == DXGI_STATUS_OCCLUDED,
                     "Synthetic proxy present returned an unexpected DXGI result");
             if (!interpolate) require(row[1] <= 1, "Real-only frame generated an image");
@@ -713,7 +771,8 @@ void verifyPopup(jlong render, jlong arc, bool requireDisplay, UINT multiplier) 
             generated |= row[1] == multiplier;
         }
         if (!generated) {
-            require(!requireDisplay && results[3 + DxgiResult] == DXGI_STATUS_OCCLUDED,
+            require(!requireDisplay && (results[3 + DxgiResult] == DXGI_STATUS_OCCLUDED
+                            || session.output->occludedThrough()),
                     "XeSS-FG did not queue a complete generated group at the requested multiplier");
             std::puts("Display coverage unavailable: DXGI marked the proxy window occluded");
         }
@@ -731,6 +790,54 @@ void verifyPopup(jlong render, jlong arc, bool requireDisplay, UINT multiplier) 
 }
 
 void verifyOffline() {
+    using cmi::xessfg::pacing::cancelRealDelay;
+    using cmi::xessfg::pacing::DelayCancellation;
+    using cmi::xessfg::pacing::evenlySpacedRealSlot;
+    using cmi::xessfg::pacing::OutputGroup;
+    using cmi::xessfg::pacing::realSubmissionTime;
+    using cmi::xessfg::pacing::UnknownSlot;
+    const auto first = evenlySpacedRealSlot(0, {3}, 1, 4);
+    require(first == 5 && evenlySpacedRealSlot(first, {7}, 1, 8) == 9,
+            "The one-refresh delay did not converge to 2:2 spacing");
+    require(evenlySpacedRealSlot(0, {4}, 1, 5) == 6,
+            "A 4:1 split exceeded the one-refresh limit");
+    require(evenlySpacedRealSlot(0, {2, 4}, 2, 5) == 6
+            && evenlySpacedRealSlot(0, {2, 4, 6}, 3, 7) == 8,
+            "Multi-frame output did not use the same real-only adjustment");
+    require(evenlySpacedRealSlot(0, {1, 3, 4}, 3, 5) == 5
+            && evenlySpacedRealSlot(0, {2}, 1, 4) == 4
+            && evenlySpacedRealSlot(UnknownSlot, {3}, 1, 4) == 4,
+            "An existing or unverified real slot was unnecessarily delayed");
+    require(realSubmissionTime(91, 10, 95, 105) == 101
+            && realSubmissionTime(91, 10, 105, 115) == 91
+            && realSubmissionTime(106, 10, 95, 105) == 106,
+            "Real output waited past its one-refresh budget or for an unreachable slot");
+    require(cancelRealDelay(true, false, true) == DelayCancellation::NextImage
+            && cancelRealDelay(true, true, false) == DelayCancellation::OutputCapacity
+            && cancelRealDelay(false, false, false) == DelayCancellation::ClockChanged
+            && cancelRealDelay(true, false, false) == DelayCancellation::None,
+            "A real-frame timer could hold up another output or outlive the refresh clock");
+    for (unsigned multiplier = 2; multiplier <= 4; ++multiplier) {
+        OutputGroup group{};
+        group.interpolate = true;
+        group.captured = 1;
+        require(!group.real(0) && group.acceptsImage(), "Unconfirmed output was treated as a real frame");
+        group.submitted = 1;
+        require(!group.completed() && group.confirm(multiplier, multiplier),
+                "An early output could not be forwarded before SDK confirmation");
+        group.captured = group.submitted = multiplier;
+        require(group.completed() && !group.acceptsImage() && group.real(multiplier - 1)
+                && group.generated(multiplier - 2), "Confirmed output lost its expected order");
+    }
+    OutputGroup shortGroup{};
+    shortGroup.interpolate = true;
+    shortGroup.captured = 1;
+    require(!shortGroup.confirm(0, 4) && shortGroup.confirm(1, 4) && shortGroup.real(0),
+            "Reduced SDK output was not classified as one real frame");
+    OutputGroup hiddenGroup{};
+    require(hiddenGroup.confirm(0, 4) && hiddenGroup.completed() && !hiddenGroup.acceptsImage(),
+            "An occluded group left pending output");
+
     verifyPendingCapacity();
     require(interpolationCount(2, 1) == 1 && interpolationCount(3, 3) == 2 && interpolationCount(4, 3) == 3,
             "Multiplier did not map to the configured number of generated frames");
@@ -795,6 +902,9 @@ int main(int argc, char** argv) {
             DestroyWindow(window);
             return 0;
         }
+        std::puts("Checking output reservation recovery after texture and group queue pressure");
+        verifyOutputBackpressure(window, arc, 2, 2);
+        verifyOutputBackpressure(window, arc, 1, cmi::xessfg::pacing::MaxGroups);
         {
             std::puts("Checking RGBA8 transfer and saturation");
             Session session;

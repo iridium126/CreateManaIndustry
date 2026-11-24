@@ -77,6 +77,19 @@ class ProxyTimingTest(unittest.TestCase):
         self.assertEqual(matches[3], (2, "verified_app_frame_id"))
         self.assertEqual(matches[4], (2, "verified_app_frame_id"))
 
+    def test_async_output_matches_after_proxy_return_and_recovers_unconfirmed_type(self):
+        frame = {"session_id": "a", "present_id": "5", "queued": "2", "present_enter_qpc": "10",
+                 "present_exit_qpc": "20", "proxy_swap_chain_address": "42"}
+        rows = [dict(type=kind, qpc=qpc, address=address, app_id=5) for kind, qpc, address in [
+            ("Unspecified", 30, 42), ("Application", 40, 42), ("Application", 32, 43),
+        ]]
+        matches, verified = merge.associate([frame], rows)
+        self.assertEqual(verified, {"a": 42})
+        self.assertEqual(matches, {i: (0, "verified_app_frame_id") for i in (0, 1)})
+        self.assertEqual(rows[0]["type"], "Intel XeSS-FG")
+        fields, _ = merge.associate([frame], [rows[2]])
+        self.assertEqual(fields, {})
+
     def test_reused_present_id_and_swap_chain_do_not_merge_sessions(self):
         app = []
         rows = []
@@ -108,6 +121,21 @@ class ProxyTimingTest(unittest.TestCase):
         self.assertEqual(fields[1]["arc_inputs_to_midpoint_ms"], 3)
         self.assertEqual(fields[1]["arc_inputs_to_generated_ms"], 13)
         self.assertNotIn("refresh_split", fields[5])
+
+    def test_gpu_ready_time_explains_which_generated_frames_miss_the_midpoint(self):
+        app = [{"session_id": "a", "fg_gameplay_eligible": "true"} for _ in range(4)]
+        events = [("Application", 0, None), ("Intel XeSS-FG", 30, 26), ("Application", 40, None),
+                  ("Intel XeSS-FG", 70, 58), ("Application", 80, None),
+                  ("Intel XeSS-FG", 110, None), ("Application", 120, None)]
+        rows = [dict(type=kind, display=display, address=42, gpu_ready=ready)
+                for kind, display, ready in events]
+        matches = {i: ((i + 1) // 2, "verified") for i in range(len(rows))}
+        fields, summary = merge.display_pacing(app, rows, matches, 1000, 100, expected_generated=1)
+        self.assertEqual(fields[1]["generated_gpu_ready_minus_midpoint_ms"], 6)
+        self.assertEqual(fields[3]["generated_gpu_ready_minus_midpoint_ms"], -2)
+        self.assertNotIn("generated_gpu_ready_minus_midpoint_ms", fields[5])
+        self.assertEqual(summary["generated_gpu_ready_after_midpoint"], 1)
+        self.assertEqual(summary["generated_gpu_ready_minus_midpoint_ms"]["samples"], 2)
 
     def test_multiple_generated_frames_report_closest_to_midpoint(self):
         app = [{"session_id": "a", "fg_gameplay_eligible": "true"} for _ in range(2)]

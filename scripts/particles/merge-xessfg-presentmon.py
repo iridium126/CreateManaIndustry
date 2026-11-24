@@ -30,8 +30,14 @@ def associate(app, presents):
         address_to_sessions[int(frame["proxy_swap_chain_address"])].add(frame["session_id"])
 
     typed = {"Application", "Intel XeSS-FG"}
+    # The async output records the actual flip chain. Its DXGI calls can all
+    # occur after the proxy return, so a proxy-window anchor is optional.
+    exact = defaultdict(list)
     anchors = defaultdict(lambda: defaultdict(set))
-    for row in presents:
+    for row_index, row in enumerate(presents):
+        for frame in by_id[row["app_id"]]:
+            if row["address"] == int(app[frame]["proxy_swap_chain_address"]) and row["qpc"] >= starts[frame]:
+                exact[row_index].append(frame)
         if row["type"] in typed:
             for frame in by_id[row["app_id"]]:
                 if starts[frame] <= row["qpc"] <= ends[frame]:
@@ -44,6 +50,24 @@ def associate(app, presents):
         ranked = sorted(((len(frames), chain) for chain, frames in chains.items()), reverse=True)
         if ranked[0][0] >= 3 and (len(ranked) == 1 or ranked[0][0] > ranked[1][0]):
             verified[session] = ranked[0][1]
+
+    exact_groups = defaultdict(list)
+    for row_index, frames in exact.items():
+        if len(frames) == 1:
+            frame = frames[0]
+            exact_groups[frame].append(row_index)
+            verified[app[frame]["session_id"]] = presents[row_index]["address"]
+    for frame, rows in exact_groups.items():
+        # A frame may be forwarded before its type is confirmed. Resolve these
+        # only for a complete, ordered group on the explicitly recorded chain.
+        rows.sort(key=lambda row: presents[row]["qpc"])
+        if len(rows) != optional_int(app[frame].get("queued")):
+            continue
+        classified = ["Intel XeSS-FG"] * (len(rows) - 1) + ["Application"]
+        if all(presents[row]["type"] in (kind, "Unspecified", "Unknown", "NotSet")
+               for row, kind in zip(rows, classified)):
+            for row, kind in zip(rows, classified):
+                presents[row]["type"] = kind
 
     candidates = defaultdict(list)
     for row_index, row in enumerate(presents):
@@ -123,6 +147,7 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None, expected_
     # compatibility and summarize every interval here.
     interval_counts = Counter()
     interval_errors = []
+    ready_midpoint_errors = []
     interval_eligible = interval_covered = 0
     all_splits = Counter()
     interval_sequences = Counter()
@@ -194,13 +219,17 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None, expected_
                     interval_counts[str(len(generated))] += 1
                     if eligible and (not reset or current.get("fg_skip_reason") not in {None, "", "0"}):
                         interval_eligible += 1
-                    displayed = [(gen_time, gen_index) for gen_time, _, _, gen_index in generated
-                                 if last_time < gen_time < time]
+                    displayed = [(gen_time, gen_index) for gen_time, _, gen_index in ordered]
                     if displayed:
                         gen_time, gen_index = min(displayed, key=lambda gen: abs(2 * gen[0] - last_time - time))
                         error = milliseconds(2 * gen_time - last_time - time, 2 * frequency)
                         interval_errors.append(error)
                         annotations.setdefault(gen_index, {})["midpoint_error_ms"] = error
+                        gpu_ready = presents[gen_index].get("gpu_ready")
+                        if complete and gpu_ready is not None:
+                            ready_error = milliseconds(2 * gpu_ready - last_time - time, 2 * frequency)
+                            ready_midpoint_errors.append(ready_error)
+                            annotations[gen_index]["generated_gpu_ready_minus_midpoint_ms"] = ready_error
                         ready = optional_int(current.get("arc_inputs_ready_qpc"))
                         if ready is not None:
                             annotations[gen_index]["arc_inputs_to_generated_ms"] = milliseconds(
@@ -269,6 +298,9 @@ def display_pacing(app, presents, matches, frequency, refresh_hz=None, expected_
         "generation_coverage": counts["covered_intervals"] / eligible if eligible else None,
         "interval_generated_frames": dict(interval_counts),
         "interval_midpoint_error_ms": {"samples": len(interval_errors), **percentiles(interval_errors)},
+        "generated_gpu_ready_minus_midpoint_ms": {"samples": len(ready_midpoint_errors),
+                                                   **percentiles(ready_midpoint_errors)},
+        "generated_gpu_ready_after_midpoint": sum(error > 0 for error in ready_midpoint_errors),
         "absolute_interval_midpoint_error_ms": percentiles([abs(value) for value in interval_errors]),
         "interval_generation_coverage": interval_covered / interval_eligible if interval_eligible else None,
         "cross_bytes_per_frame": {"samples": len(bytes_written), **percentiles(bytes_written)},
@@ -398,11 +430,20 @@ def merge(metadata_path, presentmon_path, refresh_hz=None, multiplier=None):
         display = None
         if dropped != "1" and until and until.upper() != "NA" and Decimal(until) > 0:
             display = qpc + round(Decimal(until) * frequency / 1000)
+        render_latency = row.get("MsRenderPresentLatency") or row.get("msRenderPresentLatency", "")
+        gpu_ready = None
+        if render_latency and render_latency.upper() != "NA":
+            duration = Decimal(render_latency)
+            if duration.is_finite() and duration > 0:
+                ready = qpc + round(duration * frequency / 1000)
+                if display is None or ready <= display:
+                    gpu_ready = ready
         latency = row.get("MsAllInputToPhotonLatency", "")
         input_latency = float(latency) if latency and latency.upper() != "NA" else None
         presents.append(dict(qpc=qpc, address=int(row["SwapChainAddress"], 16), app_id=app_id,
                              frame_id=row.get("FrameId", ""), type=row.get("FrameType") or "Unknown",
-                             mode=row.get("PresentMode", ""), display=display, dropped=dropped, api_ticks=api_ticks,
+                             mode=row.get("PresentMode", ""), display=display, gpu_ready=gpu_ready,
+                             dropped=dropped, api_ticks=api_ticks,
                              input_latency_ms=input_latency if input_latency is not None and input_latency > 0 else None))
 
     matched, verified = associate(app, presents)
@@ -433,9 +474,11 @@ def merge(metadata_path, presentmon_path, refresh_hz=None, multiplier=None):
               "presenter_thread_id", "proxy_present_thread_cpu_ns", "proxy_top_level", "proxy_to_first_dxgi_ms",
               "proxy_dxgi_overlap_ms", "proxy_outside_dxgi_ms",
               "pm_frame_type", "pm_swap_chain", "pm_frame_id", "pm_app_frame_id", "pm_present_mode",
-              "pm_present_qpc", "pm_present_api_ms", "display_qpc", "pm_dropped",
+              "pm_present_qpc", "pm_present_api_ms", "pm_gpu_ready_qpc", "pm_gpu_ready_to_display_ms",
+              "display_qpc", "pm_dropped",
               "present_exit_to_display_ms", "real_display_interval_ms", "real_input_to_display_ms", "midpoint_error_ms",
               "interval_refresh_sequence", "generated_ordinal", "generated_phase_error_ms",
+              "generated_gpu_ready_minus_midpoint_ms",
               "refresh_split", "arc_inputs_to_generated_ms", "arc_inputs_to_midpoint_ms",
               "fg_gameplay_eligible", "fg_skip_reason", "fg_geometry_width", "fg_geometry_height",
               "producer_hudless_gpu_ns", "hud_copy_route", "arc_hud_base_unpack_gpu_ns", "arc_hud_base_ready_qpc")
@@ -492,9 +535,12 @@ def merge(metadata_path, presentmon_path, refresh_hz=None, multiplier=None):
 def display_fields(row, exit_qpc, frequency):
     if row is None:
         return {}
+    gpu_ready = row.get("gpu_ready")
     return dict(pm_frame_type=row["type"], pm_swap_chain=f"0x{row['address']:x}", pm_app_frame_id=row["app_id"],
                 pm_frame_id=row["frame_id"], pm_present_mode=row["mode"],
                 pm_present_qpc=row["qpc"], pm_present_api_ms=milliseconds(row["api_ticks"], frequency),
+                pm_gpu_ready_qpc=gpu_ready,
+                pm_gpu_ready_to_display_ms=milliseconds(delta(row["display"], gpu_ready), frequency),
                 display_qpc=row["display"], pm_dropped=row["dropped"],
                 present_exit_to_display_ms=milliseconds(delta(row["display"], exit_qpc), frequency))
 
