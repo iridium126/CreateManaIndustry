@@ -1,6 +1,7 @@
-package com.iridium126.createmanaindustry.client.particles.engine.spatial;
+package com.iridium126.createmanaindustry.client.config;
 
 import com.electronwill.nightconfig.core.UnmodifiableConfig;
+import com.iridium126.createmanaindustry.client.particles.engine.spatial.StormGpuDevices;
 import com.iridium126.createmanaindustry.client.xessfg.XessFgAdapters;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 import com.iridium126.createmanaindustry.infrastructure.config.StormSimulationGpu;
@@ -17,6 +18,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -26,20 +28,21 @@ import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen.ConfigurationSectionScreen;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
-public final class StormGpuConfigurationScreen {
-    private static final String GPU = "simulationGpu";
-    private static final String TRANSLATION = "createmanaindustry.configuration.simulationGpu";
-
-    private StormGpuConfigurationScreen() {}
+/**
+ * Configuration screen for {@link ClientConfig}, with custom sections for Allay Storm, XeSS-FG
+ * and the startup switches. Other sections use NeoForge's default editors.
+ */
+public final class ClientConfigScreen {
+    private ClientConfigScreen() {}
 
     public static Screen create(ModContainer mod, Screen parent) {
         return new ConfigurationScreen(mod, parent, (root, type, config, title) -> config.getSpec() == ClientConfig.SPEC
-                ? new ClientSection(root, type, config, title).build()
+                ? new RootSection(root, type, config, title).build()
                 : new ConfigurationSectionScreen(root, type, config, title));
     }
 
-    private static final class ClientSection extends ConfigurationSectionScreen {
-        ClientSection(Screen parent, ModConfig.Type type, ModConfig config, Component title) {
+    private static final class RootSection extends ConfigurationSectionScreen {
+        RootSection(Screen parent, ModConfig.Type type, ModConfig config, Component title) {
             super(parent, type, config, title);
         }
 
@@ -47,19 +50,44 @@ public final class StormGpuConfigurationScreen {
 
         @Override
         protected Element createSection(String key, UnmodifiableConfig spec, UnmodifiableConfig section) {
-            if (!key.equals("allayStorm") && !key.equals("xessFg")) return super.createSection(key, spec, section);
+            if (!key.equals("allayStorm") && !key.equals("xessFg") && !key.equals("experimental"))
+                return super.createSection(key, spec, section);
             var title = getTranslationComponent(key);
             var tooltip = getTooltipComponent(key, null);
             return new Element(title, tooltip, Button.builder(title, button -> minecraft.setScreen(
-                    sectionCache.computeIfAbsent(key, name -> key.equals("xessFg")
-                            ? new XessFgSection(context, this, spec.valueMap(), name, section.entrySet(), title).build()
-                            : new StormSection(context, this, spec.valueMap(), name, section.entrySet(), title).build())))
+                    sectionCache.computeIfAbsent(key, name -> switch (key) {
+                        case "xessFg" -> new XessFgSection(context, this, spec.valueMap(), name, section.entrySet(), title).build();
+                        case "allayStorm" -> new StormSection(context, this, spec.valueMap(), name, section.entrySet(), title).build();
+                        default -> new ExperimentalSection(context, this, spec.valueMap(), name, section.entrySet(), title).build();
+                    })))
                     .width(Button.DEFAULT_WIDTH).tooltip(Tooltip.create(tooltip)).build(), false);
         }
     }
 
+    /**
+     * The startup switch is a plain {@code ConfigValue<Boolean>}, so NeoForge has no editor for it.
+     * Show its file value without the "cannot be edited in the UI" warning: the switch is
+     * intentionally restart-only and is read from the raw TOML before Mixins load.
+     */
+    private static final class ExperimentalSection extends ConfigurationSectionScreen {
+        ExperimentalSection(Context context, Screen parent, Map<String, Object> specs, String key,
+                            Set<? extends UnmodifiableConfig.Entry> entries, Component title) {
+            super(context, parent, specs, key, entries, title);
+        }
+
+        ConfigurationSectionScreen build() { return rebuild(); }
+
+        @Override
+        protected Element createOtherValue(String key, ModConfigSpec.ConfigValue<?> value) {
+            if (!key.equals("clientPackages")) return super.createOtherValue(key, value);
+            var label = new StringWidget(Button.DEFAULT_WIDTH, Button.DEFAULT_HEIGHT,
+                    Component.literal(String.valueOf(value.getRaw())), font).alignLeft();
+            return new Element(getTranslationComponent(key), getTooltipComponent(key, null), label, false);
+        }
+    }
+
     private static final class XessFgSection extends ConfigurationSectionScreen {
-        private static final String TRANSLATION = "createmanaindustry.configuration.xessFg.gpu";
+        private static final String GPU_TRANSLATION = "createmanaindustry.configuration.xessFg.gpu";
 
         XessFgSection(Context context, Screen parent, Map<String, Object> specs, String key,
                       Set<? extends UnmodifiableConfig.Entry> entries, Component title) {
@@ -91,7 +119,7 @@ public final class StormGpuConfigurationScreen {
             String current = source.get();
             var selected = XessFgGpu.parse(current);
             var choices = new LinkedHashMap<String, Component>();
-            choices.put(XessFgGpu.AUTO, Component.translatable(TRANSLATION + ".auto"));
+            choices.put(XessFgGpu.AUTO, Component.translatable(GPU_TRANSLATION + ".auto"));
             try {
                 for (var device : XessFgAdapters.discover(minecraft.gameDirectory.toPath())) {
                     var gpu = device.selection();
@@ -101,14 +129,14 @@ public final class StormGpuConfigurationScreen {
             } catch (IOException | LinkageError | RuntimeException unavailable) {
                 // Keep the saved selection available for viewing and undo.
             }
-            choices.putIfAbsent(current, Component.translatable(TRANSLATION + ".unavailable",
+            choices.putIfAbsent(current, Component.translatable(GPU_TRANSLATION + ".unavailable",
                     selected.label().isEmpty() ? selected.id() : selected.label()));
             var option = new OptionInstance<>(getTranslationKey(key), value -> Tooltip.create(choices.get(value)),
                     (caption, value) -> choices.get(value), new Custom<>(new ArrayList<>(choices.keySet())),
                     current, value -> undoManager.add(v -> { target.accept(v); onChanged(key); }, value,
                             v -> { target.accept(v); onChanged(key); }, source.get()));
-            return new Element(Component.translatable(TRANSLATION),
-                    Component.translatable(TRANSLATION + ".tooltip"), option);
+            return new Element(Component.translatable(GPU_TRANSLATION),
+                    Component.translatable(GPU_TRANSLATION + ".tooltip"), option);
         }
 
         @Override
@@ -128,6 +156,8 @@ public final class StormGpuConfigurationScreen {
     }
 
     private static final class StormSection extends ConfigurationSectionScreen {
+        private static final String GPU = "simulationGpu";
+        private static final String TRANSLATION = "createmanaindustry.configuration.simulationGpu";
         private record Choice(Component label, Component tooltip) {}
 
         StormSection(Context context, Screen parent, Map<String, Object> specs, String key,

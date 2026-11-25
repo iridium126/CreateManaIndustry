@@ -41,7 +41,7 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
-import com.iridium126.createmanaindustry.client.particles.engine.spatial.StormGpuConfigurationScreen;
+import com.iridium126.createmanaindustry.client.config.ClientConfigScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.event.GameShuttingDownEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
@@ -52,7 +52,7 @@ import com.iridium126.createmanaindustry.infrastructure.output.CMILog;
 @EventBusSubscriber(modid = CreateManaIndustry.MODID, value = Dist.CLIENT)
 public class CreateManaIndustryClient {
     public CreateManaIndustryClient(ModContainer container) {
-        container.registerExtensionPoint(IConfigScreenFactory.class, StormGpuConfigurationScreen::create);
+        container.registerExtensionPoint(IConfigScreenFactory.class, ClientConfigScreen::create);
 
         // Common payload handlers expose typed installation points instead of
         // linking client-only implementations into classes loaded on servers.

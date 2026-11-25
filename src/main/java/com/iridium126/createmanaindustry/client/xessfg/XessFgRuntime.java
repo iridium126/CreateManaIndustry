@@ -49,6 +49,7 @@ public final class XessFgRuntime {
     private boolean reportedSleepRejection;
     private boolean servicingWindow, windowInterrupted;
     private boolean topLevel;
+    private ClientConfig.XessFg appliedConfig;
     private XessFgCapture capture;
     private XessFgMotion motion;
     private XessFgGpuMotion gpuMotion;
@@ -73,7 +74,29 @@ public final class XessFgRuntime {
                 && !INSTANCE.failed && !INSTANCE.servicingWindow;
     }
 
+    /**
+     * Applies client config changes on the render thread at the start of a client tick.
+     * <p>
+     * {@code enabled} and {@code surface} take effect immediately: disabling closes the proxy
+     * presentation and re-enabling clears a previous permanent failure. Adapter, transport and
+     * multiplier are only read by {@link #open}, so the running session keeps its values and the
+     * next session uses the new ones.
+     */
+    private void applyConfig() {
+        if (servicingWindow) return;
+        ClientConfig.XessFg next = ClientConfig.xessFg();
+        if (next.equals(appliedConfig)) return;
+        ClientConfig.XessFg previous = appliedConfig;
+        appliedConfig = next;
+        if (!next.enabled()) {
+            close();
+        } else if (previous == null || !previous.enabled()) {
+            failed = false;
+        }
+    }
+
     public static void begin(Minecraft minecraft, boolean render) {
+        INSTANCE.applyConfig();
         if (INSTANCE.dlssMotionFinished) INSTANCE.dlssMotionFinished = false;
         if (!ClientConfig.dlss().enabled() && INSTANCE.session == 0 && INSTANCE.motion != null)
             INSTANCE.close();
@@ -262,6 +285,11 @@ public final class XessFgRuntime {
             return false;
         }
         ++sessionId;
+        // DLSS keeps these motion resources alive while XeSS-FG is disabled; release them before
+        // the new session installs its own instances.
+        if (motion != null) motion.close();
+        if (gpuMotion != null) gpuMotion.close();
+        gpuMotion = null;
         for (int i = 0; i < slots.length; i++) slots[i] = new XessFgTransport(session, i);
         motion = new XessFgMotion();
         if (XessFgGpuMotion.shaderSupport()) gpuMotion = new XessFgGpuMotion((int) (geometry >>> 32), (int) geometry);

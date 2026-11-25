@@ -4,7 +4,7 @@ XeSS-FG 接入目前为实验功能。Windows x64 发行包内包含 XeSS SDK 3.
 
 ## 启用
 
-在模组配置界面打开 **Intel XeSS 帧生成**，启用补帧并选择 **Arc A750** 或 **自动**。也可以在客户端 TOML 中设置后重启。
+在模组配置界面打开 **Intel XeSS 帧生成**，启用补帧并选择 **Arc A750** 或 **自动**。也可以直接修改客户端 TOML。`enabled` 与 `surface` 保存后即时生效；`multiplier`、`transport` 和 `gpu` 只在下一次补帧会话打开时读取，当前会话保持原值且不中断。
 
 ```toml
 [xessFg]
@@ -12,12 +12,12 @@ enabled = true
 multiplier = 2
 gpu = "auto"
 transport = "rgb24"
-surface = "child"
+surface = "borderless_child"
 ```
 
-首次测试使用笔记本内屏、SDR 和窗口或无边框模式。进入世界后查看 [CMI/XeSS-FG] 日志，确认渲染卡、生成卡和跨卡 RGB24。`multiplier` 接受整数 2、3、4，分别对应 2×、3×、4×。默认 2，每张真实帧请求一张生成帧。修改后重启客户端。日志记录 requested multiplier 和 interpolated frames，后者为应用到 SDK 的生成帧数。驱动不支持所选倍率时，日志会报告可用上限，客户端回退到 OpenGL 呈现。实际生成数由显式采集时的 queued 和 PresentMon 上屏记录核对。 [XeSS Inspector](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-xess-inspector.html)
+首次测试使用笔记本内屏、SDR 和窗口或无边框模式。进入世界后查看 [CMI/XeSS-FG] 日志，确认渲染卡、生成卡和跨卡 RGB24。`multiplier` 接受整数 2、3、4，分别对应 2×、3×、4×。默认 2，每张真实帧请求一张生成帧。修改倍率后在下一次补帧会话生效，不中断当前会话（例如关开 `enabled` 或切换 `surface` 重建会话时）。日志记录 requested multiplier 和 interpolated frames，后者为应用到 SDK 的生成帧数。驱动不支持所选倍率时，日志会报告可用上限，客户端回退到 OpenGL 呈现。实际生成数由显式采集时的 queued 和 PresentMon 上屏记录核对。 [XeSS Inspector](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-xess-inspector.html)
 
-DXGI 默认使用 Minecraft 窗口客户区里的子呈现表面，原 GLFW 窗口继续处理焦点、键盘和鼠标。深度与运动矢量按输出半宽半高生成。Bliss 和 Photon 的无扭曲包内超采样路径使用包的渲染尺寸和 jitter。XeSS-FG 负责上采样和膨胀，颜色继续按输出分辨率提交。
+窗口模式和默认的无边框子窗口模式使用 Minecraft 窗口客户区里的子呈现表面（`surface = "borderless_child"`）；`borderless_popup` 在无边框全屏时改用顶层呈现窗口。原 GLFW 窗口继续处理焦点、键盘和鼠标。深度与运动矢量按输出半宽半高生成。Bliss 和 Photon 的无扭曲包内超采样路径使用包的渲染尺寸和 jitter。XeSS-FG 负责上采样和膨胀，颜色继续按输出分辨率提交。
 
 NVIDIA 渲染、Arc A750 生成并使用 RGB24 时，`Arc shared inputs=true` 表示 Arc 从共享缓冲直接准备本地纹理。无扭曲时 Arc 重建相机运动，RTX 只需传输原始深度和可选局部运动覆盖。2560×1600 的半尺寸几何组为 4.096 MB，仅在有覆盖时需要 8.192 MB。对照旧版的 16.384 MB 仅深度路径。传输的实际字节量见 `cross_geometry_bytes`。已识别的屏幕扭曲由 OpenGL 产生两张低分辨率输入。
 
@@ -33,7 +33,7 @@ XeSS SDK 的输出由独立的 DXGI 线程逐张提交。固定刷新时，线�
 
 ### 独立翻转对照
 
-- 在同一构建中，分别设置 `xessFg.surface = "borderless_child"` 和 `"borderless_popup"`，每次重启客户端。进入存档后从窗口模式按 F11 切至无边框全屏。两种模式都使用当前显示器的桌面分辨率。第一种沿用子窗口，第二种在相同位置使用由 GLFW 主窗口拥有的顶层呈现窗口。退出 F11 后使用子窗口。原 GLFW 窗口负责输入。
+- 在同一构建中，分别设置 `xessFg.surface = "borderless_child"` 和 `"borderless_popup"`。保存后即时生效，按 F11 重新进入无边框全屏即可切换呈现窗口；重启客户端可获得同样的初始状态。进入存档后从窗口模式按 F11 切至无边框全屏。两种模式都使用当前显示器的桌面分辨率。第一种沿用子窗口，第二种在相同位置使用由 GLFW 主窗口拥有的顶层呈现窗口。退出 F11 后使用子窗口。原 GLFW 窗口负责输入。
 - 保持 RGB24、同一显示器和刷新率、相同的游戏设置及 Storm 模拟阶段。每种设置在游戏获得焦点后用常规 PresentMon 脚本配合 `/cmi particle profile frames 10` 采集。检查 `proxy_top_level` 是否分别为 0 和 1，再比较 PresentMon 报告的实际呈现模式。顶层窗口是否获得 `Hardware: Independent Flip` 由 Windows 和显示链路决定。 [Microsoft DXGI 翻转模型](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/for-best-performance--use-dxgi-flip-model)
 - 比较真实帧 P95、实际显示 FPS 及生成帧上屏率。复查 F11、Alt+Tab、最小化与恢复、鼠标捕获和键盘操作。
 

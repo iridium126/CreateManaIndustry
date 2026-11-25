@@ -43,6 +43,7 @@ public final class ClientConfig {
     public static final int DEFAULT_SAME_FATE_MAX_PARTICLES = 131072;
     public static final boolean DEFAULT_ALLVR_LOD = true;
     public static final boolean DEFAULT_RIFT_SKY_CLIPPING = true;
+    public static final XessFgSurfaceMode DEFAULT_XESS_FG_SURFACE = XessFgSurfaceMode.BORDERLESS_CHILD;
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
@@ -77,14 +78,6 @@ public final class ClientConfig {
     private static ModConfigSpec.EnumValue<RiftCulling> RIFT_CULLING;
 
     static {
-        BUILDER.comment("Startup switches read before any config is loaded. Changing a switch requires restarting the game.").push("experimental");
-        // The runtime value is read from the raw TOML by ExperimentalStartup before Mixins load;
-        // this entry only writes the file and renders the toggle. Changing it does not affect the
-        // running process until the game restarts.
-        BUILDER.comment("Enable client GPU package simulation and its Mixins. Requires a participating server and compatible GPU resources.")
-                .gameRestart().define("clientPackages", DEFAULT_CLIENT_PACKAGES);
-        BUILDER.pop();
-
         BUILDER.comment("Volumetric mist and far-terrain rendering options.").push("rendering");
         MIST_GLOW_STRENGTH = BUILDER
                 .comment("Global multiplier for mist glow.")
@@ -97,31 +90,31 @@ public final class ClientConfig {
                 .define("lod", DEFAULT_ALLVR_LOD);
         BUILDER.pop();
 
-        BUILDER.push("xessFg");
-        XESS_FG_ENABLED = BUILDER.comment("Enable Intel XeSS Frame Generation on supported Windows clients.")
-                .translation("createmanaindustry.configuration.xessFg.enabled")
-                .gameRestart().define("enabled", false);
-        XESS_FG_MULTIPLIER = BUILDER.comment("Frame generation multiplier: 2x, 3x, or 4x.")
-                .translation("createmanaindustry.configuration.xessFg.multiplier")
-                .gameRestart().defineInRange("multiplier", 2, XESS_FG_MULTIPLIERS.getFirst(),
-                        XESS_FG_MULTIPLIERS.getLast());
-        XESS_FG_GPU = BUILDER.comment("Use auto or a PnP device ID with an optional |model label.")
-                .translation("createmanaindustry.configuration.xessFg.gpu")
-                .gameRestart().define("gpu", XessFgGpu.AUTO, XessFgGpu::valid);
-        XESS_FG_TRANSPORT = BUILDER.comment("Cross-adapter color transport: rgba8, rgb24, or ycbcr422.")
-                .translation("createmanaindustry.configuration.xessFg.transport")
-                .gameRestart().define("transport", XessFgTransportMode.RGB24.value(), XessFgTransportMode::valid);
-        XESS_FG_SURFACE = BUILDER.comment("Presentation surface: child, borderless_child, or borderless_popup.")
-                .translation("createmanaindustry.configuration.xessFg.surface")
-                .gameRestart().define("surface", XessFgSurfaceMode.CHILD.value(), XessFgSurfaceMode::valid);
-        BUILDER.pop();
-
         BUILDER.push("dlss");
-        DLSS_ENABLED = BUILDER.comment("Enable NVIDIA DLSS Super Resolution on supported Windows RTX render adapters.")
+        DLSS_ENABLED = BUILDER.comment("Enable NVIDIA DLSS Super Resolution on supported Windows RTX GPUs. Can be combined with XeSS Frame Generation.")
                 .translation("createmanaindustry.configuration.dlss.enabled").define("enabled", false);
-        DLSS_RENDER_SCALE = BUILDER.comment("Scene render scale per axis. 1.0 uses DLAA; the GUI stays at full resolution.")
+        DLSS_RENDER_SCALE = BUILDER.comment("Scene render scale per axis. Lower values raise frame rate; 1.0 renders at native resolution (DLAA). The GUI stays at full resolution. Takes effect immediately.")
                 .translation("createmanaindustry.configuration.dlss.renderScale")
                 .defineInRange("renderScale", DEFAULT_DLSS_RENDER_SCALE, 0.50, 1.0);
+        BUILDER.pop();
+
+        BUILDER.push("xessFg");
+        XESS_FG_ENABLED = BUILDER.comment("Generate intermediate frames between real frames to raise the displayed frame rate. Requires Windows and a supported Intel GPU. Takes effect immediately.")
+                .translation("createmanaindustry.configuration.xessFg.enabled")
+                .define("enabled", false);
+        XESS_FG_MULTIPLIER = BUILDER.comment("Frame generation multiplier: 2x, 3x, or 4x. Restart the game to apply.")
+                .translation("createmanaindustry.configuration.xessFg.multiplier")
+                .defineInRange("multiplier", 2, XESS_FG_MULTIPLIERS.getFirst(),
+                        XESS_FG_MULTIPLIERS.getLast());
+        XESS_FG_GPU = BUILDER.comment("GPU used for frame generation. auto prefers an Intel Arc GPU; a PnP device ID with an optional |model label selects a specific device. Restart the game to apply.")
+                .translation("createmanaindustry.configuration.xessFg.gpu")
+                .define("gpu", XessFgGpu.AUTO, XessFgGpu::valid);
+        XESS_FG_TRANSPORT = BUILDER.comment("Format used to transfer frames between the rendering and frame generation GPUs: rgba8, rgb24, or ycbcr422. Restart the game to apply.")
+                .translation("createmanaindustry.configuration.xessFg.transport")
+                .define("transport", XessFgTransportMode.RGB24.value(), XessFgTransportMode::valid);
+        XESS_FG_SURFACE = BUILDER.comment("How the game is presented in fullscreen: child, borderless_child, or borderless_popup. Takes effect immediately; press F11 again if already fullscreen.")
+                .translation("createmanaindustry.configuration.xessFg.surface")
+                .define("surface", DEFAULT_XESS_FG_SURFACE.value(), XessFgSurfaceMode::valid);
         BUILDER.pop();
 
         BUILDER.comment("Shared GPU particle engine: capacity, frame budget, fade distance and shader integration.").push("particles");
@@ -161,14 +154,14 @@ public final class ClientConfig {
         STORM_SHADOW_QUALITY = BUILDER.comment("FULL uses Iris casting. COARSE can reject the whole Storm body.",
                 "RT uses qualified light occlusion. OFF disables particle shadow casting.")
                 .defineEnum("shaderPackShadowQuality", ParticleShadowQuality.FULL);
-        RIFT_SKY_CLIPPING=BUILDER.comment("Clip target sky to the current portal; sky history and lighting may differ.").define("riftSkyClipping",DEFAULT_RIFT_SKY_CLIPPING);
-        RIFT_CULLING=BUILDER.comment("NONE, FRUSTUM, FRUSTUM_DEPTH. Unqualified depth falls back to frustum. Combat continues.").defineEnum("riftCulling",RiftCulling.FRUSTUM_DEPTH);
         ALLAY_FEATHER_RATE = BUILDER.comment("Target total feathers per second over the whole 2R field at storm radius 32, scaled by (R/32)^2. Spawn points are sampled uniformly across the 2R disk and accepted with weight 1 inside R and (2R - d)/R out to 2R, so density falls off linearly from R to 2R. 0 stops new feathers; existing ones finish their lifetime.")
                 .defineInRange("allayFeatherMaxSpawnPerSecond",DEFAULT_ALLAY_FEATHER_RATE,0,2000);
         ALLAY_GOLD_RATE = BUILDER.comment("Target total gold particles per second over the whole 2R field at storm radius 32, scaled by (R/32)^2. Uses the same radial weight as feathers. 0 stops new particles.")
                 .defineInRange("allayGoldMaxSpawnPerSecond",DEFAULT_ALLAY_GOLD_RATE,0,4000);
         STORM_LOD_1_DISTANCE = BUILDER.comment("Distance in blocks where opaque body LOD ends and billboard LOD begins.").defineInRange("stormLod1Distance",DEFAULT_STORM_LOD_1_DISTANCE,120,8192);
         STORM_LOD_DISTANCE = BUILDER.comment("Distant display/subscription limit in blocks, capped by the server's stormLodMaxDistance. 0 disables distant members.").defineInRange("stormLodDistance",DEFAULT_STORM_LOD_DISTANCE,0,8192);
+        RIFT_SKY_CLIPPING=BUILDER.comment("Clip target sky to the current portal; sky history and lighting may differ.").define("riftSkyClipping",DEFAULT_RIFT_SKY_CLIPPING);
+        RIFT_CULLING=BUILDER.comment("NONE, FRUSTUM, FRUSTUM_DEPTH. Unqualified depth falls back to frustum. Combat continues.").defineEnum("riftCulling",RiftCulling.FRUSTUM_DEPTH);
         BUILDER.pop();
 
         BUILDER.comment("Hexcasting GPU rendering.").push("hexcasting");
@@ -178,6 +171,14 @@ public final class ClientConfig {
         PARTICLE_HEX_PATTERN_REDIRECT = BUILDER.comment("Render Hexcasting world/shadow/player-preview and spellcasting UI patterns with the shared GPU backend.").define("hexPatternRedirect", DEFAULT_HEX_PATTERN_REDIRECT);
         HEX_PATTERN_GPU_BUDGET = BUILDER.comment("Maximum Hex-specific GPU buffer allocation, including geometry, commands and in-flight parameter banks, in MiB. Overflow preserves native rendering.")
                 .defineInRange("hexPatternGpuBudgetMiB", DEFAULT_HEX_PATTERN_GPU_BUDGET_MIB, 1, 256);
+        BUILDER.pop();
+
+        BUILDER.comment("Startup switches read before any config is loaded. Changing a switch requires restarting the game.").push("experimental");
+        // The runtime value is read from the raw TOML by ExperimentalStartup before Mixins load;
+        // this entry only writes the file and renders the toggle. Changing it does not affect the
+        // running process until the game restarts.
+        BUILDER.comment("Enable client GPU package simulation and its Mixins. Requires a participating server and compatible GPU resources.")
+                .gameRestart().define("clientPackages", DEFAULT_CLIENT_PACKAGES);
         BUILDER.pop();
 
         BUILDER.comment("Create package GPU resources.").push("packages");
@@ -213,7 +214,7 @@ public final class ClientConfig {
             StormSimulationBackend.AUTO, StormSimulationGpu.FOLLOW_MINECRAFT);
     public record XessFg(boolean enabled, XessFgGpu gpu, XessFgTransportMode transport, XessFgSurfaceMode surface, int multiplier) {}
     private static volatile XessFg xessFg = new XessFg(false, XessFgGpu.parse(XessFgGpu.AUTO), XessFgTransportMode.RGB24,
-            XessFgSurfaceMode.CHILD, 2);
+            DEFAULT_XESS_FG_SURFACE, 2);
 
     public static XessFg xessFg() {
         return xessFg;
@@ -245,11 +246,9 @@ public final class ClientConfig {
         if (event.getConfig().getSpec() == SPEC
                 && (event instanceof ModConfigEvent.Loading || event instanceof ModConfigEvent.Reloading)) {
             dlss = new Dlss(DLSS_ENABLED.get(), DLSS_RENDER_SCALE.get());
-            if (event instanceof ModConfigEvent.Loading) {
-                xessFg = new XessFg(XESS_FG_ENABLED.get(), XessFgGpu.parse(XESS_FG_GPU.get()),
-                        XessFgTransportMode.parse(XESS_FG_TRANSPORT.get()), XessFgSurfaceMode.parse(XESS_FG_SURFACE.get()),
-                        XESS_FG_MULTIPLIER.get());
-            }
+            xessFg = new XessFg(XESS_FG_ENABLED.get(), XessFgGpu.parse(XESS_FG_GPU.get()),
+                    XessFgTransportMode.parse(XESS_FG_TRANSPORT.get()), XessFgSurfaceMode.parse(XESS_FG_SURFACE.get()),
+                    XESS_FG_MULTIPLIER.get());
             allvrLod = ALLVR_LOD.get();
             mistGlowStrength = MIST_GLOW_STRENGTH.get();
             mistDebugShadow = MIST_DEBUG_SHADOW.get();

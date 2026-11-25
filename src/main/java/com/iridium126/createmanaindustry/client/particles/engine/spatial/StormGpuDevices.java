@@ -17,11 +17,11 @@ import org.lwjgl.system.MemoryStack;
 
 public final class StormGpuDevices {
     public record Device(StormSimulationGpu selection, String pci, long luid, boolean dxr, String cudaUuid) {
-        boolean visible(long renderLuid, String savedId) {
+        public boolean visible(long renderLuid, String savedId) {
             return renderLuid == 0 || luid != renderLuid || selection.uuid().equals(savedId);
         }
 
-        String backends() {
+        public String backends() {
             if (cudaUuid.isEmpty()) return "DXR";
             return dxr ? "OptiX, DXR" : "OptiX";
         }
