@@ -29,7 +29,7 @@ public final class AllayDome {
     public static float radius(int count){return 32;}
     public static float closeSeconds(float radius){return 60;}
     public static boolean overlapsStormBody(double horizontalDistance,double verticalOffset,double stormRadius){
-        if(!Double.isFinite(horizontalDistance)||!Double.isFinite(verticalOffset)||!Double.isFinite(stormRadius)||horizontalDistance<0||stormRadius<2||stormRadius>64)throw new IllegalArgumentException("Dome overlap bounds");
+        if(!Double.isFinite(horizontalDistance)||!Double.isFinite(verticalOffset)||!Double.isFinite(stormRadius)||horizontalDistance<0||stormRadius<2||stormRadius>AllayStormData.RADIUS_MAX)throw new IllegalArgumentException("Dome overlap bounds");
         double band=Math.clamp(.4*stormRadius,3,8),bottom=-1.9-band*.5,top=Math.clamp(.2*stormRadius,2,6)+band*.5+1.3;
         if(verticalOffset>top)return false;
         double horizontalGap=Math.max(0,horizontalDistance-(1.15*stormRadius+.75)),verticalGap=Math.max(0,bottom-verticalOffset);

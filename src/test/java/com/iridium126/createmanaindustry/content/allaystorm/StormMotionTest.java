@@ -5,13 +5,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class StormMotionTest {
     @Test void rotationAndVelocityHaveMatchingHandednessThroughoutGrowth(){
+        // Radius 32 is countAt(32) ≈ 30783 under the quadratic law; the
+        // window then runs to the full-population radius 48.
+        double start=30783;
         for(int seed:new int[]{0,1,123,124})for(long tick:new long[]{0,1000,10000,100000}){
-            double count=Math.min(65536,16384+tick);
-            var before=AllayStormPhases.evaluate(16,32,20,0,tick,count,seed);
-            var after=AllayStormPhases.evaluate(16,32,20,0,tick+20,Math.min(65536,count+20),seed);
+            double count=Math.min(65536,start+tick);
+            var before=AllayStormPhases.evaluate(32,48,20,0,tick,count,seed);
+            var after=AllayStormPhases.evaluate(32,48,20,0,tick+20,Math.min(65536,count+20),seed);
             double delta=Math.atan2(Math.sin(after.rotation()-before.rotation()),Math.cos(after.rotation()-before.rotation()));
             assertEquals(before.omega(),delta,.0002);
-            var opposite=AllayStormPhases.evaluate(16,32,20,0,tick,count,seed^1);
+            var opposite=AllayStormPhases.evaluate(32,48,20,0,tick,count,seed^1);
             assertEquals(-before.omega(),opposite.omega());assertEquals(Math.cos(before.rotation()),Math.cos(opposite.rotation()),1e-7);
         }
     }

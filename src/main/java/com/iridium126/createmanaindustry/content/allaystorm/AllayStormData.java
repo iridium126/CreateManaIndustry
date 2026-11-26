@@ -39,6 +39,38 @@ public final class AllayStormData {
     /** stormSeed is quantized to 24 bits so it survives a float round-trip in GLSL. */
     public static final int SEED_MASK = (1 << 24) - 1;
 
+    /**
+     * Radius anchor: the default summon population, pinned to
+     * {@link #RADIUS_AT_ANCHOR}. The curve is a single quadratic in the
+     * radius, never a piecewise interpolation; see {@link #vortexRadius}.
+     */
+    public static final int RADIUS_ANCHOR_COUNT = 1024;
+    /** Radius at {@link #RADIUS_ANCHOR_COUNT}. */
+    public static final float RADIUS_AT_ANCHOR = 4f;
+    /** Population whose radius is pinned to {@link #RADIUS_AT_FULL_COUNT}. */
+    public static final int FULL_RADIUS_COUNT = 65536;
+    /** Radius at {@link #FULL_RADIUS_COUNT}: 1.5 times the historical 32. */
+    public static final float RADIUS_AT_FULL_COUNT = 48f;
+    /** Defensive ceiling; the hard population ceiling stays below it. */
+    public static final float RADIUS_MAX = 128f;
+    /**
+     * Linear radial member density (members per block of radius) at the
+     * anchor: {@code count / R}. The radius law is chosen so this quantity
+     * changes linearly with R: {@code count = A·R + B·R²}.
+     */
+    public static final double RADIUS_DENSITY_ANCHOR =
+            RADIUS_ANCHOR_COUNT / (double) RADIUS_AT_ANCHOR;
+    /** Linear radial density at {@link #FULL_RADIUS_COUNT}. */
+    public static final double RADIUS_DENSITY_FULL =
+            FULL_RADIUS_COUNT / (double) RADIUS_AT_FULL_COUNT;
+    /** B in {@code count = A·R + B·R²}; the slope of the linear density. */
+    public static final double RADIUS_DENSITY_SLOPE =
+            (RADIUS_DENSITY_FULL - RADIUS_DENSITY_ANCHOR)
+                    / (RADIUS_AT_FULL_COUNT - RADIUS_AT_ANCHOR);
+    /** A in {@code count = A·R + B·R²}; members per block at R→0. */
+    public static final double RADIUS_COUNT_PER_BLOCK =
+            RADIUS_DENSITY_ANCHOR - RADIUS_DENSITY_SLOPE * RADIUS_AT_ANCHOR;
+
     // (the fixed storm altitude moved to ServerConfig.stormChaseY — it rides
     // the center packet's Y every snapshot, so it stays live-read, never a
     // frozen per-storm constant)
@@ -64,15 +96,16 @@ public final class AllayStormData {
      * radius. A naive {@code rate(R) * timeSec} re-derives the whole pattern
      * phase whenever R moves — amplified by the accumulated world clock into
      * target teleports (the "storm clumps into a blob" bug). The fix: the
-     * growth law {@code count(t) = count0 + g*t} makes those integrals CLOSED
-     * FORM and LINEAR in {@code (R_now - R0)} — every client evaluates the
-     * identical bounded expression from the synced constants below, frozen at
-     * creation. Mid-flight config changes never retcon a living storm's
-     * phase law (same generation discipline as the seed).
+     * growth law {@code count(t) = count0 + g*t} plus the quadratic radius
+     * law makes those integrals CLOSED FORM in {@code R} and {@code ln R} —
+     * every client evaluates the identical bounded expression from the synced
+     * constants below, frozen at creation. Mid-flight config changes never
+     * retcon a living storm's phase law (same generation discipline as the
+     * seed).
      */
-    /** Radius at creation ({@code sqrt(initialCount)/8}); the phase integral's R₀. */
+    /** Radius at creation ({@link #vortexRadius}); the phase integral's R₀. */
     public float creationRadius;
-    /** Radius at full growth ({@code sqrt(finalCount)/8}); the growth window's end. */
+    /** Radius at full growth ({@link #vortexRadius}); the growth window's end. */
     public float finalRadius;
     /** Generated-population ceiling this storm grows toward (frozen config). */
     public int finalCount;
@@ -129,16 +162,27 @@ public final class AllayStormData {
     }
 
     /**
-     * Storm radius: derived from the generated population as
-     * {@code sqrt(count)/8}, clamped to the [2, 64] range. NOT quantized to
-     * any grid: the population GROWS continuously (the manager's growth
-     * clock), every client re-derives this radius every frame from its
+     * Storm radius. The population/radius relation is the single quadratic
+     * {@code count = A·R + B·R²} (see {@link #RADIUS_COUNT_PER_BLOCK} and
+     * {@link #RADIUS_DENSITY_SLOPE}); inverting it needs only a square root:
+     * <pre>
+     *   R = (-A + sqrt(A² + 4·B·count)) / (2·B)
+     * </pre>
+     * This pins the 1024-member storm to 4 and the 65536-member storm to 48,
+     * and makes the linear radial member density {@code count/R = A + B·R}
+     * vary linearly with the radius. There is no piecewise interpolation and
+     * no quantized grid: the population GROWS continuously (the manager's
+     * growth clock), every client re-derives this radius every frame from its
      * interpolated count, and a quantized value would make the expanding
-     * shell jump in discrete steps. The count is floored at 1 so a degenerate
-     * input still lands on the radius floor.
+     * shell jump in discrete steps. The small-count result is floored at 2.
      */
     public static float vortexRadius(double count) {
-        return Math.max(2f, Math.min(64f, (float) (Math.sqrt(Math.max(1.0, count)) / 8.0)));
+        double generated = Math.max(0.0, count);
+        double discriminant = RADIUS_COUNT_PER_BLOCK * RADIUS_COUNT_PER_BLOCK
+                + 4.0 * RADIUS_DENSITY_SLOPE * generated;
+        double radius = (-RADIUS_COUNT_PER_BLOCK + Math.sqrt(discriminant))
+                / (2.0 * RADIUS_DENSITY_SLOPE);
+        return (float) Math.max(2.0, Math.min(RADIUS_MAX, radius));
     }
 
     /**
@@ -197,8 +241,8 @@ public final class AllayStormData {
                 d.creationRadius = savedRadius;
                 d.finalRadius = d.growthPerSecond > 0 ? vortexRadius(d.finalCount) : savedRadius;
             } else {
-                // Missing/corrupt old laws cannot be reconstructed. Freeze at
-                // the saved population and establish a new finite phase origin.
+                // Missing/corrupt laws cannot be reconstructed. Freeze at the
+                // saved population and establish a new finite phase origin.
                 d.growthPerSecond = 0.0;
                 d.finalCount = d.count;
                 d.creationRadius = vortexRadius(d.count);

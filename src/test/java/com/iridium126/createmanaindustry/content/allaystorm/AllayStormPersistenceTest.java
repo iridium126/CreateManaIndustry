@@ -27,8 +27,9 @@ class AllayStormPersistenceTest {
     private AllayStormData storm(int count, double rate) {
         var d = new AllayStormData();
         d.active = true; d.anchor = new BlockPos(4,128,-8); d.count = count; d.stormSeed = 123;
-        d.creationRadius = 8; d.finalCount = 65536; d.growthPerSecond = rate;
-        d.finalRadius = rate > 0 ? 32 : 8; d.createdAtGameTime = 100;
+        d.creationRadius = AllayStormData.vortexRadius(count); d.finalCount = 65536; d.growthPerSecond = rate;
+        d.finalRadius = rate > 0 ? AllayStormData.vortexRadius(d.finalCount) : d.creationRadius;
+        d.createdAtGameTime = 100;
         d.dead.set(2); d.hp.put(3, 7.5f);
         return d;
     }
@@ -38,19 +39,32 @@ class AllayStormPersistenceTest {
     }
     @Test void growingStormRoundTripsFrozenLawAndLives() {
         var d = storm(16384,20); var restored = serializer.readAt(serializer.write(d,null), 20000);
-        assertEquals(8, restored.creationRadius); assertEquals(32, restored.finalRadius);
+        assertEquals(AllayStormData.vortexRadius(16384), restored.creationRadius, 1e-6f);
+        assertEquals(AllayStormData.vortexRadius(65536), restored.finalRadius, 1e-6f);
         assertEquals(d.anchor, restored.anchor); assertEquals(d.dead, restored.dead); assertEquals(d.hp, restored.hp);
         assertEquals(phase(d,20000),phase(restored,20000));
     }
     @Test void fullyGrownStormKeepsOriginalGrowthWindow() {
         var d = storm(65536,20); var restored = serializer.readAt(serializer.write(d,null), 100000);
-        assertEquals(20,restored.growthPerSecond); assertEquals(8,restored.creationRadius);
+        assertEquals(20,restored.growthPerSecond);
+        assertEquals(AllayStormData.vortexRadius(65536),restored.creationRadius,1e-6f);
         assertEquals(100,restored.createdAtGameTime); assertEquals(phase(d,100000),phase(restored,100000));
     }
     @Test void zeroGrowthKeepsFrozenCeilingAndAge() {
         var d = storm(4096,0); var restored = serializer.readAt(serializer.write(d,null), 20000);
-        assertEquals(d.finalCount, restored.finalCount); assertEquals(8,restored.finalRadius);
+        assertEquals(d.finalCount, restored.finalCount);
+        assertEquals(AllayStormData.vortexRadius(4096),restored.finalRadius,1e-6f);
         assertEquals(phase(d,20000),phase(restored,20000));
+    }
+    @Test void radiusPinsTheAnchorAndFullPopulation() {
+        assertEquals(4f, AllayStormData.vortexRadius(1024), 1e-6f);
+        assertEquals(48f, AllayStormData.vortexRadius(65536), 1e-6f);
+        assertTrue(AllayStormData.vortexRadius(131072) > 48f);
+        for (double generated : new double[]{1024, 4096, 16384, 65536}) {
+            double radius = AllayStormData.vortexRadius(generated);
+            assertEquals(AllayStormData.RADIUS_COUNT_PER_BLOCK
+                    + AllayStormData.RADIUS_DENSITY_SLOPE * radius, generated / radius, 1e-4);
+        }
     }
     @Test void invalidOrMissingLawRebasesWithoutLosingLives() {
         for (int mode=0;mode<5;mode++) {
