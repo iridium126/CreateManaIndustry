@@ -50,6 +50,7 @@ layout(std430, binding = BIND_MEMBERMAP) readonly buffer MemberMapBuf { float m[
 layout(std430,binding=28) buffer StarStateWrite {uint words[];} starStateWrite;
 uniform uint uTotalSpawn;
 uniform uint uEmitCount;
+uniform uint uManaBeamCommands;
 uniform uint uDirectHexBatch;
 uniform uint uCapacity;
 uniform bool uRecoverStorm;
@@ -144,16 +145,25 @@ void sourceMetrics(uint srcIdx, out vec3 feet, out float width, out float height
 #pragma cmi_include chunks/model_spawn.glsl
 #pragma cmi_include chunks/classic_spawn.glsl
 #pragma cmi_include chunks/feather_state.glsl
+#pragma cmi_include chunks/mana_beam_emit.glsl
 
 void main() {
-    uint g = gl_GlobalInvocationID.x;
+    uint workgroup = gl_WorkGroupID.x;
+    if (workgroup < uManaBeamCommands) {
+        cmiEmitManaBeam(workgroup);
+        return;
+    }
+    uint firstOrdinary = uManaBeamCommands;
+    if (firstOrdinary >= uEmitCount) return;
+    uint offset = firstOrdinary == 0u ? 0u : uint(emitCmd.entries[firstOrdinary * 12u + 6u]);
+    uint g = (workgroup - firstOrdinary) * gl_WorkGroupSize.x + gl_LocalInvocationID.x + offset;
     if (g >= uTotalSpawn)
         return;
 
     // Locate our command by binary search over the CPU-written exclusive
     // prefix offsets (prefix[e] <= g < prefix[e] + count[e]). O(log N) per
     // thread instead of a linear scan over all entries.
-    uint lo = 0u;
+    uint lo = firstOrdinary;
     uint hi = uEmitCount;
     if(uDirectHexBatch!=0u){lo=g;hi=g+1u;}
     while (lo + 1u < hi) {

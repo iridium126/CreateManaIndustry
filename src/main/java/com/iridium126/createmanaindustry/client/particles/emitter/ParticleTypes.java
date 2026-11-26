@@ -94,6 +94,8 @@ public final class ParticleTypes {
                 Set.of(InterpolationField.POSITION,InterpolationField.SIZE),Coordinates.CAMERA_RELATIVE));
         register(new Type(12,"fate_ribbon_alpha",Material.ALPHA,null,null,Set.of(),
                 Set.of(InterpolationField.POSITION,InterpolationField.SIZE),Coordinates.CAMERA_RELATIVE));
+        register(new Type(ManaBeamEmission.TYPE, "mana_beam", Material.ADDITIVE, null, null, Set.of(),
+                Set.of(InterpolationField.CLOCK)));
     }
     private ParticleTypes() {}
     private static void registerStandard(Type type) {
@@ -118,6 +120,7 @@ public final class ParticleTypes {
     public static Type allayFeather() { return TYPES.get(AllayFeatherLayout.TYPE); }
     public static Type externalConjure(){return TYPES.get(10);}
     public static Type fateRibbon(boolean alpha){return TYPES.get(alpha?12:11);}
+    public static Type manaBeam() { return TYPES.get(ManaBeamEmission.TYPE); }
     public static synchronized void requireRegistered(Type type) {
         if (!type.equals(TYPES.get(type.id()))) throw new IllegalArgumentException("Unregistered particle type");
     }

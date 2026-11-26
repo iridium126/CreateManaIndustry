@@ -2,11 +2,13 @@ package com.iridium126.createmanaindustry.client.particles.engine;
 
 
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ManaBeamEmission;
 import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.phys.Vec3;
 
 /** Stable public emission API. Requests are admitted and written here. */
@@ -99,6 +101,11 @@ public final class CMIParticleEngine {
         if (count <= 0)
             return;
         r.pending.add(new ParticleRuntime.Burst(spec, origin, count));
+    }
+
+    /** Queues a local cast captured in the current client level. */
+    public void spawnManaBeam(ClientLevel level, ManaBeamEmission emission) {
+        ParticleRuntime.INSTANCE.pending.add(new ParticleRuntime.ManaBeamRequest(level, emission));
     }
 
     /**

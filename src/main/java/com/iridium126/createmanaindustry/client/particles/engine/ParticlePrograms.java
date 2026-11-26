@@ -180,6 +180,8 @@ public final class ParticlePrograms {
     private static String buildPrelude() {
         StringBuilder sb = new StringBuilder(com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.glsl());
         sb.append(ParticleAtlasLayout.shaderPrelude());
+        sb.append("#define CMI_MANA_BEAM_TYPE ")
+                .append(com.iridium126.createmanaindustry.client.particles.emitter.ManaBeamEmission.TYPE).append("u\n");
         sb.append("#define CMI_GOLD_TYPE ").append(com.iridium126.createmanaindustry.client.particles.emitter.AllayGoldSpecs.TYPE).append("u\n#define CMI_GOLD_MAX ").append(com.iridium126.createmanaindustry.client.particles.emitter.AllayGoldSpecs.MAX_COUNT).append("u\n");
         // A uniform zero origin prevents pathological cold linking of large constant
         // SSBO ranges on tested NVIDIA drivers. Apply it once at every access, so

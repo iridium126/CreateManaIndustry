@@ -12,6 +12,7 @@ in vec3 vColor;
 in float vAlpha;
 in float vDist;
 flat in float vHex;
+in vec4 vMana;
 
 out vec4 fragColor;
 
@@ -20,8 +21,13 @@ out vec4 fragColor;
 // hexagon of circumradius ≈ 0.453 UV (apothem 0.866·R ≈ 0.392), interior
 // plateau 1.0, soft edge ≈ 2.5/32 UV via a smoothstep on the hex SDF.
 #pragma cmi_include chunks/hex_shape.glsl
+#pragma cmi_include chunks/mana_beam_shade.glsl
 
 void main() {
+    if (vHex > 4.5) {
+        fragColor = cmiShadeManaBeam();
+        return;
+    }
     if(vHex>2.5){
         vec2 q=(vUv-.5)*2.,a=abs(q);float r2=dot(q,q);
         float profile=exp(-6.*r2);

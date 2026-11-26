@@ -71,15 +71,25 @@ public final class EmitCommandWriter {
 
     /** Proportional launch bound. Domain admission is handled separately. */
     public void limitParticles(int capacity) {
+        limitParticles(capacity, 0);
+    }
+
+    /** Reserves one record per leading command when scaling, then returns the retained prefix length. */
+    public int limitParticles(int capacity, int leading) {
         if (capacity < 0) throw new IllegalArgumentException("Particle capacity");
-        if (particles <= capacity) return;
-        double scale = (double)capacity / particles;
+        if (leading < 0 || leading > size) throw new IllegalArgumentException("Priority command count");
+        if (particles <= capacity) return leading;
+        int reserved = Math.min(leading, capacity);
+        double scale = (double) (capacity - reserved) / (particles - reserved);
         int write = 0, oldSize = size;
+        int keptLeading = 0;
         particles = 0;
         for (int read = 0; read < oldSize; read++) {
             int b = read * WORDS;
-            int count = (int)(rows[b+ParticleLayout.COMMAND_COUNT] * scale);
+            int minimum = read < reserved ? 1 : 0;
+            int count = minimum + (int)((rows[b+ParticleLayout.COMMAND_COUNT] - minimum) * scale);
             if (count == 0) continue;
+            if (read < leading) keptLeading++;
             if (read != write) {
                 System.arraycopy(rows, b, rows, write * WORDS, WORDS);
                 parameters[write] = parameters[read];
@@ -90,6 +100,13 @@ public final class EmitCommandWriter {
         }
         Arrays.fill(parameters, write, oldSize, null);
         size = write;
+        return keptLeading;
+    }
+
+    public int particlesBefore(int entry) {
+        int count = 0;
+        for (int i = 0; i < entry; i++) count += (int) rows[i * WORDS + ParticleLayout.COMMAND_COUNT];
+        return count;
     }
 
     public FloatBuffer encode(int frameSeed) {

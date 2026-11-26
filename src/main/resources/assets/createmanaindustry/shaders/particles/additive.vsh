@@ -25,6 +25,7 @@ out float vDist;
 // colorMode 4/5/6 (Hexcasting pigment/direct conjure and vine wheel) marker for the fsh:
 // hexagonal cloud shape
 flat out float vHex;
+out vec4 vMana;
 
 #pragma cmi_include chunks/hex_color.glsl
 
@@ -60,6 +61,7 @@ vec2 quadCorner(int v) {
 }
 
 #pragma cmi_include chunks/shared_fate_draw.glsl
+#pragma cmi_include chunks/mana_beam_draw.glsl
 
 void main() {
     uint inst = orderAdd.order[gl_InstanceID];
@@ -69,10 +71,16 @@ void main() {
     vec4 p2 = particles.data[base + 2u];
     vec4 p3 = particles.data[base + 3u];
 
-    bool gold=uint(emitters.u[floatBitsToUint(p3.w)*VEC4_PER_EMITTER].x)==CMI_GOLD_TYPE;
-    float life = clamp(p3.x / max(p3.y, 1e-5), 0.0, 1.0);
     uint eid = floatBitsToUint(p3.w);
     uint hb = eid * VEC4_PER_EMITTER;
+    uint type = uint(emitters.u[hb].x);
+    if (type == CMI_MANA_BEAM_TYPE) {
+        cmiDrawManaBeam(p0, p1, p2, p3, quadCorner(gl_VertexID));
+        return;
+    }
+    vMana = vec4(0);
+    bool gold = type == CMI_GOLD_TYPE;
+    float life = clamp(p3.x / max(p3.y, 1e-5), 0.0, 1.0);
     float spawnStyle=emitters.u[hb+17u].y;
     bool nativeHex=spawnStyle>3.5&&spawnStyle<5.5;
     float hexAge=floor(p3.x*20.+.0001);

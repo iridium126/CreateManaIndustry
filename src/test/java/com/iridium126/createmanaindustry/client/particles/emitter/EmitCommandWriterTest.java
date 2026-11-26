@@ -1,5 +1,6 @@
 package com.iridium126.createmanaindustry.client.particles.emitter;
 
+import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -64,6 +65,23 @@ class EmitCommandWriterTest {
     }
 
 
+
+    @Test void manaBeamRetainsItsPriorityRowAndHitPlaneUnderAFullLaunchBudget() {
+        var writer = new EmitCommandWriter();
+        var beam = new ManaBeamEmission(new Vec3(8, 9, 10), new Vec3(1, 0, 0), 41, Direction.WEST);
+        assertTrue(beam.stage(writer, 13, 1));
+        assertTrue(writer.particles() <= 512);
+        assertTrue(writer.basic(1, 2_000_000, Vec3.ZERO, 0));
+        int beamCommands = writer.limitParticles(2, 1);
+        assertEquals(1, beamCommands);
+        assertEquals(1, writer.particlesBefore(beamCommands));
+        var data = writer.encode(1);
+        assertEquals(13, data.get(4));
+        assertEquals(1, data.get(8));
+        assertEquals(41, data.get(11));
+        assertEquals(-1, data.get(writer.size() * EmitCommandWriter.WORDS));
+        assertEquals(0, data.get(writer.size() * EmitCommandWriter.WORDS + 1));
+    }
 
     @Test void fullWriterRejectsWithoutMutatingAcceptedRowsAndCanBeReused() {
         var writer=new EmitCommandWriter();
