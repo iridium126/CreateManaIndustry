@@ -2,12 +2,24 @@
   "name": "hexcasting.entry.createmanaindustry.casting_item_production",
   "category": "hexcasting:createmanaindustry",
   "icon": "hexcasting:artifact",
-  "sortnum": 1,
+  "sortnum": 2,
   "advancement": "hexcasting:root",
   "pages": [
-    "hexcasting.page.createmanaindustry.casting_item_production.1",
-    "hexcasting.page.createmanaindustry.casting_item_production.2",
-    "hexcasting.page.createmanaindustry.casting_item_production.3",
-    "hexcasting.page.createmanaindustry.casting_item_production.4"
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.casting_item_production.1"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.casting_item_production.2"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.casting_item_production.3"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.casting_item_production.4"
+    }
   ]
 }

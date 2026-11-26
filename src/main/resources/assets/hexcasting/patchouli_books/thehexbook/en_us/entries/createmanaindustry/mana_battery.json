@@ -1,0 +1,29 @@
+{
+  "name": "hexcasting.entry.createmanaindustry.mana_battery",
+  "category": "hexcasting:createmanaindustry",
+  "icon": "hexcasting:battery",
+  "sortnum": 1,
+  "advancement": "hexcasting:root",
+  "pages": [
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.mana_battery.1"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.mana_battery.2"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.mana_battery.3"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.mana_battery.4"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.mana_battery.5"
+    }
+  ]
+}

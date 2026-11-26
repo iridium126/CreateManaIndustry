@@ -114,7 +114,7 @@ dependencies {
     compileOnly coordinates.hexal
     hexcastingLocalRuntime coordinates.hexcasting
     hexcastingLocalRuntime coordinates.paucal
-    hexalLocalRuntime coordinates.hexal
+    //hexalLocalRuntime coordinates.hexal
     hexalLocalRuntime coordinates.moreiotas
 
     ['caelus', 'patchouli', 'clothConfig', 'architectury', 'kotlinForForge',

@@ -25,7 +25,7 @@
 
 <|page-title@lavender:book_components|title=执行的快慢|>
 
-链速为 32 时，执行上限与普通核心相同；链速加倍，上限也相应加倍。它改变的是每刻可执行的圈数，不是法术所需的魔力。
+链速为32时，执行上限与普通核心相同；链速加倍，上限也相应加倍。它改变的是每刻可执行的圈数，不是法术所需的魔力。
 
 四枚核心分别执行各自的法术，仍从组构台中央的晶结中取用魔力。
 
@@ -33,6 +33,6 @@
 
 <|page-title@lavender:book_components|title=接入应力网络|>
 
-每枚动力法术核心会给所在链的控制端增加 **4 × 转速绝对值 SU** 的负载。多枚核心的负载会相加，应提前为整条链留足应力容量。
+每枚动力法术核心会给所在链的控制端增加 **4SU × 转速绝对值** 的负载。多枚核心的负载会相加，应提前为整条链留足应力容量。
 
 可以用[动力注魔台](^createmanaindustry:mana_industry/charging_knots)补充中央晶结，再用[显示链接](^createmanaindustry:mana_industry/display_link)传入机器状态。

@@ -63,7 +63,7 @@ public final class ProcessingPonderScenes {
     }
 
     public static void glass(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "mist_amethyst", "Growing amethyst in a Basin", "使用雾在工作盆中生成紫水晶");
+        Workshop w = new Workshop(builder, util, "mist_amethyst", "Growing amethyst in a Basin", "在工作盆中生成紫水晶");
         BlockPos basin = p(6, 2, 4), a = p(3, 2, 4);
         mixer(w, basin, true);
         w.text(60, basin.below(), "This recipe needs Allay Heat and Liquid Media mist at the same time.", "此配方需要悦灵加热和液态媒质雾");

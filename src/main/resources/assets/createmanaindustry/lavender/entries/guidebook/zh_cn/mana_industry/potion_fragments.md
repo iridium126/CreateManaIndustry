@@ -31,4 +31,4 @@
 
 复制、法术树和长时法术存档均保留完整快照，包括无限时长。片段显示效果名称、等级和剩余时间。
 
-装有 Hex Casting 时，我可以用酊剂赋形将保存的药效施于生物，消耗 32 Anima。
+装有咒法学时，可用[酊剂赋形](^createmanaindustry:mana_industry/great_tricks#12)将保存的药效施于生物。

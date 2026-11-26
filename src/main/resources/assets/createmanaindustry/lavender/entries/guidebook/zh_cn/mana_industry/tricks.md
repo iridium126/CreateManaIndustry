@@ -11,11 +11,11 @@
 }
 ```
 
-本节的戏法把魔力用于驱动机械。它只需戏法师与机械动力；咒法学互通的[读取与运行戏法](^createmanaindustry:mana_industry/hexcasting_bridge/iota_bridge)另列于后。
+本节的戏法把魔力用于驱动机械。它只需戏法学与机械动力；咒法学互通的[读取与运行戏法](^createmanaindustry:mana_industry/hexcasting_bridge/iota_bridge)另列于后。
 
 ;;;;;
 
-<|ploy@trickster:templates|trick-id=createmanaindustry:temporary_kinetic_stress,cost=0.008 × |转速| × 刻数 G|>
+<|ploy@trickster:templates|trick-id=createmanaindustry:temporary_kinetic_stress,cost=0.008G × 转速绝对值 × 刻数|>
 
 为给定位置的动力方块临时提供转速和应力来源，返回目标向量。
 
@@ -25,7 +25,7 @@
 
 <|page-title@lavender:book_components|title=持续时间与耗费|>
 
-默认耗费为 **0.008 × 转速绝对值 × 持续刻数 G**。例如，转速 32、持续 20 刻，消耗 5.12 G。服务器可调整应力换算与费用倍率。
+耗费与转速绝对值、持续刻数成正比；转速32、持续20刻即消耗5.12G。服务器可调整应力换算与费用倍率。
 
 时间结束后，临时来源撤去，目标重新按原有动力连接运转。目标必须是已加载的动力方块。
 

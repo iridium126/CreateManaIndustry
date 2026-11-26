@@ -2,10 +2,14 @@
   "name": "hexcasting.entry.createmanaindustry.industrial_patterns",
   "category": "hexcasting:createmanaindustry",
   "icon": "createmanaindustry:allay_burner",
-  "sortnum": 2,
+  "sortnum": 3,
   "advancement": "hexcasting:root",
+  "read_by_default": true,
   "pages": [
-    "hexcasting.page.createmanaindustry.industrial_patterns.1",
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.industrial_patterns.1"
+    },
     {
       "type": "hexcasting:pattern",
       "op_id": "createmanaindustry:read_iota_from_block",
@@ -22,8 +26,17 @@
       "output": "",
       "text": "hexcasting.page.createmanaindustry.industrial_patterns.light_burner"
     },
-    "hexcasting.page.createmanaindustry.industrial_patterns.2",
-    "hexcasting.page.createmanaindustry.industrial_patterns.3",
-    "hexcasting.page.createmanaindustry.industrial_patterns.4"
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.industrial_patterns.2"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.industrial_patterns.3"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.industrial_patterns.4"
+    }
   ]
 }

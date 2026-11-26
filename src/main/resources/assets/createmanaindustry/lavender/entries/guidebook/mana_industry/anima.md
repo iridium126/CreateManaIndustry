@@ -18,7 +18,9 @@
 }
 ```
 
-The soul used by Great Tricks is measured in **Anima**. A Spout can fill a Hex Casting **Media Battery** with Liquid Soul. A bucket supplies **32 Anima** by default, adjustable by the server.
+The soul used by [Great Tricks](^createmanaindustry:mana_industry/great_tricks) is measured in **Anima**.
+
+A Spout can fill a Hex Casting **Media Battery** with Liquid Soul. A bucket supplies **32 Anima** by default, adjustable by the server.
 
 Liquid Soul can be condensed from the soul mist produced by a burning Allay Burner. Condensation requires Coolant.
 
@@ -26,7 +28,7 @@ Liquid Soul can be condensed from the soul mist produced by a burning Allay Burn
 
 <|page-title@lavender:book_components|title=Battery Capacity|>
 
-Soul capacity follows the battery's actual maximum media capacity. By default, each amethyst-dust equivalent of capacity allows **0.1 Anima**.
+Soul capacity follows the battery's actual maximum media capacity. By default, each amethyst-dust equivalent of capacity allows **0.125Anima**.
 
 A battery holding 64,000 dust equivalents can therefore also store 6,400 Anima. Media and soul have separate balances; filling soul does not change the media already stored.
 

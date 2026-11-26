@@ -54,7 +54,7 @@ public final class MistPonderScenes {
     }
 
     public static void atomizing(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "atomizer_setup", "Turning liquid into mist", "使用动力雾化器产生雾");
+        Workshop w = new Workshop(builder, util, "atomizer_setup", "Turning liquid into mist", "雾化流体");
         BlockPos a = p(3, 2, 4);
         w.place(a, CMIBlocks.KINETIC_ATOMIZER.getDefaultState().setValue(BlockStateProperties.FACING, Direction.UP));
         w.explain(60, a, "An Atomizer turns supplied liquid into a mist field while rotating.", "动力雾化器可以将输入的流体转化为雾");
@@ -168,7 +168,7 @@ public final class MistPonderScenes {
     }
 
     public static void soul(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "soul_recovery", "Collecting the Allay's mist", "收集悦灵燃烧室产生的雾");
+        Workshop w = new Workshop(builder, util, "soul_recovery", "Collecting the Allay's mist", "收集悦灵产生的液态灵魂");
         BlockPos b = p(3, 1, 3), c = p(5, 2, 5);
         w.burner(b, false);
         w.explain(60, b, "A burning Allay Burner produces Liquid Soul mist around itself.", "悦灵燃烧室在燃烧时会产生液态灵魂雾");
@@ -216,7 +216,7 @@ public final class MistPonderScenes {
     }
 
     public static void cogwheel(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "mana_cogwheel", "Mist-powered rotation and reversal", "使用雾驱动魔力齿轮");
+        Workshop w = new Workshop(builder, util, "mana_cogwheel", "Mist-powered rotation and reversal", "驱动魔力齿轮");
         BlockPos a = p(3, 2, 4), cog = p(6, 1, 4), mill = p(7, 1, 4);
         w.build(() -> atomizer(w, a, CMIFluids.LIQUID_MANA.get()));
         Workshop.Mist mist = w.mist(a, MANA, 3);

@@ -2,22 +2,94 @@
   "name": "hexcasting.entry.createmanaindustry.ysm_model_editing",
   "category": "hexcasting:createmanaindustry",
   "icon": "minecraft:player_head[minecraft:profile={name:'Iridium126'}]",
-  "sortnum": 5,
+  "sortnum": 6,
   "advancement": "hexcasting:enlightenment",
+  "read_by_default": true,
   "flag": "mod:yes_steve_model",
   "pages": [
-    "hexcasting.page.createmanaindustry.ysm_model_editing.intro",
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_read", "input": "entity", "output": "list of groups", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.read"},
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_geometry_get", "input": "group or cube, number", "output": "value", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.get"},
-    "hexcasting.page.createmanaindustry.ysm_model_editing.cube_properties",
-    "hexcasting.page.createmanaindustry.ysm_model_editing.group_properties",
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_group_create", "input": "", "output": "group", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.create_group"},
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_cube_create", "input": "", "output": "cube", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.create_cube"},
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_geometry_set", "input": "group or cube, number, value", "output": "group or cube", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.set"},
-    "hexcasting.page.createmanaindustry.ysm_model_editing.example",
-    "hexcasting.page.createmanaindustry.ysm_model_editing.limits",
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_apply", "input": "player, list of groups", "output": "", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.apply"},
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_restore", "input": "player", "output": "", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.restore"},
-    {"type": "hexcasting:pattern", "op_id": "createmanaindustry:ysm_model_export", "input": "list of groups", "output": "", "text": "hexcasting.page.createmanaindustry.ysm_model_editing.export"}
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.intro"
+    },
+    {
+      "type": "hexcasting:pattern",
+      "op_id": "createmanaindustry:ysm_model_read",
+      "anchor": "createmanaindustry:ysm_model_read",
+      "input": "entity",
+      "output": "list of groups",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.read"
+    },
+    {
+      "type": "hexcasting:pattern",
+      "op_id": "createmanaindustry:ysm_geometry_get",
+      "anchor": "createmanaindustry:ysm_geometry_get",
+      "input": "group or cube, number",
+      "output": "value",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.get"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.cube_properties"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.group_properties"
+    },
+    {
+      "type": "hexcasting:pattern",
+      "op_id": "createmanaindustry:ysm_group_create",
+      "anchor": "createmanaindustry:ysm_group_create",
+      "input": "",
+      "output": "group",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.create_group"
+    },
+    {
+      "type": "hexcasting:pattern",
+      "op_id": "createmanaindustry:ysm_cube_create",
+      "anchor": "createmanaindustry:ysm_cube_create",
+      "input": "",
+      "output": "cube",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.create_cube"
+    },
+    {
+      "type": "hexcasting:pattern",
+      "op_id": "createmanaindustry:ysm_geometry_set",
+      "anchor": "createmanaindustry:ysm_geometry_set",
+      "input": "group or cube, number, value",
+      "output": "group or cube",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.set"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.example"
+    },
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.limits"
+    },
+    {
+      "type": "hexcasting:pattern",
+      "op_id": "createmanaindustry:ysm_model_apply",
+      "anchor": "createmanaindustry:ysm_model_apply",
+      "input": "player, list of groups",
+      "output": "",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.apply"
+    },
+    {
+      "type": "hexcasting:pattern",
+      "op_id": "createmanaindustry:ysm_model_restore",
+      "anchor": "createmanaindustry:ysm_model_restore",
+      "input": "player",
+      "output": "",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.restore"
+    },
+    {
+      "type": "hexcasting:pattern",
+      "op_id": "createmanaindustry:ysm_model_export",
+      "anchor": "createmanaindustry:ysm_model_export",
+      "input": "list of groups",
+      "output": "",
+      "text": "hexcasting.page.createmanaindustry.ysm_model_editing.export"
+    }
   ]
 }

@@ -49,7 +49,7 @@ public final class AllayBurnerPonderScenes {
     }
 
     public static void solidFuel(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "allay_fuel", "Keeping the Allay Burner Burning", "为悦灵燃烧室补充燃料");
+        Workshop w = new Workshop(builder, util, "allay_fuel", "Keeping the Allay Burner Burning", "悦灵燃烧室的燃料");
         BlockPos b = p(5, 1, 3), depot = p(3, 1, 2), arm = p(4, 1, 4);
         w.burner(b, false);
         w.explain(60, b, "Feed the Allay Burner with Amethyst Shards to provide heat.", "紫水晶碎片可以为悦灵燃烧室提供燃料");
@@ -68,7 +68,7 @@ public final class AllayBurnerPonderScenes {
     }
 
     public static void liquidMedia(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "allay_liquid", "Using Liquid Fuel", "使用液态媒质供热");
+        Workshop w = new Workshop(builder, util, "allay_liquid", "Using Liquid Fuel", "使用液态燃料");
         BlockPos b = p(6, 1, 3), tank = p(2, 1, 3);
         w.burner(b, false);
         w.explain(60, b, "A bucket of Liquid Media can also fuel the burner.", "液态媒质也可以为悦灵燃烧室提供燃料");
@@ -137,7 +137,7 @@ public final class AllayBurnerPonderScenes {
     }
 
     public static void heating(SceneBuilder builder, SceneBuildingUtil util) {
-        Workshop w = new Workshop(builder, util, "allay_heating", "Producing Liquid Media from Amethyst", "使用紫水晶碎片制作液态媒质");
+        Workshop w = new Workshop(builder, util, "allay_heating", "Producing Liquid Media from Amethyst", "融化紫水晶");
         BlockPos b = p(4, 1, 3), basin = b.above(), press = b.above(3);
         w.burner(b, false);
         w.place(basin, AllBlocks.BASIN.get());

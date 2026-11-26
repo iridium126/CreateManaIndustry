@@ -7,7 +7,7 @@
 }
 ```
 
-本章是工业魔术的补遗。你可以先读[晶结产线](^createmanaindustry:mana_industry/incomplete_knots)，也可以直接翻到所需的设备或戏法。魔力量沿用本书的单位：甘道夫，简称甘，记作 G。
+本章是工业魔术的补遗。你可以先读[晶结产线](^createmanaindustry:mana_industry/incomplete_knots)，也可以直接翻到所需的设备或戏法。魔力量沿用本书的单位：甘道夫，简称甘，记作G。
 
 ;;;;;
 

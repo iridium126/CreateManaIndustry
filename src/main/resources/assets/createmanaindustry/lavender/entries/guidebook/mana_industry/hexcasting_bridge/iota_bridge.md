@@ -51,6 +51,18 @@ Player casting uses the player's media items and permits overcasting when the or
 
 Construct casting uses the [internal media reserve](^createmanaindustry:mana_industry/hexcasting_bridge/construct_media), with a 32-block ambit centred on the construct. Operations requiring a player or held item still require one.
 
+Calls between the two systems share one execution budget. Cross-language nesting defaults to a limit of 32, adjustable by the server.
+
+;;;;;
+
+<|page-title@lavender:book_components|title=Sources and Recovery|>
+
+Spell circles and Spell Constructs cast a Trick Iota at the current Slate or Construct. Tricks that require a player still require one.
+
+A playerless block source may keep at most five spells running; unloading or restarting dissipates those temporary spells. A waiting spell can be cancelled manually from the spell slot.
+
+A circle bound to a caster remembers the Slate's position, facing and world when it was called. The caster may be in another dimension: the original Slate still casts, with the caster providing identity and items. Offline players or unloaded source chunks pause the saved spell until the same source is available again. Removing or replacing the source terminates it; replacing the Knot settles against the new Knot's current balance.
+
 ;;;;;
 
 <|page-title@lavender:book_components|title=Sending a Trick to Hex Casting|>

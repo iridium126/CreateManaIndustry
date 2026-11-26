@@ -31,4 +31,4 @@ The target must resolve in the current dimension and be in an entity-ticking chu
 
 Copies, spell trees and saved long-running spells preserve the complete snapshot, including infinite duration. The fragment shows the effect's name, level and remaining time.
 
-With Hex Casting installed, Tincture Shaping can apply the saved effect to a living entity for 32 Anima.
+With Hex Casting installed, [Tincture Shaping](^createmanaindustry:mana_industry/great_tricks#12) can apply the saved effect to a living creature.

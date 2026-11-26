@@ -2,10 +2,14 @@
   "name": "hexcasting.entry.createmanaindustry.industry_and_spell_circle",
   "category": "hexcasting:createmanaindustry",
   "icon": "hexcasting:slate",
-  "sortnum": 3,
+  "sortnum": 4,
   "advancement": "hexcasting:enlightenment",
+  "read_by_default": true,
   "pages": [
-    "hexcasting.page.createmanaindustry.industry_and_spell_circle.1",
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.industry_and_spell_circle.1"
+    },
     {
       "type": "hexcasting:pattern",
       "op_id": "createmanaindustry:players_in_circle",
@@ -14,6 +18,9 @@
       "output": "list of entity",
       "text": "hexcasting.page.createmanaindustry.industry_and_spell_circle.players_in_circle"
     },
-    "hexcasting.page.createmanaindustry.industry_and_spell_circle.2"
+    {
+      "type": "patchouli:text",
+      "text": "hexcasting.page.createmanaindustry.industry_and_spell_circle.2"
+    }
   ]
 }
