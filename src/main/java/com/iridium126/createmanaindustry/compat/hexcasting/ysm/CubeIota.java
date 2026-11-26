@@ -22,8 +22,7 @@ public final class CubeIota extends Iota {
     @Override public boolean isTruthy(at.petrak.hexcasting.api.casting.eval.CastingEnvironment env) { return true; }
     @Override protected boolean toleratesOther(Iota other) { return other instanceof CubeIota cube && key.equals(cube.key); }
     @Override public int hashCode() { return key.hashCode(); }
-    @Override public Component display() { return YsmIotaDisplay.cube(key,
-            Component.translatable("createmanaindustry.iota.cube", key.substring(0, 12))); }
+    @Override public Component display() { return InlineYsmGeometryData.cube(key).asText(false); }
 
     public static final IotaType<CubeIota> TYPE = new IotaType<>() {
         private final MapCodec<CubeIota> codec = YsmReferenceIotaCodecs.persistent(CubeIota::new, CubeIota::key).fieldOf("value");

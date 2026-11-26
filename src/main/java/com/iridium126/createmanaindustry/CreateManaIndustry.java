@@ -121,8 +121,7 @@ public class CreateManaIndustry {
             com.iridium126.createmanaindustry.compat.hexcasting.ysm.CMIYsmIotaTypes.register(modEventBus);
             com.iridium126.createmanaindustry.compat.hexcasting.ysm.CMIYsmActions.register(modEventBus);
             com.iridium126.createmanaindustry.compat.ysm.YsmServerRuntime.register();
-            if (ModList.get().isLoaded("inline"))
-                com.iridium126.createmanaindustry.compat.hexcasting.ysm.YsmInlineBootstrap.register();
+            com.iridium126.createmanaindustry.compat.hexcasting.ysm.YsmInlineBootstrap.register();
         }
         if (HEX_ACTIVE && TRICKSTER_ACTIVE) {
             // Keep Inline and Trickster types out of this constructor's verifier.

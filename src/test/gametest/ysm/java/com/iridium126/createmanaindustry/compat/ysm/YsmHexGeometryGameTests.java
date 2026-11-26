@@ -80,10 +80,6 @@ public final class YsmHexGeometryGameTests {
     }
     @GameTest(template = "worldgen_test")
     public static void geometryIotasAttachInlineData(GameTestHelper helper) {
-        if (!net.neoforged.fml.ModList.get().isLoaded("inline")) {
-            helper.succeed();
-            return;
-        }
         String key = "ef".repeat(32);
         List<Iota> values = List.of(new GroupIota(key), new CubeIota("12".repeat(32)));
         List<com.iridium126.createmanaindustry.compat.hexcasting.ysm.InlineYsmGeometryData.Kind> expected = List.of(

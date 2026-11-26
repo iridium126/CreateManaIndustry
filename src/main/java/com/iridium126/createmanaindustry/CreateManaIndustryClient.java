@@ -146,8 +146,7 @@ public class CreateManaIndustryClient {
             com.iridium126.createmanaindustry.client.greattrick.PartitionClient.install();
         if (CreateManaIndustry.HEX_ACTIVE && CreateManaIndustry.TRICKSTER_ACTIVE)
             InlineClientAPI.INSTANCE.addRenderer(InlineTrickRenderer.INSTANCE);
-        if (CreateManaIndustry.HEX_ACTIVE && net.neoforged.fml.ModList.get().isLoaded("yes_steve_model")
-                && net.neoforged.fml.ModList.get().isLoaded("inline"))
+        if (CreateManaIndustry.HEX_ACTIVE && net.neoforged.fml.ModList.get().isLoaded("yes_steve_model"))
             InlineClientAPI.INSTANCE.addRenderer(InlineYsmGeometryRenderer.INSTANCE);
     }
 

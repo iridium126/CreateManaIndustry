@@ -22,8 +22,7 @@ public final class GroupIota extends Iota {
     @Override public boolean isTruthy(at.petrak.hexcasting.api.casting.eval.CastingEnvironment env) { return true; }
     @Override protected boolean toleratesOther(Iota other) { return other instanceof GroupIota group && key.equals(group.key); }
     @Override public int hashCode() { return key.hashCode(); }
-    @Override public Component display() { return YsmIotaDisplay.group(key,
-            Component.translatable("createmanaindustry.iota.group", key.substring(0, 12))); }
+    @Override public Component display() { return InlineYsmGeometryData.group(key).asText(false); }
 
     public static final IotaType<GroupIota> TYPE = new IotaType<>() {
         private final MapCodec<GroupIota> codec = YsmReferenceIotaCodecs.persistent(GroupIota::new, GroupIota::key).fieldOf("value");
