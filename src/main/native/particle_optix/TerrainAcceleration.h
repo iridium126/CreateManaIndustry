@@ -245,7 +245,7 @@ public:
         }
     }
     unsigned update(OptixDeviceContext context,CUstream stream,unsigned slot,const TerrainSnapshot& snapshot,
-                    unsigned memberCapacity,unsigned members,CUdeviceptr instances,bool copyInstances=true){
+                    unsigned memberCapacity,unsigned members,CUdeviceptr instances,bool copyInstances=true,bool storm=false){
         collectRetired();
         if(published&&scene==snapshot.scene&&revision==snapshot.revision){
             if(active&&copyInstances)checked(cuMemcpyDtoDAsync(instances+members*sizeof(OptixInstance),templates.device,active*sizeof(OptixInstance),stream));
@@ -295,7 +295,7 @@ public:
             }
             const auto& mesh=found->second;
             auto& instance=hostInstances[slot][count];instance={};instance.transform[0]=instance.transform[5]=instance.transform[10]=1;
-            instance.instanceId=memberCapacity+count;instance.visibilityMask=std::get<3>(key);instance.flags=OPTIX_INSTANCE_FLAG_DISABLE_ANYHIT;instance.traversableHandle=mesh.handle;
+            instance.instanceId=memberCapacity+count;instance.visibilityMask=storm?2u:std::get<3>(key);instance.flags=OPTIX_INSTANCE_FLAG_DISABLE_ANYHIT;instance.traversableHandle=mesh.handle;
             // Packet row numbers can shift without changing a section's GAS.
             auto& indices=content.indices;
             std::copy(indices.begin(),indices.end(),hostRows[slot]+rowCount);

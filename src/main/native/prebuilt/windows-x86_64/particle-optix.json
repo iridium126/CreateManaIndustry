@@ -1,8 +1,8 @@
 {
   "dll": "CmiParticleOptix.dll",
   "platform": "windows-x86_64",
-  "version": "13.1.4.0",
-  "abi": 13,
-  "dll_sha256": "815455c7b2c7d3c018ea3b432e0f1ee877bbd4532bac029cb71564283858705e",
+  "version": "14.0.1.0",
+  "abi": 14,
+  "dll_sha256": "2bdebd20f0625ff15f854e7a731caef7cfd55215d5a47d7d8dd591276d477698",
   "embedded_device_programs": true
 }

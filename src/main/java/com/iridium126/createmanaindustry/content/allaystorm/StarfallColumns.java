@@ -50,6 +50,12 @@ public final class StarfallColumns {
     }
     public void tick(ServerLevel level,AllayStormData data,double cx,double cz,List<ServerPlayer> players,
                      BitSet reserved,IntSupplier ids,Consumer<ClientboundStormColumnPacket> send,java.util.function.IntConsumer expiredMember){
+        tick(level,data,cx,cz,players,reserved,ids,send,expiredMember,
+                StormNearbyRoster.lazy(data,new Vec3(cx,ServerConfig.stormChaseY,cz),level.getGameTime()+4,reserved));
+    }
+    void tick(ServerLevel level,AllayStormData data,double cx,double cz,List<ServerPlayer> players,
+                     BitSet reserved,IntSupplier ids,Consumer<ClientboundStormColumnPacket> send,java.util.function.IntConsumer expiredMember,
+                     java.util.function.Supplier<StormNearbyRoster> nearby){
         long tick=level.getGameTime();float now=clock(tick);
         var currentIdentity=StormIdentity.of(level,data);
         var it=columns.values().iterator();
@@ -76,15 +82,19 @@ public final class StarfallColumns {
             if(available<0)available=AllayStarfall.available(data.count,data.dead,reserved);
             if(available<64){stats.count(data.aliveCount()<64?StormAttackStats.Reason.TOO_FEW:StormAttackStats.Reason.RESERVED);continue;}
             int seed=level.random.nextInt(1<<24);
-            int[] roster=AllayStarfall.selectExact(data.count,data.dead,reserved,StarfallColumnRules.MEMBERS,seed);
-            if(roster.length!=StarfallColumnRules.MEMBERS){stats.count(data.aliveCount()<64?StormAttackStats.Reason.TOO_FEW:StormAttackStats.Reason.RESERVED);continue;}
             float gather=ServerConfig.stormChaseY-8;
             List<Vec3> occupied=columns.values().stream().map(a->a.packet).filter(p->time(p,now)<=p.bloomEnd()).map(p->new Vec3(p.x(),p.y(),p.z())).toList();
             Vec3 landing=StarfallColumnRules.landing(player.getX(),player.getZ(),cx,cz,radius,seed,occupied,(x,z)->terrain(level,x,z,gather,Double.NaN));
             if(landing==null){stats.count(StormAttackStats.Reason.RESOURCE);continue;}
+            var slots=new Vec3[StarfallColumnRules.MEMBERS];
+            var origin=new Vec3(landing.x,gather,landing.z);
+            for(int rank=0;rank<slots.length;rank++)slots[rank]=StarfallColumnRules.gather(origin,rank,seed);
+            var match=nearby.get().match(slots,seed);
+            int[] roster=match.members();
+            if(roster.length!=slots.length){stats.count(StormAttackStats.Reason.RESERVED);continue;}
             float y=(float)ground(level,landing.x,landing.z)+.02f,start=now+.2f;
-            // Conservative travel budget includes the storm envelope and the vertically staggered bundle.
-            float assemble=start+Math.max(4,(radius*2+16)*2/AllayStarfall.SPEED);
+            float legacy=Math.max(4,(radius*2+16)*2/AllayStarfall.SPEED);
+            float assemble=start+Math.min(legacy,StormNearbyRoster.gatherSeconds(match.farthest(),StormMotion.INTERCEPT-StormMotion.COLUMN_ORBIT));
             float touch=assemble+StarfallColumnRules.descentSeconds(gather+6-y);
             float bloomEnd=touch+StarfallColumnRules.delay(63)+StarfallColumnRules.ARRIVAL_GRACE+StarfallColumnRules.BLOOM;
             float end=bloomEnd+Math.max(4,StarfallColumnRules.descentSeconds(gather+6-y)*.5f);

@@ -155,6 +155,10 @@ uniform bool uDomePoseStorageEnabled;
 uint cmiDomeFlowWord(uint at){return CMI_STATE(starStateRead,at);}
 #pragma cmi_include chunks/allay_storm.glsl
 #pragma cmi_include chunks/storm_separation.glsl
+#if defined(CMI_UPDATE_DOMAIN) && CMI_UPDATE_DOMAIN == 3
+#define CMI_RING_REPORT
+#pragma cmi_include chunks/storm_ring.glsl
+#endif
 
 #pragma cmi_include chunks/collision_queries.glsl
 
@@ -388,6 +392,10 @@ void main() {
     }
     if(cmiColumnExit&&cmiContactSweepValid)vel=cmiColumnExitVelocity;
     age += uDt;
+#ifdef CMI_RING_REPORT
+    if(!corpse&&stormA.x>.5&&!cmiStormEmbedded&&!cmiStormMissing)
+        cmiRingReport(cmiManaRing,cmiManaPhase,pos,vel,cmiManaTarget,cmiManaReference);
+#endif
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w),member=cmiStarMember(p0.w);if(a!=0u&&member<131072u&&(cmiHelix(cmiStarBase(cmiStarSlot(a)))||cmiDome(cmiStarBase(cmiStarSlot(a))))){float limit=cmiStormFrameCap*uDt+.01;if(!cmiContactSweepValid||distance(pos,p0.xyz)>limit)CMI_STATE(starStateWrite,member*2u+1u)|=0x80000000u;}}
 
     if(!corpse&&stormA.x>.5&&uStarfallEnabled){uint a=cmiStarAssignment(p0.w);

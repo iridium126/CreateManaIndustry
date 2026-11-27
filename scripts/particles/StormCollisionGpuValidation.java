@@ -100,9 +100,89 @@ public class StormCollisionGpuValidation extends StarfallGpuValidation {
    }finally{for(int b:new int[]{output,grid,damage,players,correction,map})GL15.glDeleteBuffers(b);}
   }finally{GL20.glUseProgram(0);deleteProgram(update);}
  }
+ static void edits()throws Exception{
+  int p=compileText("storm sparse terrain edits",source("chunks/storm_collision.glsl")+source("chunks/storm_edited_probe.glsl")+"""
+   layout(local_size_x=1) in;
+   layout(std430,binding=10) buffer Output { vec4 values; } result;
+   void main(){
+    vec3 a=vec3(15.5,.1,.5),b=vec3(16.5,.1,.5),dir=vec3(1,0,0),normal;
+    float distance=3.;
+    bool hit=cmiEditedProbe(a,a+dir*3.)&&cmiEditedProbeHit(a,dir,3.,distance,normal);
+    result.values=vec4(cmiStormBody(a).occupied?1.:0.,cmiStormBody(b).occupied?1.:0.,cmiStormSolid(vec3(17.5,.1,.5))?1.:0.,hit?distance:-1.);
+   }
+   """);
+  int output=buffer(bytes(16)),texture=GL45.glCreateTextures(GL31.GL_TEXTURE_BUFFER);
+  var sections=List.of(new Section(0,0,0),new Section(1,0,0));
+  try(var gpu=new StormCollisionGpu()){
+   gpu.offer(Map.of(sections.get(0),new Page(1,SOLID,null),sections.get(1),new Page(1,SOLID,null)));
+   long deadline=System.nanoTime()+10_000_000_000L;
+   while(!gpu.settled()&&System.nanoTime()<deadline){gpu.pump(131072,50_000_000);GL11.glFlush();Thread.sleep(1);}
+   check(gpu.settled(),"initial solid collision pages");
+   gpu.bind(p);bind(10,output);bool(p,"uStormTerrainEdited",false);dispatch(p,1);
+   check(read(output,16).getFloat(0)==1,"solid section shortcut precondition");
+   long terrainBytes=gpu.uploaded();
+   int[] a=new int[128],b=new int[128];a[0]=1<<15;b[0]=1;
+   for(int step=0;step<2;step++){
+    var snapshot=StormTerrainEdits.pack(step+1,step==0?Map.of(sections.get(0),a,sections.get(1),b):Map.of(sections.get(0),a));
+    var data=bytes(snapshot.bytes());snapshot.write(data);data.flip();
+    int edits=buffer(data);
+    try{
+     GL45.glTextureBuffer(texture,GL30.GL_R32UI,edits);
+     GL45.glBindTextureUnit(6,texture);bool(p,"uStormTerrainEdited",true);dispatch(p,1);
+     var result=read(output,16);
+     check(result.getFloat(0)==0&&result.getFloat(4)==step&&result.getFloat(8)==1,"edited cells or later restoration");
+     check(Math.abs(result.getFloat(12)-(step==0?1.5:.5))<.01,"voxel probe follows the edited cross-section passage");
+    }finally{GL15.glDeleteBuffers(edits);}
+   }
+   check(gpu.uploaded()==terrainBytes,"blast used the resident base pages");
+  }finally{GL11.glDeleteTextures(texture);GL15.glDeleteBuffers(output);deleteProgram(p);}
+  System.out.println("PASS Storm sparse edits in resident full-solid pages with terrain upload paused");
+ }
+ static void ring()throws Exception{
+  int p=compileText("storm ring reference","#define CMI_RING_REPORT\n"+source("chunks/storm_ring.glsl")+"""
+   layout(local_size_x=1) in;
+   layout(std430,binding=10) buffer Output{vec4 point;} result;
+   void main(){
+    vec3 target,reference,axis;uint phase=0u;
+    uint assignment=cmiRingSample(0u,target,reference,axis,phase);
+    result.point=vec4(target,float(assignment));
+    cmiRingReport(assignment,phase,vec3(0,-1.75,0),vec3(-.91629786,0,0),target,reference);
+   }
+   """);
+  int frame=131072+63*16, ready=131072+64*16;
+  var data=bytes((ready+64)*4);
+  data.putInt(0,64);
+  data.putFloat((frame+3)*4,4);
+  data.putFloat((frame+6)*4,1).putFloat((frame+7)*4,1);
+  data.putFloat((frame+8)*4,1).putFloat((frame+11)*4,1);
+  int storage=buffer(data),output=buffer(bytes(16)),texture=GL45.glCreateTextures(GL31.GL_TEXTURE_BUFFER);
+  try{
+   GL45.glTextureBuffer(texture,GL30.GL_R32UI,storage);
+   GL42.glBindImageTexture(7,texture,0,false,0,GL15.GL_READ_WRITE,GL30.GL_R32UI);
+   bind(10,output);bool(p,"uStormRingEnabled",true);bool(p,"uStormRingReport",true);f(p,"uStormRingSeconds",4);
+   dispatch(p,1);GL42.glMemoryBarrier(GL42.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT|GL42.GL_BUFFER_UPDATE_BARRIER_BIT);
+   var q=read(output,16);var mask=read(storage,data.capacity());
+   check(Math.abs(q.getFloat(0))<.001&&Math.abs(q.getFloat(4)+1.75)<.001&&q.getFloat(12)==64,
+       "Ring rank zero rotates clockwise from observer view");
+   check(mask.getInt((ready+63)*4)==1,"Ring readiness reaches the highest slot");
+  }finally{GL11.glDeleteTextures(texture);GL15.glDeleteBuffers(output);GL15.glDeleteBuffers(storage);deleteProgram(p);}
+  int update=compile("update_storm_gl.comp"),animate=compile("allay_animate.comp"),projection=compile("storm_projection.comp");
+  try{
+   var reflected=UpdateResourceInterface.verify(update,16);
+   check(reflected.images().containsKey("cmiStormRing"),"Production Storm update binds ring readiness");
+   check(reflected.samplers().containsKey("uStormTerrainEdits"),"Production Storm update reads terrain edits");
+  }finally{deleteProgram(projection);deleteProgram(animate);deleteProgram(update);}
+  System.out.println("PASS Storm round-trip formation reference and OpenGL production shaders");
+ }
  public static void main(String[] args)throws Exception{
   long window=GpuValidationSupport.open(128,128,"Storm collision validation",false);
-  try{System.out.println(GL11.glGetString(GL11.GL_RENDERER));inheritedGlError();atlas();production();check(GL11.glGetError()==0,"storm collision GL state");System.out.println("Storm collision GPU: "+checks+" assertions passed");}
+  try{
+   System.out.println(GL11.glGetString(GL11.GL_RENDERER));
+   if(List.of(args).contains("--ring-only"))ring();
+   else{inheritedGlError();atlas();production();}
+   edits();check(GL11.glGetError()==0,"storm collision GL state");
+   System.out.println("Storm collision GPU: "+checks+" assertions passed");
+  }
   finally{GpuValidationSupport.close(window);}
  }
 }

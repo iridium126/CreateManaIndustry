@@ -5,20 +5,10 @@
 
 namespace {
 using uint=unsigned int;
-struct vec3 {
-    float x, y, z;
-    __device__ explicit vec3(float v) : x(v), y(v), z(v) {}
-    __device__ vec3(float x, float y, float z) : x(x), y(y), z(z) {}
-    __device__ explicit vec3(float4 v) : x(v.x), y(v.y), z(v.z) {}
-    __device__ vec3 operator+(vec3 b) const { return vec3(x+b.x,y+b.y,z+b.z); }
-    __device__ vec3 operator-(vec3 b) const { return vec3(x-b.x,y-b.y,z-b.z); }
-    __device__ vec3 operator*(float a) const { return vec3(x*a,y*a,z*a); }
-    __device__ float4 row(float w) const { return make_float4(x,y,z,w); }
-};
+#include "StormVector.cuh"
 __device__ float length(vec3 v) { return sqrtf(v.x*v.x+v.y*v.y+v.z*v.z); }
 __device__ float fract(float v) { return v-floorf(v); }
 __device__ float sign(float v) { return float(v>0.f)-float(v<0.f); }
-__device__ float clamp(float v,float a,float b) { return fminf(fmaxf(v,a),b); }
 __device__ float max(float a,float b) { return fmaxf(a,b); }
 #include "StormCollision.cuh"
 
@@ -204,6 +194,25 @@ extern "C" __global__ void compactStormFeatherImpacts(const StormFeatherCell* ce
 __device__ void applyStormControlRow(StormStepMember* members,StormTick tick,StormControl command,StormDomeView dome,unsigned rank) {
     unsigned index=command.member+rank;
     unsigned id=unsigned(command.scope),slot=unsigned(command.scope>>32);
+    if(command.op>=CMI_RESOURCE_STORM_CONTROL_RING_STATE&&command.op<=CMI_RESOURCE_STORM_CONTROL_RING_ASSIGN){
+        auto& ring=dome.columns[columnSlots+slot];
+        bool same=ring.identity==tick.identity&&ring.id==id;
+        if(command.op==CMI_RESOURCE_STORM_CONTROL_RING_STATE){
+            if(!command.flags){if(same)ring.state=0;return;}
+            ring.identity=tick.identity;ring.id=id;ring.state=command.flags;
+            ring.landingTop=command.a;ring.ringAxisStart=command.b;
+        }else if(same&&ring.state){
+            if(command.op==CMI_RESOURCE_STORM_CONTROL_RING_BASIS){
+                ring.ringRight=command.a;ring.ringVelocity=command.b;
+            }else{
+                auto& member=dome.assignments[index];
+                member={};member.identity=tick.identity;member.id=id;member.slot=slot;
+                member.rank=command.flags;member.kind=RegionalRing;member.phase=DomeGather;
+                dome.routes[index]={};
+            }
+        }
+        return;
+    }
     if(command.op==CMI_RESOURCE_STORM_CONTROL_COLUMN_STATE){
         auto& column=dome.columns[slot];
         bool same=column.identity==tick.identity&&column.id==id;
@@ -470,6 +479,30 @@ extern "C" __global__ void prepareStormSpatial(SpatialParams params){
     auto position=member.position;
     position.w=.34f;
     params.instances[index]=movingInstance(position,member.velocity,index,alive,params.unit);
+    if(!params.stormTerrainHints||!alive||member.spatialSteering.w<=0.f)return;
+    vec3 forward(member.spatialSteering);
+    float speed=length(forward);
+    if(speed<.01f)return;
+    forward=forward*(1.f/speed);
+    vec3 right=cross(forward,fabsf(forward.y)<.9f?vec3(0,1,0):vec3(1,0,0));
+    right=right*(1.f/length(right));
+    vec3 up=cross(right,forward);
+    constexpr float cs[]{1.f,-.5f,-.5f},sn[]{0.f,.866025404f,-.866025404f};
+    float reach=fmaxf(.05f,fminf(speed,member.spatialSteering.w)*.1f+.34f);
+    auto origin=make_float3(position.x,position.y,position.z);
+    StormCollision terrain{params.stormTerrain};
+    for(unsigned k=0;k<params.probes;k++){
+        unsigned side=params.probes==2?unsigned(params.generation%3):k-1u;
+        auto ray=k?forward*.906307787f+(right*cs[side]+up*sn[side])*.422618262f:forward;
+        auto end=vec3(position)+ray*reach;
+        auto& result=params.stormTerrainHints[index*params.probes+k];
+        result=make_float4(0,0,0,-1);
+        if(!terrain.editedProbe(origin,make_float3(end.x,end.y,end.z)))continue;
+        float distance=reach;
+        auto normal=make_float3(0,0,0);
+        terrain.editedProbeHit(origin,make_float3(ray.x,ray.y,ray.z),distance,normal);
+        result=make_float4(normal.x,normal.y,normal.z,distance);
+    }
 }
 
 extern "C" __global__ void advanceStormVortex(StormStepMember* members,StormTick tick,StormTerrain terrain,
@@ -529,6 +562,29 @@ extern "C" __global__ void advanceStormVortex(StormStepMember* members,StormTick
     home(tick,member.seed,target,reference);
     auto proposed=velocity+((target-position)*24.f+(reference-velocity)*6.f)*dt;
     StormDomeMember* assignment=view.assignments?view.assignments+index:nullptr;
+    if(assignment&&assignment->identity==tick.identity&&assignment->kind==RegionalRing&&assignment->phase!=DomeHome){
+        const auto& ring=view.columns[columnSlots+assignment->slot];
+        if(ring.identity!=tick.identity||ring.id!=assignment->id||!ring.state)assignment->phase=DomeHome;
+        else{
+            float age=domeElapsed(tick,ring.ringAxisStart.w);
+            if(age>=0.f){
+                float angle=float(assignment->rank)*.3926990817f-age*.5235987756f;
+                vec3 axis(ring.ringAxisStart),right(ring.ringRight),travel(ring.ringVelocity);
+                auto radial=(right*cosf(angle)+cross(axis,right)*sinf(angle))*1.75f;
+                auto slot=vec3(ring.landingTop)+travel*clamp(domeElapsed(tick,ring.landingTop.w),0.f,.1f)+radial;
+                auto tangent=travel-cross(axis,radial)*.5235987756f;
+                auto desired=tangent+(slot-position)*4.f;
+                velocity=velocity+(desired*(8.f/fmaxf(8.f,length(desired)))-velocity)*fminf(1.f,12.f*dt);
+                velocity=velocity*(8.f/fmaxf(8.f,length(velocity)));
+                member.previous=member.position;
+                member.terrainState=liveSweep(collision,view.featherCells,position,velocity);
+                member.position=position.row(0.f);member.velocity=velocity.row(0.f);
+                member.spatialSteering=make_float4(0,0,0,0);
+                return;
+            }
+        }
+        assignment=nullptr;
+    }
     if(assignment&&assignment->identity==tick.identity&&assignment->kind==RegionalColumn
         &&assignment->phase==DomeGather){
         const auto& column=view.columns[assignment->slot];

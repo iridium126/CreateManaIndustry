@@ -1,12 +1,16 @@
 package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 
 import com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime;
+import com.iridium126.createmanaindustry.client.allaystorm.StormTerrainEdits;
 import com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall;
 import com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherFrame;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherRecovery;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormRingPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.StarfallColumns;
+import com.iridium126.createmanaindustry.content.allaystorm.StormRingGeometry;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket;
 import com.iridium126.createmanaindustry.content.allaystorm.network.StormColumnSnapshotPacket;
 import com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket;
@@ -32,6 +36,7 @@ public final class StormNativeInputs {
     private long generation=1, terrainVersion=Long.MIN_VALUE, projectedSequence;
     private long lastPositionSnapshot=Long.MIN_VALUE;
     private Object terrainSource, previousTarget;
+    private StormTerrainEdits.Snapshot lastEdits;
     private Vec3 previousAim;
     private boolean active, needsDome;
     private String failure="";
@@ -86,6 +91,24 @@ public final class StormNativeInputs {
                 new StormControlJournal.Float4(x,y,z,arrival),new StormControlJournal.Float4(vx,vy,vz,strength)));
     }
     public boolean hasOuter(){return outerCount!=0;}
+    public void ring(ClientboundStormRingPacket.Frame frame,long sampleTick){
+        if(!active)return;
+        long scope=Integer.toUnsignedLong(frame.id())|((long)frame.slot()<<32);
+        var zero=vector(Vec3.ZERO,0);
+        if(frame.phase()==StormRingGeometry.END){
+            add(new StormControlJournal.Command(STORM_CONTROL_RING_STATE,0,1,0,scope,zero,zero));
+            return;
+        }
+        add(new StormControlJournal.Command(STORM_CONTROL_RING_STATE,0,1,frame.phase(),scope,
+                vector(frame.center(),StarfallColumns.clock(sampleTick)),vector(frame.axis(),StarfallColumns.clock(frame.startTick()))));
+        add(new StormControlJournal.Command(STORM_CONTROL_RING_BASIS,0,1,0,scope,
+                vector(frame.right(),0),vector(frame.velocity(),0)));
+        for(int rank=0;rank<frame.roster().length;rank++)
+            add(new StormControlJournal.Command(STORM_CONTROL_RING_ASSIGN,frame.roster()[rank],1,rank,scope,zero,zero));
+    }
+    private static StormControlJournal.Float4 vector(Vec3 value,float w){
+        return new StormControlJournal.Float4((float)value.x,(float)value.y,(float)value.z,w);
+    }
     boolean outerExpected(int member,int cycle){
         return member>=0&&member<outerCycles.length&&outerCycles[member]==cycle;
     }
@@ -213,7 +236,10 @@ public final class StormNativeInputs {
         StormControlJournal.Geometry geometry=null; // Built from the same page delta on the native worker.
         var captures=active?ColumnSnapshotClient.INSTANCE.reserveNativeCaptures():List.<ColumnSnapshotClient.NativeCapture>of();
         boolean featherImpacts=active&&com.iridium126.createmanaindustry.client.particles.engine.AllayFeatherGpu.INSTANCE.needsPlayers();
-        journal.appendWorldSample(gameTime,p,pending,terrain,contact,projectedSequence,samples,positionSnapshot,geometry,captures,featherImpacts);
+        var edits=active?StormCollisionRuntime.terrainEdits():StormTerrainEdits.EMPTY;
+        journal.appendWorldSample(gameTime,p,pending,terrain,contact,projectedSequence,samples,positionSnapshot,geometry,captures,
+                featherImpacts,edits==lastEdits?null:edits);
+        lastEdits=edits;
         if(positionSnapshot)lastPositionSnapshot=tick;
         pending.clear();
         previousTarget=aim==null?null:target;previousAim=aim;

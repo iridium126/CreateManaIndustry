@@ -32,7 +32,7 @@ public final class StormCollisionCache {
         Page snapshot(Section key,long revision);
         boolean solid(Section key,int index);
     }
-    private static final class Entry {Page page;int cursor;int[] bits;long revision;boolean dirty=true;}
+    private static final class Entry {Page page,lastReady;int cursor;int[] bits;long revision;boolean dirty=true;}
     private final Map<Section,Entry> entries=new HashMap<>();
     private final LinkedHashSet<Section> pending=new LinkedHashSet<>();
     private final LongSupplier clock;
@@ -43,21 +43,28 @@ public final class StormCollisionCache {
         if(entries.keySet().removeIf(k->{if(keys.contains(k))return false;changed(k,null);return true;}))version++;pending.removeIf(k->!keys.contains(k));
         for(Section key:keys)if(!entries.containsKey(key)){var e=new Entry();e.revision=++revision;entries.put(key,e);pending.add(key);version++;}
     }
-    public void dirty(Section key){var e=entries.get(key);if(e==null)return;e.dirty=true;e.cursor=0;e.bits=null;e.revision=++revision;pending.add(key);if(e.page!=null){e.page=null;version++;changed(key,null);}}
-    public void unavailable(Section key){dirty(key);}
+    public void dirty(Section key){var e=entries.get(key);if(e==null)return;e.dirty=true;e.cursor=0;e.bits=null;e.revision=++revision;pending.add(key);if(e.page!=null){e.lastReady=e.page;e.page=null;version++;changed(key,null);}}
+    boolean retainForEdit(Section key){
+        var e=entries.get(key);
+        if(e==null)return false;
+        if(e.page==null&&e.lastReady!=null){e.page=e.lastReady;version++;changed(key,e.page);}
+        return true;
+    }
+    boolean requested(Section key){return entries.containsKey(key);}
+    public void unavailable(Section key){dirty(key);var entry=entries.get(key);if(entry!=null)entry.lastReady=null;}
     public void dirtyColumn(int x,int z){for(Section key:entries.keySet())if(key.x()==x&&key.z()==z)unavailable(key);}
     public void capture(Source source,long nanos){
         long begin=clock.getAsLong();int attempts=pending.size();
         while(attempts-->0&&!pending.isEmpty()&&clock.getAsLong()-begin<nanos){
             Section key=pending.iterator().next();pending.remove(key);var e=entries.get(key);if(e==null)continue;
             if(!source.loaded(key)){pending.add(key);continue;}
-            if(e.cursor==0){var shared=source.snapshot(key,e.revision);if(shared!=null){e.page=shared;e.dirty=false;version++;changed(key,shared);reused++;continue;}e.bits=new int[WORDS];}
+            if(e.cursor==0){var shared=source.snapshot(key,e.revision);if(shared!=null){e.page=shared;e.lastReady=null;e.dirty=false;version++;changed(key,shared);reused++;continue;}e.bits=new int[WORDS];}
             while(e.cursor<4096){
                 int until=Math.min(4096,e.cursor+32);
                 for(;e.cursor<until;e.cursor++)if(source.solid(key,e.cursor))e.bits[e.cursor>>>5]|=1<<(e.cursor&31);
                 if(clock.getAsLong()-begin>=nanos)break;
             }
-            if(e.cursor==4096){e.page=page(e.revision,e.bits);e.bits=null;e.cursor=0;e.dirty=false;version++;changed(key,e.page);captured++;}
+            if(e.cursor==4096){e.page=page(e.revision,e.bits);e.lastReady=null;e.bits=null;e.cursor=0;e.dirty=false;version++;changed(key,e.page);captured++;}
             else pending.add(key);
         }
         spent=clock.getAsLong()-begin;if(spent>nanos)overruns++;

@@ -1,6 +1,8 @@
 package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 
 import com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState;
+import com.iridium126.createmanaindustry.client.allaystorm.StormCollisionPages;
+import com.iridium126.createmanaindustry.client.allaystorm.StormTerrainEdits;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherFrame;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
@@ -39,6 +41,10 @@ public final class StormDisplayTransferGpuValidation {
             GL.createCapabilities();
             System.out.println("GL_RENDERER=" + GL11.glGetString(GL11.GL_RENDERER));
             if (List.of(args).contains("--renderer-only")) return;
+            if (List.of(args).contains("--ring-only")) {
+                validateStagedRing(List.of(args).contains("--dxr"));
+                return;
+            }
             validateOpenGlStatus();
             if (List.of(args).contains("--dxr")) {
                 validateDxr();
@@ -70,6 +76,24 @@ public final class StormDisplayTransferGpuValidation {
         } finally {
             GLFW.glfwDestroyWindow(window);
             GLFW.glfwTerminate();
+        }
+    }
+
+    private static void validateStagedRing(boolean dxr) throws Exception {
+        var api=new StormControlNative(dxr);
+        String device=dxr?StormGpuDevices.discoverDxr().getFirst().selection().uuid()
+                :StormGpuDevices.discoverCuda().getFirst().uuid();
+        try(var stage=new StormStagedDisplay(CAPACITY)){
+            long worker=dxr?StormDxrNative.create(CAPACITY,device,stage.mappings,2,0,0)
+                    :SpatialNative.createStagedStormControl(CAPACITY,device,stage.mappings,2);
+            long deadline=System.nanoTime()+180_000_000_000L;
+            try{
+                verifyRingTerrainEdits(api,worker,new StormControlJournal(),0,stage,null,deadline);
+            }finally{
+                while(!api.closeStormControl(worker)){
+                    check(System.nanoTime()<deadline,"Staged ring worker retirement");Thread.sleep(1);
+                }
+            }
         }
     }
 
@@ -211,7 +235,7 @@ public final class StormDisplayTransferGpuValidation {
 
     private static List<ByteBuffer> exercise(StormControlNative api, long worker, long bridge, StormStagedDisplay staged,
                                              StormDxrSharedDisplay shared, String dxrModel) throws Exception {
-        long deadline = System.nanoTime() + 45_000_000_000L;
+        long deadline = System.nanoTime() + 120_000_000_000L;
         var journal = new StormControlJournal();
         var packet = new ClientboundStormColumnPacket(null, 1, 79, false, 13,
                 .01f, .12f, 12, 15, 17, 0, 62, 0, 68, 0, 0, 8, new int[] {0});
@@ -243,7 +267,7 @@ public final class StormDisplayTransferGpuValidation {
             check(api.submitStormTick(worker, input, size, slot, timed), "Tick submission");
             journal.sent(tick);
             while (api.pollStormTick(worker, tick.sequence()) == 1) {
-                check(System.nanoTime() < deadline, "Gameplay receipt timeout");
+                check(System.nanoTime() < deadline, "Gameplay receipt timeout at sequence " + tick.sequence());
                 Thread.sleep(1);
             }
             if (i == 2 && api.pollStormTick(worker, tick.sequence()) == 2) {
@@ -333,11 +357,13 @@ public final class StormDisplayTransferGpuValidation {
             var input = BufferUtils.createByteBuffer(tick.bytes());
             check(api.prepareStormDisplaySlot(worker, 0), "Shared slot returned after OpenGL release");
             check(api.submitStormTick(worker, input, tick.encode(input), 0, false), "New identity reused shared slot");
+            journal.sent(tick);
             while (api.pollStormTick(worker, tick.sequence()) == 1) {
                 check(System.nanoTime() < deadline, "Reused slot receipt timeout");
                 Thread.sleep(1);
             }
             check(api.consumeStormTick(worker, tick.sequence()) == 2, "New identity receipt");
+            journal.receive(tick.sequence(), true);
             var header = BufferUtils.createByteBuffer(STORM_DISPLAY_HEADER_BYTES);
             int sharedBuffer = shared.acquire(worker, 0, tick.sequence());
             // Inspect GPU-visible bytes because a direct CPU read of the imported buffer can return stale data.
@@ -358,12 +384,85 @@ public final class StormDisplayTransferGpuValidation {
                 Thread.sleep(1);
             }
         }
+        verifyRingTerrainEdits(api,worker,journal,bridge,staged,shared,deadline);
         while (!api.closeStormControl(worker)) {
             check(System.nanoTime() < deadline, "Native session retirement");
             Thread.sleep(1);
         }
         if (bridge != 0) SpatialNative.closeBuffers(bridge);
         return List.copyOf(frames);
+    }
+
+    private static void verifyRingTerrainEdits(StormControlNative api,long worker,StormControlJournal journal,
+                                               long bridge,StormStagedDisplay staged,StormDxrSharedDisplay shared,
+                                               long deadline) throws Exception {
+        var pages=new java.util.HashMap<StormCollisionPages.Section,StormCollisionPages.Page>();
+        var masks=new java.util.HashMap<StormCollisionPages.Section,int[]>();
+        int[] clear=new int[128];java.util.Arrays.fill(clear,-1);
+        for(int x=-1;x<=0;x++)for(int y=3;y<=4;y++)for(int z=-1;z<=0;z++){
+            var section=new StormCollisionPages.Section(x,y,z);
+            pages.put(section,new StormCollisionPages.Page(1,StormCollisionPages.SOLID,null));
+            masks.put(section,clear);
+        }
+        int ringId=123,ringSlot=STORM_RING_SLOTS-1;
+        long scope=(long)ringSlot<<32|ringId;
+        var zero=new StormControlJournal.Float4(0,0,0,0);
+        var ring=List.of(
+                new StormControlJournal.Command(STORM_CONTROL_RING_STATE,0,1,1,scope,
+                        new StormControlJournal.Float4(0,64,0,1),new StormControlJournal.Float4(0,0,1,1)),
+                new StormControlJournal.Command(STORM_CONTROL_RING_BASIS,0,1,0,scope,
+                        new StormControlJournal.Float4(1,0,0,0),zero),
+                new StormControlJournal.Command(STORM_CONTROL_RING_ASSIGN,0,1,0,scope,zero,zero),
+                new StormControlJournal.Command(STORM_CONTROL_RING_ASSIGN,1,1,1,scope,zero,zero));
+        for(int i=0;i<4;i++){
+            var commands=i==0?List.of(StormControlJournal.Command.lifecycle(true),
+                    StormControlJournal.Command.spawn(0,MEMBERS,false)):i==1?ring:List.<StormControlJournal.Command>of();
+            var edits=i==2?StormTerrainEdits.pack(1,masks):i==3?StormTerrainEdits.pack(2,java.util.Map.of()):null;
+            journal.appendWorldSample(20+i,new StormControlJournal.Parameters(4,true,MEMBERS,19,0,64,0,2,
+                    0,0,0,1,1+i*.05f,6,false),commands,i==0?StormControlTerrain.capture(pages):null,
+                    StormControlJournal.Target.ABSENT,0,List.of(),false,null,List.of(),false,edits);
+            var tick=journal.sendable();int slot=i==0?-1:0;
+            if(slot>=0)check(api.prepareStormDisplaySlot(worker,slot),"Ring display slot");
+            var input=BufferUtils.createByteBuffer(tick.bytes());
+            check(api.submitStormTick(worker,input,tick.encode(input),slot,false),"Ring edit tick submission");
+            journal.sent(tick);
+            while(api.pollStormTick(worker,tick.sequence())==1){
+                check(System.nanoTime()<deadline,"Ring edit worker timeout");Thread.sleep(1);
+            }
+            check(api.consumeStormTick(worker,tick.sequence())==2,api.stormControlDiagnostics(worker));
+            journal.receive(tick.sequence(),true);
+            if(slot<0)continue;
+            int buffer;
+            if(staged!=null){
+                var meta=new long[2];
+                while(api.stagedStormDisplayTime(worker,slot,tick.sequence(),meta)<0){
+                    check(System.nanoTime()<deadline,"Ring staged copy timeout");Thread.sleep(1);
+                }
+                staged.upload(slot,(int)meta[0],meta[1]);buffer=staged.buffer(slot);
+            }else if(shared!=null)buffer=shared.acquire(worker,slot,tick.sequence());
+            else buffer=SpatialNative.buffers(bridge,slot)[1];
+            int copy=GL45.glCreateBuffers();
+            var records=BufferUtils.createByteBuffer(MEMBERS*STORM_DISPLAY_RECORD_BYTES);
+            try {
+                GL45.glNamedBufferStorage(copy,records.capacity(),0);
+                GL45.glCopyNamedBufferSubData(buffer,copy,STORM_DISPLAY_HEADER_BYTES,0,records.capacity());
+                GL45.glGetNamedBufferSubData(copy,0,records);
+            }finally{GL45.glDeleteBuffers(copy);}
+            for(int member=0;member<MEMBERS;member++){
+                int key=member*STORM_DISPLAY_RECORD_BYTES+STORM_DISPLAY_KEY_OFFSET;
+                check(records.getInt(key+4)==ringId,"Ring assignment uses the independent highest ring slot");
+                boolean embedded=(records.getInt(key+12)&4)!=0;
+                check(embedded==(i!=2),"Sparse clear/replacement must affect native occupancy with no terrain upload. Step "+i);
+            }
+            long fence=shared==null?GL32.glFenceSync(GL32.GL_SYNC_GPU_COMMANDS_COMPLETE,0):0;
+            try{
+                while(!(shared==null?api.recycleStormDisplay(worker,slot,tick.sequence(),fence)
+                        :shared.recycle(worker,slot,tick.sequence()))){
+                    check(System.nanoTime()<deadline,"Ring display retirement");Thread.sleep(1);
+                }
+            }finally{if(fence!=0)GL32.glDeleteSync(fence);}
+        }
+        System.out.println("Ring assignment and paused terrain-upload edit/restore passed");
     }
 
     private static void verifyHelixGatherReceipt(StormControlNative api, long worker, StormControlJournal journal,

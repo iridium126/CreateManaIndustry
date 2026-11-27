@@ -16,7 +16,7 @@ void prepareInstances(uint index:SV_DispatchThreadID) {
         storeInstance(index,alive?member.position.xyz+motion:0,.34f+abs(motion),alive?1u:0u,unitBlas);
     } else if(index==tick.population&&terrainBoxes) {
 
-        storeInstance(index,0,1,1u,terrainBlas);
+        storeInstance(index,0,1,2u,terrainBlas);
     }
 }
 
@@ -26,6 +26,32 @@ static const float3 faceNormal[6] = {
 };
 static const float circleCos[3]={1.f,-.5f,-.5f};
 static const float circleSin[3]={0.f,.866025404f,-.866025404f};
+
+bool editedProbe(float3 start,float3 end){
+    if(!terrainEdited)return false;
+    int3 lo=voxelSection(voxelBlock(min(start,end))),hi=voxelSection(voxelBlock(max(start,end)));
+    for(int x=lo.x;x<=hi.x;x++)for(int y=lo.y;y<=hi.y;y++)for(int z=lo.z;z<=hi.z;z++)
+        if(stormEditPage(int3(x,y,z))>=0)return true;
+    return false;
+}
+bool editedProbeHit(RayDesc ray,inout float distance,inout float3 normal){
+    float3 start=ray.Origin+ray.Direction*.0001f;
+    int3 cell=voxelBlock(start),step=int3(sign(ray.Direction));
+    float3 stride=1.f/max(abs(ray.Direction),.000001f);
+    float3 edge=(float3(cell)+float3(step.x>0,step.y>0,step.z>0)-start)*float3(step)*stride;
+    for(uint axis=0;axis<3;axis++)if(step[axis]==0)edge[axis]=1e9f;
+    StormCollision terrain=(StormCollision)0;
+    for(uint i=0;i<16;i++){
+        uint axis=edge.x<=edge.y&&edge.x<=edge.z?0:edge.y<=edge.z?1:2;
+        float at=edge[axis]+.0001f;
+        if(at>distance)break;
+        cell[axis]+=step[axis];edge[axis]+=stride[axis];
+        if(terrain.solid(cell,terrain.lookup(voxelSection(cell)))){
+            distance=at;normal=0;normal[axis]=-float(step[axis]);return true;
+        }
+    }
+    return false;
+}
 
 [numthreads(128,1,1)]
 void queryMotion(uint index:SV_DispatchThreadID) {
@@ -51,11 +77,15 @@ void queryMotion(uint index:SV_DispatchThreadID) {
         ray.TMin=0.f;
         ray.TMax=reach;
         RayQuery<RAY_FLAG_FORCE_OPAQUE|RAY_FLAG_CULL_BACK_FACING_TRIANGLES|RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> query;
-        query.TraceRayInline(scene,RAY_FLAG_NONE,1u,ray);
+        bool edited=editedProbe(ray.Origin,ray.Origin+ray.Direction*reach);
+        query.TraceRayInline(scene,RAY_FLAG_NONE,edited?1u:3u,ray);
         while(query.Proceed()) {}
-        if(query.CommittedStatus()==COMMITTED_TRIANGLE_HIT) {
-            float distance=query.CommittedRayT();
-            hint+=faceNormal[query.CommittedPrimitiveIndex()%12u/2u]*(max(0.f,1.f-distance/reach)/simulationProbes);
+        bool hit=query.CommittedStatus()==COMMITTED_TRIANGLE_HIT;
+        float distance=hit?query.CommittedRayT():reach;
+        float3 normal=hit?faceNormal[query.CommittedPrimitiveIndex()%12u/2u]:0;
+        if(edited&&editedProbeHit(ray,distance,normal))hit=true;
+        if(hit) {
+            hint+=normal*(max(0.f,1.f-distance/reach)/simulationProbes);
             clearance=min(clearance,distance);
         }
     }

@@ -16,6 +16,11 @@
     // Only WORLD-frame acceleration leaves this block: the collision sweep
     // below still owns the final position move.
     float cmiStormFrameCap=max(stormA.w,.5);
+    uint cmiManaRing=0u,cmiManaPhase=0u;
+    vec3 cmiManaTarget=vec3(0),cmiManaReference=vec3(0),cmiManaAxis=vec3(0);
+#ifdef CMI_RING_REPORT
+    vec3 cmiManaPrior=vel;
+#endif
     bool cmiDomeFollowing=false,cmiDomeGatherSampleValid=false;vec3 cmiDomeFollowingPoint=vec3(0),cmiDomePoseTangent=vel;
     if (!corpse && stormA.x > 0.5) {
         // ----- typhoon: world-frame servo onto the circulating arm home point
@@ -270,6 +275,19 @@
             }}
             vel=candidate;
         }
+#ifdef CMI_RING_REPORT
+        if(!cmiOuterFlight){
+            cmiManaRing=cmiRingSample(cmiStarMember(p0.w),cmiManaTarget,cmiManaReference,cmiManaAxis,cmiManaPhase);
+            if(cmiManaRing!=0u){
+                vec3 desired=cmiManaReference+(cmiManaTarget-pos)*4.;
+                float speed=length(desired);
+                if(speed>8.)desired*=8./speed;
+                vel=mix(cmiManaPrior,desired,min(1.,12.*uDt));
+                spMaxV=8.;
+                cmiSpatialDesired=cmiManaReference;
+            }
+        }
+#endif
         cmiStormFrameCap=spMaxV;
         float spdV = length(vel);
         if (spdV > spMaxV)
@@ -301,7 +319,7 @@
                 bool hitC = cB.w > 2.5;
                 float window = hitC ? 0.25 : 1.5;
                 uint assignment=cmiStarAssignment(p0.w);
-                if (cage <= window && (hitC||!cmiColumnAssignment(assignment))) {
+                if (cage <= window && (hitC||(cmiManaRing==0u&&!cmiColumnAssignment(assignment)))) {
                     vec3 target = cA.xyz + cB.xyz * cage; // velocity extrapolation
                     float ramp = hitC ? 1.0 : (0.25 + 0.75 * clamp(cage / window, 0.0, 1.0));
                     float k = (hitC ? 24.0 : 8.0) * ramp;

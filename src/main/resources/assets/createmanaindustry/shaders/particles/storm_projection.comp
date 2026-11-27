@@ -43,6 +43,8 @@ uniform uvec2 uProjectionSequence,uProjectionTick,uProjectionIdentity,uProjectio
 #pragma cmi_include chunks/storm_home.glsl
 #pragma cmi_include chunks/death_spawn.glsl
 #pragma cmi_include chunks/dome_pose_math.glsl
+#define CMI_RING_REPORT
+#pragma cmi_include chunks/storm_ring.glsl
 
 bool validNativeFrame(){
     uint columns=uint(CMI_RESOURCE_STORM_COLUMN_SLOTS*CMI_RESOURCE_STORM_COLUMN_MEMBERS*CMI_RESOURCE_STORM_DISPLAY_COLUMN_BYTES/16);
@@ -190,6 +192,11 @@ void main(){
         cmiHistoryContinue(slot);
     }
     publishPose(member,record,stable);
+    if(uStormRingReport&&record.appearance.x>0.&&(record.key.w&7u)==0u){
+        vec3 target,reference,axis;uint phase=0u;
+        uint assignment=cmiRingSample(member,target,reference,axis,phase);
+        cmiRingReport(assignment,phase,record.position.xyz,record.velocity.xyz,target,reference);
+    }
     publishPlayback(member,record,stable);
     uint base=slot*4u;
     writeBuf.data[base]=vec4(record.position.xyz,float(member+1u));

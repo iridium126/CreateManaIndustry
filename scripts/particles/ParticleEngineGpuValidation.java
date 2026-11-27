@@ -498,7 +498,7 @@ public final class ParticleEngineGpuValidation {
         var spawn=Class.forName(journal+"Command").getDeclaredMethod("spawn",int.class,int.class,boolean.class);spawn.setAccessible(true);
         var type=Class.forName(journal+"Tick");var ctor=type.getDeclaredConstructors()[0];ctor.setAccessible(true);
         var input=ctor.newInstance(sequence,tick,gameTime,p,birth?List.of(spawn.invoke(null,0,population,false)):List.of(),
-                null,target.get(null),0L,List.of(),false,null,List.of(),false);
+                null,target.get(null),0L,List.of(),false,null,List.of(),false,null);
         var encode=type.getDeclaredMethod("encode",ByteBuffer.class);encode.setAccessible(true);
         var data=bytes(STORM_TICK_HEADER_BYTES+(birth?STORM_CONTROL_BYTES:0));encode.invoke(input,data);data.clear();
         return data;

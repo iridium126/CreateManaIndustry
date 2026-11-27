@@ -5,6 +5,8 @@ cbuffer StormDispatch : register(b0) {
     uint commandFirst, commandCount, commandMode, featherEnabled;
     uint publishDisplay, simulationProbes, terrainBoxes, hasRegional;
     uint2 unitBlas,terrainBlas;
+    uint terrainEdited;
+    uint3 editPad;
 };
 
 StructuredBuffer<StormTick> tickInput : register(t0);
@@ -16,6 +18,7 @@ StructuredBuffer<float> domeRecords : register(t5);
 StructuredBuffer<uint> domeKeys : register(t6);
 StructuredBuffer<uint> domeFlowsDevice : register(t7);
 RaytracingAccelerationStructure scene : register(t8);
+StructuredBuffer<uint> terrainEdits : register(t9);
 
 RWStructuredBuffer<StormStepMember> members : register(u0);
 RWStructuredBuffer<StormDomeMember> assignments : register(u1);

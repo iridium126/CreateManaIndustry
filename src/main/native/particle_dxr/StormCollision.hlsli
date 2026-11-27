@@ -11,6 +11,27 @@ uint stormSectionHash(int x,int y,int z){
 bool sameSection(int3 a,int3 b) { return all(a==b); }
 int3 voxelBlock(float3 p) { return int3(floor(p)); }
 int3 voxelSection(int3 p) { return p>>4; }
+int4 stormEditRow(uint row) {
+    uint at=4u+row*4u;
+    return asint(uint4(terrainEdits[at],terrainEdits[at+1u],terrainEdits[at+2u],terrainEdits[at+3u]));
+}
+int stormEditPage(int3 key) {
+    if(!terrainEdited)return -1;
+    uint primary=terrainEdits[0],mask=primary-1u;
+    uint row=stormSectionHash(key.x,key.y,key.z)&mask;
+    for(uint i=0;i<8;i++,row=(row+1)&mask){
+        int4 value=stormEditRow(row);
+        if(value.w<0)break;
+        if(all(value.xyz==key))return value.w;
+    }
+    uint lo=primary,hi=lo+terrainEdits[1];
+    while(lo<hi){
+        uint mid=(lo+hi)/2;int4 v=stormEditRow(mid);
+        int c=v.x<key.x?-1:v.x>key.x?1:v.y<key.y?-1:v.y>key.y?1:v.z<key.z?-1:v.z>key.z?1:0;
+        if(c<0)lo=mid+1;else if(c>0)hi=mid;else return v.w;
+    }
+    return -1;
+}
 // Uses the same voxel cells as GL. A missing page cannot certify free space.
 struct StormBody { bool occupied, complete; };
 struct StormCollision {
@@ -42,8 +63,14 @@ struct StormCollision {
         return page;
     }
     bool solid(int3 p,int id){
-        if(id<0)return id==-3;
+        if(id<0&&id!=-3)return false;
         uint cell=uint((p.x&15)|((p.z&15)<<4)|((p.y&15)<<8));
+        int edit=stormEditPage(voxelSection(p));
+        if(edit>=0){
+            uint at=4u+4u*(terrainEdits[0]+terrainEdits[1])+uint(edit)*128u+(cell>>5);
+            if((terrainEdits[at]&(1u<<(cell&31u)))!=0u)return false;
+        }
+        if(id==-3)return true;
         return (terrainCells[uint(id)*128u+(cell>>5)]&(1u<<(cell&31u)))!=0;
     }
     StormBody body(float3 feet){
@@ -52,7 +79,7 @@ struct StormCollision {
         int3 key=voxelSection(lo);
         bool single=sameSection(key,voxelSection(hi));
         int pageSlot=single?lookup(key):-4;
-        if(single&&pageSlot<0){StormBody body={pageSlot==-3,pageSlot!=-1};return body;}
+        if(single&&pageSlot<0&&(pageSlot!=-3||stormEditPage(key)<0)){StormBody body={pageSlot==-3,pageSlot!=-1};return body;}
         StormBody result={false,true};
         for(int x=lo.x;x<=hi.x;x++)for(int y=lo.y;y<=hi.y;y++)for(int z=lo.z;z<=hi.z;z++){
             int3 p=int3(x,y,z);

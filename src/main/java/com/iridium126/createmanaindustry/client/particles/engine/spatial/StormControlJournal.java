@@ -1,6 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 
 import com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient;
+import com.iridium126.createmanaindustry.client.allaystorm.StormTerrainEdits;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherFrame;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherRecovery;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixTemplate;
@@ -168,10 +169,10 @@ final class StormControlJournal {
     record Geometry(long revision,int count,byte[] rows) {}
     record Tick(long sequence,long tick,long gameTime,Parameters parameters,List<Command> commands,StormControlTerrain terrain,
                 Target target,long projectedSequence,List<Float4> players,boolean positionSnapshot,Geometry geometry,
-                List<ColumnSnapshotClient.NativeCapture> columnCaptures,boolean featherImpacts) {
+                List<ColumnSnapshotClient.NativeCapture> columnCaptures,boolean featherImpacts,StormTerrainEdits.Snapshot edits) {
         int bytes(){
             return STORM_TICK_HEADER_BYTES+commands.size()*STORM_CONTROL_BYTES+(terrain==null?0:terrain.bytes())
-                    +players.size()*STORM_PLAYER_BYTES;
+                    +players.size()*STORM_PLAYER_BYTES+(edits==null?0:edits.bytes());
         }
         int encode(ByteBuffer out){
             var p=parameters;
@@ -191,9 +192,11 @@ final class StormControlJournal {
                 }else out.putLong(0).putLong(0);
             }
             out.putLong(terrain==null?0:terrain.baseRevision()).putLong(terrain==null?0:terrain.revision());
+            out.putInt(edits==null?0:edits.bytes()).putInt(0).putLong(0);
             for(var command:commands)command.write(out,p.identity());
             if(terrain!=null)terrain.write(out);
             for(var player:players)player.write(out);
+            if(edits!=null)edits.write(out);
             return out.position();
         }
     }
@@ -223,19 +226,26 @@ final class StormControlJournal {
     void append(long tick,Parameters parameters,List<Command> commands,StormControlTerrain terrain,Target target,
                 long projectedSequence,List<Float4> players,boolean positionSnapshot,Geometry geometry,
                 List<ColumnSnapshotClient.NativeCapture> columnCaptures){
-        append(tick,tick,parameters,commands,terrain,target,projectedSequence,players,positionSnapshot,geometry,columnCaptures,false);
+        append(tick,tick,parameters,commands,terrain,target,projectedSequence,players,positionSnapshot,geometry,columnCaptures,false,null);
     }
     long nextLogicalTick(){return written==0?1:lastTick+1;}
     long nextSequence(){return written+1;}
     void appendWorldSample(long gameTime,Parameters parameters,List<Command> commands,StormControlTerrain terrain,
                            Target target,long projectedSequence,List<Float4> players,boolean positionSnapshot,
                            Geometry geometry,List<ColumnSnapshotClient.NativeCapture> columnCaptures,boolean featherImpacts){
+        appendWorldSample(gameTime,parameters,commands,terrain,target,projectedSequence,players,positionSnapshot,
+                geometry,columnCaptures,featherImpacts,null);
+    }
+    void appendWorldSample(long gameTime,Parameters parameters,List<Command> commands,StormControlTerrain terrain,
+                           Target target,long projectedSequence,List<Float4> players,boolean positionSnapshot,
+                           Geometry geometry,List<ColumnSnapshotClient.NativeCapture> columnCaptures,boolean featherImpacts,
+                           StormTerrainEdits.Snapshot edits){
         append(nextLogicalTick(),gameTime,parameters,commands,terrain,target,projectedSequence,players,
-                positionSnapshot,geometry,columnCaptures,featherImpacts);
+                positionSnapshot,geometry,columnCaptures,featherImpacts,edits);
     }
     private void append(long tick,long gameTime,Parameters parameters,List<Command> commands,StormControlTerrain terrain,
                         Target target,long projectedSequence,List<Float4> players,boolean positionSnapshot,Geometry geometry,
-                        List<ColumnSnapshotClient.NativeCapture> columnCaptures,boolean featherImpacts){
+                        List<ColumnSnapshotClient.NativeCapture> columnCaptures,boolean featherImpacts,StormTerrainEdits.Snapshot edits){
         boolean idleBoundary=!lastActive&&parameters.identity()>lastIdentity;
         boolean tickOrder=written==0||tick>lastTick&&(tick==lastTick+1||idleBoundary);
         if(tick<0||!tickOrder)
@@ -246,8 +256,9 @@ final class StormControlJournal {
             throw new IllegalArgumentException("Invalid Storm player sample");
         if(columnCaptures.size()>STORM_COLUMN_CAPTURE_LIMIT)
             throw new IllegalArgumentException("Too many Starfall column captures");
+        if(edits!=null&&edits.bytes()>STORM_TERRAIN_EDIT_MAX_BYTES)throw new IllegalArgumentException("Too many storm terrain edit sections");
         var input=new Tick(written+1,tick,gameTime,parameters,List.copyOf(commands),terrain,target,projectedSequence,
-                List.copyOf(players),positionSnapshot,geometry,List.copyOf(columnCaptures),featherImpacts);
+                List.copyOf(players),positionSnapshot,geometry,List.copyOf(columnCaptures),featherImpacts,edits);
         log.addLast(input);unsent.addLast(input);written++;lastTick=tick;
         lastIdentity=parameters.identity();lastActive=parameters.active();
     }

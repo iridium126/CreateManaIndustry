@@ -1,6 +1,25 @@
 void applyStormControlRow(StormTick tick,StormControl command,uint rank) {
     uint index=command.member+rank;
     uint id=uint(command.scope),slot=uint(command.scope>>32);
+    if(command.op>=CMI_RESOURCE_STORM_CONTROL_RING_STATE&&command.op<=CMI_RESOURCE_STORM_CONTROL_RING_ASSIGN){
+        uint ringSlot=columnSlots+slot;
+        bool same=columns[ringSlot].identity==tick.identity&&columns[ringSlot].id==id;
+        if(command.op==CMI_RESOURCE_STORM_CONTROL_RING_STATE){
+            if(!command.flags){if(same)columns[ringSlot].state=0;return;}
+            columns[ringSlot].identity=tick.identity;columns[ringSlot].id=id;columns[ringSlot].state=command.flags;
+            columns[ringSlot].landingTop=command.a;columns[ringSlot].ringAxisStart=command.b;
+        }else if(same&&columns[ringSlot].state){
+            if(command.op==CMI_RESOURCE_STORM_CONTROL_RING_BASIS){
+                columns[ringSlot].ringRight=command.a;columns[ringSlot].ringVelocity=command.b;
+            }else{
+                StormDomeMember member=(StormDomeMember)0;
+                member.identity=tick.identity;member.id=id;member.slot=slot;
+                member.rank=command.flags;member.kind=RegionalRing;member.phase=DomeGather;
+                assignments[index]=member;routes[index]=(StormRoute)0;
+            }
+        }
+        return;
+    }
     if(command.op==CMI_RESOURCE_STORM_CONTROL_COLUMN_STATE){
         bool same=columns[slot].identity==tick.identity&&columns[slot].id==id;
         uint state=command.flags&3u;

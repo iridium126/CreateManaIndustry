@@ -15,6 +15,7 @@ uniform bool uDomePoseStorageEnabled;
 #pragma cmi_include chunks/allay_storm.glsl
 #pragma cmi_include chunks/storm_players.glsl
 #pragma cmi_include chunks/dome_pose_math.glsl
+#pragma cmi_include chunks/storm_ring.glsl
 #pragma cmi_include chunks/collision_queries.glsl
 #pragma cmi_include chunks/allay_animation_update.glsl
 void main(){
@@ -42,6 +43,13 @@ void main(){
         }
         uint member=cmiStarMember(p0.w);
         if(storm&&member<131072u&&uDomePoseStorageEnabled&&(CMI_STATE(starStateWrite,CMI_DOME_POSE+member*2u+1u)&0x80000000u)!=0u){bodyYaw=-cmiDomeUnpackPose(CMI_STATE(starStateWrite,CMI_DOME_POSE+member*2u)).x;overrideBody=true;}
+        if(storm&&!corpse){
+            vec3 ringTarget,ringReference,axis;uint ringPhase=0u;
+            if(cmiRingSample(member,ringTarget,ringReference,axis,ringPhase)!=0u){
+                animation=0;carry=0.;
+                if(ringPhase>=2u&&length(axis.xz)>.0001){overrideBody=true;bodyYaw=atan(-axis.x,axis.z);}
+            }
+        }
         cmiUpdateAllayAnimation(animationSlot,animationSlot,p0,p1,p3,pos,vel,age,storm,corpse,corpse?3:animation,corpse?0.:carry,overrideBody,bodyYaw);
     }
  if(uAllayAnimationCountWrites)imageAtomicAdd(cmi_ModelAllocator,0,1u);

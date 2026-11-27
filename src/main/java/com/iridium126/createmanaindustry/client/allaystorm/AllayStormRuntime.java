@@ -729,7 +729,11 @@ public final class AllayStormRuntime {
         StormFeedback.INSTANCE.retireWaveReports();
     }
     private WaveClient findWaveById(int id){for(var w:waveSlots)if(w!=null&&w.alive&&w.waveId==id)return w;return null;}
-    public void clearWaveState(){StormFeedback.INSTANCE.clearOuterReports();java.util.Arrays.fill(navigationStats,0);java.util.Arrays.fill(depenetrationStats,0);ColumnSnapshotClient.INSTANCE.clear();StormCollisionRuntime.clearReturns();waveLifecycle.clear();lastHelixAbort="none";lastGatherId=0;lastGatherAbort=0;java.util.Arrays.fill(lastGatherCounts,0);java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
+    public void clearWaveState(){StormRingClient.INSTANCE.clear();StormFeedback.INSTANCE.clearOuterReports();java.util.Arrays.fill(navigationStats,0);java.util.Arrays.fill(depenetrationStats,0);ColumnSnapshotClient.INSTANCE.clear();StormCollisionRuntime.clearReturns();waveLifecycle.clear();lastHelixAbort="none";lastGatherId=0;lastGatherAbort=0;java.util.Arrays.fill(lastGatherCounts,0);java.util.Arrays.fill(waveSlots,null);java.util.Arrays.fill(starfallSnapshots,null);StormFeedback.INSTANCE.retireWaves();starfallDirty=true;starfallGpu.invalidate();}
+    public boolean ringAuthority(){return stormAuthority;}
+    public void applyRings(com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormRingPacket packet) {
+        StormRingClient.INSTANCE.accept(packet,frame->{if(nativeInputs!=null)nativeInputs.ring(frame,packet.tick());});
+    }
     private long columnSoundTick=Long.MIN_VALUE;private int columnSounds;
     public void refreshWaves(){
         waveLifecycle.retire(timeSec);

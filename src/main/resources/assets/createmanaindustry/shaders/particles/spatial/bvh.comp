@@ -38,14 +38,16 @@ bool boundsHit(vec3 origin,vec3 direction,vec3 lo,vec3 hi,float limit,out float 
  }
  return exit>=0.&&enter<=limit;
 }
-bool trace(uint own,vec3 origin,vec3 direction,float reach,bool visibility,out vec3 normal,out float distance,out bool complete,out uint occluder){
+#pragma cmi_include chunks/storm_collision.glsl
+#pragma cmi_include chunks/storm_edited_probe.glsl
+bool trace(uint own,vec3 origin,vec3 direction,float reach,bool visibility,bool skipTerrain,out vec3 normal,out float distance,out bool complete,out uint occluder){
  occluder=INVALID;
  uint stack[64];uint used=1u,visits=0u;stack[0]=0u;normal=vec3(0);distance=reach;bool hit=false;complete=true;
  while(used>0u){
   if(visits++>=nodeBudget){complete=false;return false;}uint at=stack[--used];Node n=nodes.rows[at];
   if((floatBitsToUint(n.lo.w)&(visibility?2u:1u))==0u)continue;
   float enter;vec3 face;if(!boundsHit(origin,direction,n.lo.xyz,n.hi.xyz,distance,enter,face))continue;
-  if(at>=total()-1u){uint row=keysIn.rows[at-(total()-1u)].y;if(row==own&&!visibility)continue;if(enter<0.&&!visibility)continue;
+  if(at>=total()-1u){uint row=keysIn.rows[at-(total()-1u)].y;if((row==own&&!visibility)||(skipTerrain&&row>=capacity))continue;if(enter<0.&&!visibility)continue;
    if(visibility){occluder=row;return true;}distance=max(0.,enter);normal=face;hit=true;continue;}
   if(used+2u>64u){complete=false;return false;}
   uint left=n.links.x,right=n.links.y;float lt,rt;vec3 unusedNormal;
@@ -111,7 +113,11 @@ void main(){
  vec3 right=normalize(cross(forward,abs(forward.y)<.9?vec3(0,1,0):vec3(1,0,0))),up=cross(right,forward);const float cs[3]=float[3](1.,-.5,-.5),sn[3]=float[3](0.,.866025404,-.866025404);
  uint count=kind==1u?1u:probes;vec3 hint=vec3(0);float clearance=reach;
  for(uint k=0u;k<count;k++){uint side=probes==2u?sourceTick.x%3u:k-1u;vec3 dir=k==0u?forward:forward*.906307787+(right*cs[side]+up*sn[side])*.422618262;
-  vec3 normal;float d;bool complete;uint occluder;bool hit=trace(i,row.position.xyz,dir,reach,kind==1u,normal,d,complete,occluder);
+  bool edited=kind==0u&&cmiEditedProbe(row.position.xyz,row.position.xyz+dir*reach);
+  vec3 normal;float d;bool complete;uint occluder;bool hit=trace(i,row.position.xyz,dir,reach,kind==1u,edited,normal,d,complete,occluder);
+  if(edited){float voxelDistance;vec3 voxelNormal;
+   if(cmiEditedProbeHit(row.position.xyz,dir,d,voxelDistance,voxelNormal)){hit=true;d=voxelDistance;normal=voxelNormal;}
+  }
   if(!complete){result.identity.w=0u;hint=vec3(kind==1u?1.:0.,0,0);clearance=-1.;break;}
   if(kind==1u){bool hidden=false;if(hit&&occluder>=capacity&&occluder<capacity+inputData.header[28]){InputRow box=inputData.rows[occluder];hidden=(box.identity.w&2u)!=0u&&cmiWholeBoundOccluded(row.position.xyz,row.position.xyz+forward*reach,row.position.w,box.position.xyz,box.velocity.xyz);}hint.x=hidden?0.:1.;break;}if(hit){hint+=normal*(max(0.,1.-d/reach)/float(probes));clearance=min(clearance,d);}
  }

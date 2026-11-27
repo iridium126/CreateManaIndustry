@@ -15,6 +15,8 @@ struct StormTick {
     uint playerCount, positionSnapshot, columnCaptureCount, featherImpacts;
     uint4 columnCaptures[CMI_RESOURCE_STORM_COLUMN_CAPTURE_LIMIT];
     uint64_t terrainBaseRevision, terrainRevision;
+    uint terrainEditBytes;
+    uint3 editReserved;
 };
 struct StormControl {
     uint op, member, span, flags;
@@ -42,7 +44,7 @@ static const uint domeMembers=CMI_RESOURCE_STORM_DOME_MEMBERS;
 static const uint domeFlows=CMI_RESOURCE_STORM_DOME_FLOWS;
 static const uint domeBitmapWords=domeMembers/32;
 enum StormDomePhase  { DomeUnassigned, DomeGather, DomeReleasePending, DomeAttack, DomeReturn, DomeHome };
-enum StormRegionalKind  { RegionalDome=1, RegionalHelix=2, RegionalColumn=3 };
+enum StormRegionalKind  { RegionalDome=1, RegionalHelix=2, RegionalColumn=3, RegionalRing=4 };
 static const uint columnSlots=CMI_RESOURCE_STORM_COLUMN_SLOTS;
 static const uint columnMembers=CMI_RESOURCE_STORM_COLUMN_MEMBERS;
 struct StormDome {
@@ -71,6 +73,7 @@ struct StormColumn {
     float4 landingTop;
     uint roster[columnMembers];
     float start, assemble, touch, end, restoreElapsed;
+    float4 ringAxisStart, ringRight, ringVelocity;
 };
 struct StormColumnCurve {
     float radius, root, angle, endAngle, height, endHeight, radial, angular, vertical, arcWarp;

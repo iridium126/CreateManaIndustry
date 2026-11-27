@@ -1,5 +1,9 @@
 package com.iridium126.createmanaindustry;
 
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormRingPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormBlastPacket;
+import com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime;
+
 import com.iridium126.createmanaindustry.client.particles.BlockParticleEmitterClient;
 import com.iridium126.createmanaindustry.client.packages.feedback.PackageLightClient;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
@@ -82,6 +86,8 @@ public class CreateManaIndustryClient {
         ClientboundStormCenterPacket.installClientHandler(AllayStormClientHandler::onCenter);
         com.iridium126.createmanaindustry.client.allaystorm.lod.StormLodClient.install();
         com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.installClientHandler(com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE::outer);
+        ClientboundStormRingPacket.installClientHandler(com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE::applyRings);
+        ClientboundStormBlastPacket.installClientHandler(StormCollisionRuntime::acceptBlast);
         com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket.installClientHandler(com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE::completeAttack);
         ClientboundStormWavePacket.installClientHandler(AllayStormClientHandler::onWave);
         com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnSnapshotRequest.installClientHandler(com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient.INSTANCE::request);

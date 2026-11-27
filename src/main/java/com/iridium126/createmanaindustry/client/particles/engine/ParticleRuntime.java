@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
+import com.iridium126.createmanaindustry.client.allaystorm.StormRingClient;
+
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.NativeStormSimulation;
 
 import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
@@ -678,6 +680,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             ParticleDiagnostics.INSTANCE.beginUpdate(ParticleDiagnostics.UpdateStage.INPUT_PREPARE,updateFrame,updateGeneration);boolean inputPrepared=false;try{
             ParticleDiagnostics.INSTANCE.beginPreparation(ParticleDiagnostics.UpdateStage.INPUT_STATE,updateFrame,updateGeneration);
             if(AllayStormRuntime.INSTANCE.active())ParticleRuntime.this.gpu.ensureStormIdentities();
+            StormRingClient.INSTANCE.prepare(simulationTick,AllayStormRuntime.INSTANCE.ringAuthority());
             ParticleRuntime.this.gpu.ensureCarrierCapacity(AllayStormRuntime.INSTANCE.carrierCount());
             if(AllayStormRuntime.INSTANCE.active()||StarfallGpuBuffers.INSTANCE.bytes()>0)
                 StarfallGpuBuffers.INSTANCE.prepare(ParticleRuntime.this.committedGeneration+1,nativeStorm!=null);
@@ -811,6 +814,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 }
                 if(pass==1)ClientFrameCapture.INSTANCE.simulationInput(updateFrame,AllayStormRuntime.INSTANCE.timeSec(),dt);
                 if(pass==3&&spatial!=null)spatial.bindUpdate(updateProgram,simulationTick);else setIntUniform(updateProgram,"uSpatialEnabled",0);
+                if(pass==3)StormRingClient.INSTANCE.bind(updateProgram,AllayStormRuntime.INSTANCE.timeSec(),true);
                 ParticleRuntime.this.gpu.dispatch(pass==0?0:pass==1?ParticleBuffers.ORDINARY_DISPATCH:pass==2?ParticleBuffers.MODEL_DISPATCH:ParticleBuffers.STORM_DISPATCH);
                 AllayAnimationGpu.barrier();
                 firstDone=true;}finally{ParticleDiagnostics.INSTANCE.endUpdate(firstDone);}
@@ -984,6 +988,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             if(collisionBake.ready()){collisionBake.bind(0);gpu.bindBakeMeta();setIntUniform(animate,"uCollisionOn",1);}else setIntUniform(animate,"uCollisionOn",0);
             setIntUniform(animate,"uPlayerCount",AllayStormRuntime.INSTANCE.lastPlayerCount());
             setFloatUniform(animate,"uTimeSec",AllayStormRuntime.INSTANCE.timeSec());
+            StormRingClient.INSTANCE.bind(animate,AllayStormRuntime.INSTANCE.timeSec(),false);
             StarfallGpuBuffers.INSTANCE.bind(animate,true);StarfallGpuBuffers.INSTANCE.uploadUniforms(animate);
             com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(animate);
             gpu.bindDispatch();gpu.dispatch(ParticleBuffers.CANDIDATE_MODEL_DISPATCH);AllayAnimationGpu.barrier();
@@ -1172,6 +1177,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             feathers.commit(ParticleRuntime.this.committedGeneration);
             waveTargetPrevious=targetAim;waveTargetTick=simulationTick;waveTargetIdentity=targetIdentity;waveTargetEpoch=gpu.identityEpoch();
             stormBatches.commit(stormBatch);
+            StormRingClient.INSTANCE.committed(simulationTick);
             committed=true;step=5;
             return drawInput;
         }

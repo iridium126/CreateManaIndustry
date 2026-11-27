@@ -1,6 +1,7 @@
 #pragma once
 #include <optix.h>
 #include "SpatialParticle.h"
+#include "StormStep.h"
 #include <cstddef>
 
 // Independent packet layout; the ABI marker is CMI_RESOURCE_ABI. Production particle records are never imported.
@@ -19,6 +20,8 @@ struct SpatialParams {
     const SpatialParticle* terrainRows;
     const struct StormStepMember* stormMembers;
     float4* stormHints;
+    StormTerrain stormTerrain;
+    float4* stormTerrainHints;
 };
 #ifdef __CUDACC__
 __device__ inline OptixInstance movingInstance(float4 position,float4 velocity,unsigned member,

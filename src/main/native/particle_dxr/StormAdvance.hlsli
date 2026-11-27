@@ -50,6 +50,29 @@ void stepMember(uint index, StormTick tick, inout StormStepMember member,
     home(tick,member.seed,target,reference);
     vec3 proposed=velocity+((target-position)*24.f+(reference-velocity)*6.f)*dt;
     bool assigned=assignment.identity==tick.identity;
+    if(assigned&&assignment.kind==RegionalRing&&assignment.phase!=DomeHome){
+        StormColumn ring=columns[columnSlots+assignment.slot];
+        if(ring.identity!=tick.identity||ring.id!=assignment.id||!ring.state)assignment.phase=DomeHome;
+        else{
+            float age=domeElapsed(tick,ring.ringAxisStart.w);
+            if(age>=0.f){
+                float angle=float(assignment.rank)*.3926990817f-age*.5235987756f;
+                vec3 axis=ring.ringAxisStart.xyz,right=ring.ringRight.xyz,travel=ring.ringVelocity.xyz;
+                vec3 radial=1.75f*(cos(angle)*right+sin(angle)*cross(axis,right));
+                vec3 slot=ring.landingTop.xyz+clamp(domeElapsed(tick,ring.landingTop.w),0.f,.1f)*travel+radial;
+                vec3 tangent=travel-.5235987756f*cross(axis,radial);
+                vec3 desired=tangent+(slot-position)*4.f;
+                velocity=lerp(velocity,desired*(8.f/max(8.f,length(desired))),min(1.f,12.f*dt));
+                velocity=velocity*(8.f/max(8.f,length(velocity)));
+                member.previous=member.position;
+                member.terrainState=liveSweep(collision,position,velocity);
+                member.position=float4(position,0.f);member.velocity=float4(velocity,0.f);
+                member.spatialSteering=0;
+                return;
+            }
+        }
+        assigned=false;
+    }
     if(assigned&&assignment.identity==tick.identity&&assignment.kind==RegionalColumn
         &&assignment.phase==DomeGather){
         StormColumn column=columns[assignment.slot];

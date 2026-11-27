@@ -1,5 +1,6 @@
 #pragma once
 #include "../particle_common/StormStep.h"
+#include "../particle_common/StormTerrain.h"
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -24,11 +25,14 @@ inline size_t batchBytes(const StormTick& input){
     return input.positionSnapshot?offsetof(StormDomeBatch,columnCaptures):offsetof(StormDomeBatch,positions);
 }
 inline size_t maxTerrainUpload(){return rowBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS+CMI_RESOURCE_STORM_TERRAIN_MAX_SECTIONS)+cellBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES);}
+inline bool ringCommand(StormControl op){
+    return op.op>=CMI_RESOURCE_STORM_CONTROL_RING_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_RING_ASSIGN;
+}
 inline bool regionalCommand(StormControl op){
-    return op.op>=CMI_RESOURCE_STORM_CONTROL_DOME_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW;
+    return (op.op>=CMI_RESOURCE_STORM_CONTROL_DOME_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW)||ringCommand(op);
 }
 inline bool columnCommand(StormControl op){
-    return op.op>=CMI_RESOURCE_STORM_CONTROL_COLUMN_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW;
+    return (op.op>=CMI_RESOURCE_STORM_CONTROL_COLUMN_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW)||ringCommand(op);
 }
 inline bool outerCommand(StormControl op){
     return op.op==CMI_RESOURCE_STORM_CONTROL_OUTER_START||op.op==CMI_RESOURCE_STORM_CONTROL_OUTER_RELEASE;
@@ -42,6 +46,8 @@ inline bool attackWide(StormControl op){
         case CMI_RESOURCE_STORM_CONTROL_HELIX_RECOVERY:
         case CMI_RESOURCE_STORM_CONTROL_COLUMN_STATE:
         case CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE:
+        case CMI_RESOURCE_STORM_CONTROL_RING_STATE:
+        case CMI_RESOURCE_STORM_CONTROL_RING_BASIS:return true;
         case CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW:return true;
         default:return false;
     }
@@ -71,9 +77,10 @@ inline void validateHeader(const StormTick& input,size_t bytes,unsigned capacity
         ||input.playerCount>CMI_RESOURCE_STORM_PLAYER_LIMIT||input.positionSnapshot>1u
         ||input.columnCaptureCount>CMI_RESOURCE_STORM_COLUMN_CAPTURE_LIMIT
         ||input.featherImpacts>1u
+        ||input.terrainEditBytes>CMI_RESOURCE_STORM_TERRAIN_EDIT_MAX_BYTES||input.editReserved[0]||input.editReserved[1]||input.editReserved[2]
         ||(input.positionSnapshot&&!input.playerCount)||(!(input.active&1u)&&(input.playerCount||input.columnCaptureCount))
         ||bytes!=sizeof(StormTick)+commandBytes(input.controls)+rowBytes(input.terrainRows)+cellBytes(input.terrainPages)
-            +playerBytes(input.playerCount))reject("layout or feedback counts");
+            +playerBytes(input.playerCount)+input.terrainEditBytes)reject("layout or feedback counts");
     if(input.active>3||(input.active&2u&&!domeStaged)||input.population>capacity||input.seed>0xffffffu||(!(input.active&1u)&&input.population)
         ||!std::isfinite(input.centerX)||std::abs(input.centerX)>31000000.f
         ||!std::isfinite(input.centerY)||std::abs(input.centerY)>31000000.f
@@ -106,7 +113,7 @@ inline void validatePayload(const StormTick& input,const unsigned char* commands
         if(!attackWide(op)&&(op.member>=memberLimit||op.span>memberLimit-op.member))
             throw std::runtime_error("Storm command exceeds member range");
         if(regionalCommand(op)){
-            unsigned limit=columnCommand(op)?columnSlots:domeSlots;
+        unsigned limit=ringCommand(op)?CMI_RESOURCE_STORM_RING_SLOTS:columnCommand(op)?columnSlots:domeSlots;
             unsigned span=op.op==CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE?columnMembers:1;
             if(unsigned(op.scope)==0||op.scope>>32>=limit||op.span!=span)
                 throw std::runtime_error("Invalid regional attack identity");
@@ -179,6 +186,15 @@ inline void validatePayload(const StormTick& input,const unsigned char* commands
             case CMI_RESOURCE_STORM_CONTROL_COLUMN_ASSIGN:
                 if(op.flags>=columnMembers)throw std::runtime_error("Invalid Starfall column rank");
                 break;
+        case CMI_RESOURCE_STORM_CONTROL_RING_STATE:
+            if(op.member||op.flags>4u||!targetPointValid(op.a))throw std::runtime_error("Invalid Storm ring state");
+            break;
+        case CMI_RESOURCE_STORM_CONTROL_RING_BASIS:
+            if(op.member||op.flags)throw std::runtime_error("Invalid Storm ring basis");
+            break;
+        case CMI_RESOURCE_STORM_CONTROL_RING_ASSIGN:
+            if(op.flags>=CMI_RESOURCE_STORM_RING_MEMBERS)throw std::runtime_error("Invalid Storm ring rank");
+            break;
             case CMI_RESOURCE_STORM_CONTROL_COLUMN_RELEASE:
                 if(op.flags)throw std::runtime_error("Invalid Starfall column release");
                 break;
@@ -202,6 +218,7 @@ inline void validatePayload(const StormTick& input,const unsigned char* commands
             throw std::runtime_error("Invalid Storm voxel page reference");
     }
     auto players=rows+rowBytes(input.terrainRows)+cellBytes(input.terrainPages);
+    validateStormTerrainEdits(players+playerBytes(input.playerCount),input.terrainEditBytes);
     for(unsigned i=0;i<input.playerCount;i++){
         float4 row;std::memcpy(&row,players+playerBytes(i),sizeof(row));
         if(!targetPointValid(row)||!std::isfinite(row.w)||std::abs(row.w-row.y)>8.f)

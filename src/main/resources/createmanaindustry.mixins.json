@@ -5,6 +5,8 @@
   "plugin": "com.iridium126.createmanaindustry.mixin.CMIMixinPlugin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "particles.StormBlastMixin",
+    "particles.StormBlastChunkMixin",
     "allaystorm.AllayLevelTimeMixin",
     "allaystorm.RiftDimensionTravelMixin",
     "allaystorm.RiftExternalTravelMixin",

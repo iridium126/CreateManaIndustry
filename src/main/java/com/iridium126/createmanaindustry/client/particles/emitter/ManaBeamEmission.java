@@ -4,7 +4,10 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
 
 /** World-space input for one local cast. The shared emitter header never changes per cast. */
-public record ManaBeamEmission(Vec3 origin, Vec3 direction, float distance, Direction hitFace) {
+public record ManaBeamEmission(Vec3 origin, Vec3 direction, float distance, Direction hitFace, float initialAge) {
+    public ManaBeamEmission(Vec3 origin, Vec3 direction, float distance, Direction hitFace) {
+        this(origin, direction, distance, hitFace, 0);
+    }
     public static final int TYPE = 13;
     public static final float MAX_DISTANCE = 48;
     private static final int MAX_PARTICLES = 512;
@@ -28,7 +31,8 @@ public record ManaBeamEmission(Vec3 origin, Vec3 direction, float distance, Dire
                     target.put(hitFace == null ? 0 : hitFace.getStepX());
                     target.put(hitFace == null ? 0 : hitFace.getStepY());
                     target.put(hitFace == null ? 0 : hitFace.getStepZ());
-                    for (int i = 3; i < EmitCommandWriter.PARAMETER_WORDS; i++) target.put(0);
+                    target.put(initialAge);
+                    for (int i = 4; i < EmitCommandWriter.PARAMETER_WORDS; i++) target.put(0);
                 });
     }
 }

@@ -63,6 +63,8 @@ struct TickSlot {
     StormStepReceipt* receipt{};
     CUdeviceptr deviceReceipt{};
     void* terrainUpload{};
+    void* editUpload{};
+    size_t editBytes{};
     void* controlUpload{};
     void* playerUpload{};
     StormDomeBatch* domeBatch{};
@@ -95,6 +97,9 @@ class StormControlSession {
     CUfunction compactFeather{};
     CUdeviceptr members{},deviceControls{},devicePlayers{};
     CUdeviceptr terrainRows{},terrainCells{};
+    CUdeviceptr terrainEdits{};
+    size_t terrainEditCapacity{};
+    bool terrainEdited{};
     unsigned terrainMask{},terrainRevision{},terrainOverflow{};
     StormTerrainCache terrainCache;
     std::shared_ptr<const TerrainSnapshot> workerGeometry;
@@ -172,11 +177,14 @@ class StormControlSession {
         return input.positionSnapshot?offsetof(StormDomeBatch,columnCaptures):offsetof(StormDomeBatch,positions);
     }
     static size_t maxTerrainUpload(){return rowBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS+CMI_RESOURCE_STORM_TERRAIN_MAX_SECTIONS)+cellBytes(CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES);}
+    static bool ringCommand(StormControl op){
+        return op.op>=CMI_RESOURCE_STORM_CONTROL_RING_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_RING_ASSIGN;
+    }
     static bool regionalCommand(StormControl op){
-        return op.op>=CMI_RESOURCE_STORM_CONTROL_DOME_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW;
+        return (op.op>=CMI_RESOURCE_STORM_CONTROL_DOME_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW)||ringCommand(op);
     }
     static bool columnCommand(StormControl op){
-        return op.op>=CMI_RESOURCE_STORM_CONTROL_COLUMN_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW;
+        return (op.op>=CMI_RESOURCE_STORM_CONTROL_COLUMN_STATE&&op.op<=CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW)||ringCommand(op);
     }
     static bool outerCommand(StormControl op){
         return op.op==CMI_RESOURCE_STORM_CONTROL_OUTER_START||op.op==CMI_RESOURCE_STORM_CONTROL_OUTER_RELEASE;
@@ -190,6 +198,8 @@ class StormControlSession {
             case CMI_RESOURCE_STORM_CONTROL_HELIX_RECOVERY:
             case CMI_RESOURCE_STORM_CONTROL_COLUMN_STATE:
             case CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE:
+            case CMI_RESOURCE_STORM_CONTROL_RING_STATE:
+            case CMI_RESOURCE_STORM_CONTROL_RING_BASIS:return true;
             case CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE_ROW:return true;
             default:return false;
         }
@@ -218,8 +228,9 @@ class StormControlSession {
         if(columns)return;
         allocate(columnStates,columnSlots*columnMembers*sizeof(StormColumnMember));
         allocate(columnRestores,columnSlots*columnMembers*sizeof(StormColumnRestore));
-        allocate(columns,columnSlots*sizeof(StormColumn));
-        checked(cuMemsetD8Async(columns,0,columnSlots*sizeof(StormColumn),stream));
+        constexpr auto columnBytes=(columnSlots+CMI_RESOURCE_STORM_RING_SLOTS)*sizeof(StormColumn);
+        allocate(columns,columnBytes);
+        checked(cuMemsetD8Async(columns,0,columnBytes,stream));
         checked(cuMemsetD8Async(columnStates,0,columnSlots*columnMembers*sizeof(StormColumnMember),stream));
         checked(cuMemsetD8Async(columnRestores,0,columnSlots*columnMembers*sizeof(StormColumnRestore),stream));
     }
@@ -263,9 +274,10 @@ class StormControlSession {
             ||input.playerCount>CMI_RESOURCE_STORM_PLAYER_LIMIT||input.positionSnapshot>1u
             ||input.columnCaptureCount>CMI_RESOURCE_STORM_COLUMN_CAPTURE_LIMIT
             ||input.featherImpacts>1u
+            ||input.terrainEditBytes>CMI_RESOURCE_STORM_TERRAIN_EDIT_MAX_BYTES||input.editReserved[0]||input.editReserved[1]||input.editReserved[2]
             ||(input.positionSnapshot&&!input.playerCount)||(!(input.active&1u)&&(input.playerCount||input.columnCaptureCount))
             ||bytes!=sizeof(StormTick)+commandBytes(input.controls)+rowBytes(input.terrainRows)+cellBytes(input.terrainPages)
-                +playerBytes(input.playerCount))reject("layout or feedback counts");
+                +playerBytes(input.playerCount)+input.terrainEditBytes)reject("layout or feedback counts");
         if(input.active>3||(input.active&2u&&!domeStaged)||input.population>capacity||input.seed>0xffffffu||(!(input.active&1u)&&input.population)
             ||!std::isfinite(input.centerX)||std::abs(input.centerX)>31000000.f
             ||!std::isfinite(input.centerY)||std::abs(input.centerY)>31000000.f
@@ -298,7 +310,7 @@ class StormControlSession {
             if(!attackWide(op)&&(op.member>=memberLimit||op.span>memberLimit-op.member))
                 throw std::runtime_error("Storm command exceeds member range");
             if(regionalCommand(op)){
-                unsigned limit=columnCommand(op)?columnSlots:domeSlots;
+            unsigned limit=ringCommand(op)?CMI_RESOURCE_STORM_RING_SLOTS:columnCommand(op)?columnSlots:domeSlots;
                 unsigned span=op.op==CMI_RESOURCE_STORM_CONTROL_COLUMN_RESTORE?columnMembers:1;
                 if(unsigned(op.scope)==0||op.scope>>32>=limit||op.span!=span)
                     throw std::runtime_error("Invalid regional attack identity");
@@ -371,6 +383,15 @@ class StormControlSession {
                 case CMI_RESOURCE_STORM_CONTROL_COLUMN_ASSIGN:
                     if(op.flags>=columnMembers)throw std::runtime_error("Invalid Starfall column rank");
                     break;
+            case CMI_RESOURCE_STORM_CONTROL_RING_STATE:
+                if(op.member||op.flags>4u||!targetPointValid(op.a))throw std::runtime_error("Invalid Storm ring state");
+                break;
+            case CMI_RESOURCE_STORM_CONTROL_RING_BASIS:
+                if(op.member||op.flags)throw std::runtime_error("Invalid Storm ring basis");
+                break;
+            case CMI_RESOURCE_STORM_CONTROL_RING_ASSIGN:
+                if(op.flags>=CMI_RESOURCE_STORM_RING_MEMBERS)throw std::runtime_error("Invalid Storm ring rank");
+                break;
                 case CMI_RESOURCE_STORM_CONTROL_COLUMN_RELEASE:
                     if(op.flags)throw std::runtime_error("Invalid Starfall column release");
                     break;
@@ -394,6 +415,7 @@ class StormControlSession {
                 throw std::runtime_error("Invalid Storm voxel page reference");
         }
         auto players=rows+rowBytes(input.terrainRows)+cellBytes(input.terrainPages);
+        validateStormTerrainEdits(players+playerBytes(input.playerCount),input.terrainEditBytes);
         for(unsigned i=0;i<input.playerCount;i++){
             float4 row;std::memcpy(&row,players+playerBytes(i),sizeof(row));
             if(!targetPointValid(row)||!std::isfinite(row.w)||std::abs(row.w-row.y)>8.f)
@@ -531,6 +553,7 @@ public:
             if(s.deviceReceipt)cuMemFree(s.deviceReceipt);
             if(s.receipt)cuMemFreeHost(s.receipt);
             if(s.terrainUpload)cuMemFreeHost(s.terrainUpload);
+            if(s.editUpload)cuMemFreeHost(s.editUpload);
             if(s.controlUpload)cuMemFreeHost(s.controlUpload);
             if(s.playerUpload)cuMemFreeHost(s.playerUpload);
             if(s.domeBatch)cuMemFreeHost(s.domeBatch);
@@ -539,6 +562,7 @@ public:
             for(auto mark:s.marks)if(mark)cuEventDestroy(mark);
         }
         if(terrainRows)cuMemFree(terrainRows);
+        if(terrainEdits)cuMemFree(terrainEdits);
         if(terrainCells)cuMemFree(terrainCells);
         if(deviceControls)cuMemFree(deviceControls);
         if(devicePlayers)cuMemFree(devicePlayers);
@@ -717,6 +741,33 @@ public:
                 terrainMask=terrainCache.primary-1;terrainOverflow=terrainCache.overflow;
             }
             if(input.playerCount)checked(cuMemcpyHtoDAsync(devicePlayers,s.playerUpload,playerBytes(input.playerCount),stream));
+            if(input.terrainEditBytes){
+                auto source=commands+commandBytes(input.controls)+rowBytes(input.terrainRows)+cellBytes(input.terrainPages)
+                        +playerBytes(input.playerCount);
+                uint32_t primary{};std::memcpy(&primary,source,sizeof(primary));
+                terrainEdited=primary!=0;
+                ++terrainRevision;
+                if(terrainEdited){
+                    if(terrainEditCapacity<input.terrainEditBytes){
+                        if(terrainEdits){
+                            checked(cuMemFree(terrainEdits));
+                            owned-=terrainEditCapacity;
+                            particleOptixOwnedBytes-=terrainEditCapacity;
+                        }
+                        terrainEdits=0;
+                        terrainEditCapacity=(size_t(input.terrainEditBytes)+4095)&~size_t(4095);
+                        allocate(terrainEdits,terrainEditCapacity);
+                    }
+                    if(s.editBytes<input.terrainEditBytes){
+                        if(s.editUpload)checked(cuMemFreeHost(s.editUpload));
+                        s.editUpload=nullptr;
+                        s.editBytes=terrainEditCapacity;
+                        checked(cuMemAllocHost(&s.editUpload,s.editBytes));
+                    }
+                    std::memcpy(s.editUpload,source,input.terrainEditBytes);
+                    checked(cuMemcpyHtoDAsync(terrainEdits,s.editUpload,input.terrainEditBytes,stream));
+                }
+            }
             mark(9);
             stage="Storm controls";
             applyControls(s,input,commands);
@@ -738,9 +789,10 @@ public:
             if(active&&input.population){
                 stage="Storm spatial query";
                 checked(cuMemsetD32Async(domeSearches,0,2,stream));
-                StormTerrain terrain{reinterpret_cast<const int4*>(terrainRows),reinterpret_cast<const uint32_t*>(terrainCells),terrainMask,terrainRevision,terrainOverflow};
+                StormTerrain terrain{reinterpret_cast<const int4*>(terrainRows),reinterpret_cast<const uint32_t*>(terrainCells),
+                        terrainMask,terrainRevision,terrainOverflow,terrainEdited?reinterpret_cast<const uint32_t*>(terrainEdits):nullptr};
                 auto hints=queryStormSpatial(*spatial,unsigned((input.sequence-1)%slots),prepareSpatial,members,input,
-                    s.geometry?s.geometry.get():workerGeometry.get(),timed?s.marks.data()+2:nullptr);
+                    s.geometry?s.geometry.get():workerGeometry.get(),terrain,timed?s.marks.data()+2:nullptr);
                 stage="Storm member advance";
                 void* args[]={&members,&input,&terrain,&view,&devicePlayers,&hints};launch(advance,input.population,args);
                 mark(5);

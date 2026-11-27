@@ -1,5 +1,7 @@
 package com.iridium126.createmanaindustry.content.allaystorm;
 
+import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormRingReadyPacket;
+
 import java.util.BitSet;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -188,6 +190,7 @@ public final class AllayStormManager {
         final BitSet waveReserved=new BitSet();
         final StormOuterLoop outer=new StormOuterLoop();
         final StarfallColumns columns=new StarfallColumns();
+        final StormManaRings rings=new StormManaRings();
         final StarfallSnapshotSync columnSnapshots=new StarfallSnapshotSync();
         final StormAttackStats stats=new StormAttackStats();
         int waveIdCounter;
@@ -238,7 +241,7 @@ public final class AllayStormManager {
         if (!data.active) {
             com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.stop(level);
             com.iridium126.createmanaindustry.content.allaystorm.lod.StormLodServer.stop(level);
-            rt.columns.clear();rt.columnSnapshots.clear();rt.waves.clear();rt.schedule.reset();rt.waveReserved.clear();rt.outer.clear();
+            rt.columns.clear();rt.rings.clear();rt.columnSnapshots.clear();rt.waves.clear();rt.schedule.reset();rt.waveReserved.clear();rt.outer.clear();
             if (rt.tracks.values().stream().anyMatch(t -> t.active))
                 deactivateAll(level, rt);
             return;
@@ -263,15 +266,41 @@ public final class AllayStormManager {
         }
         tickColumnSnapshots(level,rt,data,columnPlayers);
         tickWaves(level,rt,data,eligible);
-        int first=rt.schedule.ready(level.getGameTime())?rt.schedule.first():0;
+        long now=level.getGameTime();
+        var stormCenter=new Vec3(rt.chaseX,ServerConfig.stormChaseY,rt.chaseZ);
+        var nearby=StormNearbyRoster.lazy(data,stormCenter.add(rt.chaseVX*.2,0,rt.chaseVZ*.2),now+4,rt.waveReserved);
+        int first=rt.schedule.ready(now)?rt.schedule.first():0;
+        boolean ringsFirst=rt.rings.beforeOtherDraws(now);
+        if(ringsFirst)tickRings(level,data,rt,stormCenter,columnPlayers,eligible,nearby);
         for(int i=0;i<3;i++){int kind=(first+i)%3;
-            if(kind==0)rt.columns.tick(level,data,rt.chaseX,rt.chaseZ,eligible,rt.waveReserved,()->nextAttackId(rt),packet->{if(!packet.abort())rt.columnSnapshots.created(packet.id(),columnPlayers.stream().map(ServerPlayer::getUUID).toList());for(var p:columnPlayers)PacketDistributor.sendToPlayer(p,packet);},member->{if(!data.dead.get(member))rt.outer.offer(member,rt.waveReserved);});
+            if(kind==0)rt.columns.tick(level,data,rt.chaseX,rt.chaseZ,eligible,rt.waveReserved,()->nextAttackId(rt),packet->{if(!packet.abort())rt.columnSnapshots.created(packet.id(),columnPlayers.stream().map(ServerPlayer::getUUID).toList());for(var p:columnPlayers)PacketDistributor.sendToPlayer(p,packet);},member->{if(!data.dead.get(member))rt.outer.offer(member,rt.waveReserved);},nearby);
             else tryMajor(level,rt,data,eligible,kind==1?StormAttack.HELIX:StormAttack.DOME);
         }
+        if(!ringsFirst)tickRings(level,data,rt,stormCenter,columnPlayers,eligible,nearby);
         if (++rt.scanCounter >= SCAN_INTERVAL_TICKS) {
             rt.scanCounter = 0;
             scan(level, rt, data);
         }
+    }
+
+    private static void tickRings(ServerLevel level,AllayStormData data,Runtime rt,Vec3 center,
+                                  List<ServerPlayer> observers,List<ServerPlayer> eligible,
+                                  java.util.function.Supplier<StormNearbyRoster> nearby) {
+        rt.rings.tick(level,data,center,observers,eligible,rt.waveReserved,nearby,()->nextAttackId(rt),
+                packet->{for(var player:observers)PacketDistributor.sendToPlayer(player,packet);},
+                packet->{for(var player:observers)PacketDistributor.sendToPlayer(player,packet);});
+    }
+
+    public static void ringReady(ServerboundStormRingReadyPacket packet,IPayloadContext ctx) {
+        if(!(ctx.player() instanceof ServerPlayer player))return;
+        var level=player.serverLevel();
+        var data=level.getData(CMIAttachments.STORM_DATA.get());
+        var rt=runtime(level);
+        var track=rt.tracks.get(player.getUUID());
+        long now=level.getGameTime();
+        if(!data.active||track==null||!track.active||!track.authority||!StormIdentity.of(level,data).equals(packet.identity())
+                ||packet.tick()<now-20||packet.tick()>now)return;
+        rt.rings.ready(packet.tick(),packet.ids());
     }
 
     /** Shared-clock seconds — the SAME domain every client derives: (gameTime mod 2^21)/20. */
@@ -671,6 +700,8 @@ public final class AllayStormManager {
         var outerFlights=new java.util.ArrayList<>(rt.outer.flights());
         for(int offset=0;offset<outerFlights.size();offset+=1024)PacketDistributor.sendToPlayer(player,com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.batch(level.dimension().location(),StormIdentity.of(level,data).epoch(),0,outerFlights.subList(offset,Math.min(offset+1024,outerFlights.size()))));
         for(var packet:rt.columns.snapshots()){rt.columnSnapshots.observe(packet.id(),player.getUUID());PacketDistributor.sendToPlayer(player,packet.resuming());PacketDistributor.sendToPlayer(player,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(packet.dimension(),packet.epoch(),packet.id(),rt.columns.completed(packet.id())));}
+        var rings=rt.rings.snapshot(StormIdentity.of(level,data),level.getGameTime());
+        if(rings!=null)PacketDistributor.sendToPlayer(player,rings);
         // seed the joining client's center stream immediately — without this
         // its interpolation would sit at the (block-quantized) ACTIVATE anchor
         // for up to one interval while the typhoon drifts on
@@ -775,6 +806,7 @@ public final class AllayStormManager {
             w.completed.set(rank);w.membership.clear(member);rt.waveReserved.clear(member);broadcastCompletion(level,rt,new com.iridium126.createmanaindustry.content.allaystorm.network.StormAttackCompletedPacket(level.dimension().location(),w.epoch,w.id,w.completed.toLongArray()));break;
         }
         rt.columns.deadMember(member,rt.waveReserved,packet->broadcastCompletion(level,rt,packet));
+        rt.rings.dead(member,rt.waveReserved);
     }
 
     /** Relays an authority client's position snapshot to the other active clients. */
@@ -1030,7 +1062,7 @@ public final class AllayStormManager {
     }
 
     /** Structured attack telemetry lines for /cmi particle allaystorm status. */
-    public static List<String> attackStatus(ServerLevel level){var rt=runtime(level);return List.of("attack major : "+rt.stats, "attack columns : "+rt.columns.stats);}
+    public static List<String> attackStatus(ServerLevel level){var rt=runtime(level);return List.of("attack major : "+rt.stats, "attack columns : "+rt.columns.stats,"attack rings : "+rt.rings.active()+" active, "+rt.rings.stats);}
 
     // ---- command surface -------------------------------------------------------
 
@@ -1087,6 +1119,7 @@ public final class AllayStormManager {
         }
         Runtime rt = runtime(level);
         rt.columns.clear();
+        rt.rings.clear();
         rt.columnSnapshots.clear();
         rt.waves.clear();
         rt.schedule.reset();

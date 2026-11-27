@@ -1,6 +1,6 @@
 # Allay Storm：同步与资源契约
 
-当前核心协议 **22**、Dome模板 **v4**、Helix模板 **v1**。两端同步升级并重启，拒绝旧协议混连；F3+T不更新Java类。Helix v1仍为0.75圈，离线模板二进制布局、存档和Dome v4格式不变。[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)分别维护，不保留历史协议逐版说明。
+当前核心协议 **27**、原生粒子 ABI **14**、Dome 模板 **v4**、Helix 模板 **v1**。服务端与客户端同步升级并重启，现有风暴存档可直接加载。F3+T 不更新 Java 类和原生模块。见[攻击与配置](allay-storm-ai.md)和[验证入口](allay-storm-validation.md)。
 
 ## 数据所有权与身份
 
@@ -26,6 +26,9 @@ Dome普通归队交接仅复用成员阶段字及阶段互斥的临时计时字�
 | 双向各一类 | `ServerboundStormPositionsPacket`／`ClientboundStormPositionsPacket` | dimension／epoch、采样时间、authority稀疏校正及转发 |
 | S→C | `ClientboundStormWavePacket` | Helix／Dome的START、UPDATE、LOCK、ABORT；开始／观察者快照含名单，阶段更新为紧凑参数；Helix含最多9段有序刚体参考历史 |
 | S→C | `ClientboundStormColumnPacket` | 独立星柱身份、种子、冻结落点与集合参数、阶段时间、精确64名名单；中止紧凑发送 |
+| S→C | `ClientboundStormRingPacket` | 按风暴和 tick 批量发送圆环参考帧。开始和晚加入快照带 16 名成员 ID，开火帧带发射时间、碰撞长度及命中面 |
+| C→S | `ServerboundStormRingReadyPacket` | 权威客户端提交连续三次全员就位的攻击 ID 和采样 tick。伤害和方块修改由服务端决定 |
+| S→C | `ClientboundStormBlastPacket` | 服务端按区段合并实际移除碰撞的单元，通过稀疏遮罩更新 GPU 占用，等正常页面接管后回收 |
 | S→C | `ClientboundStormColumnSnapshotRequest` | 柱身份、请求令牌和指定采集来源；同批观察者合并请求 |
 | 双向 | `StormColumnSnapshotPacket` | 同身份与令牌、来源、采样时间及固定64名实际阶段／运动初值；仅按需采集与转发 |
 | C→S | `StormAttackGatheredPacket` | dimension／epoch／攻击ID、ready与eligible两张rank位图、Helix参考版本与攻击内采样时间，及Dome流线暂停状态，空位图用于只发布暂停变化 |
@@ -69,7 +72,7 @@ Helix计划解码仅接受轴向12、合速度上限32格／秒，位置及解�
 
 Dome v4共享五次Hermite曲线、闭合流线与离线逆弧长表；稳态不上传成员位置，不在帧内积分／Newton反解。资源后台准备、分帧上传，完整后发布；资源未就绪不得伤害。同攻击内部正常分离已烘焙，运行时只保留异常／跨攻击的一次预测接触裁剪和地形处理。
 
-主体、尸体、三种攻击和普通归队统一使用独立风暴碰撞域，不占通用粒子8槽。16³区块段位图每段512字节，空气／实心共享标记；整数纹理＋TBO页表，按需扩容，不淘汰活动需求。重叠只采集一次，范围移动增删边界，世界变更仅更新相关段；只读已加载数据，未知不能作为空气。
+主体、尸体、四种攻击和普通归队统一使用独立风暴碰撞域。16³ 区块段位图每段 512 字节，空气和实心使用共享标记。区段按需分配，重叠只采集一次，未知区段保留未知状态。爆炸的清除遮罩优先覆盖仍驻留的基础页。
 
 客户端所属线程采集，后台只处理不可变数字快照；默认每帧采集1ms、上传0.5ms且≤128KiB软预算。完整上传后发布页表，旧版本保留至引用帧结束。Dome覆盖中心下20格至上40格及穿出／归队；Helix包含32格尾部及扫掠，已释放成员由独立本地归队覆盖记录接管。报告请求／覆盖／未知段、显存、上传量、采集耗时及超预算，不静默回退8槽。
 

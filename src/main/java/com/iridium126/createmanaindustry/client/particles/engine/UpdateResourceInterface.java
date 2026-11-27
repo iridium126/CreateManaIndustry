@@ -11,13 +11,16 @@ public final class UpdateResourceInterface {
     public record Texture(String name,int type,int unit){}
     public static final List<Texture> SAMPLERS=List.of(new Texture("uCollision",GL20.GL_SAMPLER_3D,0),
             new Texture("uStormCollisionAtlas",GL30.GL_UNSIGNED_INT_SAMPLER_3D,1),new Texture("uStormCollisionTable",GL31.GL_INT_SAMPLER_BUFFER,2),
-            new Texture("cmi_AllayAnimationRead",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,3),new Texture("cmiDomeKeys",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_DOME_KEYS));
+            new Texture("cmi_AllayAnimationRead",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,3),
+            new Texture("uStormTerrainEdits",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,6),
+            new Texture("cmiDomeKeys",GL31.GL_UNSIGNED_INT_SAMPLER_BUFFER,com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SAMPLER_DOME_KEYS));
     public static final List<Texture> IMAGES=List.of(new Texture("cmi_AllayAnimationWrite",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,0),
             new Texture("cmi_AllayAnimationInitial",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,1),new Texture("cmi_ModelMembersWrite",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,2),
             new Texture("cmi_ModelAllocator",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,3),
             new Texture("cmiSpatialWrite",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,4),new Texture("cmiSpatialMeta",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,5),
             new Texture("cmiSpatialSteering",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,5),
-            new Texture("cmiSpatialHints",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,6),new Texture("cmiSpatialRead",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,7));
+            new Texture("cmiSpatialHints",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,6),new Texture("cmiSpatialRead",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,7),
+            new Texture("cmiStormRing",GL42.GL_UNSIGNED_INT_IMAGE_BUFFER,7));
     public record Report(Map<String,Integer> blocks,Map<String,Integer> samplers,Map<String,Integer> images){}
     public static Report verify(int program,int expectedBlocks){
         int count=GL43.glGetProgramInterfacei(program,GL43.GL_SHADER_STORAGE_BLOCK,GL43.GL_ACTIVE_RESOURCES);

@@ -13,7 +13,7 @@ using namespace stormInput;
 namespace {
 constexpr unsigned threadCount = 128;
 constexpr size_t featherBytes = sizeof(StormFeatherReceipt);
-constexpr unsigned descriptorSrvs = 9, descriptorUavs = 17;
+constexpr unsigned descriptorSrvs = 10, descriptorUavs = 17;
 constexpr size_t batchOffset = 32;
 constexpr size_t featherOffset = batchOffset + sizeof(StormDomeBatch);
 constexpr size_t timingOffset = featherOffset + featherBytes;
@@ -24,8 +24,8 @@ constexpr size_t maxRows = (CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS + CMI_RESOURCE_S
 constexpr size_t maxCells = CMI_RESOURCE_STORM_TERRAIN_MAX_PAGES * CMI_RESOURCE_STORM_TERRAIN_PAGE_BYTES;
 // HLSL's structured buffers have natural scalar alignment. External
 // buffers instead use the shared ABI offsets and are checked by fixtures.
-constexpr std::array<unsigned, descriptorUavs> strides{184,128,112,320,1408,320,432,152,0,32,0,4,0,0,0,16,4};
-constexpr std::array<unsigned, 8> inputStrides{sizeof(StormTick),sizeof(StormControl),16,16,4,4,4,4};
+constexpr std::array<unsigned, descriptorUavs> strides{184,128,112,320,1408,368,432,152,0,32,0,4,0,0,0,16,4};
+constexpr std::array<unsigned, 10> inputStrides{sizeof(StormTick),sizeof(StormControl),16,16,4,4,4,4,0,4};
 
 unsigned groups(unsigned rows) { return (rows + threadCount - 1) / threadCount; }
 double nanos(std::chrono::steady_clock::duration duration) {
@@ -160,7 +160,8 @@ void Gpu::setAccelerationView() {
 }
 
 void Gpu::bind(DisplayTransfer* display) {
-    for (unsigned index = 0; index < inputStrides.size(); ++index) srv(index, inputs[index], inputStrides[index]);
+    for (unsigned index = 0; index < inputStrides.size(); ++index)
+        if(inputStrides[index])srv(index, inputs[index], inputStrides[index]);
     for (unsigned index = 0; index < strides.size(); ++index)
         uavView(index, index == 12 ? (display ? display->snapshot : dummySnapshot) : storage[index], strides[index]);
     setAccelerationView();
@@ -235,14 +236,14 @@ void Gpu::initializeBuffers(std::array<DisplayTransfer, slots>& displays) {
     const size_t displayBytes = sizeof(StormDisplayHeader)+args.capacity*sizeof(StormDisplayRecord)+columnSlots*columnBytes;
     const std::array<size_t, descriptorUavs> bytes{
         args.capacity*strides[0],args.capacity*strides[1],args.capacity*strides[2],domeSlots*strides[3],
-        domeSlots*strides[4],columnSlots*strides[5],columnSlots*columnMembers*strides[6],
+        domeSlots*strides[4],(columnSlots+CMI_RESOURCE_STORM_RING_SLOTS)*strides[5],columnSlots*columnMembers*strides[6],
         columnSlots*columnMembers*strides[7],sizeof(StormDomeBatch),featherImpactLimit*strides[9],featherBytes,
         8,0,32,sizeof(D3D12_RAYTRACING_INSTANCE_DESC)*(args.capacity+1),args.capacity*strides[15],domeSlots*domeFlows*4
     };
-    const std::array<size_t, 8> inputBytes{sizeof(StormTick),maxControls,playerBytes(CMI_RESOURCE_STORM_PLAYER_LIMIT),
-        maxRows,maxCells,4,4,4};
+    const std::array<size_t, 10> inputBytes{sizeof(StormTick),maxControls,playerBytes(CMI_RESOURCE_STORM_PLAYER_LIMIT),
+        maxRows,maxCells,4,4,4,0,16};
     for (unsigned index = 0; index < inputBytes.size(); ++index)
-        inputs[index] = buffer(inputBytes[index], D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        if(inputBytes[index])inputs[index] = buffer(inputBytes[index], D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     for (unsigned index = 0; index < bytes.size(); ++index)
         if (bytes[index]) storage[index] = uav(bytes[index]);
     results = buffer(readbackBytes, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -437,6 +438,18 @@ void Gpu::step(const StormTick& tick, const unsigned char* payload,
     args.terrainBoxes = geometryCount;
     auto terrainBytes = changedTerrain ? terrain.index.size()*sizeof(int4) + cellBytes(unsigned(terrain.uploads.size())) : 0;
     auto capacity = sizeof(tick)+commandBytes(tick.controls)+playerBytes(tick.playerCount)+terrainBytes;
+    const auto editData=players+playerBytes(tick.playerCount);
+    if(tick.terrainEditBytes){
+        uint32_t primary{};std::memcpy(&primary,editData,sizeof(primary));
+        args.terrainEdited=primary!=0;
+        ++args.terrainRevision;
+        if(args.terrainEdited){
+            capacity+=tick.terrainEditBytes;
+            if(tick.terrainEditBytes>inputs[9].size)
+                inputs[9]=buffer((size_t(tick.terrainEditBytes)+4095)&~size_t(4095),D3D12_HEAP_TYPE_DEFAULT,
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        }
+    }
     if (boxes) capacity += boxes->size()*(24*sizeof(float)+36*sizeof(uint32_t));
     if (dome) {
         const size_t sizes[]{dome->records.size()*4,dome->keys.size()*4,dome->flows.size()*4};
@@ -459,6 +472,7 @@ void Gpu::step(const StormTick& tick, const unsigned char* payload,
     uploadData(inputs[1],0,payload,commandBytes(tick.controls),srvState);
     uploadData(inputs[2],0,players,playerBytes(tick.playerCount),srvState);
     if (changedTerrain) uploadTerrain(tick, rows);
+    if(tick.terrainEditBytes&&args.terrainEdited)uploadData(inputs[9],0,editData,tick.terrainEditBytes,srvState);
     if (dome) {
         uploadData(inputs[5],0,dome->records.data(),dome->records.size()*4,srvState);
         uploadData(inputs[6],0,dome->keys.data(),dome->keys.size()*4,srvState);

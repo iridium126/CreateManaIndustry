@@ -1,5 +1,9 @@
 package com.iridium126.createmanaindustry;
 
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormRingPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormBlastPacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ServerboundStormRingReadyPacket;
+
 import org.slf4j.Logger;
 
 import com.iridium126.createmanaindustry.compat.hexcasting.CMIHexActions;
@@ -157,7 +161,10 @@ public class CreateManaIndustry {
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(MODID).versioned("26");
+        PayloadRegistrar registrar = event.registrar(MODID).versioned("27");
+        registrar.playToClient(ClientboundStormRingPacket.TYPE,ClientboundStormRingPacket.STREAM_CODEC,ClientboundStormRingPacket::handle);
+        registrar.playToClient(ClientboundStormBlastPacket.TYPE,ClientboundStormBlastPacket.STREAM_CODEC,ClientboundStormBlastPacket::handle);
+        registrar.playToServer(ServerboundStormRingReadyPacket.TYPE,ServerboundStormRingReadyPacket.STREAM_CODEC,ServerboundStormRingReadyPacket::handle);
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPacket::handle);
         registrar.playToServer(com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.network.StormLodPreferencePacket::handle);
         registrar.playToClient(com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket.TYPE,com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket.STREAM_CODEC,com.iridium126.createmanaindustry.content.allaystorm.rift.AllaySkyPacket::handle);

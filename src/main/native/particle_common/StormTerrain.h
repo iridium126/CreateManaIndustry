@@ -21,6 +21,25 @@ CMI_TERRAIN_FN inline uint32_t stormSectionHash(int x,int y,int z){
 #undef CMI_TERRAIN_FN
 
 #ifndef __CUDACC__
+inline std::array<uint32_t,4> validateStormTerrainEdits(const unsigned char* input,uint32_t bytes){
+    std::array<uint32_t,4> header{};
+    if(!bytes)return header;
+    if(bytes<sizeof(header)||bytes>CMI_RESOURCE_STORM_TERRAIN_EDIT_MAX_BYTES)
+        throw std::runtime_error("Invalid Storm terrain edit size");
+    std::memcpy(header.data(),input,sizeof(header));
+    auto [primary,overflow,count,revision]=header;
+    if(primary>CMI_RESOURCE_STORM_TERRAIN_MAX_ROWS||overflow>count||count>CMI_RESOURCE_STORM_TERRAIN_MAX_SECTIONS
+        ||(primary&&(primary<16||(primary&(primary-1))!=0||primary<count*2))
+        ||(!primary&&count)||bytes!=16+(primary+overflow)*16+count*CMI_RESOURCE_STORM_TERRAIN_PAGE_BYTES)
+        throw std::runtime_error("Invalid Storm terrain edit index");
+    for(unsigned i=0;i<primary+overflow;i++){
+        int4 row;std::memcpy(&row,input+16+i*16,sizeof(row));
+        if(row.w< -1||row.w>=int(count)||(i>=primary&&row.w<0))
+            throw std::runtime_error("Invalid Storm terrain edit section");
+    }
+    return header;
+}
+
 /** Worker-owned incremental occupancy. GPU readers see one stream-ordered revision. */
 class StormTerrainCache {
     using Key=std::tuple<int,int,int>;

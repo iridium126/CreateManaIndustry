@@ -24,6 +24,7 @@ void cmiEmitManaBeam(uint row) {
     uint params = uEmitCount * 12u + uint(emitCmd.entries[command + 7u]) * 48u;
     vec3 normal = vec3(emitCmd.entries[params], emitCmd.entries[params + 1u], emitCmd.entries[params + 2u]);
     float face = dot(normal, vec3(1.0, 2.0, 3.0));
+    float initialAge = max(0.0, emitCmd.entries[params + 3u]);
     uint detail = manaGranted - min(manaGranted, 3u);
     uint impactCount = face == 0.0 ? 0u : min(40u, min(detail, max(1u, detail / 4u)));
     if (range < 0.01 && face != 0.0) impactCount = detail;
@@ -77,7 +78,7 @@ void cmiEmitManaBeam(uint row) {
         writeBuf.data[base] = vec4(origin + axis * anchor, radius);
         writeBuf.data[base + 1u] = vec4(axis, range);
         writeBuf.data[base + 2u] = vec4(station, field, float(role), face);
-        writeBuf.data[base + 3u] = vec4(0.0, life, seed, uintBitsToFloat(emitter));
+        writeBuf.data[base + 3u] = vec4(initialAge, life, seed, uintBitsToFloat(emitter));
         cmiHistorySnap(slot);
         if (uFgOrdinaryIds) cmiNewIdentity(slot);
     }

@@ -11,6 +11,24 @@ struct StormCollision {
     __device__ static bool same(int3 a,int3 b){return a.x==b.x&&a.y==b.y&&a.z==b.z;}
     __device__ static int3 block(vec3 p){return make_int3(__float2int_rd(p.x),__float2int_rd(p.y),__float2int_rd(p.z));}
     __device__ static int3 section(int3 p){return make_int3(p.x>>4,p.y>>4,p.z>>4);}
+    __device__ int editPage(int3 key) const{
+        auto words=terrain.edits;
+        if(!words)return -1;
+        unsigned primary=words[0],mask=primary-1u;
+        auto rows=reinterpret_cast<const int4*>(words+4);
+        unsigned row=stormSectionHash(key.x,key.y,key.z)&mask;
+        for(unsigned i=0;i<8;i++,row=(row+1)&mask){
+            auto v=rows[row];if(v.w<0)break;
+            if(v.x==key.x&&v.y==key.y&&v.z==key.z)return v.w;
+        }
+        unsigned lo=primary,hi=lo+words[1];
+        while(lo<hi){
+            unsigned mid=(lo+hi)/2;auto v=rows[mid];
+            int c=v.x<key.x?-1:v.x>key.x?1:v.y<key.y?-1:v.y>key.y?1:v.z<key.z?-1:v.z>key.z?1:0;
+            if(c<0)lo=mid+1;else if(c>0)hi=mid;else return v.w;
+        }
+        return -1;
+    }
     __device__ int lookup(int3 p){
         if(!terrain.rows||terrain.mask==0)return -1;
         if(hasPage&&same(cached,p))return page;
@@ -30,9 +48,48 @@ struct StormCollision {
         return page;
     }
     __device__ bool solid(int3 p,int id) const{
-        if(id<0)return id==-3;
+        if(id<0&&id!=-3)return false;
         unsigned cell=unsigned((p.x&15)|((p.z&15)<<4)|((p.y&15)<<8));
+        int edit=editPage(section(p));
+        if(edit>=0){
+            auto words=terrain.edits;
+            unsigned at=4u+4u*(words[0]+words[1])+unsigned(edit)*128u+(cell>>5);
+            if((words[at]&(1u<<(cell&31u)))!=0u)return false;
+        }
+        if(id==-3)return true;
         return (terrain.cells[unsigned(id)*128u+(cell>>5)]&(1u<<(cell&31u)))!=0;
+    }
+    __device__ bool editedProbe(float3 start,float3 end) const {
+        if(!terrain.edits)return false;
+        auto lo=section(block(vec3(fminf(start.x,end.x),fminf(start.y,end.y),fminf(start.z,end.z))));
+        auto hi=section(block(vec3(fmaxf(start.x,end.x),fmaxf(start.y,end.y),fmaxf(start.z,end.z))));
+        for(int x=lo.x;x<=hi.x;x++)for(int y=lo.y;y<=hi.y;y++)for(int z=lo.z;z<=hi.z;z++)
+            if(editPage(make_int3(x,y,z))>=0)return true;
+        return false;
+    }
+    __device__ bool editedProbeHit(float3 origin,float3 direction,float& distance,float3& normal){
+        float dir[]{direction.x,direction.y,direction.z};
+        float start[]{origin.x+direction.x*.0001f,origin.y+direction.y*.0001f,origin.z+direction.z*.0001f};
+        int cell[3],step[3];float stride[3],edge[3];
+        for(int axis=0;axis<3;axis++){
+            cell[axis]=__float2int_rd(start[axis]);
+            step[axis]=int(dir[axis]>0.f)-int(dir[axis]<0.f);
+            stride[axis]=1.f/fmaxf(fabsf(dir[axis]),.000001f);
+            edge[axis]=step[axis]?(cell[axis]+int(step[axis]>0)-start[axis])*step[axis]*stride[axis]:1e9f;
+        }
+        for(int i=0;i<16;i++){
+            int axis=edge[0]<=edge[1]&&edge[0]<=edge[2]?0:edge[1]<=edge[2]?1:2;
+            float at=edge[axis]+.0001f;
+            if(at>distance)break;
+            cell[axis]+=step[axis];edge[axis]+=stride[axis];
+            auto point=make_int3(cell[0],cell[1],cell[2]);
+            if(solid(point,lookup(section(point)))){
+                distance=at;normal=make_float3(0,0,0);
+                (axis==0?normal.x:axis==1?normal.y:normal.z)=-float(step[axis]);
+                return true;
+            }
+        }
+        return false;
     }
     __device__ StormBody body(vec3 feet){
         auto lo=block(feet+vec3(-.17499f,.00001f,-.17499f));
@@ -40,7 +97,7 @@ struct StormCollision {
         auto key=section(lo);
         bool single=same(key,section(hi));
         int shared=single?lookup(key):-4;
-        if(single&&shared<0)return {shared==-3,shared!=-1};
+        if(single&&shared<0&&(shared!=-3||editPage(key)<0))return {shared==-3,shared!=-1};
         StormBody result{false,true};
         for(int x=lo.x;x<=hi.x;x++)for(int y=lo.y;y<=hi.y;y++)for(int z=lo.z;z<=hi.z;z++){
             auto p=make_int3(x,y,z);

@@ -30,7 +30,7 @@ struct Engine {
     bool staticIas{};
     CUcontext context{};CUstream stream{};OptixDeviceContext optix{};CUmodule grid{};CUfunction validate{},prepare{},seal{};
     OptixModule module{};OptixProgramGroup groups[3]{};OptixPipeline pipeline{};OptixShaderBindingTable sbt{};
-    CUdeviceptr vertices{},indices{},unitGas{},instances{},gas{},scratch{},params{},records{},temporary{},stormHints{};size_t owned{},gasBytes{},scratchBytes{};
+    CUdeviceptr vertices{},indices{},unitGas{},instances{},gas{},scratch{},params{},records{},temporary{},stormHints{},stormTerrainHints{};size_t owned{},gasBytes{},scratchBytes{};
     OptixTraversableHandle unitHandle{},handle{};unsigned capacity{},terrainCapacity{},probes{};bool built{},referenceRefit{},borrowedStream{};unsigned builtInstances{};SpatialParams* host{};unsigned* receipts{};
     void alloc(CUdeviceptr& p,size_t bytes){bytes=std::max<size_t>(bytes,16);reserveBytes(bytes);try{checked(cuMemAlloc(&p,bytes));}catch(...){particleOptixOwnedBytes-=bytes;throw;}owned+=bytes;}
     Engine(unsigned cap,unsigned terrain,unsigned rays,bool reference,CUstream shared=nullptr,CUcontext owner=nullptr):
@@ -64,7 +64,8 @@ struct Engine {
     }
     unsigned publishTerrain(unsigned slot,const TerrainSnapshot& snapshot,SpatialParams& p,unsigned dynamicInstances,bool copyInstances=true){
         if(!terrainCache)terrainCache=std::make_unique<TerrainAcceleration>(terrainCapacity);
-        unsigned count=terrainCache->update(optix,stream,slot,snapshot,capacity,dynamicInstances,instances,copyInstances);
+        unsigned count=terrainCache->update(optix,stream,slot,snapshot,capacity,dynamicInstances,instances,copyInstances,
+                p.stormMembers!=nullptr);
         p.terrainViews=terrainCache->deviceViews();p.terrainRows=terrainCache->deviceRows();
         return count;
     }
@@ -92,7 +93,7 @@ struct Engine {
         CUDA_EXTERNAL_SEMAPHORE_SIGNAL_PARAMS done{};done.params.fence.value=ticket.value;checked(cuSignalExternalSemaphoresAsync(&ticket.outputReady,&done,1,stream));if(marks)checked(cuEventRecord(marks[5],stream));
     }
     ~Engine(){release();}
-    void release(){if(context)cuCtxSetCurrent(context);if(stream)cuStreamSynchronize(stream);terrainCache.reset();if(pipeline)optixPipelineDestroy(pipeline);for(auto g:groups)if(g)optixProgramGroupDestroy(g);if(module)optixModuleDestroy(module);if(grid)cuModuleUnload(grid);if(optix)optixDeviceContextDestroy(optix);for(auto p:{vertices,indices,unitGas,instances,gas,scratch,params,records,temporary,stormHints})if(p)cuMemFree(p);particleOptixOwnedBytes-=owned;if(host)cuMemFreeHost(host);if(receipts)cuMemFreeHost(receipts);if(stream&&!borrowedStream)cuStreamDestroy(stream);if(context&&!borrowedStream)releaseContext();}
+    void release(){if(context)cuCtxSetCurrent(context);if(stream)cuStreamSynchronize(stream);terrainCache.reset();if(pipeline)optixPipelineDestroy(pipeline);for(auto g:groups)if(g)optixProgramGroupDestroy(g);if(module)optixModuleDestroy(module);if(grid)cuModuleUnload(grid);if(optix)optixDeviceContextDestroy(optix);for(auto p:{vertices,indices,unitGas,instances,gas,scratch,params,records,temporary,stormHints,stormTerrainHints})if(p)cuMemFree(p);particleOptixOwnedBytes-=owned;if(host)cuMemFreeHost(host);if(receipts)cuMemFreeHost(receipts);if(stream&&!borrowedStream)cuStreamDestroy(stream);if(context&&!borrowedStream)releaseContext();}
 };
 struct Job {std::shared_ptr<const TerrainSnapshot> terrain;int state{};bool launched{},drainRecorded{},timed{};BridgeTicket ticket{};uint64_t nonce{},generation{},scene{};unsigned kind{},members{},terrainCount{};CUevent marks[6]{},done{},drain{};std::string error;};
 struct Session {
@@ -161,7 +162,7 @@ StormSpatial* createStormSpatial(unsigned capacity,unsigned probes,CUcontext con
 }
 void destroyStormSpatial(StormSpatial* spatial){delete spatial;}
 CUdeviceptr queryStormSpatial(StormSpatial& spatial,unsigned slot,CUfunction prepare,
-        CUdeviceptr members,const StormTick& tick,const TerrainSnapshot* terrain,const CUevent* timing){
+        CUdeviceptr members,const StormTick& tick,const TerrainSnapshot* terrain,StormTerrain voxels,const CUevent* timing){
     auto& engine=spatial.pipeline;
     auto& p=engine.host[slot];
     p={};
@@ -171,6 +172,12 @@ CUdeviceptr queryStormSpatial(StormSpatial& spatial,unsigned slot,CUfunction pre
     p.epoch=tick.identity;p.generation=tick.tick==0?0:tick.tick-1;
     p.stormMembers=reinterpret_cast<const StormStepMember*>(members);
     p.stormHints=reinterpret_cast<float4*>(engine.stormHints);
+    p.stormTerrain=voxels;
+    if(voxels.edits){
+        if(!engine.stormTerrainHints)
+            engine.alloc(engine.stormTerrainHints,size_t(engine.capacity)*engine.probes*sizeof(float4));
+        p.stormTerrainHints=reinterpret_cast<float4*>(engine.stormTerrainHints);
+    }
     unsigned staticInstances=terrain?engine.publishTerrain(slot,*terrain,p,tick.population):0;
     void* args[]={&p};
     checked(cuLaunchKernel(prepare,(p.members+255)/256,1,1,256,1,1,0,engine.stream,args,nullptr));

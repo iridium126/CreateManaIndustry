@@ -27,6 +27,11 @@ void cmiUpdateAllayAnimation(uint src,uint dst,vec4 p0,vec4 p1,vec4 p3,vec3 posi
   if(!corpse){if(overrideBody)yaw=bodyYaw;else if(moving&&length(velocity.xz)>.0001)yaw=cmiAnimationTurn(yaw,atan(-velocity.x,velocity.z),1.570796327*ticks);}
   float size=emitters.u[floatBitsToUint(p3.w)*VEC4_PER_EMITTER+5u].z*2.*(storm?1.:p0.w);vec3 eye=position+vec3(0,max(.01,size*.6),0),look=vec3(0);bool looking=false;
   uint assignment=storm?cmiStarAssignment(p0.w):0u;uint member=cmiStarMember(p0.w);uint phase=assignment!=0u&&member<131072u?CMI_STATE(starStateWrite,member*2u+1u)&255u:6u;
+  if(storm&&!corpse){vec3 ringTarget,ringReference,ringAxis;uint ringPhase=0u;
+   if(cmiRingSample(member,ringTarget,ringReference,ringAxis,ringPhase)!=0u){
+    look=eye+(ringPhase>=2u?ringAxis*24.:velocity);looking=true;
+   }
+  }
   if(!corpse&&assignment!=0u&&phase<6u){vec4 target=cmiAttackEyes(cmiStarSlot(assignment));if(target.w>.5){look=target.xyz;looking=true;}}
   int player=cmiPlayerWithId(int(c.x));
   if(player>=0){vec3 delta=position-cmiPlayerFeet(player);if(dot(delta,delta)>CMI_ALLAY_LOOK_RANGE_SQ||!cmiAllayLookVisible(eye,cmiPlayerEyes(player)))player=-1;}

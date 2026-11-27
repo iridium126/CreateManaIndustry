@@ -12,4 +12,4 @@ std::shared_ptr<const TerrainSnapshot> copyTerrainSnapshot(uint64_t scene,uint64
 StormSpatial* createStormSpatial(unsigned capacity,unsigned probes,CUcontext context,CUstream stream);
 void destroyStormSpatial(StormSpatial* spatial);
 CUdeviceptr queryStormSpatial(StormSpatial& spatial,unsigned slot,CUfunction prepare,
-        CUdeviceptr members,const StormTick& tick,const TerrainSnapshot* terrain,const CUevent* timing);
+        CUdeviceptr members,const StormTick& tick,const TerrainSnapshot* terrain,StormTerrain voxels,const CUevent* timing);

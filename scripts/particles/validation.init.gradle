@@ -77,6 +77,7 @@ allprojects {
             classpath = files(layout.buildDirectory.dir('storm-display-transfer-harness')) + validationClasspath
             mainClass = 'com.iridium126.createmanaindustry.client.particles.engine.spatial.StormDisplayTransferGpuValidation'
             if (project.hasProperty('stormDxr')) args '--dxr'
+            if (project.hasProperty('stormRingOnly')) args '--ring-only'
         }
         tasks.register('validateSimulationReadbackGpu',JavaExec){
             dependsOn simulationSnapshotHarness
@@ -373,6 +374,7 @@ allprojects {
             dependsOn 'compileStarfallHarness'
             classpath = files(layout.buildDirectory.dir('starfall-harness')) + validationClasspath
             mainClass = 'StormCollisionGpuValidation'
+            if (project.hasProperty('stormRingOnly')) args '--ring-only'
         }
         tasks.register('benchmarkStormDome', JavaExec) {
             dependsOn 'compileStarfallHarness'

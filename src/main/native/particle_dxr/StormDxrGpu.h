@@ -70,8 +70,9 @@ class Gpu {
         uint32_t controlFirst, controlCount, controlMode, feathers;
         uint32_t display, probes, terrainBoxes, regional;
         uint64_t unitBlas, terrainBlas;
+        uint32_t terrainEdited, editPad[3];
     } args{};
-    static_assert(sizeof(Dispatch) == 64);
+    static_assert(sizeof(Dispatch) == 80);
 
     ComPtr<ID3D12Device5> device;
     Queue compute, transfer;
@@ -81,7 +82,7 @@ class Gpu {
     ComPtr<ID3D12QueryHeap> queries;
     UINT64 frequency{};
     UINT descriptorSize{};
-    Buffer inputs[8], storage[17];
+    Buffer inputs[10], storage[17];
     Buffer results, upload, tlas, terrainBlas, unitBlas, accelerationScratch, dummySnapshot;
     size_t uploadOffset{};
     std::vector<Buffer> retiredBuffers;

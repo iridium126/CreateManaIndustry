@@ -12,6 +12,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import com.iridium126.createmanaindustry.client.packages.world.*;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket;
+import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormBlastPacket;
 import com.iridium126.createmanaindustry.client.particles.engine.StormSurfaceCapture;
 import com.iridium126.createmanaindustry.client.particles.engine.FeatherSupportGpu;
 import com.iridium126.createmanaindustry.client.particles.engine.spatial.RenderTerrain;
@@ -27,6 +28,7 @@ public final class StormCollisionRuntime implements AutoCloseable {
     private final ClientLevel level;
     private final StormCollisionCache cache=new StormCollisionCache();
     private final StormCollisionGpu gpu=new StormCollisionGpu();
+    private final StormTerrainEdits edits=new StormTerrainEdits();
     private long lastActive;
     private long nativeCaptureTick=Long.MIN_VALUE;
     private StormCollisionCache.Cursor gpuCursor;
@@ -86,6 +88,13 @@ public final class StormCollisionRuntime implements AutoCloseable {
             float[] route=p.helixAttack()?p.helix().controls():p.path();
             for(int i=0;i<route.length;i+=3){minX=Math.min(minX,route[i]-attackPad);maxX=Math.max(maxX,route[i]+attackPad);minY=Math.min(minY,route[i+1]-attackPad);maxY=Math.max(maxY,route[i+1]+attackPad);minZ=Math.min(minZ,route[i+2]-attackPad);maxZ=Math.max(maxZ,route[i+2]+attackPad);}
         }
+        for(var frame:StormRingClient.INSTANCE.frames()){
+            var a=frame.center();
+            var b=frame.shot()==null?a:a.add(frame.axis().scale(frame.shot().distance()));
+            minX=Math.min(minX,Math.min(a.x,b.x)-12);maxX=Math.max(maxX,Math.max(a.x,b.x)+12);
+            minY=Math.min(minY,Math.min(a.y,b.y)-12);maxY=Math.max(maxY,Math.max(a.y,b.y)+12);
+            minZ=Math.min(minZ,Math.min(a.z,b.z)-12);maxZ=Math.max(maxZ,Math.max(a.z,b.z)+12);
+        }
         int[] next={(int)Math.floor(minX/16),(int)Math.floor(minY/16),(int)Math.floor(minZ/16),(int)Math.floor(maxX/16),(int)Math.floor(maxY/16),(int)Math.floor(maxZ/16)};
         if(!active)next=new int[]{0,0,0,-1,-1,-1};
         long tick=level.getGameTime();boolean changed=!Arrays.equals(bounds,next);
@@ -127,6 +136,15 @@ public final class StormCollisionRuntime implements AutoCloseable {
     public static long spatialVersion(){return current==null?-1:current.cache.version();}
     public static Object spatialSource(){return current==null?null:current.cache;}
     public static StormCollisionCache spatialCache(){return current==null?null:current.cache;}
+    public static StormTerrainEdits.Snapshot terrainEdits(){return current==null?StormTerrainEdits.EMPTY:current.edits.snapshot();}
+    public static void acceptBlast(ClientboundStormBlastPacket packet){
+        if(current==null||!packet.identity().equals(AllayStormRuntime.INSTANCE.identity()))return;
+        current.edits.accept(packet,current.cache);
+    }
+    public static void bindEdits(int program){
+        if(current!=null)current.edits.bind(program,Math.max(0,current.gpu.revision()));
+        else com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.setIntUniform(program,"uStormTerrainEdited",0);
+    }
     public static Map<Section,Page> spatialPages(){return current==null?Map.of():current.cache.ready();}
     public static void captureForNativeTick(){
         if(current!=null){
@@ -147,6 +165,9 @@ public final class StormCollisionRuntime implements AutoCloseable {
             var changes=current.gpuCursor.poll();if(changes!=null)current.gpu.offer(changes);
             if(surfaceBegin!=0)StormSurfaceCapture.captureRemaining(Math.max(0,1_000_000-(System.nanoTime()-surfaceBegin)));
             long before=current.gpu.uploaded();current.gpu.pump(131072,500_000);surfaceUploadBudget=(int)Math.max(0,131072-(current.gpu.uploaded()-before));current.gpu.bind(program);
+            current.edits.retire(current.cache,current.gpu.settled());
+            current.edits.prepare();
+            bindEdits(program);
         }catch(RuntimeException|LinkageError failure){
             if(current.error.isEmpty())com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.error(CMILog.STORM + "Storm collision resource unavailable",failure);
             current.error=failure.toString();com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.loc(program,"uStormCollisionOn"),0);
@@ -161,6 +182,7 @@ public final class StormCollisionRuntime implements AutoCloseable {
         }
         // The GPU owner already fans the immutable publication out to all parts.
         if(available)current.gpu.bind(program);
+        for(int part:com.iridium126.createmanaindustry.client.particles.engine.DomeBodyContacts.related(program))bindEdits(part);
     }
     /** Existing immutable publication, without capture, demand or transfer. */
     public static StormCollisionGpu publication(){return current!=null&&current.error.isEmpty()?current.gpu:null;}
@@ -169,7 +191,17 @@ public final class StormCollisionRuntime implements AutoCloseable {
     public static String status(){return current==null?"storm collision idle":current.cache.stats()+" demandMs="+current.demandNanos/1e6+" "+current.gpu.stats()+" error="+current.error;}
     public static String profilingReport(){return current==null?"":"Storm collision: "+String.format(java.util.Locale.ROOT,"demand=%.3f ms; ",current.demandNanos/1e6)
             +current.cache.profilingReport()+"\nStorm collision GPU: "+current.gpu.profilingReport()+(current.error.isEmpty()?"":"; error="+current.error);}
-    public static void blockChanged(ClientLevel level,BlockPos pos){RenderTerrain.blockChanged(level,pos);StormSurfaceCapture.blockChanged(level,pos);FeatherSupportGpu.INSTANCE.blockChanged(level,pos);if(current==null||current.level!=level)return;int x=pos.getX()>>4,y=pos.getY()>>4,z=pos.getZ()>>4;for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++)current.cache.dirty(new Section(x+dx,y+dy,z+dz));}
+    public static void blockChanged(ClientLevel level,BlockPos pos){
+        RenderTerrain.blockChanged(level,pos);StormSurfaceCapture.blockChanged(level,pos);FeatherSupportGpu.INSTANCE.blockChanged(level,pos);
+        if(current==null||current.level!=level)return;
+        boolean restoring=current.edits.covers(pos)&&!level.getBlockState(pos).getCollisionShape(level,pos).isEmpty();
+        if(restoring)current.edits.restored(pos);
+        int x=pos.getX()>>4,y=pos.getY()>>4,z=pos.getZ()>>4;
+        for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++)for(int dz=-1;dz<=1;dz++){
+            var key=new Section(x+dx,y+dy,z+dz);current.cache.dirty(key);
+            if(current.edits.covers(key)||(restoring&&dx==0&&dy==0&&dz==0))current.cache.retainForEdit(key);
+        }
+    }
     public static void cubeChanged(long packed){
         RenderTerrain.cubeChanged(packed);
         var cube=com.iridium126.createmanaindustry.dimension.cube.AllvrCubePos.fromLong(packed);
@@ -177,12 +209,15 @@ public final class StormCollisionRuntime implements AutoCloseable {
         StormSurfaceCapture.cubeChanged(cube.getX()*size,cube.getZ()*size,size);
         FeatherSupportGpu.INSTANCE.cubeChanged(Minecraft.getInstance().level,cube.getX()*n,cube.getY()*n,cube.getZ()*n,n);
         if(current==null)return;
-        for(int x=0;x<n;x++)for(int y=0;y<n;y++)for(int z=0;z<n;z++)
-            current.cache.unavailable(new Section(cube.getX()*n+x,cube.getY()*n+y,cube.getZ()*n+z));
+        for(int x=0;x<n;x++)for(int y=0;y<n;y++)for(int z=0;z<n;z++){
+            var key=new Section(cube.getX()*n+x,cube.getY()*n+y,cube.getZ()*n+z);
+            current.cache.unavailable(key);
+            current.edits.forget(key);
+        }
     }
     @SubscribeEvent public static void loaded(ChunkEvent.Load event){changed(event);}
     @SubscribeEvent public static void unloaded(ChunkEvent.Unload event){changed(event);}
-    private static void changed(ChunkEvent event){if(event.getLevel() instanceof ClientLevel level){var p=event.getChunk().getPos();RenderTerrain.chunkChanged(level,p.x,p.z);StormSurfaceCapture.changed(level,p.x,p.z);FeatherSupportGpu.INSTANCE.chunkChanged(level,p.x,p.z);}if(current!=null&&event.getLevel()==current.level){var pos=event.getChunk().getPos();current.cache.dirtyColumn(pos.x,pos.z);}}
+    private static void changed(ChunkEvent event){if(event.getLevel() instanceof ClientLevel level){var p=event.getChunk().getPos();RenderTerrain.chunkChanged(level,p.x,p.z);StormSurfaceCapture.changed(level,p.x,p.z);FeatherSupportGpu.INSTANCE.chunkChanged(level,p.x,p.z);}if(current!=null&&event.getLevel()==current.level){var pos=event.getChunk().getPos();current.cache.dirtyColumn(pos.x,pos.z);current.edits.forgetColumn(pos.x,pos.z);}}
     public static void reset(){if(current!=null){current.close();current=null;}}
-    @Override public void close(){gpu.close();}
+    @Override public void close(){edits.close();gpu.close();}
 }

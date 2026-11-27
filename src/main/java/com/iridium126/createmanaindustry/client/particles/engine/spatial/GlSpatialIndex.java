@@ -38,6 +38,7 @@ public final class GlSpatialIndex implements AutoCloseable {
     private void query(int input,int output,long nonce,long epoch,long sourceTick,long scene,int probes,int kind,float x,float y,float z,int members,int terrain,boolean ranged){
         int active=Math.max(1,members+terrain),activeGroups=(active+255)/256;
         com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(program);bind(0,input);bind(1,output);bind(2,keys[0]);bind(3,keys[1]);bind(4,nodes);bind(5,histogram);bind(6,offsets);
+        com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime.bindCurrent(program);
         com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform1i(program,GpuUniforms.loc(program,"ranged"),ranged?1:0);ui("memberCount",members);ui("terrainCount",terrain);
         ui("capacity",capacity);ui("terrainCapacity",terrainCapacity);ui("probes",probes);ui("kind",kind);ui("nodeBudget",256);
         pair("nonce",nonce);pair("epoch",epoch);pair("sourceTick",sourceTick);pair("scene",scene);com.iridium126.createmanaindustry.client.gpu.shader.GpuUniforms.uniform3f(program,GpuUniforms.loc(program,"anchor"),x,y,z);

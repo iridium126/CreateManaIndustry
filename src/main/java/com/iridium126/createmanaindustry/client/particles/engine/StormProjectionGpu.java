@@ -1,6 +1,8 @@
 package com.iridium126.createmanaindustry.client.particles.engine;
 
 import com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers;
+import com.iridium126.createmanaindustry.client.allaystorm.StormRingClient;
+import com.iridium126.createmanaindustry.content.allaystorm.StarfallColumns;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuBufferNames;
 import com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands;
 import com.iridium126.createmanaindustry.client.gpu.shader.GpuPrograms;
@@ -78,6 +80,8 @@ final class StormProjectionGpu implements AutoCloseable {
         GpuUniforms.setIntUniform(program,"uPlaybackWrite",0);
         var starfall=StarfallGpuBuffers.INSTANCE;
         GpuBindings.program(program);
+        StormRingClient.INSTANCE.bind(program,display==null?0:StarfallColumns.clock(display.gameTime()),
+                display!=null&&(!reusable||candidateSequence>sequence));
         gpu.bindParticleRead(0);gpu.bindParticleWrite(1);
         gpu.bindCounter(ParticleBuffers.COUNTER_BB,current);
         gpu.bindPrevCounter(ParticleBuffers.PREVCOUNTER_BINDING,previous);
