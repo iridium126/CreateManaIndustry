@@ -14,8 +14,11 @@ import com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands;
 
 /** OpenGL Storm steering uses a stable publication and a portable LBVH. */
 public final class OpenGlStormScene implements AutoCloseable {
-    public static final int CAPACITY=131072,PACKET_BYTES=com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SPATIAL_HEADER_BYTES
-            +(CAPACITY+SpatialTerrain.CAPACITY)*com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SPATIAL_RECORD_BYTES;
+    public static final int CAPACITY=131072;
+    private static final int HINT_BYTES=com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SPATIAL_HEADER_BYTES
+            +CAPACITY*com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SPATIAL_RECORD_BYTES;
+    public static final int PACKET_BYTES=HINT_BYTES
+            +SpatialTerrain.CAPACITY*com.iridium126.createmanaindustry.client.gpu.GpuResourceConstants.SPATIAL_RECORD_BYTES;
     private static final AtomicLong EPOCHS=new AtomicLong(1);
     private final long epoch=EPOCHS.getAndIncrement();
     private long scene=EPOCHS.getAndIncrement(),nonce,terrainRevision=-1,resourceEpoch=Long.MIN_VALUE;
@@ -36,7 +39,8 @@ public final class OpenGlStormScene implements AutoCloseable {
         ui(program,"capacity",CAPACITY);ui(program,"probes",probes);ui(program,"kind",0);
         for(int i=0;i<2;i++){states[i]=buffer(CAPACITY*64L);textures[i]=texture(states[i]);GpuReplayCommands.clearNamedBufferData(states[i],GL30.GL_R32UI,GL30.GL_RED_INTEGER,GL11.GL_UNSIGNED_INT,(IntBuffer)null);}
         meta=buffer(CAPACITY*16L);metaTexture=texture(meta);
-        input=buffer(PACKET_BYTES);output=buffer(PACKET_BYTES);outputTexture=texture(output);
+        // The query emits one steering hint per member. Terrain rows only appear in the input.
+        input=buffer(PACKET_BYTES);output=buffer(HINT_BYTES);outputTexture=texture(output);
         glIndex=new GlSpatialIndex(CAPACITY,SpatialTerrain.CAPACITY);
         }catch(RuntimeException|LinkageError failure){close();throw failure;}
     }

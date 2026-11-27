@@ -17,7 +17,7 @@ import com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands;
 /** Display buffers have their own ownership. Simulation buffers are never interpolation targets. */
 public final class ModelRenderPublication implements AutoCloseable {
     private static final class Slot {
-        int pool,counter,commands,first,second,add,opaque,dispatch,feathers,parameters;
+        int pool,counter,commands,permutation,add,opaque,dispatch,feathers,parameters;
         final java.nio.ByteBuffer parameterBytes=org.lwjgl.BufferUtils.createByteBuffer(DisplayParameters.BYTES);
         long frozenGeneration=-1;
         long fence;
@@ -25,6 +25,7 @@ public final class ModelRenderPublication implements AutoCloseable {
         final ModelShadowGroups groups=new ModelShadowGroups();
     }
     private final Slot[] slots={new Slot(),new Slot(),new Slot()};
+    private static final boolean SORT_STARTS_IN_SCRATCH=(ParticleBuffers.RADIX_PASSES&1)!=0;
     private static final int COMMAND_BYTES=ParticleBuffers.INDIRECT_UINTS*4, PROFILE_BYTES=COMMAND_BYTES+44;
     private static final class ProfileSlot {
         com.iridium126.createmanaindustry.client.gpu.buffer.GpuReadbackBuffer data;
@@ -39,7 +40,7 @@ public final class ModelRenderPublication implements AutoCloseable {
     private final Matrix4f clip=new Matrix4f();
     private final Vector4f plane=new Vector4f();
     private int program,capacity,carrierCapacity,nextSlot;
-    private int frozenEmitters;
+    private int frozenEmitters,sortScratch;
     private long emitterRevision=-1,emitterEpoch=-1;
     private long identityEpoch=-1;
     private long publicationId;
@@ -71,8 +72,10 @@ public final class ModelRenderPublication implements AutoCloseable {
         DisplayParameters.verify(program);
         GpuProgramContract.installSamplers(program);GpuProgramContract.verify(program,"display.comp");
         frozenEmitters=buffer(GL45.glGetNamedBufferParameteri64(gpu.emitterBufferId(),GL15.GL_BUFFER_SIZE));
+        long permutationBytes=(gpu.metaSlotIndex()+1L)*8;
+        sortScratch=buffer(permutationBytes);
         for(Slot s:slots){s.pool=buffer(capacity*64L);s.counter=buffer(16);s.commands=buffer(ParticleBuffers.INDIRECT_UINTS*4L);
-            s.first=buffer((gpu.metaSlotIndex()+1L)*8);s.second=buffer((gpu.metaSlotIndex()+1L)*8);
+            s.permutation=buffer(permutationBytes);
             s.parameters=buffer(DisplayParameters.BYTES);s.add=buffer(capacity*4L);s.opaque=buffer(capacity*4L);s.dispatch=buffer(48);s.feathers=buffer(com.iridium126.createmanaindustry.client.particles.emitter.AllayFeatherLayout.BYTES);}
         }catch(RuntimeException|LinkageError failure){close();throw failure;}
     }
@@ -95,6 +98,10 @@ public final class ModelRenderPublication implements AutoCloseable {
                          NativeStormDisplayClock.View stormPlayback){
         endFrame();allocate(gpu);Slot s=freeSlot();
         selected=s;
+        // The command stream consumes scratch during preparation. The final
+        // radix pass must leave all draw data in the selected frame slot.
+        int keygenOrder=SORT_STARTS_IN_SCRATCH?sortScratch:s.permutation;
+        int alternateOrder=SORT_STARTS_IN_SCRATCH?s.permutation:sortScratch;
         if(emitterRevision!=gpu.emitterRevision()||emitterEpoch!=gpu.identityEpoch()){
             long bytes=gpu.uploadedEmitterBytes();
             if(bytes>0)GpuReplayCommands.copyNamedBufferSubData(gpu.emitterBufferId(),frozenEmitters,0,0,bytes);
@@ -108,7 +115,7 @@ public final class ModelRenderPublication implements AutoCloseable {
         displayBindings.clear();
         displayBindings.put(current.pool()).put(gpu.previousParticleBufferId()).put(s.pool).put(current.counter())
                 .put(history?previous.counter():current.counter()).put(gpu.historyBufferId()).put(s.counter).put(s.commands)
-                .put(s.dispatch).put(s.first).put(current.population()).put(frozenEmitters).flip();
+                .put(s.dispatch).put(keygenOrder).put(current.population()).put(frozenEmitters).flip();
         GpuBindings.bindBases(GL43.GL_SHADER_STORAGE_BUFFER,0,displayBindings);
         gpu.bindOrdinaryRead(program,false,current.generation());
         var cameraNow=camera.getPosition();var currentDelta=gpu.currentCameraOrigin().subtract(cameraNow);var previousDelta=gpu.previousCameraOrigin().subtract(cameraNow);
@@ -145,7 +152,7 @@ public final class ModelRenderPublication implements AutoCloseable {
         for(int role=1;role<=2;role++){
             gpu.beginBindings();int keygen=role==1?shaders.ordinaryKeygen():shaders.keygen();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(keygen);
             bind(0,s.pool);bind(2,s.commands);bind(3,s.counter);bind(5,frozenEmitters);
-            bind(ParticleBuffers.SORTWRITE_BINDING,s.first);bind(ParticleBuffers.CARRIERSINK_BB,s.second);bind(ParticleBuffers.ORDERADD_BINDING,s.add);bind(ParticleBuffers.ORDEROPAQUE_BINDING,s.opaque);
+            bind(ParticleBuffers.SORTWRITE_BINDING,keygenOrder);bind(ParticleBuffers.CARRIERSINK_BB,alternateOrder);bind(ParticleBuffers.ORDERADD_BINDING,s.add);bind(ParticleBuffers.ORDEROPAQUE_BINDING,s.opaque);
             if(role==1){gpu.bindOrdinaryRead(keygen,false,current.generation());AllayFeatherGpu.INSTANCE.publishDisplay(keygen,s.feathers);}
             else {
                 gpu.bindVisibility(keygen);gpu.bindPopulationRead(keygen,false,current.generation());
@@ -165,15 +172,15 @@ public final class ModelRenderPublication implements AutoCloseable {
         }
         s.groups.commit(0,current.generation());
         ClientFrameCapture.INSTANCE.visibilitySubmitted(gpu.displayVisibility(),false);
-        bind(7,s.commands);bind(8,s.dispatch);bind(9,s.first);phase(4,1);
-        int read=s.first,write=s.second;
+        bind(7,s.commands);bind(8,s.dispatch);bind(9,keygenOrder);phase(4,1);
+        int read=keygenOrder,write=alternateOrder;
         for(int pass=0;pass<ParticleBuffers.RADIX_PASSES;pass++){
             gpu.beginBindings();gpu.clearHist();bind(2,s.commands);gpu.bindHist();gpu.bindOffsets();
             int p=shaders.radixHist();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(p);bind(ParticleBuffers.SORTREAD_BINDING,read);ui(p,"uShift",pass*Integer.numberOfTrailingZeros(ParticleBuffers.RADIX_BINS));GpuReplayCommands.dispatchComputeIndirect(24);barrier();
             p=shaders.radixScan();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(p);GpuReplayCommands.dispatchCompute(1,1,1);barrier();
             p=shaders.radixScatter();com.iridium126.createmanaindustry.client.gpu.state.GpuBindings.program(p);bind(ParticleBuffers.SORTREAD_BINDING,read);bind(ParticleBuffers.SORTWRITE_BINDING,write);ui(p,"uShift",pass*Integer.numberOfTrailingZeros(ParticleBuffers.RADIX_BINS));GpuReplayCommands.dispatchComputeIndirect(24);barrier();int swap=read;read=write;write=swap;
         }
-        if(read!=s.first)GpuReplayCommands.copyNamedBufferSubData(s.first,read,gpu.metaSlotIndex()*8L,gpu.metaSlotIndex()*8L,8);
+        if(SORT_STARTS_IN_SCRATCH)GpuReplayCommands.copyNamedBufferSubData(keygenOrder,s.permutation,gpu.metaSlotIndex()*8L,gpu.metaSlotIndex()*8L,8);
         gpu.setDisplayResources(s.pool,s.commands,s.add,s.opaque,read,s.groups.buffer(0,current.generation()),history?alpha:1);
         com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFateGpu.INSTANCE.publishDisplay(
                 current.generation(),history?alpha:1,cameraNow);
@@ -230,9 +237,10 @@ public final class ModelRenderPublication implements AutoCloseable {
         for(var slot:profiles){if(slot.fence!=0)GL32.glDeleteSync(slot.fence);slot.fence=0;if(slot.data!=null)slot.data.close();slot.data=null;}
         for(Slot s:slots){
             s.groups.close();if(s.fence!=0)GL32.glDeleteSync(s.fence);s.fence=0;
-            for(int id:new int[]{s.pool,s.counter,s.commands,s.first,s.second,s.add,s.opaque,s.dispatch,s.feathers,s.parameters})GpuBufferNames.delete(id);
-            s.pool=s.counter=s.commands=s.first=s.second=s.add=s.opaque=s.dispatch=s.feathers=s.parameters=0;s.frozenGeneration=-1;
+            for(int id:new int[]{s.pool,s.counter,s.commands,s.permutation,s.add,s.opaque,s.dispatch,s.feathers,s.parameters})GpuBufferNames.delete(id);
+            s.pool=s.counter=s.commands=s.permutation=s.add=s.opaque=s.dispatch=s.feathers=s.parameters=0;s.frozenGeneration=-1;
         }
+        GpuBufferNames.delete(sortScratch);sortScratch=0;
         GpuBufferNames.delete(frozenEmitters);frozenEmitters=0;emitterRevision=emitterEpoch=-1;
         GpuPrograms.delete(program);program=capacity=carrierCapacity=nextSlot=0;identityEpoch=-1;
     }
