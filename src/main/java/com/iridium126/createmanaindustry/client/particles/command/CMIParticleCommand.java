@@ -3,6 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.command;
 import com.iridium126.createmanaindustry.CreateManaIndustry;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterPresets;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ManaBeamEmission;
 import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import com.iridium126.createmanaindustry.client.particles.engine.ParticleRuntime;
 import com.iridium126.createmanaindustry.client.particles.engine.CMIParticleEngine;
@@ -19,9 +20,12 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
+import net.minecraft.client.Minecraft;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -41,6 +45,7 @@ import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
  *
  * <pre>
  *   /cmi particle emit &lt;source&gt; &lt;amount&gt; [seconds|forever]
+ *   /cmi particle emit mana_beam
  *   /cmi particle anim &lt;preset&gt; &lt;animation&gt;
  *   /cmi particle clear|packagepreview &lt;amount&gt;|status|budget &lt;ms&gt;
  *   /cmi particle profile [details|hardware status|frames|capture|on|off]
@@ -87,6 +92,7 @@ public final class CMIParticleCommand {
         return Commands.literal("cmi")
                         .then(Commands.literal("particle")
                         .then(Commands.literal("emit")
+                                .then(Commands.literal("mana_beam").executes(CMIParticleCommand::manaBeam))
                                 .then(Commands.argument("source", StringArgumentType.word())
                                         .suggests(SOURCES)
                                         .then(Commands.argument("amount", IntegerArgumentType.integer(1, 4_000_000))
@@ -184,6 +190,29 @@ public final class CMIParticleCommand {
     private static int hardwareStatus(CommandContext<CommandSourceStack> ctx) {
         CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.PROFILE, "Storm hardware",
                 SpatialQueryRuntime.INSTANCE.status().lines().toList());
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int manaBeam(CommandContext<CommandSourceStack> ctx) {
+        if (!engine(ctx)) return 0;
+        Minecraft minecraft = Minecraft.getInstance();
+        var player = minecraft.player;
+        var level = minecraft.level;
+        if (player == null || level == null) {
+            fail(ctx, "A local player is required to emit a mana beam.");
+            return 0;
+        }
+        Vec3 origin = player.getEyePosition();
+        Vec3 direction = player.getLookAngle().normalize();
+        Vec3 end = origin.add(direction.scale(ManaBeamEmission.MAX_DISTANCE));
+        var hit = level.clip(new ClipContext(origin, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, player));
+        boolean blocked = hit.getType() == HitResult.Type.BLOCK;
+        float distance = blocked
+                ? Math.clamp((float) hit.getLocation().subtract(origin).dot(direction), 0, ManaBeamEmission.MAX_DISTANCE)
+                : ManaBeamEmission.MAX_DISTANCE;
+        CMIParticleEngine.INSTANCE.spawnManaBeam(level,
+                new ManaBeamEmission(origin, direction, distance, blocked ? hit.getDirection() : null));
+        ok(ctx, "Mana beam queued.");
         return Command.SINGLE_SUCCESS;
     }
 

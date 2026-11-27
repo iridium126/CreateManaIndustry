@@ -162,15 +162,16 @@ public final class AllayStormRuntime {
      * {@code dω/dR * dR/dt * timeSec} rad/s, so the servo's time-averaged pull
      * drags everything to the rotation center). The fix ships the FROZEN
      * growth law from the server (state packet, frozen at creation like the
-     * seed): with {@code count(t) = count0 + g*t} and {@code R = sqrt(count)/8},
-     * both phase integrals are CLOSED FORM and LINEAR in the grown radius —
-     * bounded expressions every client evaluates identically:
+     * seed): with {@code count(t) = count0 + g*t} and the quadratic radius
+     * law {@code count = A·R + B·R²}, both phase integrals are CLOSED FORM in
+     * the grown radius and {@code ln R} — bounded expressions every client
+     * evaluates identically:
      * <pre>
-     *   rotPhase  = SPIN_K·128·(min(R,Rf) − R0)/g + (SPIN_K/Rf)·postSec
-     *   convPhase = (rate_i/a_i)·(64·(min(R,Rf) − R0)/g + postSec/(2Rf))
+     *   rotPhase  = (SPIN_K/g)·(A·ln(R/R0) + 2B·(R − R0)) + (SPIN_K/Rf)·postSec
+     *   convPhase = (rate_i/a_i)·((A·ln(R/R0) + 2B·(R − R0))/(2g) + postSec/(2Rf))
      * </pre>
-     * (postSec = the age past the growth window; {@code dt = 128·R·dR/g} is
-     * what makes ∫dt/R linear). Every term is a constant rate times a bounded
+     * (postSec = the age past the growth window; {@code dt = (A + 2B·R)·dR/g}
+     * is what makes both integrals logarithmic). Every term is a bounded
      * quantity — a radius change can only advance the pattern by its
      * physically-correct amount, never teleport it.
      */

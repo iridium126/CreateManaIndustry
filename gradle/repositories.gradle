@@ -26,29 +26,49 @@ repositories {
         }
         filter { includeGroup 'curse.maven' }
     }
-    maven {
-        name = 'BlameJared'
-        url = 'https://maven.blamejared.com'
-        content {
+    // Each mod repository below excludes every other repository for the groups it
+    // publishes. A plain content filter still makes Gradle probe the earlier
+    // repositories first, and it re-probes them once the 24 hour cache of a missing
+    // module expires, so a cold build pays a pointless round trip per module and host.
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'BlameJared'
+                url = 'https://maven.blamejared.com'
+            }
+        }
+        filter {
             includeGroup 'mezz.jei'
             includeGroup 'vazkii.patchouli'
             includeGroup 'com.hollingsworth.ars_nouveau'
         }
     }
-    maven {
-        name = 'Shedaniel'
-        url = 'https://maven.shedaniel.me/'
-        content { includeGroup 'me.shedaniel.cloth' }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'Shedaniel'
+                url = 'https://maven.shedaniel.me/'
+            }
+        }
+        filter { includeGroup 'me.shedaniel.cloth' }
     }
-    maven {
-        name = 'Architectury'
-        url = 'https://maven.architectury.dev/'
-        content { includeGroup 'dev.architectury' }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'Architectury'
+                url = 'https://maven.architectury.dev/'
+            }
+        }
+        filter { includeGroup 'dev.architectury' }
     }
-    maven {
-        name = 'TheIllusiveC4'
-        url = 'https://maven.theillusivec4.top/'
-        content {
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'TheIllusiveC4'
+                url = 'https://maven.theillusivec4.top/'
+            }
+        }
+        filter {
             includeGroup 'top.theillusivec4.curios'
             includeGroup 'com.illusivesoulworks.caelus'
         }
@@ -62,15 +82,23 @@ repositories {
         }
         filter { includeGroup 'dev.ryanhcode.sable' }
     }
-    maven {
-        name = 'GeckoLib'
-        url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
-        content { includeGroup 'software.bernie.geckolib' }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'GeckoLib'
+                url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
+            }
+        }
+        filter { includeGroup 'software.bernie.geckolib' }
     }
-    maven {
-        name = 'Caffeinemc'
-        url = 'https://maven.flashyreese.me/releases'
-        content { includeGroup 'net.caffeinemc' }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'Caffeinemc'
+                url = 'https://maven.flashyreese.me/releases'
+            }
+        }
+        filter { includeGroup 'net.caffeinemc' }
     }
     exclusiveContent {
         forRepository {
@@ -81,35 +109,52 @@ repositories {
         }
         filter { includeGroup 'org.sinytra.forgified-fabric-api' }
     }
+    // Not exclusive: org.sinytra.forgified-fabric-api shares the group prefix but is
+    // only published to SinytraReleases, and exclusive filters cannot exclude a module.
     maven {
         name = "Sinytra"
         url = "https://maven.sinytra.org/"
         content { includeGroupByRegex 'org\\.sinytra(\\..*)?' }
     }
-    maven {
-        name = "Create"
-        url = "https://maven.createmod.net"
-        content {
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Create"
+                url = "https://maven.createmod.net"
+            }
+        }
+        filter {
             includeGroup 'dev.engine-room.flywheel'
             includeGroup 'net.createmod.ponder'
-            includeGroup 'com.tterrag.registrate'
             includeGroup 'com.simibubi.create'
         }
     }
-    maven {
-        name = "Ithundxr"
-        url = "https://maven.ithundxr.dev/snapshots"
-        content { includeModule 'com.tterrag.registrate', 'Registrate' }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Ithundxr"
+                url = "https://maven.ithundxr.dev/snapshots"
+            }
+        }
+        filter { includeModule 'com.tterrag.registrate', 'Registrate' }
     }
-    maven {
-        name = "Fabric"
-        url = "https://maven.fabricmc.net/"
-        content { includeGroupByRegex 'net\\.fabricmc(\\..*)?' }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Fabric"
+                url = "https://maven.fabricmc.net/"
+            }
+        }
+        filter { includeGroupByRegex 'net\\.fabricmc(\\..*)?' }
     }
-    maven {
-        name = "WispForest"
-        url = "https://maven.wispforest.io/releases"
-        content { includeGroup 'io.wispforest' }
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "WispForest"
+                url = "https://maven.wispforest.io/releases"
+            }
+        }
+        filter { includeGroup 'io.wispforest' }
     }
     exclusiveContent {
         forRepository {
@@ -121,5 +166,21 @@ repositories {
         filter {
             includeGroup "maven.modrinth"
         }
+    }
+}
+
+// ModDevGradle registers its Minecraft/NeoForged repositories while the plugin is
+// applied, so they end up ahead of every repository declared above. Two of them use
+// maven.neoforged.net, which is unreachable on some networks: lookups that reach it
+// wait for the full connect timeout, and the timeout aborts the whole resolution
+// instead of falling through to the next repository. Keeping CMI's repositories first
+// lets every module they host be answered before that probe, so configuration and
+// configuration-cache storage stay offline-fast on such networks.
+project.afterEvaluate {
+    def modDevRepositories = ['Mojang Meta', 'Mojang Minecraft Libraries', 'NeoForged Releases'] as Set
+    def cmiRepositories = repositories.findAll { !(it.name in modDevRepositories) }
+    cmiRepositories.reverseEach { repository ->
+        repositories.remove(repository)
+        repositories.add(0, repository)
     }
 }

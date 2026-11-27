@@ -26,6 +26,18 @@ class CMIParticleCommandTreeTest {
         rejects(dispatcher, "cmi particle emit mana_spark");
     }
 
+    @Test void manaBeamIsACompletableOneShotSource() {
+        var dispatcher = dispatcher();
+        accepts(dispatcher, "cmi particle emit mana_beam");
+        rejects(dispatcher, "cmi particle emit mana_beam 1");
+        rejects(dispatcher, "cmi particle emit mana_beam forever");
+        var completion = new CommandDispatcher<CommandSourceStack>();
+        completion.getRoot().addChild(dispatcher.getRoot().getChild("cmi").getChild("particle")
+                .getChild("emit").getChild("mana_beam"));
+        assertTrue(completion.getCompletionSuggestions(completion.parse("mana_b", null)).join().getList().stream()
+                .anyMatch(suggestion -> suggestion.getText().equals("mana_beam")));
+    }
+
     @Test void oldAndRemovedParticleCommandsAreAbsent() {
         var dispatcher = dispatcher();
         assertNull(dispatcher.getRoot().getChild("cmip"));

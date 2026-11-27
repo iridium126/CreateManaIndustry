@@ -39,10 +39,14 @@ float cmiStormCloudDensity(vec3 relativePoint) {
     float h=relativePoint.y+CmiStormCloud.w;
     float below=CmiStormCloud.y-h;
     if(below<=0.0)return 1.0;
-    float r0=max(16.0,CmiStormCloud.x*abs(h));
-    float r1=r0+max(16.0,0.15*r0);
-    float r2=r0+max(48.0,0.5*r0);
-    float r3=r2+max(32.0,0.25*r0);
+    // The absolute ring floors and the 0.15/0.5/0.25 bands are authored at
+    // the historical R=32 field; scale them with the live radius so the
+    // cloud ring follows the storm body instead of pinching at large radii.
+    float cloudScale=max(1.0,CmiStormCenter.w/32.0);
+    float r0=max(16.0*cloudScale,CmiStormCloud.x*abs(h));
+    float r1=r0+max(16.0*cloudScale,0.15*r0);
+    float r2=r0+max(48.0*cloudScale,0.5*r0);
+    float r3=r2+max(32.0*cloudScale,0.25*r0);
     vec2 delta=relativePoint.xz-CmiStormCenter.xz;
     float d2=dot(delta,delta);
     if(d2>=r3*r3)return 1.0;

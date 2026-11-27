@@ -12,8 +12,11 @@ public record StormCloudFrame(double x,double y,double z,double radius,double co
     /** CPU oracle for the shader contract, also used by headless boundary tests. */
     public double density(double dx,double worldY,double dz){
         if(!active()||worldY>=planeY)return 1;
-        double r0=Math.max(16,coneSlope*Math.abs(worldY-64));
-        double r1=r0+Math.max(16,.15*r0),r2=r0+Math.max(48,.5*r0),r3=r2+Math.max(32,.25*r0);
+        // Ring floors are authored at the historical R=32 field; follow the
+        // live radius so clouds and the storm body scale together.
+        double cloudScale=Math.max(1,radius/32.0);
+        double r0=Math.max(16*cloudScale,coneSlope*Math.abs(worldY-64));
+        double r1=r0+Math.max(16*cloudScale,.15*r0),r2=r0+Math.max(48*cloudScale,.5*r0),r3=r2+Math.max(32*cloudScale,.25*r0);
         double d2=dx*dx+dz*dz;
         double ring=2*smooth((d2-r0*r0)/(r1*r1-r0*r0))-smooth((d2-r2*r2)/(r3*r3-r2*r2));
         return 1+(ring-1)*strength*smooth((planeY-worldY)/16);

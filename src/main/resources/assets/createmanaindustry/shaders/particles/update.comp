@@ -279,6 +279,18 @@ void main() {
 #endif
 #if !defined(CMI_UPDATE_DOMAIN) || CMI_UPDATE_DOMAIN == 1
     if(!modelMaterial&&updateHexParticle(hb,p0,p1,p2,p3))return;
+    if (uint(emitters.u[hb].x) == CMI_MANA_BEAM_TYPE) {
+        if (p3.x >= p3.y) return;
+        uint slot = cmiReserveParticle();
+        if (slot >= uCapacity) return;
+        cmiHistoryContinue(slot);
+        uint b = slot * 4u;
+        writeBuf.data[b] = p0;
+        writeBuf.data[b + 1u] = p1;
+        writeBuf.data[b + 2u] = p2;
+        writeBuf.data[b + 3u] = vec4(p3.x + uDt, p3.yzw);
+        return;
+    }
     bool isFeather = uint(emitters.u[hb].x)==CMI_FEATHER_TYPE;
     if(uint(emitters.u[hb].x)==CMI_GOLD_TYPE){cmiGoldUpdate(p0,p1,p2,p3);return;}
     if(isFeather&&cmiFeatherEarly(p0,p1,p2,p3))return;

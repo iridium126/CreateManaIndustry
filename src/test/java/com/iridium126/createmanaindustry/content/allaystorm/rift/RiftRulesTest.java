@@ -9,8 +9,8 @@ class RiftRulesTest {
         assertFalse(eligible(16383,0,385,0));
         assertTrue(eligible(16384,0,Math.nextUp(384d),0));
         assertFalse(eligible(16384,0,384,0));
-        assertFalse(eligible(16384,64,385,0));
-        assertTrue(eligible(16384,Math.nextDown(64d),385,0));
+        assertFalse(eligible(16384,128,385,0));
+        assertTrue(eligible(16384,Math.nextDown(128d),385,0));
         assertFalse(eligible(16384,0,385,Double.NaN));
         assertFalse(RiftRules.eligible(false,true,16384,true,0,385,0,0,0,320));
         assertFalse(RiftRules.eligible(true,false,16384,true,0,385,0,0,0,320));

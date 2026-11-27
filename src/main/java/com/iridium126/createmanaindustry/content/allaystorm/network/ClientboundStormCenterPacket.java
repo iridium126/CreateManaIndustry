@@ -28,7 +28,8 @@ import java.util.function.Consumer;
  * The packet also carries the storm's GROWTH state: the generated member
  * population (count, varint). The client keeps it in a double-snapshot
  * interpolation (same scheme as the center) and derives the storm radius
- * ({@code sqrt(count)/8}) and angular velocity ({@code SPIN_K/radius}, see
+ * ({@code AllayStormData.vortexRadius(count)}) and angular velocity
+ * ({@code SPIN_K/radius}, see
  * {@code AllayStormData.vortexOmega}) from it
  * CONTINUOUSLY every frame — the radius rides no wire at all, so the
  * expanding shell never jumps at packet or quantization steps.

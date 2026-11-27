@@ -22,7 +22,9 @@ import com.iridium126.createmanaindustry.client.greattrick.sharedfate.SharedFate
 import com.iridium126.createmanaindustry.client.greattrick.partition.PartitionGpu;
 import com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime;
 import com.iridium126.createmanaindustry.client.allaystorm.StarfallGpuBuffers;
+import com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter;
 import com.iridium126.createmanaindustry.client.particles.emitter.EmitterSpec;
+import com.iridium126.createmanaindustry.client.particles.emitter.ManaBeamEmission;
 import com.iridium126.createmanaindustry.client.particles.emitter.ParticleTypes;
 import com.iridium126.createmanaindustry.infrastructure.config.ClientConfig;
 
@@ -77,6 +79,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
 
     /** One-shot burst request posted from a client thread. */
     private final List<Burst> frameBursts = new ArrayList<>();
+    private final List<ManaBeamEmission> frameManaBeams = new ArrayList<>();
 
     static final class Burst {
         final EmitterSpec spec;
@@ -91,6 +94,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
     }
 
     record StreamReq(CMIParticleEngine.StreamHandle handle, EmitterSpec spec, Vec3 origin, double rate, double duration) {
+    }
+
+    record ManaBeamRequest(ClientLevel level, ManaBeamEmission emission) {
     }
 
     record StreamCancel(CMIParticleEngine.StreamHandle handle) {
@@ -158,8 +164,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
     private final ParticleAtlas spriteAtlas = ParticleAtlas.SPRITE;
     private final ParticleAtlas allayAtlas = ParticleAtlas.ALLAY;
 
-    private final com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter emitCommands =
-            new com.iridium126.createmanaindustry.client.particles.emitter.EmitCommandWriter();
+    private final EmitCommandWriter emitCommands = new EmitCommandWriter();
 
     /** One-shot Hexcasting conjure spray (spawnStyle 4), drained next compute. */
     record HexSpray(float x, float y, float z, float vx, float vy, float vz,
@@ -404,6 +409,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         private int consumedSprays;
         private int entryCount;
         private int totalSpawn;
+        private int manaBeamCommands;
+        private int ordinarySpawn;
         private int blockSpawnBound;
         private int ringId;
         private int damageCount;
@@ -470,6 +477,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         // 1. Drain requests from client thread.
         List<Burst> bursts = ParticleRuntime.this.frameBursts;
         bursts.clear();
+        frameManaBeams.clear();
+        ClientLevel inputLevel = Minecraft.getInstance().level;
         boolean doClear = false;
 
         Object item;
@@ -477,6 +486,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             drainedInputs.add(item);
             if (item instanceof Burst b) {
                 bursts.add(b);
+            } else if (item instanceof ManaBeamRequest beam) {
+                if (beam.level() == inputLevel && frameManaBeams.size() < EmitCommandWriter.LIMIT)
+                    frameManaBeams.add(beam.emission());
             } else if (item instanceof StreamReq sr) {
                 if (!ParticleRuntime.this.cancelledStreamIds.remove(sr.handle().id())) {
                     ParticleRuntime.this.streams.add(new Stream(sr.handle().id(), sr.spec(), sr.origin(), sr.rate(), sr.duration()));
@@ -490,7 +502,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 applyAnimation(ar.spec(), ar.animation());
             } else if (item instanceof Boolean) {
                 doClear = true;
-
+                frameManaBeams.clear();
             }
         }
         pending.measure(retryInputs.size());
@@ -526,6 +538,15 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
 
         // Producers share one bounded writer. No producer owns parallel command metadata.
         ParticleRuntime.this.emitCommands.clear();
+        if (!frameManaBeams.isEmpty()) {
+            int emitter = ensureEmitter(ManaBeamEmission.SPEC);
+            if (emitter >= 0) {
+                for (ManaBeamEmission beam : frameManaBeams)
+                    if (!beam.stage(emitCommands, emitter, scale)) break;
+            }
+            frameManaBeams.clear();
+        }
+        manaBeamCommands = emitCommands.size();
         AllayStormRuntime.INSTANCE.scheduleSpawnRuns(ParticleRuntime.this.emitCommands);
         // continuous chased center: rewrite the storm header's anchor slot from
         // the interpolated center every frame (1 Hz snapshots, frame-rate motion)
@@ -592,8 +613,9 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
         ParticleRuntime.this.streamCount = ParticleRuntime.this.streams.size();
 
 
-        ParticleRuntime.this.emitCommands.limitParticles(cap);
+        manaBeamCommands = emitCommands.limitParticles(cap, manaBeamCommands);
         entryCount=ParticleRuntime.this.emitCommands.size();totalSpawn=ParticleRuntime.this.emitCommands.particles();
+        ordinarySpawn = totalSpawn - emitCommands.particlesBefore(manaBeamCommands);
 
         feathers.prepare(dt,ParticleRuntime.this.scale,ParticleRuntime.this,0);
         // CPU limits submission work only; GPU allocation and dispatch determine the exact live set.
@@ -856,6 +878,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 setIntUniform(ParticleRuntime.this.programs.emit(),"uHexTickReady",1);
                 setUIntUniform(ParticleRuntime.this.programs.emit(), "uTotalSpawn", totalSpawn);
                 setUIntUniform(ParticleRuntime.this.programs.emit(), "uEmitCount", entryCount);
+                setUIntUniform(ParticleRuntime.this.programs.emit(), "uManaBeamCommands", manaBeamCommands);
                 setIntUniform(ParticleRuntime.this.programs.emit(),"uRecoverStorm",AllayStormRuntime.INSTANCE.glRecovery()?1:0);
                 setUIntUniform(ParticleRuntime.this.programs.emit(),"uHexParameterBase",entryCount*ParticleBuffers.EMIT_ENTRY_FLOATS);
 
@@ -867,7 +890,8 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 setFloatUniform(ParticleRuntime.this.programs.emit(), "uStormRotPhase", AllayStormRuntime.INSTANCE.rotPhase());
                 setFloatUniform(ParticleRuntime.this.programs.emit(), "uStormConvPhase", AllayStormRuntime.INSTANCE.convPhase());
                 setFloatUniform(ParticleRuntime.this.programs.emit(), "uStormConvRate", AllayStormRuntime.INSTANCE.convRate());
-                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(Math.max(1, (totalSpawn + 63) / 64), 1, 1);
+                int groups = manaBeamCommands + (ordinarySpawn + 63) / 64;
+                com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute(groups, 1, 1);
                 com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.memoryBarrier(GL43.GL_SHADER_STORAGE_BARRIER_BIT | GL42.GL_ATOMIC_COUNTER_BARRIER_BIT);
             }
 
@@ -884,6 +908,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
                 setUIntUniform(program,"uTotalSpawn",directHexCount);
                 setUIntUniform(program,"uEmitCount",directHexCount);
                 setUIntUniform(program,"uDirectHexBatch",1);
+                setUIntUniform(program,"uManaBeamCommands",0);
                 setUIntUniform(program,"uHexCurrentTick",hexTick);
                 setIntUniform(program,"uHexTickReady",1);
                 try{com.iridium126.createmanaindustry.client.gpu.buffer.GpuReplayCommands.dispatchCompute((directHexCount+63)/64,1,1);}
