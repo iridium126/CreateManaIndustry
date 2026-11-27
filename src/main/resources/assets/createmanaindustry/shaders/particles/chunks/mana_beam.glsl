@@ -10,7 +10,6 @@ const float MANA_TAU = 6.2831853;
 const uint MANA_CORE = 0u;
 const uint MANA_HEAD = 1u;
 const uint MANA_ORIGIN_RING = 2u;
-const uint MANA_HEAD_RING = 3u;
 const uint MANA_ARC = 4u;
 const uint MANA_REVERSE_ARC = 5u;
 const uint MANA_TRAIL = 6u;

@@ -8,7 +8,7 @@ public record ManaBeamEmission(Vec3 origin, Vec3 direction, float distance, Dire
     public static final int TYPE = 13;
     public static final float MAX_DISTANCE = 48;
     private static final int MAX_PARTICLES = 512;
-    private static final int MAIN_PARTICLES = 4;
+    private static final int MAIN_PARTICLES = 3;
 
     public static final EmitterSpec SPEC = EmitterSpec.builder()
             .type(ParticleTypes.manaBeam())
@@ -17,7 +17,8 @@ public record ManaBeamEmission(Vec3 origin, Vec3 direction, float distance, Dire
             .build();
 
     public boolean stage(EmitCommandWriter writer, int emitter, double scale) {
-        // Four silhouette layers, then enough detail to keep a long beam dense.
+        // Three silhouette layers (the hit circle is gone), then HEAD's exact
+        // detail curve so every other beam visual stays identical.
         int arcSegments = 2 * (int) Math.ceil(distance / 1.25);
         int sparks = (int) Math.ceil(8 * distance) + (hitFace == null ? 0 : 40);
         int detail = Math.min(MAX_PARTICLES - MAIN_PARTICLES, arcSegments + sparks);

@@ -28,7 +28,7 @@ public final class ManaBeamGpuValidation {
     private static final int AGE_OFFSET = 48;
     private static final int SIZE_X = 260;
     private static final int SIZE_Y = 160;
-    private static final int CORE = 0, HEAD = 1, ORIGIN_RING = 2, HEAD_RING = 3, IMPACT = 7;
+    private static final int CORE = 0, HEAD = 1, ORIGIN_RING = 2, IMPACT = 7;
     private static final Vec3 SIDE_VIEW_ORIGIN = new Vec3(0, 0, -5);
     private static final Vec3 EAST = new Vec3(1, 0, 0);
 
@@ -171,20 +171,20 @@ public final class ManaBeamGpuValidation {
         for (int i = 0; i < live; i++) if (particles.getInt(i * RECORD_BYTES + 60) == 1) ordinary++;
         check(ordinary == 5, "mixed dispatch lost ordinary entries after the beam prefix");
         int core = role(particles, live, CORE), head = role(particles, live, HEAD);
-        int headRing = role(particles, live, HEAD_RING), impact = role(particles, live, IMPACT);
+        int impact = role(particles, live, IMPACT);
         int early = rightmostLit(f.draw(0.1f, core, head));
         int later = rightmostLit(f.draw(0.25f, core, head));
         check(early >= pixelX(6) && early < pixelX(8), "beam head does not reach six blocks at 0.1 seconds");
         check(later >= pixelX(15) && later < pixelX(17), "beam head does not advance linearly");
         check(rightmostLit(f.draw(0.35f, impact)) < 0, "impact spark visible before the head arrives");
         check(rightmostLit(f.draw(0.54f, impact)) >= 0, "missing impact spark after contact");
-        int terminal = rightmostLit(f.draw(0.53f, core, head, headRing, impact));
+        int terminal = rightmostLit(f.draw(0.53f, core, head, impact));
         check(terminal >= pixelX(23) && terminal < pixelX(24), "visuals cross the wall plane or stop short");
-        check(rightmostLit(f.draw(1.3f, core, head, headRing, impact)) < 0, "expired beam is still luminous");
+        check(rightmostLit(f.draw(1.3f, core, head, impact)) < 0, "expired beam is still luminous");
 
         live = f.spawn(wallCast, 4, false);
         particles = read(f.pool, live * RECORD_BYTES);
-        for (int i = 0; i < live; i++) check(particles.getFloat(i * RECORD_BYTES + 40) == i, "pool priority lost a silhouette role");
+        for (int i = 0; i < 3; i++) check(particles.getFloat(i * RECORD_BYTES + 40) == i, "pool priority lost a silhouette role");
         check(f.step(live) == 4, "beam disappeared during ordinary update");
         ByteBuffer updated = read(f.updated, live * RECORD_BYTES);
         for (int i = 0; i < live; i++) {

@@ -4,7 +4,7 @@ shared uint manaFirstSlot;
 shared uint manaGranted;
 
 // One workgroup reserves the whole cast before assigning roles. A partially
-// full pool therefore still gets the core, head and rings before decoration.
+// full pool therefore still gets the core, head and muzzle ring before decoration.
 void cmiEmitManaBeam(uint row) {
     uint command = row * 12u;
     uint lane = gl_LocalInvocationID.x;
@@ -24,7 +24,7 @@ void cmiEmitManaBeam(uint row) {
     uint params = uEmitCount * 12u + uint(emitCmd.entries[command + 7u]) * 48u;
     vec3 normal = vec3(emitCmd.entries[params], emitCmd.entries[params + 1u], emitCmd.entries[params + 2u]);
     float face = dot(normal, vec3(1.0, 2.0, 3.0));
-    uint detail = manaGranted - min(manaGranted, 4u);
+    uint detail = manaGranted - min(manaGranted, 3u);
     uint impactCount = face == 0.0 ? 0u : min(40u, min(detail, max(1u, detail / 4u)));
     if (range < 0.01 && face != 0.0) impactCount = detail;
     uint arcSegments = min(uint(ceil(range / 1.25)), (detail - impactCount) / 4u);
@@ -38,9 +38,9 @@ void cmiEmitManaBeam(uint row) {
         float radius = station + 2.7;
         if (i == MANA_ORIGIN_RING) {
             station = min(2.65, range * 0.36);
-            radius = 2.25;
-        } else if (i >= 4u) {
-            uint index = i - 4u;
+            radius = 2.05;
+        } else if (i >= 3u) {
+            uint index = i - 3u;
             if (index < arcSegments * 2u) {
                 uint segment = index % arcSegments;
                 role = index < arcSegments ? MANA_ARC : MANA_REVERSE_ARC;
@@ -62,12 +62,22 @@ void cmiEmitManaBeam(uint row) {
             }
         }
         float anchor = role == MANA_ARC || role == MANA_REVERSE_ARC ? (station + field) * 0.5 : station;
+        // Sparks fade out before the beam does; retire them at that exact
+        // moment instead of holding the pool slot for the full envelope.
+        float life = lifetime;
+        if (role == MANA_TRAIL) {
+            float fade = manaRandom(seed * 1439.0 + field * 13.73);
+            life = min(life, station / MANA_SPEED + mix(0.40, 1.00, fade));
+        } else if (role == MANA_IMPACT) {
+            float fade = manaRandom(seed * 1439.0 + field * 13.73);
+            life = min(life, range / MANA_SPEED + mix(0.30, 0.72, fade));
+        }
         uint slot = manaFirstSlot + i;
         uint base = slot * 4u;
         writeBuf.data[base] = vec4(origin + axis * anchor, radius);
         writeBuf.data[base + 1u] = vec4(axis, range);
         writeBuf.data[base + 2u] = vec4(station, field, float(role), face);
-        writeBuf.data[base + 3u] = vec4(0.0, lifetime, seed, uintBitsToFloat(emitter));
+        writeBuf.data[base + 3u] = vec4(0.0, life, seed, uintBitsToFloat(emitter));
         cmiHistorySnap(slot);
         if (uFgOrdinaryIds) cmiNewIdentity(slot);
     }

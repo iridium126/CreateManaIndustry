@@ -60,18 +60,19 @@ void cmiDrawManaBeam(vec4 p0, vec4 p1, vec4 p2, vec4 p3, vec2 corner) {
         vec3 side = manaStripSide(normalize(b - a), relative + (a + b) * 0.5);
         delta = mix(a, b, fraction) + side * q.y * (reverse ? 0.12 : 0.19);
         if (head <= start) alpha = 0.0;
-    } else if (role == MANA_ORIGIN_RING || role == MANA_HEAD_RING) {
+    } else if (role == MANA_ORIGIN_RING) {
         style = 7.0;
-        bool muzzle = role == MANA_ORIGIN_RING;
-        color = muzzle ? vec3(1.0, 0.70, 0.26) : vec3(1.0, 0.57, 0.21);
-        station = muzzle ? min(anchor, head) : head;
-        float expand = muzzle ? smoothstep(0.0, 0.22, age) : smoothstep(0.0, 0.13, age);
+        // Rose outer ring; the fragment shades the inner ring, runes and
+        // champagne hexagram with their own tints.
+        color = vec3(1.0, 0.30, 0.52);
+        station = min(anchor, head);
+        float expand = smoothstep(0.0, 0.22, age);
         float flare = p2.w != 0.0 ? exp(-10.0 * max(0.0, arrived)) * step(0.0, arrived) : 0.0;
-        float radius = muzzle ? mix(0.48, 2.06, expand) : mix(0.33, 1.25, expand) + flare * 0.75;
+        float radius = mix(0.48, 2.0, expand);
         radius *= mix(0.48, 1.0, smoothstep(0.0, 4.0, range));
         vec3 right = manaRight(axis);
         vec3 up = cross(axis, right);
-        float angle = age * (muzzle ? 2.7 : -4.0) + p3.z * MANA_TAU;
+        float angle = age * 2.7 + p3.z * MANA_TAU;
         vec2 spun = mat2(cos(angle), sin(angle), -sin(angle), cos(angle)) * q;
         delta = axis * (station - anchor) + (right * spun.x + up * spun.y) * radius;
         alpha *= (0.41 + 0.20 * expand + 0.18 * flare) * smoothstep(0.0, 0.05, age);
