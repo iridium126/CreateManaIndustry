@@ -188,6 +188,9 @@ public final class ParticleEngineGpuValidation {
                 GL45.glTextureBuffer(playbackTexture,GL30.GL_RGBA32UI,playback);
                 var view=new NativeStormDisplayClock.View(playbackTexture,7,new NativeStormDisplayClock.Weights(.5f,.5f,0,0));
                 var projected=display.prepare(gpu,shaders,publication,null,.5f,1,camera,new org.joml.Matrix4f(),matrix,view);
+                check(projected.permutation()!=frame.permutation(),"Each published draw list belongs to its frame slot");
+                check(read(frame.permutation(),(gpu.metaSlotIndex()+1)*8).getInt(gpu.metaSlotIndex()*8)==2,
+                        "Preparing another frame preserves the previous draw list metadata");
                 var rendered=read(projected.pool(),rows.capacity());
                 check(Math.abs(rendered.getFloat(2*64)+.125f)<1e-6f&&rendered.getFloat(64)==rows.getFloat(64),
                         "Native playback weights affect Storm members only");
