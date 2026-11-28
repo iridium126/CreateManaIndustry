@@ -3,75 +3,95 @@
 [中文](./README_zh.md)
 
 Create: Mana Industry is a NeoForge addon for **Minecraft 1.21.1** and **Create**. It adds Create
-machinery, magical fluids, and integrations for moving resources between kinetic and magic systems.
-The project also includes experimental GPU rendering, logistics, and an expanded-height dimension;
-those systems are still under active development.
+machinery that turns rotational power into mana and media, magical fluids and volumetric mist
+fields, and integrations that move resources between Create, Trickster, Hexcasting, and Ars
+Nouveau. The project also includes experimental GPU rendering and upscaling, GPU-driven Create
+package simulation, an Allay dimension, and a server-managed Allay Storm.
 
 ## Features
 
 ### Create machines, fluids, and recipes
 
-- **Kinetic Mana Generator** converts Create stress into mana; its stress-per-RPM setting can be
-  adjusted with the in-world scroll box. With Trickster installed, it can charge knots in compatible
-  constructs and charging arrays.
-- **Kinetic Atomizer** turns supported piped fluids into a spatial mist field. The field radius
-  scales with rotational speed, and concentration falls with distance. Custom recipes can require
-  mist or emit it as a byproduct.
-- **Condenser** uses a separate Coolant line to recover fluid from nearby mist and sends the result
-  to an Item Drain below.
-- **Allay Burner** is a Create heat source built around a captured allay and fueled by amethyst
-  materials or Liquid Media. It supports records and releases Liquid Soul mist while burning; basins
-  can request its `allayheated` heat level.
+- **Kinetic Mana Generator** consumes rotational stress and, with Trickster installed, charges
+  Knots in an adjacent Charging Array or Spell Construct. Its scroll box sets stress per RPM from
+  4 to 256 (default 4); the mana supplied each tick is `stress × speed × manaPerStress`.
+- **Mana Cogwheel** generates rotation from a mist field. Liquid Mana mist drives it at 256 RPM
+  and Liquid Media mist at −256 RPM; it provides 8 × absolute speed SU of stress capacity and
+  stops when the field disappears.
+- **Kinetic Atomizer** turns a piped, non-molten fluid into a volumetric mist field. Radius scales
+  with rotational speed and concentration falls with distance. Water mist above 10% hydrates
+  farmland; mist from molten fluids ignites and burns living entities.
+- **Condenser** consumes coolant flowing through its axis one-to-one with the fluid it recovers
+  from nearby mist, then sends the result to an Item Drain below. Copper weathering and waxed
+  variants are available.
+- **Allay Burner** is a Create heat source built around a captured allay. It burns Amethyst Shards,
+  Hexcasting Amethyst Dust or Charged Amethyst, and Liquid Media; it plays records, emits Liquid
+  Soul mist, and provides the `allayheated` heat level.
 - Adds Liquid Mana, Liquid Media, Liquid Source, Liquid Soul, Coolant, and Molten Rose Quartz.
-  Create pipes and tanks can move the fluids; optional magic-mod integrations add their respective
-  resource bridges.
-- Adds heated compacting, mist compacting/mixing, vaporizing, and vapor-deposition processing.
-  Recipes cover amethyst-to-media conversion, quartz processing, and sheets coated with amethyst and
-  rose quartz.
-- The included heated mixing recipe converts 250 mB of Liquid Media into 125 mB of Liquid Mana. A
-  superheated mist recipe turns 250 mB of Liquid Mana into a Liquid Media mist emission. Ice can be
-  compacted into Coolant.
+- Adds `heated_compacting`, `mist_mixing`, `vaporizing`, and `vapor_deposition` recipe types.
+  Amethyst materials compact into Liquid Media; heated mixing turns 250 mB Liquid Media into
+  125 mB Liquid Mana; superheated mist mixing turns 250 mB Liquid Mana into Liquid Media mist;
+  glass becomes Amethyst Blocks under Liquid Media mist and `allayheated` heat; ice compacts into
+  Coolant.
+- A **Framed Glass Trapdoor** placed over a Basin becomes a **Deposition Lid**; closing it seals
+  the basin. Sealed basins run `vapor_deposition` recipes: amethyst or rose quartz mist coats iron,
+  copper, gold, and brass sheets, and with Hexcasting, glass can also become a Scrying Lens.
+- Create **Ponder** scenes cover the Allay Burner, mist fields, the Mana Cogwheel, deposition, and
+  the Trickster and Hexcasting production lines.
 
 ### Hexcasting
 
 With Hexcasting installed, Create can automate Cypher, Trinket, Artifact, and Media Battery
-production: a Deployer writes patterns, a Spout adds Liquid Media, and a Mechanical Press finalizes
-the item while preserving its data. Media Batteries can also be filled and drained through Create
-fluid networks.
+production. A Deployer copies patterns from an Iota-bearing item onto an incomplete casting item;
+a Spout fills it with Liquid Media; a Mechanical Press finalizes it while preserving patterns,
+Iotas, media, and dye. Media Batteries are made from a Make Phial scroll and a Glass Bottle, and
+exchange Liquid Media with Create fluid networks; a Spout fills their Anima reserve from Liquid
+Soul.
 
-Other integrations include slate stonecutting recipes for non-great-spell patterns, actions for
-reading an Iota from an item on a Depot or Placard and lighting Blaze Burners or Allay Burners, plus
-querying players in spell circles. A configurable server-side Hex JIT compiles hot call
-sites; it is off by default (`OFF`) and is enabled in the server config.
+Other integrations include stonecutting recipes for non-great-spell patterns, actions for reading
+an Iota from an item on a Depot or Placard, lighting Blaze Burners or Allay Burners, and querying
+players in spell circles.
 
-The in-game guide content is packaged as Patchouli entries with English and Simplified Chinese
+Guide content is available as a Lavender category extending Trickster's guidebook and as a Mana
+Industry category in Hexcasting's Patchouli book, with English and Simplified Chinese
 localization.
 
 ### Trickster, Bits 'n' Bobs, and Ars Nouveau
 
-- Trickster adds knot assembly and filling, mechanical-arm interaction with knots and constructs,
-  Display Link targets and a temporary kinetic-stress trick.
-- The Kinetics Spell Core exposes cogwheel-chain stress from Create: Bits 'n' Bobs to Trickster
-  spells.
-- Ars Nouveau integration provides Liquid Source support and source-jar fluid handling. Source
-  Berry recipes are available only when Ars Nouveau is installed.
+- Trickster integration adds automated Knot production and filling, Mechanical Arm access to
+  Knots and constructs, Display Link targets, and a temporary kinetic-stress ploy. Deployers use
+  glass and materials to produce Knots. Higher tiers pass through an incomplete stage, which Spouts
+  fill with Liquid Mana; finished Knots need no pressing, and a Mechanical Press can produce
+  cracked variants.
+- **Great Tricks** (with Hexcasting installed) add a hexagonal lattice editor and Anima costs:
+  Ectoplasmic Inversion swaps reach and media/mana costs, Shared Fate mirrors mishaps, Tincture
+  Shaping applies stored potion effects, and Partition separates space with a cubic boundary.
+- **Anima** is the soul cost of Great Tricks. A Spout fills a Hexcasting Media Battery's Anima
+  reserve with Liquid Soul (32 Anima per bucket by default); the soul is condensed from the Liquid
+  Soul mist of a burning Allay Burner using Coolant.
+- **Potion fragments** captured through a Trickster trick preserve a potion effect's type,
+  duration, level, and flags for later use.
+- The **Kinetics Spell Core** is a Trickster Spell Core driven by a Create: Bits 'n' Bobs cogwheel
+  chain. Chain speed sets the execution budget, and each core adds 4 × absolute speed SU of load.
+- Ars Nouveau integration provides Liquid Source and source-jar fluid handling. Source Berry
+  recipes are available only when Ars Nouveau is installed.
 
 ### Experimental systems
 
-These systems are present in the codebase but are not yet considered fully game-verified. The
-[development index](./docs/README.md) links to implementation notes and known gaps.
+These systems are under development.
 
-- **ALLVR Allay Dimension** adds a custom dimension with standard-height terrain and cube storage
-  above and below it. Dimension rendering, block-entity synchronization, and some vanilla tick
-  behavior remain in development. Sodium is required on clients.
-- **Allay Storm** is a persistent, server-managed GPU swarm encounter. Operators can start it with
-  `/cmi particle allaystorm [count]` and stop it with `/cmi particle allaystorm stop`; the command
-  requires permission level 2. Encounter balance and behavior still need in-game validation.
-- **GPU particle engine** handles high-volume particles, model particles, and Hexcasting effects.
-  Client settings include a frame budget and automatic emission throttling. Shader-pack integration
-  is available, with compatibility depending on the installed renderer versions.
-- **GPU Create package simulation** is an opt-in experiment. It is disabled by default and requires
-  matching client and server settings.
+- **Allay Storm** is a server-managed, client-GPU-driven group boss with Starfall columns, mana
+  beams, Helix, and Dome attacks. At 16,384 generated members, an overworld storm can open a sky
+  rift above build height and teleport eligible players into the Allay dimension. Operators can use
+  `/cmi particle allaystorm [count]`, `/cmi particle allaystorm status`, and
+  `/cmi particle allaystorm stop` to test the Allay Storm. On Windows, the native RT backend uses
+  CUDA/OptiX and falls back to OpenGL.
+- **GPU particle engine** handles high-volume particles, model particles, persistent block
+  emitters, and Hexcasting effects. Client settings include capacity, a frame budget, and automatic
+  emission throttling. Shader-pack integration is available, with compatibility depending on the
+  installed renderer versions.
+- **Windows x64 upscaling and frame generation**: NVIDIA DLSS Super Resolution on supported RTX
+  GPUs and Intel XeSS Frame Generation on supported Arc GPUs are disabled by default.
 
 ## Dependencies
 
@@ -82,20 +102,18 @@ Java 21 is required.
 | Minecraft | 1.21.1 |
 | NeoForge | 21.1.236 or newer |
 | Create | 6.0.10 or newer |
-| Sodium | 0.8.13 on every client; not needed on a dedicated server |
+| Sodium | 0.8.13 or newer |
 
 The following mods are optional. Their integration is enabled when the mod is installed:
 
 | Mod | Minimum version | Integration |
 |---|---:|---|
+| [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-64 | Casting-item automation, media storage, and custom patterns |
 | [Trickster](https://modrinth.com/mod/trickster) | 2.0.0-beta.56 | Knots, spells, constructs, and kinetic links |
-| [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) | 2.1.9-beta | Cogwheel-chain data for the Kinetics Spell Core |
-| [Hexcasting](https://modrinth.com/mod/hexcasting) | 0.12.0-devel-pre-64 | Casting-item automation, media storage, and custom actions |
-| [Hexal for NeoForge](https://github.com/c-Caelum/hexal-neoforge-1.21.1) | Verified pre-15 build | Supplies `hexal:tick` and its settings. CMI accelerates the verified action in Hex JIT. |
-| HexParse | 1.21.1-1.11.2.pre53 | Adapters for integration-specific Hexcasting data |
-| [Veil](https://modrinth.com/mod/veil) | 4.1.4 | Volumetric mist and related rendering effects |
-| [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0-alpha | Shaderpack integration for mist |
-| [Ars Nouveau](https://modrinth.com/mod/ars-nouveau) | 5.13.0 | Liquid Source and source-jar handling |
+| [Veil](https://modrinth.com/mod/veil) | 4.1.4 | Volumetric mist |
+| [Iris Veil Compat](https://github.com/leon-o/iris-veil-compat) | 0.4.0 | Shaderpack integration for mist |
+| [Ars Nouveau](https://modrinth.com/mod/ars-nouveau) | 5.13.0 | Liquid Source |
+| [Create: Bits 'n' Bobs](https://modrinth.com/mod/create-bits-n-bobs) | 2.1.9-beta | Kinetics Spell Core |
 
 ## Configuration
 
@@ -109,67 +127,41 @@ Common server settings:
 |---|---:|---|
 | `fluid.manaPerBucket` | 2048 | Mana represented by one bucket of Liquid Mana |
 | `fluid.mediaPerBucket` | 400000 | Media represented by one bucket of Liquid Media |
+| `fluid.animaPerBucket` | 32 | Anima represented by one bucket of Liquid Soul |
 | `kinetics.manaPerStress` | 0.001 | Mana produced per stress unit per tick |
 | `mist.mistMaxRadius` | 16 | Maximum atomizer mist radius in blocks |
 | `mist.mistFluidPerTick` | 8 | Base atomizer fluid use at 256 RPM, in mB/tick |
 | `mist.condenseEfficiency` | 5.0 | Condenser base output per concentration unit, in mB/tick |
 
-The server file also has settings for Allay Burner fuel, Hexcasting item capacities, and Allay Storm
-behavior. The client file controls mist glow, GPU particle limits and
-throttling, Hexcasting particle redirects, and ALLVR LOD.
-
-Experimental switches are read from the instance's `config/` directory before Mixins load.
-Restart the whole game or dedicated server after changing them. A world's `serverconfig/`
-can still override tuning such as budgets and thresholds.
-
-| File in `config/` | Setting | Default |
-|---|---|---|
-| `createmanaindustry-server.toml` | `experimental.serverPackages` | `false` |
-| `createmanaindustry-server.toml` | `experimental.hexJitMode` | `OFF` |
-| `createmanaindustry-client.toml` | `experimental.clientPackages` | `false` |
-
-Use `PROFILE` for Hex JIT profiling or `AUTO` for compilation. GPU package authority needs the
-server opt-in and a ready client that opted in. When the server switch is off, saved lightweight
-packages return to Create as their chunks load. To opt in after upgrading, set the new keys explicitly.
-
-Existing worlds must redraw CMI's old Tick Acceleration pattern using Hexal's `hexal:tick` pattern.
-
-Client diagnostics start from commands in the current session. Use
-`/cmi particle profile frames <seconds>` for whole-frame and render-stage timings,
-`/cmi particle profile frames cancel` to cancel, and `/cmi particle profile capture <name>`
-for a GPU command capture. Use `/cmi particle shaderpack stormcloud profile on` or `off`
-to control cloud-stage profiling. The client keeps the frame boundary hooks ready and creates
-diagnostic GPU queries only when a capture or profiling session needs them.
+The server file also has settings for Allay Burner fuel use and mist, Hexcasting item capacities,
+battery Anima capacity, Allay Storm population and attacks, and the Hex JIT. The client file
+controls mist glow and shadow debugging, GPU particle capacity/budget/throttling, Allay Storm
+simulation and LOD, DLSS and XeSS-FG, Hexcasting particle and pattern redirection, Great Trick grid
+snapping, and package budgets.
 
 ## Build
 
-Use Java 21. The first `build` prepares the pinned Hexal dependencies automatically when
-their cache is missing; later builds skip that step.
+Use Java 21. The first `build` prepares the pinned Hexal and Voxy dependencies when their caches are
+missing; later builds skip those steps.
 
 ```bash
 bash ./gradlew build
 ```
 
-On Windows, use `.\gradlew.bat`. To reuse a local Hexal checkout, pass
-`-Phexal_checkout=<path>`. The installable mod jar is written to
-`build/libs/createmanaindustry-<version>.jar`. The bootstrap-only jar used by development launches is
-kept under `build/internal/` and is not a separate player-installation file.
+On Windows, use `.\gradlew.bat`.
 
-When Connector is installed, the bundled early startup service patches Trickster before Connector
-scans Fabric mods if its target classes match the verified hashes. It
-saves the original beside the jar as `.jar.backup`, and leaves unrecognized or modified jars
-untouched. In development runs, Gradle copies the Trickster dependency into `run/mods/` before
-launch so the same service can process it there.
+To load Trickster on NeoForge, the bundled early startup service verifies the hashes of Trickster's
+target classes before Connector scans Fabric mods. When they match, it applies the patch and saves
+the original beside the jar with a `.jar.backup` suffix.
 
-## Development documentation
+## Acknowledgements
 
-See [docs/README.md](./docs/README.md) for the development-documentation index, implementation
-status, and known gaps. It covers GPU particles and packages, ALLVR, Allay Storm, and shader-pack
-integration.
-
-Mixin registrations and mod version ranges live in `neoforge.mods.toml`. The two manifests use the
-same plugin, and the separate Hex JIT manifest preserves its low priority. See the
-[Mixin maintenance checks](./docs/testing.md#mixin-维护检查) for group ownership and test commands.
+- **xm1221** — wrote part of the Hexcasting guidebook
+- **YukkuriC** — HexParse help spell testing
+- **拟故喵喵** — contributed part of the art design
+- **七七** — provided complex test environments
+- **cang_hai_yi_su** — drew primary cell textures
+- **C8N16O32** — provided test spells
 
 ## License
 

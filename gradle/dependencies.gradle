@@ -112,6 +112,8 @@ dependencies {
 
     compileOnly coordinates.hexcasting
     compileOnly coordinates.hexal
+    // The bytecode contract check reads Hexal's prepared jar without launching Minecraft.
+    testRuntimeOnly coordinates.hexal
     hexcastingLocalRuntime coordinates.hexcasting
     hexcastingLocalRuntime coordinates.paucal
     //hexalLocalRuntime coordinates.hexal
