@@ -6,7 +6,7 @@ Create: Mana Industry is a NeoForge addon for **Minecraft 1.21.1** and **Create*
 machinery that turns rotational power into mana and media, magical fluids and volumetric mist
 fields, and integrations that move resources between Create, Trickster, Hexcasting, and Ars
 Nouveau. The project also includes experimental GPU rendering and upscaling, GPU-driven Create
-package simulation, an Allay dimension, and a server-managed Allay Storm.
+package simulation, Allay dimension and Allay Storm.
 
 ## Features
 
