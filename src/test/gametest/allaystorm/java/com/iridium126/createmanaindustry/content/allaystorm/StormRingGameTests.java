@@ -198,6 +198,10 @@ public final class StormRingGameTests {
             int member=packets.getFirst().frames().getFirst().roster()[0];
             attacks.dead(member,reserved);
             helper.assertTrue(reserved.cardinality()==36&&!reserved.get(member),"Dead ring member did not release");
+            attacks.tick(level,data,center,players,List.of(),reserved,(m,point,margin)->{},
+                    ()->{throw new AssertionError("No candidate search expected");},
+                    nextId::incrementAndGet,packets::add,packet->{});
+            helper.assertTrue(attacks.active()==2,"A single ring member death aborted the ring");
             attacks.tick(level,data,center,List.of(),List.of(),reserved,(m,point,margin)->{},
                     ()->{throw new AssertionError("No candidate search expected");},
                     nextId::incrementAndGet,packets::add,packet->{});

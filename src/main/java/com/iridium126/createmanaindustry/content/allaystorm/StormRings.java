@@ -57,6 +57,7 @@ final class StormRings {
             entered = tick;
             ready = Long.MIN_VALUE;
         }
+        int alive() { return MEMBERS - released.cardinality(); }
         boolean ready(long now) { return ready >= entered && now - ready <= 20; }
     }
 
@@ -111,7 +112,7 @@ final class StormRings {
             var oldPhase = ring.phase;
             boolean keep = ring.phase == FIRING
                     ? ring.beam.advance(level, now, removed)
-                    : targetValid && ring.released.isEmpty() && advanceRing(level, ring, target, now);
+                    : targetValid && ring.alive() >= READY_MEMBERS && advanceRing(level, ring, target, now);
             if (!keep) {
                 StormAttackMembers.releaseUnfinished(reserved, ring.roster, ring.released);
                 for (int rank = 0; rank < MEMBERS; rank++) if (!ring.released.get(rank))
@@ -176,18 +177,20 @@ final class StormRings {
         double step = StormRingOrbit.step(orbit);
         int direction = StormRingOrbit.direction(data.stormSeed);
         int attempts = Math.max(1, (int) Math.ceil(Math.PI * 2 / step));
-        for (int attempt = 0; attempt < attempts; attempt++) {
-            double angle = orbitAngle;
-            orbitAngle = StormRingOrbit.wrap(orbitAngle + direction * step);
-            Vec3 center = StormRingOrbit.center(stormCenter, orbit, angle);
-            boolean free = true;
-            for (Ring ring : rings) {
-                if (ring != null && StormRingOrbit.overlaps(ring.center, center)) {
-                    free = false;
-                    break;
+        for (int tier = 0; tier < StormRingOrbit.MAX_TIERS; tier++) {
+            for (int attempt = 0; attempt < attempts; attempt++) {
+                double angle = orbitAngle;
+                orbitAngle = StormRingOrbit.wrap(orbitAngle + direction * step);
+                Vec3 center = StormRingOrbit.center(stormCenter, orbit, angle, tier);
+                boolean free = true;
+                for (Ring ring : rings) {
+                    if (ring != null && StormRingOrbit.overlaps(ring.center, center)) {
+                        free = false;
+                        break;
+                    }
                 }
+                if (free) return center;
             }
-            if (free) return center;
         }
         return null;
     }

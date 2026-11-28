@@ -32,6 +32,22 @@ class StormRingOrbitTest {
         assertEquals(orbit, Math.hypot(center.x - STORM.x, center.z - STORM.z), 1e-6);
     }
 
+    @Test void eightTiersStackAtFourBlockIntervals() {
+        double orbit = StormRingOrbit.radius(4096);
+        assertEquals(8, StormRingOrbit.MAX_TIERS);
+        Vec3 first = StormRingOrbit.center(STORM, orbit, 0, 0);
+        Vec3 second = StormRingOrbit.center(STORM, orbit, 0, 1);
+        assertEquals(StormRingOrbit.TIER_SPACING, first.y - second.y, 1e-9);
+        assertFalse(StormRingOrbit.overlaps(first, second));
+        Vec3 last = StormRingOrbit.center(STORM, orbit, 0, StormRingOrbit.MAX_TIERS - 1);
+        assertEquals(STORM.y - StormRingOrbit.CENTER_DROP
+                - (StormRingOrbit.MAX_TIERS - 1) * StormRingOrbit.TIER_SPACING, last.y, 1e-9);
+    }
+
+    @Test void ringReadinessKeepsFifteenOfSixteen() {
+        assertEquals(15, StormRingGeometry.READY_MEMBERS);
+    }
+
     @Test void directionFollowsStormHandedness() {
         assertEquals(1, StormRingOrbit.direction(18));
         assertEquals(-1, StormRingOrbit.direction(17));

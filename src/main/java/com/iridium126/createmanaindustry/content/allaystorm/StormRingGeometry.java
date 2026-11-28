@@ -4,6 +4,8 @@ import net.minecraft.world.phys.Vec3;
 
 public final class StormRingGeometry {
     public static final int MEMBERS = 16, CAPACITY = 64;
+    /** Ready members (and survivors) required to fire; one loss is tolerated. */
+    public static final int READY_MEMBERS = MEMBERS - 1;
     public static final float RADIUS = 1.75f, FIRE_DISTANCE = 24, BEAM_RANGE = 48, BEAM_SPEED = 60;
     public static final float HOLD = .30f, FADE = .55f;
     public static final double SPIN = 2 * Math.PI / 12;

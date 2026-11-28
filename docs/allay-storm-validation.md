@@ -67,7 +67,7 @@ python scripts/art/julia_verify.py
 
 GameTest只使用`build/gametest`独立目录，故障注入不读写`run/saves`。普通乘骑、Create、Sable／Simulated结构、库存／连接／离线乘客及各日志阶段的恢复检查保留；详见[裂口与传送](allay-storm-rift.md)。
 
-圆环 GameTest 覆盖并发预留、穿人、方块截停、单次爆炸、保护规则及固定随机种子下与原版的破坏范围对照；`StormRingOrbitTest` 校验轨道半径、环心弦长间距、旋转方向和重叠容差。悬停 12/16 门槛依赖 GPU 样本回读，只能在实机验证。压测在同一 tick 中分别执行 16 和 64 次威力 5 爆炸，输出 p95 毫秒数。实机可将 `stormManaRingChance` 设为 `1.0`，在露天生成风暴并等待集结，再检查构图、光束和洞口。测试多人并发时可切换三种模拟后端复测。
+圆环 GameTest 覆盖并发预留、穿人、方块截停、单次爆炸、保护规则及固定随机种子下与原版的破坏范围对照；`StormRingOrbitTest` 校验轨道半径、环心弦长间距、旋转方向、重叠容差和 8 层 4 格垂直间距。悬停 15/16 门槛及损失 1 名成员后的续行依赖 GPU 样本回读，只能在实机验证。压测在同一 tick 中分别执行 16 和 64 次威力 5 爆炸，输出 p95 毫秒数。实机可将 `stormManaRingChance` 设为 `1.0`，在露天生成风暴并等待集结，再检查构图、光束和洞口。测试多人并发时可切换三种模拟后端复测。
 
 Dome重建保留独立解码、弧长、连续运动／间距／闭合流线证书与无损源控制点，候选留在`build/`，不自动替换生产二进制。Helix生成也须显式指定候选输出。工具与依赖见[scripts/allaystorm](../scripts/allaystorm/README.md)。
 

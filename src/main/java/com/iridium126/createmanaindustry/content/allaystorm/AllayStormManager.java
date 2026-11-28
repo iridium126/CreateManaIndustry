@@ -255,6 +255,7 @@ public final class AllayStormManager {
         if(!batch.isEmpty())broadcastOuter(level,rt,com.iridium126.createmanaindustry.content.allaystorm.network.StormOuterPacket.batch(level.dimension().location(),StormIdentity.of(level,data).epoch(),0,batch));
         com.iridium126.createmanaindustry.content.allaystorm.rift.StormRiftServer.tick(level,data,rt.chaseX,rt.chaseZ);
         var columnPlayers=new ArrayList<ServerPlayer>();
+        var targetable=new ArrayList<ServerPlayer>();
         var eligible=new ArrayList<ServerPlayer>();
         for(var entry:rt.tracks.entrySet())if(entry.getValue().active){
             var p=level.getServer().getPlayerList().getPlayer(entry.getKey());
@@ -263,16 +264,18 @@ public final class AllayStormManager {
             if(!p.isAlive()||p.isSpectator())continue;
             var t=entry.getValue();
             if(level.getGameTime()-t.skyTick>=10){t.sky=level.canSeeSky(p.blockPosition());t.skyTick=level.getGameTime();}
+            targetable.add(p);
             if(t.sky)eligible.add(p);
         }
+        targetable.sort(java.util.Comparator.comparing(ServerPlayer::getUUID));
         eligible.sort(java.util.Comparator.comparing(ServerPlayer::getUUID));
         tickColumnSnapshots(level,rt,data,columnPlayers);
         tickWaves(level,rt,data,eligible);
         long now=level.getGameTime();
         var stormCenter=new Vec3(rt.chaseX,ServerConfig.stormChaseY,rt.chaseZ);
         var nearby=StormNearbyRoster.lazy(data,stormCenter.add(rt.chaseVX*.2,0,rt.chaseVZ*.2),now+4,rt.waveReserved,rt.returns,now);
-        var columnCandidates=withinRange(eligible,StormAttackKind.COLUMNS,rt,data);
-        var ringCandidates=withinRange(eligible,StormAttackKind.RING,rt,data);
+        var columnCandidates=withinRange(targetable,StormAttackKind.COLUMNS,rt,data);
+        var ringCandidates=withinRange(targetable,StormAttackKind.RING,rt,data);
         var helixCandidates=withinRange(eligible,StormAttackKind.HELIX,rt,data);
         var domeCandidates=withinRange(eligible,StormAttackKind.DOME,rt,data);
         int dueMask=0;

@@ -6,7 +6,8 @@ import net.minecraft.world.phys.Vec3;
 final class StormRingOrbit {
     /** Shader band whose members play the vanilla dance cycle (0.2 of the vortex radius). */
     static final float DANCE_FRACTION = .2f;
-    static final double MARGIN = 2, CLEARANCE = .5, CENTER_DROP = 4;
+    static final double MARGIN = 2, CLEARANCE = .5, CENTER_DROP = 4, TIER_SPACING = 4;
+    static final int MAX_TIERS = 8;
 
     private StormRingOrbit() {}
 
@@ -24,7 +25,12 @@ final class StormRingOrbit {
     }
 
     static Vec3 center(Vec3 stormCenter, double orbit, double angle) {
-        return stormCenter.add(Math.cos(angle) * orbit, -CENTER_DROP, Math.sin(angle) * orbit);
+        return center(stormCenter, orbit, angle, 0);
+    }
+
+    static Vec3 center(Vec3 stormCenter, double orbit, double angle, int tier) {
+        return stormCenter.add(Math.cos(angle) * orbit, -CENTER_DROP - tier * TIER_SPACING,
+                Math.sin(angle) * orbit);
     }
 
     static boolean overlaps(Vec3 a, Vec3 b) {

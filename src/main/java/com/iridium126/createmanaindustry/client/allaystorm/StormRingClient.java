@@ -35,7 +35,6 @@ public final class StormRingClient {
     private static final int FRAME_OFFSET = MEMBER_LIMIT * 4, FRAME_BYTES = 64;
     private static final int READY_OFFSET = FRAME_OFFSET + CAPACITY * FRAME_BYTES;
     private static final int READY_BYTES = CAPACITY * 4;
-    private static final int READY_MEMBERS = MEMBERS * 3 / 4;
 
     private final Slot[] slots = new Slot[CAPACITY];
     private final long[] lastPacketTick = new long[CAPACITY];
