@@ -13,7 +13,7 @@ public final class StormOuterLoop {
     private int limit,serial;
     public void configure(int generated,int maximum,int alive,double growth) {
         rate=generated>=maximum?Math.clamp(growth,0,2048):0;
-        limit=(int)Math.min(Math.max(0,alive),Math.ceil(rate*10));
+        limit=(int)Math.min(Math.max(0,alive),Math.ceil(rate*5));
     }
     public boolean offer(int member,BitSet reserved) {
         if(rate<=0||queue.size()>=limit||queued.get(member)||flights.containsKey(member))return false;
@@ -36,10 +36,10 @@ public final class StormOuterLoop {
         if(queue.isEmpty())credit=0;
         return out;
     }
-    public boolean arrived(int member,int cycle,BitSet reserved) {
+    public Flight arrived(int member,int cycle,BitSet reserved) {
         var flight=flights.get(member);
-        if(flight==null||flight.cycle()!=cycle)return false;
-        flights.remove(member);reserved.clear(member);return true;
+        if(flight==null||flight.cycle()!=cycle)return null;
+        flights.remove(member);reserved.clear(member);return flight;
     }
     public Flight dead(int member,BitSet reserved) {
         if(queued.get(member)){queued.clear(member);queue.remove(member);reserved.clear(member);}

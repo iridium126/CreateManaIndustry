@@ -10,15 +10,15 @@ class StormOuterLoopTest {
         q.configure(99,100,99,20);assertFalse(q.offer(0,reserved));
         q.configure(100,100,100,0);assertFalse(q.offer(0,reserved));
         q.configure(1000,1000,1000,20);
-        for(int i=0;i<200;i++)assertTrue(q.offer(i,reserved));
+        for(int i=0;i<100;i++)assertTrue(q.offer(i,reserved));
         assertFalse(q.offer(200,reserved));assertFalse(q.offer(0,reserved));
-        for(int tick=0;tick<200;tick++){
+        for(int tick=0;tick<100;tick++){
             var batch=q.tick(member->true,reserved,10,80,-40,32);assertEquals(1,batch.size());
             var f=batch.getFirst();assertEquals(tick,f.member());assertTrue(reserved.get(tick));
             assertEquals(152,Math.hypot(f.x()-10,f.z()+40),.01);assertEquals(80,f.y());
-            assertFalse(q.arrived(f.member(),f.cycle()+1,reserved));assertTrue(reserved.get(tick));
-            assertTrue(q.arrived(f.member(),f.cycle(),reserved));assertFalse(reserved.get(tick));
-            assertFalse(q.arrived(f.member(),f.cycle(),reserved));
+            assertNull(q.arrived(f.member(),f.cycle()+1,reserved));assertTrue(reserved.get(tick));
+            assertNotNull(q.arrived(f.member(),f.cycle(),reserved));assertFalse(reserved.get(tick));
+            assertNull(q.arrived(f.member(),f.cycle(),reserved));
         }
         assertEquals(0,q.waiting());assertTrue(q.flights().isEmpty());
     }

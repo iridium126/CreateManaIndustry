@@ -3,7 +3,7 @@ package com.iridium126.createmanaindustry.client.particles.engine.spatial;
 import com.iridium126.createmanaindustry.client.allaystorm.StormCollisionRuntime;
 import com.iridium126.createmanaindustry.client.allaystorm.StormTerrainEdits;
 import com.iridium126.createmanaindustry.client.allaystorm.ColumnSnapshotClient;
-import com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall;
+import com.iridium126.createmanaindustry.content.allaystorm.StormAttackMembers;
 import com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherFrame;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherRecovery;
@@ -186,7 +186,7 @@ public final class StormNativeInputs {
                 add(StormControlJournal.Command.helixAssign(packet.waveId(),slot,packet.members()[rank],rank));
         }
     }
-    private static float elapsed(float time,ClientboundStormWavePacket packet){return AllayStarfall.elapsed(time,packet.startSec());}
+    private static float elapsed(float time,ClientboundStormWavePacket packet){return StormAttackMembers.elapsed(time,packet.startSec());}
     private static HelixGatherFrame.Sample sample(HelixGatherFrame[] frames,float seconds){
         var selected=frames[0];
         for(var frame:frames){if(frame.seconds()>seconds)break;selected=frame;}

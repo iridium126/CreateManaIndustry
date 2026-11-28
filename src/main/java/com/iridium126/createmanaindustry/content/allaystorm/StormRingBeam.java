@@ -17,7 +17,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import static com.iridium126.createmanaindustry.content.allaystorm.StormRingGeometry.*;
 
 /** Server-side progression of the same finite ray sent to the effect emitter. */
-final class StormManaBeam {
+final class StormRingBeam {
     final Shot shot;
     private final Vec3 origin, axis;
     private final BlockHitResult block;
@@ -25,7 +25,7 @@ final class StormManaBeam {
     private double head = -1e-6;
     private boolean impacted;
 
-    StormManaBeam(ServerLevel level, Vec3 origin, Vec3 axis, long start) {
+    StormRingBeam(ServerLevel level, Vec3 origin, Vec3 axis, long start) {
         this.origin = origin;
         this.axis = axis;
         Vec3 end = origin.add(axis.scale(BEAM_RANGE));
@@ -57,12 +57,12 @@ final class StormManaBeam {
     }
 
     static void damagePlayers(ServerLevel level, Vec3 from, Vec3 to, HashSet<UUID> hitPlayers) {
-        if (ServerConfig.stormManaBeamDamage <= 0) return;
+        if (ServerConfig.stormRingBeamDamage <= 0) return;
         for (ServerPlayer player : level.getEntitiesOfClass(ServerPlayer.class, new AABB(from, to).inflate(.001),
                 p -> p.isAlive() && !p.isSpectator())) {
             var box = player.getBoundingBox();
             if ((box.contains(from) || box.clip(from, to).isPresent()) && hitPlayers.add(player.getUUID())) {
-                player.hurt(level.damageSources().magic(), (float) ServerConfig.stormManaBeamDamage);
+                player.hurt(level.damageSources().magic(), (float) ServerConfig.stormRingBeamDamage);
             }
         }
     }

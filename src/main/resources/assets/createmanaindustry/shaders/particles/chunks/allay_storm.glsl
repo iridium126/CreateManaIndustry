@@ -26,7 +26,7 @@
 // emit.comp): every hash input is built from NAMED single-mul statements —
 // never an inline a*b+c — so driver FMA contraction cannot fork per-member
 // constants between GPU vendors. The server's Java re-derivation
-// (AllayStormWaves) validates contact reports against the SAME chains.
+// (StormMemberHash) validates contact reports against the SAME chains.
 
 // Shared simulation uniforms. Consumers that already declared these must NOT
 // re-declare them (duplicate declarations are a compile error under the
@@ -41,7 +41,7 @@ uniform vec4  uWaveTarget[4]; // xyz live target aim point (feet + 0.5), w waveI
 // Membership + launch-stagger rolls. SAME hash discipline as emit.comp's
 // identity chain: NAMED single-mul statements only — an inline a*b+c may
 // contract into an FMA and fork the selection between GPU vendors and the
-// server's Java re-derivation (AllayStormWaves, which validates contact
+// server's Java re-derivation (StormMemberHash, which validates contact
 // reports against the SAME chains). waveSeed is a 24-bit integer-valued
 // float (exact); mseed is the member's identity seed in [0,1) from p3.z.
 float cmiStormWaveRoll(float mseed, float waveSeed) {

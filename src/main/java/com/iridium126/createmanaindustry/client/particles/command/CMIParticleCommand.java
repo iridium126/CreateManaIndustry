@@ -395,7 +395,7 @@ public final class CMIParticleCommand {
             if(CreateManaIndustry.HEX_ACTIVE)appendReport(report,details?com.iridium126.createmanaindustry.client.hex.pattern.HexMetrics.report():com.iridium126.createmanaindustry.client.hex.pattern.HexMetrics.summary());
             if(CreateManaIndustry.IRISVEIL_ACTIVE)appendReport(report,details?com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.profilingReport():com.iridium126.createmanaindustry.client.particles.shaderpack.CMIPackEntityMergeHook.profilingSummary());
             if(CreateManaIndustry.IRIS_ACTIVE)appendReport(report,details?com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.profilingReport():com.iridium126.createmanaindustry.client.packages.render.PackageShaderHook.profilingSummary());
-            if(details)appendReport(report,com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.starfallStatus());
+            if(details)appendReport(report,com.iridium126.createmanaindustry.client.allaystorm.AllayStormRuntime.INSTANCE.attackStatus());
         }
         appendReport(report,com.iridium126.createmanaindustry.client.particles.engine.StormLodGpu.INSTANCE.report());
         CMICommandOutput.sendReportLines(ctx.getSource(), CMICommandOutput.PROFILE,

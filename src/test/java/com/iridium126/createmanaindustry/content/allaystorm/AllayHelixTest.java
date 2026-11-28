@@ -14,10 +14,9 @@ class AllayHelixTest {
    var scheduled=flight.schedule(launch+2,launch+3);assertEquals(1,AllayHelix.deadline(scheduled)-scheduled.finish(),.001);
   }
  }
- @Test void probabilitiesAndLimits(){
-  assertEquals(StormAttack.HELIX,StormAttack.choose(.199,.2,.2));assertEquals(StormAttack.DOME,StormAttack.choose(.2,.2,.2));assertEquals(StormAttack.STARFALL,StormAttack.choose(.4,.2,.2));
-  assertEquals(StormAttack.HELIX,StormAttack.choose(.49,.8,.8));assertEquals(StormAttack.DOME,StormAttack.choose(.51,.8,.8));
-  assertEquals(0,StormAttack.quota(131072,0,8192));assertEquals(8192,StormAttack.quota(131072,.1,8192));assertFalse(StormAttack.targetRequired(StormAttack.HELIX,true));
+ @Test void targetAndReservationRules(){
+  assertTrue(StormAttack.requiresTarget(StormAttack.HELIX,false));assertFalse(StormAttack.requiresTarget(StormAttack.HELIX,true));
+  assertFalse(StormAttack.requiresTarget(StormAttack.DOME,false));assertFalse(StormAttack.requiresTarget(StormAttack.DOME,true));
  }
  @Test void actualOppositeArmsExactAndExclusive(){
   BitSet dead=new BitSet(),reserved=new BitSet();dead.set(0,123);

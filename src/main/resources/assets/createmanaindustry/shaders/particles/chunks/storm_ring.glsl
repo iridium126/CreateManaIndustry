@@ -38,7 +38,7 @@ uint cmiRingSample(uint member, out vec3 target, out vec3 reference, out vec3 ax
 
 #ifdef CMI_RING_REPORT
 void cmiRingReport(uint assignment, uint phase, vec3 pos, vec3 vel, vec3 target, vec3 reference) {
-    if (!uStormRingReport || assignment == 0u || (phase != 1u && phase != 3u)) return;
+    if (!uStormRingReport || assignment == 0u || phase != 3u) return;
     if (distance(pos,target) <= .4 && distance(vel,reference) <= 1.)
         imageAtomicOr(cmiStormRing,int(132096u+(assignment&255u)-1u),1u<<(assignment>>8u));
 }

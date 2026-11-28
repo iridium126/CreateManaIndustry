@@ -6,6 +6,8 @@ float manaThinLine(float distance, float width, float aa) {
 // The 18 procedural ticks are replaced by the mana beam's own Hexcasting
 // sequence, repeated twice (14 glyphs). Glyphs are authored in Hexcasting hex
 // units (y down) and rotated so their +y points at the circle centre.
+// Every glyph is mirrored left-right in its own frame (local x negated), so the
+// band shows each pattern reflected rather than as drawn.
 // Every glyph is evaluated in its own 1/14 sector, so a fragment only pays for
 // one glyph (<= 9 segments) instead of all 37.
 const float MANA_GLYPH_SECTOR = 6.2831853 / 14.0;
@@ -144,7 +146,9 @@ vec4 cmiShadeManaBeam() {
             float rel = (theta - 1.5707963) / MANA_GLYPH_SECTOR;
             float base = floor(rel + 0.5);
             float phi = (rel - base) * MANA_GLYPH_SECTOR;
-            float gx = radius * sin(phi);
+            // Negated local x mirrors every pattern left-right; the guard below
+            // stays symmetric because all glyphs span the same x extent.
+            float gx = -radius * sin(phi);
             if (abs(gx) < 0.135) {
                 float gy = MANA_GLYPH_RING - radius; // +y points at the centre
                 float gd = manaGlyphDistance(vec2(gx, gy) / MANA_GLYPH_UNIT,

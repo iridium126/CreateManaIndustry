@@ -8,9 +8,9 @@ class StormCenterTimelineTest {
     private final StormIdentity id=new StormIdentity(ResourceLocation.withDefaultNamespace("overworld"),7);
     private StormCenterSample point(double x,int count,long tick){return new StormCenterSample(x,128,30_000_000.125,count,tick);}
     @Test void smallerHashedEpochStartsImmediatelyAndOldPacketsCannotReviveIt(){
-        long created=1;while(AllayStarfall.epoch(created+1,17)>AllayStarfall.epoch(created,17))created++;
-        var old=new StormIdentity(id.dimension(),AllayStarfall.epoch(created,17));
-        var next=new StormIdentity(id.dimension(),AllayStarfall.epoch(created+1,17));
+        long created=1;while(StormAttackMembers.epoch(created+1,17)>StormAttackMembers.epoch(created,17))created++;
+        var old=new StormIdentity(id.dimension(),StormAttackMembers.epoch(created,17));
+        var next=new StormIdentity(id.dimension(),StormAttackMembers.epoch(created+1,17));
         assertTrue(next.epoch()<old.epoch());
         var t=new StormCenterTimeline();t.offer(old,point(1,16383,100));
         assertTrue(t.select(next));assertTrue(t.offer(next,point(10,20000,120)));

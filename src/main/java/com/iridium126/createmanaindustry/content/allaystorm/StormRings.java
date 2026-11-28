@@ -6,7 +6,6 @@ import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundS
 import com.iridium126.createmanaindustry.infrastructure.config.ServerConfig;
 import java.util.ArrayList;
 import java.util.BitSet;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -18,33 +17,32 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import static com.iridium126.createmanaindustry.content.allaystorm.StormRingGeometry.*;
 
-final class StormManaRings {
+final class StormRings {
     private static final int[] NO_ROSTER = new int[0];
     private final Ring[] rings = new Ring[CAPACITY];
-    private long nextDraw = Long.MIN_VALUE, blastRevision;
-    private int cursor;
-    private boolean firstDraw = true;
+    private long blastRevision;
+    private double orbitAngle;
     final StormAttackStats stats = new StormAttackStats();
 
     private static final class Ring {
         final int slot, id;
         final int[] roster;
         final UUID target;
-        final long start, gatherDeadline;
+        final long start, assemble;
         final BitSet released = new BitSet(MEMBERS);
         int phase = GATHER;
         long entered, ready = Long.MIN_VALUE;
         Vec3 center, axis, right, velocity = Vec3.ZERO;
-        StormManaBeam beam;
+        StormRingBeam beam;
 
-        Ring(int slot, int id, int[] roster, UUID target, long start, long gatherDeadline,
+        Ring(int slot, int id, int[] roster, UUID target, long start, long assemble,
              Vec3 center, Vec3 axis, Vec3 right) {
             this.slot = slot;
             this.id = id;
             this.roster = roster;
             this.target = target;
             this.start = start;
-            this.gatherDeadline = gatherDeadline;
+            this.assemble = assemble;
             this.center = center;
             this.axis = axis;
             this.right = right;
@@ -64,10 +62,8 @@ final class StormManaRings {
 
     void clear() {
         java.util.Arrays.fill(rings, null);
-        nextDraw = Long.MIN_VALUE;
         blastRevision = 0;
-        cursor = 0;
-        firstDraw = true;
+        orbitAngle = 0;
     }
 
     ClientboundStormRingPacket snapshot(StormIdentity identity, long tick) {
@@ -82,11 +78,9 @@ final class StormManaRings {
         return count;
     }
 
-    boolean beforeOtherDraws(long now) { return now >= nextDraw && firstDraw; }
-
     void ready(long sample, int[] ids) {
         for (int id : ids) for (Ring ring : rings) {
-            if (ring != null && ring.id == id && (ring.phase == GATHER || ring.phase == HOLDING)
+            if (ring != null && ring.id == id && ring.phase == HOLDING
                     && sample >= ring.entered && sample > ring.ready) ring.ready = sample;
         }
     }
@@ -104,7 +98,8 @@ final class StormManaRings {
     }
 
     void tick(ServerLevel level, AllayStormData data, Vec3 stormCenter, List<ServerPlayer> observers,
-              List<ServerPlayer> eligible, BitSet reserved, Supplier<StormNearbyRoster> nearby, IntSupplier ids,
+              List<ServerPlayer> due, BitSet reserved, StormMemberReturns.Release released,
+              Supplier<StormNearbyRoster> nearby, IntSupplier ids,
               Consumer<ClientboundStormRingPacket> send, Consumer<ClientboundStormBlastPacket> blast) {
         long now = level.getGameTime();
         var identity = StormIdentity.of(level, data);
@@ -118,7 +113,9 @@ final class StormManaRings {
                     ? ring.beam.advance(level, now, removed)
                     : targetValid && ring.released.isEmpty() && advanceRing(level, ring, target, now);
             if (!keep) {
-                for (int rank = 0; rank < MEMBERS; rank++) if (!ring.released.get(rank)) reserved.clear(ring.roster[rank]);
+                StormAttackMembers.releaseUnfinished(reserved, ring.roster, ring.released);
+                for (int rank = 0; rank < MEMBERS; rank++) if (!ring.released.get(rank))
+                    released.accept(ring.roster[rank], ring.center, 2);
                 rings[ring.slot] = null;
                 changed[ring.slot] = new Frame(ring.slot, ring.id, END, 0, Vec3.ZERO, Vec3.ZERO,
                         Vec3.ZERO, Vec3.ZERO, NO_ROSTER, null);
@@ -126,35 +123,23 @@ final class StormManaRings {
                 changed[ring.slot] = ring.frame(false);
             }
         }
-        if (now >= nextDraw) {
-            nextDraw = now + Math.max(1, Math.round(ServerConfig.stormManaRingInterval * 20));
-            firstDraw = !firstDraw;
-            schedule(level, data, stormCenter, eligible, reserved, nearby, ids, now, changed);
-        }
+        if (!due.isEmpty()) schedule(level, data, stormCenter, due, reserved, nearby, ids, now, changed);
         var frames = new ArrayList<Frame>();
         for (Frame frame : changed) if (frame != null) frames.add(frame);
         if (!frames.isEmpty()) send.accept(new ClientboundStormRingPacket(identity, now, List.copyOf(frames)));
         sendBlasts(identity, removed, blast);
     }
 
-    private void schedule(ServerLevel level, AllayStormData data, Vec3 stormCenter, List<ServerPlayer> eligible,
+    private void schedule(ServerLevel level, AllayStormData data, Vec3 stormCenter, List<ServerPlayer> due,
                           BitSet reserved, Supplier<StormNearbyRoster> nearby, IntSupplier ids, long now, Frame[] changed) {
-        if (eligible.isEmpty() || ServerConfig.stormManaRingChance <= 0) return;
-        var players = new ArrayList<>(eligible);
-        players.sort(Comparator.comparing(ServerPlayer::getUUID));
-        int first = Math.floorMod(cursor++, players.size());
         int available = -1;
         int active = active();
-        float radius = AllayStormData.vortexRadius(data.count);
-        for (int i = 0; i < players.size(); i++) {
-            var player = players.get((first + i) % players.size());
-            if (Math.hypot(player.getX() - stormCenter.x, player.getZ() - stormCenter.z) > radius) continue;
-            if (level.random.nextDouble() >= ServerConfig.stormManaRingChance) continue;
-            if (active >= ServerConfig.stormManaRingMaxActive) {
+        for (var player : due) {
+            if (active >= ServerConfig.stormRingMaxActive) {
                 stats.count(StormAttackStats.Reason.CAPACITY);
                 break;
             }
-            if (available < 0) available = AllayStarfall.available(data.count, data.dead, reserved);
+            if (available < 0) available = StormAttackMembers.available(data.count, data.dead, reserved);
             if (available < MEMBERS) {
                 stats.count(data.aliveCount() < MEMBERS ? StormAttackStats.Reason.TOO_FEW : StormAttackStats.Reason.RESERVED);
                 break;
@@ -163,24 +148,22 @@ final class StormManaRings {
             while (slot < CAPACITY && (rings[slot] != null || changed[slot] != null)) slot++;
             if (slot == CAPACITY) break;
             Vec3 target = player.getBoundingBox().getCenter();
-            Vec3 center = stormCenter.add(0, -4, 0);
-            if (center.distanceTo(target) < FIRE_DISTANCE + 2) {
-                Vec3 away = center.subtract(target).normalize();
-                if (away.lengthSqr() < .5) away = new Vec3(0, 1, 0);
-                center = target.add(away.scale(FIRE_DISTANCE + 2));
-            }
-            Vec3 axis = target.subtract(center).normalize();
+            Vec3 center = nextCenter(data, stormCenter);
+            if (center == null) continue;
+            Vec3 axis = target.subtract(center);
+            axis = axis.lengthSqr() < 1e-6 ? new Vec3(0, 1, 0) : axis.normalize();
             Vec3 right = StormRingGeometry.right(axis, Vec3.ZERO);
             var slots = new Vec3[MEMBERS];
             for (int rank = 0; rank < MEMBERS; rank++) slots[rank] = center.add(offset(axis, right, rank, 0));
             var selection = nearby.get().match(slots, level.random.nextInt());
             if (selection.members().length == 0) continue;
             long start = now + 4;
-            long budget = Math.round(20 * StormNearbyRoster.gatherSeconds(selection.farthest(), StormMotion.INTERCEPT - RADIUS * SPIN));
-            var ring = new Ring(slot, ids.getAsInt(), selection.members(), player.getUUID(), start, start + budget,
+            long assemble = start + Math.round(20 * StormNearbyRoster.gatherSeconds(
+                    selection.farthest(), StormMotion.INTERCEPT - RADIUS * SPIN));
+            var ring = new Ring(slot, ids.getAsInt(), selection.members(), player.getUUID(), start, assemble,
                     center, axis, right);
             rings[slot] = ring;
-            for (int member : ring.roster) reserved.set(member);
+            StormAttackMembers.reserve(reserved, ring.roster);
             active++;
             available -= MEMBERS;
             changed[slot] = ring.frame(true);
@@ -188,13 +171,30 @@ final class StormManaRings {
         }
     }
 
+    private Vec3 nextCenter(AllayStormData data, Vec3 stormCenter) {
+        double orbit = StormRingOrbit.radius(data.count);
+        double step = StormRingOrbit.step(orbit);
+        int direction = StormRingOrbit.direction(data.stormSeed);
+        int attempts = Math.max(1, (int) Math.ceil(Math.PI * 2 / step));
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            double angle = orbitAngle;
+            orbitAngle = StormRingOrbit.wrap(orbitAngle + direction * step);
+            Vec3 center = StormRingOrbit.center(stormCenter, orbit, angle);
+            boolean free = true;
+            for (Ring ring : rings) {
+                if (ring != null && StormRingOrbit.overlaps(ring.center, center)) {
+                    free = false;
+                    break;
+                }
+            }
+            if (free) return center;
+        }
+        return null;
+    }
+
     private boolean advanceRing(ServerLevel level, Ring ring, ServerPlayer player, long now) {
         if (ring.phase == GATHER) {
-            if (ring.ready(now) && now >= ring.start) ring.phase(APPROACH, now);
-            else if (now > ring.gatherDeadline) {
-                stats.count(StormAttackStats.Reason.GATHER_TIMEOUT);
-                return false;
-            }
+            if (now >= ring.assemble) ring.phase(APPROACH, now);
             return true;
         }
         if (ring.phase == APPROACH) {
@@ -217,7 +217,7 @@ final class StormManaRings {
         if (now - ring.entered > 40) return false;
         if (ring.ready(now)) {
             ring.phase(FIRING, now);
-            ring.beam = new StormManaBeam(level, ring.center, ring.axis, now);
+            ring.beam = new StormRingBeam(level, ring.center, ring.axis, now);
         }
         return true;
     }

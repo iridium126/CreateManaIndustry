@@ -13,14 +13,14 @@ class AllayDomeTest {
   assertEquals(31.35f,AllayDome.gatherSeconds(40,16));assertThrows(IllegalArgumentException.class,()->AllayDome.gatherSeconds(Double.NaN,16));
  }
  @Test void fixedCountThresholdAndIdentityGroups(){
-  assertEquals(0,AllayDome.quota(16383));assertEquals(12288,AllayDome.quota(16384));
-  assertArrayEquals(new int[]{12288},AllayDome.groups(12288));assertEquals(0,AllayDome.group(new int[]{12288},12287));assertEquals(-1,AllayDome.group(new int[]{12288},12288));assertEquals(32,AllayDome.radius(12288));
+  assertArrayEquals(new int[]{12288},AllayDome.groups(12288));
+  assertArrayEquals(new int[]{64,100},AllayDome.columns(100,64));
  }
  @Test void sharedReservationsDeathsAndUndersize(){
   BitSet dead=new BitSet(),reserved=new BitSet();dead.set(0,20);
   int[] a=AllayDome.select(10000,dead,reserved,2000,42);assertEquals(2000,a.length);
   for(int member:a){assertFalse(dead.get(member));assertFalse(reserved.get(member));reserved.set(member);}
-  int[] b=AllayStarfall.selectExact(10000,dead,reserved,64,55);assertEquals(64,b.length);
+  int[] b=StormAttackMembers.selectExact(10000,dead,reserved,64,55);assertEquals(64,b.length);
   for(int member:b){assertFalse(reserved.get(member));reserved.set(member);}
   int[] c=AllayDome.select(10000,dead,reserved,10000,56);assertEquals(10000-20-a.length-b.length,c.length);
   reserved.set(0,10000);assertEquals(0,AllayDome.select(10000,dead,reserved,768,0).length);
@@ -41,10 +41,10 @@ class AllayDomeTest {
   assertFalse(AllayStormManager.validContactSample(wrap,wrap,2f));
  }
  @Test void lockedAreaOutlivesOriginalTarget(){
-  assertFalse(AllayDome.targetRequired(AllayDome.DOME,false));
-  assertFalse(AllayDome.targetRequired(AllayDome.DOME,true));
-  assertTrue(AllayDome.targetRequired(AllayDome.STARFALL,false));
-  assertTrue(AllayDome.targetRequired(AllayDome.STARFALL,true));
+  assertFalse(StormAttack.requiresTarget(StormAttack.DOME,false));
+  assertFalse(StormAttack.requiresTarget(StormAttack.DOME,true));
+  assertTrue(StormAttack.requiresTarget(StormAttack.HELIX,false));
+  assertFalse(StormAttack.requiresTarget(StormAttack.HELIX,true));
  }
  @Test void observerActivationFollowsLockedRegion(){
   assertEquals(0,AllayDome.distanceSquared(10,64,0,0,64,0,20));

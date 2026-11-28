@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.content.allaystorm.network;
 
-import com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall;
+import com.iridium126.createmanaindustry.content.allaystorm.StormAttackMembers;
 import com.iridium126.createmanaindustry.content.allaystorm.StormIdentity;
 import com.iridium126.createmanaindustry.infrastructure.network.ClientPayloadHandler;
 import io.netty.handler.codec.DecoderException;
@@ -82,7 +82,7 @@ public record ClientboundStormRingPacket(StormIdentity identity, long tick, List
             var members = new BitSet();
             for (int rank = 0; rank < roster.length; rank++) {
                 int member = in.readVarInt();
-                if (member < 0 || member >= AllayStarfall.MAX_MEMBERS || members.get(member))
+                if (member < 0 || member >= StormAttackMembers.MAX_MEMBERS || members.get(member))
                     throw new DecoderException("Invalid storm ring roster");
                 members.set(member);
                 roster[rank] = member;

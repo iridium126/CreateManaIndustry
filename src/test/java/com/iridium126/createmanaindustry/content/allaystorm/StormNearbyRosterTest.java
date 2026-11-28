@@ -41,18 +41,34 @@ class StormNearbyRosterTest {
         var empty = new BitSet();
         assertFasterThanRandom(data, phase, center, radius, ring, empty, ringMatch);
         assertTrue(StormNearbyRoster.gatherSeconds(columnMatch.farthest(), 5)
-                < Math.max(4, (radius * 2 + 16) * 2 / AllayStarfall.SPEED));
+                < Math.max(4, (radius * 2 + 16) * 2 / StormAttackMembers.SPEED));
     }
 
     private static void assertFasterThanRandom(AllayStormData data, AllayStormPhases phase, Vec3 center,
                                                 float radius, Vec3[] slots, BitSet reserved, StormNearbyRoster.Match match) {
-        int[] random = AllayStarfall.selectExact(data.count, data.dead, reserved, slots.length, 17);
+        int[] random = StormAttackMembers.selectExact(data.count, data.dead, reserved, slots.length, 17);
         double farthest = 0;
         for (int i = 0; i < slots.length; i++) {
-            var home = StormNearbyRoster.home(AllayStormWaves.memberSeed(data.stormSeed, random[i]), radius, phase, center);
+            var home = StormNearbyRoster.home(StormMemberHash.memberSeed(data.stormSeed, random[i]), radius, phase, center);
             farthest = Math.max(farthest, home.distanceTo(slots[i]));
         }
         assertTrue(match.farthest() < farthest);
+    }
+
+    @Test void returningMembersYieldToCleanNeighbours() {
+        var center = new Vec3(0, 128, 0);
+        var data = AllayStormData.create(BlockPos.containing(center), 16, 0, 1234);
+        var reserved = new BitSet();
+        float radius = AllayStormData.vortexRadius(data.count);
+        var phase = AllayStormPhases.evaluate(data.creationRadius, data.finalRadius, (float) data.growthPerSecond,
+                data.createdAtGameTime, 1000, data.count, data.stormSeed);
+        var home = StormNearbyRoster.home(StormMemberHash.memberSeed(data.stormSeed, 0), radius, phase, center);
+        var slots = new Vec3[]{home};
+        assertEquals(0, new StormNearbyRoster(data, center, 1000, reserved).match(slots, 7).members()[0]);
+        var returns = new StormMemberReturns();
+        returns.released(0, 1000, home.add(500, 0, 0), 0);
+        int picked = new StormNearbyRoster(data, center, 1000, reserved, returns, 1000).match(slots, 7).members()[0];
+        assertNotEquals(0, picked);
     }
 
     @Test void exhaustedReservationsDoNotReturnPartialRosters() {

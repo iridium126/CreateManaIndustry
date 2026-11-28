@@ -16,6 +16,8 @@ final class StormNearbyRoster {
     private final Vec3[] positions;
     private final ArrayList<Bucket> buckets;
     private final BitSet reserved;
+    /** Gather-equivalent distance still owed by members released from an attack. */
+    private final double[] penalty;
 
     private record Bucket(BlockPos key, IntArrayList members) {
         double lowerBound(Vec3 point) {
@@ -33,25 +35,37 @@ final class StormNearbyRoster {
     }
 
     static Supplier<StormNearbyRoster> lazy(AllayStormData data, Vec3 center, long tick, BitSet reserved) {
+        return lazy(data, center, tick, reserved, null, tick);
+    }
+
+    static Supplier<StormNearbyRoster> lazy(AllayStormData data, Vec3 center, long tick, BitSet reserved,
+                                            StormMemberReturns returns, long now) {
         return new Supplier<>() {
             private StormNearbyRoster roster;
             @Override public StormNearbyRoster get() {
-                if (roster == null) roster = new StormNearbyRoster(data, center, tick, reserved);
+                if (roster == null) roster = new StormNearbyRoster(data, center, tick, reserved, returns, now);
                 return roster;
             }
         };
     }
 
     StormNearbyRoster(AllayStormData data, Vec3 center, long tick, BitSet reserved) {
+        this(data, center, tick, reserved, null, tick);
+    }
+
+    StormNearbyRoster(AllayStormData data, Vec3 center, long tick, BitSet reserved,
+                      StormMemberReturns returns, long now) {
         this.reserved = reserved;
         positions = new Vec3[data.count];
+        penalty = returns == null ? null : new double[data.count];
         var radius = AllayStormData.vortexRadius(data.count);
         var phase = AllayStormPhases.evaluate(data.creationRadius, data.finalRadius, (float) data.growthPerSecond,
                 data.createdAtGameTime, tick, data.count, data.stormSeed);
         var cells = new HashMap<BlockPos, IntArrayList>();
         for (int member = data.dead.nextClearBit(0); member < data.count; member = data.dead.nextClearBit(member + 1)) {
-            var point = home(AllayStormWaves.memberSeed(data.stormSeed, member), radius, phase, center);
+            var point = home(StormMemberHash.memberSeed(data.stormSeed, member), radius, phase, center);
             positions[member] = point;
+            if (penalty != null) penalty[member] = returns.penalty(member, now, point);
             var key = BlockPos.containing(point.x / CELL, point.y / CELL, point.z / CELL);
             cells.computeIfAbsent(key, ignored -> new IntArrayList()).add(member);
         }
@@ -74,25 +88,26 @@ final class StormNearbyRoster {
             visits[i]=new Visit(bucket,bucket.lowerBound(center));
         }
         Arrays.sort(visits,Comparator.comparingDouble(Visit::distance));
-        int first = Math.floorMod(AllayStarfall.mix(seed), slots.length);
+        int first = Math.floorMod(StormAttackMembers.mix(seed), slots.length);
         for (int offset = 0; offset < slots.length; offset++) {
             int rank = (first + offset) % slots.length;
             Vec3 point = slots[rank];
             int best = -1;
-            double distance = Double.POSITIVE_INFINITY;
+            double bestDistance = Double.POSITIVE_INFINITY;
             double stop = Double.POSITIVE_INFINITY;
             for (var visit : visits) {
                 if (visit.distance > stop) break;
-                if (visit.bucket.lowerBound(point) > distance) continue;
+                if (visit.bucket.lowerBound(point) > bestDistance * bestDistance) continue;
                 var members = visit.bucket.members;
                 for (int i = 0; i < members.size(); i++) {
                     int member = members.getInt(i);
                     if (chosen.get(member) || reserved.get(member)) continue;
-                    double candidate = positions[member].distanceToSqr(point);
-                    if (candidate < distance || candidate == distance && member < best) {
+                    double candidate = Math.sqrt(positions[member].distanceToSqr(point))
+                            + (penalty == null ? 0 : penalty[member]);
+                    if (candidate < bestDistance || candidate == bestDistance && member < best) {
                         best = member;
-                        distance = candidate;
-                        double bound = Math.sqrt(distance) + extent;
+                        bestDistance = candidate;
+                        double bound = bestDistance + extent;
                         stop = bound * bound + 1e-9;
                     }
                 }
@@ -100,9 +115,9 @@ final class StormNearbyRoster {
             if (best < 0) return Match.EMPTY;
             roster[rank] = best;
             chosen.set(best);
-            farthest = Math.max(farthest, distance);
+            farthest = Math.max(farthest, bestDistance);
         }
-        return new Match(roster, Math.sqrt(farthest));
+        return new Match(roster, farthest);
     }
 
     static float gatherSeconds(double farthest, double speedAdvantage) {
@@ -110,7 +125,7 @@ final class StormNearbyRoster {
     }
 
     private static float hash(float value) {
-        return AllayStormWaves.hash1(value);
+        return StormMemberHash.hash1(value);
     }
 
     // Position half of cmiTyphoonHome, including the per-member vertical band and micro jitter.

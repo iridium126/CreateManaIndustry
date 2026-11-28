@@ -20,13 +20,13 @@ public final class AllayHelix {
  public static float gatherSeconds(double radius){double speed=12,acceleration=18,relative=speed-2-Math.sqrt(2048)*Math.toRadians(8);double seconds=(radius+1.15*radius+46+8)/relative+2*speed/acceleration+Math.PI/Math.min(Math.PI,acceleration/speed)+.75+1;return (float)(Math.ceil(Math.max(4,seconds)*20)/20);}
 
  public static float deadline(Flight flight){return flight.finish()+FAULT_GRACE;}
- public static int arm(int stormSeed,int member){float seed=AllayStormWaves.memberSeed(stormSeed,member);return Math.min(5,(int)Math.floor(AllayStormWaves.hash1(seed*5.7f)*6));}
+ public static int arm(int stormSeed,int member){float seed=StormMemberHash.memberSeed(stormSeed,member);return Math.min(5,(int)Math.floor(StormMemberHash.hash1(seed*5.7f)*6));}
  public static Selection select(int generated,BitSet dead,BitSet reserved,int quota,int stormSeed,int waveSeed){
-  generated=Math.min(AllayStarfall.MAX_MEMBERS,Math.max(0,generated));
+  generated=Math.min(StormAttackMembers.MAX_MEMBERS,Math.max(0,generated));
   int alive=generated-dead.get(0,generated).cardinality();
   if(alive<16384||quota<4096)return new Selection(-1,-1,new int[0],new int[0]);
   int[][] available=new int[6][2048];int[] counts=new int[6];
-  int mask=AllayStarfall.MAX_MEMBERS-1,offset=AllayStarfall.mix(waveSeed)&mask,stride=(AllayStarfall.mix(waveSeed^0x619c731b)|1)&mask;
+  int mask=StormAttackMembers.MAX_MEMBERS-1,offset=StormAttackMembers.mix(waveSeed)&mask,stride=(StormAttackMembers.mix(waveSeed^0x619c731b)|1)&mask;
   for(int r=0;r<=mask;r++){int member=(offset+r*stride)&mask;if(member>=generated||dead.get(member)||reserved.get(member))continue;int arm=arm(stormSeed,member);if(counts[arm]<2048)available[arm][counts[arm]++]=member;}
   int first=Math.floorMod(waveSeed,3);
   for(int p=0;p<3;p++){int a=(first+p)%3,b=a+3;if(counts[a]<2048||counts[b]<2048)continue;
@@ -38,8 +38,8 @@ public final class AllayHelix {
  public static float radius(int members){return 32;}
  /** Stable truncated isotropic Gaussian in the strand normal plane, in units of sigma. */
  public static float[] scatter(int seed,int member){
-  double u=((AllayStarfall.mix(seed^member*0x9e3779b9)>>>8)+.5)/16777216.0;
-  double v=((AllayStarfall.mix(seed+member*0x632be5ab)>>>8)+.5)/16777216.0;
+  double u=((StormAttackMembers.mix(seed^member*0x9e3779b9)>>>8)+.5)/16777216.0;
+  double v=((StormAttackMembers.mix(seed+member*0x632be5ab)>>>8)+.5)/16777216.0;
   double r=Math.sqrt(-2*Math.log(1-u*(1-Math.exp(-4.5)))),a=2*Math.PI*v;
   return new float[]{(float)(r*Math.cos(a)),(float)(r*Math.sin(a))};
  }
@@ -60,13 +60,13 @@ public final class AllayHelix {
  }
  public static float memberU(float fraction){return fraction<.3f?.2f*(float)Math.pow(fraction/.3f,1.5):.2f+.8f*(fraction-.3f)/.7f;}
  public static float progress(Flight f,float now){
-  float elapsed=Math.max(0,Math.min(f.duration(),AllayStarfall.elapsed(now,f.thrust))),distance;
+  float elapsed=Math.max(0,Math.min(f.duration(),StormAttackMembers.elapsed(now,f.thrust))),distance;
   if(elapsed<RAMP)distance=.5f*f.speed*elapsed*elapsed/RAMP;
   else if(elapsed>f.duration()-RAMP){float remaining=f.duration()-elapsed;distance=f.arcLength()-f.length-.5f*f.speed*remaining*remaining/RAMP;}
   else distance=f.speed*(elapsed-RAMP*.5f);
   return f.length+Math.max(0,Math.min(f.arcLength()-f.length,distance));
  }
- public static float speedAt(Flight f,float now){float elapsed=AllayStarfall.elapsed(now,f.thrust);if(elapsed<=0||elapsed>=f.duration())return 0;return f.speed*Math.min(1,Math.min(elapsed/RAMP,(f.duration()-elapsed)/RAMP));}
+ public static float speedAt(Flight f,float now){float elapsed=StormAttackMembers.elapsed(now,f.thrust);if(elapsed<=0||elapsed>=f.duration())return 0;return f.speed*Math.min(1,Math.min(elapsed/RAMP,(f.duration()-elapsed)/RAMP));}
  public static float parameter(Flight f,float arc){
   if(arc<=0)return 0;if(arc>=f.arcLength())return 1;
   int low=0,high=SAMPLES-1;while(high-low>1){int mid=(low+high)/2;if(f.samples[mid*4+3]<arc)low=mid;else high=mid;}
@@ -121,10 +121,10 @@ public final class AllayHelix {
   }
  }
  public static int phase(float now,float assemble,float lock,boolean locked,Flight f){
-  if(AllayStarfall.elapsed(now,assemble)<0)return 1;
-  if(!locked||AllayStarfall.elapsed(now,lock)<0)return 2;
-  if(AllayStarfall.elapsed(now,f.thrust)<0)return 3;
-  return AllayStarfall.elapsed(now,f.finish)<0?4:5;
+  if(StormAttackMembers.elapsed(now,assemble)<0)return 1;
+  if(!locked||StormAttackMembers.elapsed(now,lock)<0)return 2;
+  if(StormAttackMembers.elapsed(now,f.thrust)<0)return 3;
+  return StormAttackMembers.elapsed(now,f.finish)<0?4:5;
  }
  public static double distanceSquared(Flight flight,double x,double y,double z){
   double closest=Double.POSITIVE_INFINITY;float[] samples=flight.samples;

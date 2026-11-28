@@ -5,7 +5,7 @@ import com.iridium126.createmanaindustry.client.allaystorm.StormTerrainEdits;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherFrame;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixGatherRecovery;
 import com.iridium126.createmanaindustry.content.allaystorm.HelixTemplate;
-import com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall;
+import com.iridium126.createmanaindustry.content.allaystorm.StormAttackMembers;
 import com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnSnapshot;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormColumnPacket;
 import java.nio.ByteBuffer;
@@ -112,8 +112,8 @@ final class StormControlJournal {
             int flags=(packet.resume()?2:1)|(create?STORM_DOME_CONTROL_CREATE:0);
             return new Command(STORM_CONTROL_COLUMN_STATE,packet.seed(),1,flags,scope,
                     new Float4(packet.x(),packet.y(),packet.z(),packet.gatherY()),
-                    new Float4(packet.start(),AllayStarfall.elapsed(packet.assemble(),packet.start()),
-                            AllayStarfall.elapsed(packet.touch(),packet.start()),AllayStarfall.elapsed(packet.end(),packet.start())));
+                    new Float4(packet.start(),StormAttackMembers.elapsed(packet.assemble(),packet.start()),
+                            StormAttackMembers.elapsed(packet.touch(),packet.start()),StormAttackMembers.elapsed(packet.end(),packet.start())));
         }
         static Command columnAssign(int id,int slot,int member,int rank){
             return new Command(STORM_CONTROL_COLUMN_ASSIGN,member,1,rank,columnScope(id,slot),Float4.ZERO,Float4.ZERO);

@@ -20,17 +20,17 @@ class StarfallColumnTest {
     @Test void completionTransfersReservationToOuterQueueOnlyOnce(){
         var columns=new StarfallColumns();var reserved=new BitSet();var queue=new StormOuterLoop();queue.configure(64,64,64,20);
         columns.reserve(packet(1),reserved);var done=new BitSet();done.set(0);done.set(31);done.set(63);
-        assertTrue(columns.complete(1,done,reserved,member->queue.offer(member,reserved)));
+        assertTrue(columns.complete(1,done,reserved,(member,point,margin)->queue.offer(member,reserved)));
         assertEquals(3,queue.waiting());assertEquals(64,reserved.cardinality());
-        assertTrue(columns.complete(1,done,reserved,member->queue.offer(member,reserved)));assertEquals(3,queue.waiting());
-        for(int member:new int[]{0,31,63}){var flight=queue.tick(m->true,reserved,0,80,0,32).getFirst();assertEquals(member,flight.member());assertTrue(reserved.get(member));assertTrue(queue.arrived(member,flight.cycle(),reserved));assertFalse(reserved.get(member));}
+        assertTrue(columns.complete(1,done,reserved,(member,point,margin)->queue.offer(member,reserved)));assertEquals(3,queue.waiting());
+        for(int member:new int[]{0,31,63}){var flight=queue.tick(m->true,reserved,0,80,0,32).getFirst();assertEquals(member,flight.member());assertTrue(reserved.get(member));assertNotNull(queue.arrived(member,flight.cycle(),reserved));assertFalse(reserved.get(member));}
     }
     @Test void sixtyFourSlotsRemainIndependentOfFourMajorAttacks(){
         var slots=new StormWaveSlots(68);
         for(int i=0;i<64;i++){var update=slots.apply(packet(i+1).snapshot(),0);assertNotNull(update);assertEquals(4+i,update.slot());}
         assertNull(slots.apply(packet(65).snapshot(),0));
         var legacy=packet(100).snapshot();
-        var major=new ClientboundStormWavePacket(100,87,0,1,1,5,1,64,0,4,10,70,0,20,0,4,new int[]{0},new float[]{0,20,0,0,10,0},new float[]{0,0,0,3.5f});
+        var major=new ClientboundStormWavePacket(100,87,StormAttack.EVENT_START,1,1,5,1,64,0,4,10,70,0,20,0,4,new int[]{0},new float[]{0,20,0,0,10,0},new float[]{0,0,0,3.5f},StormAttack.DOME,1,new int[]{1},0,20,0,0,1,0,0);
         assertEquals(0,slots.apply(major,0).slot());
         assertEquals(4,slots.apply(packet(1).aborted().snapshot(),1).slot());
         assertEquals(4,slots.apply(packet(65).snapshot(),1).slot());
@@ -45,7 +45,7 @@ class StarfallColumnTest {
         for(int slot=4;slot<68;slot++)for(int rank=0;rank<64;rank++){
             int word=StarfallColumnRules.assignment(slot,rank);assertTrue(words.add(word));assertEquals(slot,StarfallColumnRules.slot(word));assertEquals(rank,(word&0x3fffffff)>>>8);
         }
-        for(int slot=0;slot<4;slot++)assertEquals(slot,StarfallColumnRules.slot(AllayStarfall.pack(slot,31,4095)));
+        for(int slot=0;slot<4;slot++)assertEquals(slot,StarfallColumnRules.slot(StormAttackMembers.pack(slot,31,4095)));
     }
     @Test void exactPlayerXZIsPreferred(){
         assertEquals(new Vec3(3,0,4),StarfallColumnRules.landing(3,4,0,0,32,1,List.of(),(x,z)->true));
@@ -68,9 +68,9 @@ class StarfallColumnTest {
     }
     @Test void sixtyFourLivingUnreservedMembersOrNothing(){
         var dead=new BitSet();dead.set(0,16);var reserved=new BitSet();reserved.set(16,32);
-        int[] first=AllayStarfall.selectExact(160,dead,reserved,64,1);assertEquals(64,first.length);for(int m:first){assertFalse(dead.get(m));assertFalse(reserved.get(m));reserved.set(m);}
-        int[] second=AllayStarfall.selectExact(160,dead,reserved,64,2);assertEquals(64,second.length);for(int m:second)assertFalse(reserved.get(m));
-        assertEquals(63,AllayStarfall.selectExact(63,new BitSet(),new BitSet(),64,1).length);
+        int[] first=StormAttackMembers.selectExact(160,dead,reserved,64,1);assertEquals(64,first.length);for(int m:first){assertFalse(dead.get(m));assertFalse(reserved.get(m));reserved.set(m);}
+        int[] second=StormAttackMembers.selectExact(160,dead,reserved,64,2);assertEquals(64,second.length);for(int m:second)assertFalse(reserved.get(m));
+        assertEquals(63,StormAttackMembers.selectExact(63,new BitSet(),new BitSet(),64,1).length);
     }
     @Test void bloomUsesExactParabolaAndFourBlockRadius(){
         Vec3 origin=new Vec3(1500,64,-2300);
@@ -128,7 +128,7 @@ class StarfallColumnTest {
         float previous=-1;for(int frame=0;frame<240;frame++){double tick=frame/12.;long whole=1000+(long)tick;float partial=(float)(tick-Math.floor(tick));float time=StarfallColumnRules.renderSeconds(whole,partial);assertTrue(time>previous);previous=time;}
         assertEquals(50.025f,StarfallColumnRules.renderSeconds(1000,.5f));
         assertEquals(0,StarfallColumnRules.renderSeconds(1<<21,0));
-        assertTrue(AllayStarfall.elapsed(StarfallColumnRules.renderSeconds(1<<21,.5f),StarfallColumnRules.renderSeconds((1<<21)-1,.5f))>0);
+        assertTrue(StormAttackMembers.elapsed(StarfallColumnRules.renderSeconds(1<<21,.5f),StarfallColumnRules.renderSeconds((1<<21)-1,.5f))>0);
     }
     @Test void gatheringOrbitsAtAStableHeightAndHasVerticalClearance(){
         for(int rank=0;rank<64;rank++){

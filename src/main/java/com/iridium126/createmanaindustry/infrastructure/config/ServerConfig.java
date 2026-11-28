@@ -141,8 +141,8 @@ public final class ServerConfig {
     private static ModConfigSpec.DoubleValue STORM_STARFALL_INTERVAL;
     private static ModConfigSpec.DoubleValue STORM_STARFALL_CHANCE;
     private static ModConfigSpec.IntValue STORM_STARFALL_ACTIVE;
-    private static ModConfigSpec.DoubleValue STORM_MANA_RING_INTERVAL, STORM_MANA_RING_CHANCE, STORM_MANA_BEAM_DAMAGE;
-    private static ModConfigSpec.IntValue STORM_MANA_RING_ACTIVE;
+    private static ModConfigSpec.DoubleValue STORM_RING_INTERVAL, STORM_RING_CHANCE, STORM_RING_BEAM_DAMAGE;
+    private static ModConfigSpec.IntValue STORM_RING_ACTIVE;
     private static ModConfigSpec.DoubleValue STORM_WAVE_DAMAGE;
     private static ModConfigSpec.DoubleValue STORM_WAVE_RANGE;
     private static ModConfigSpec.IntValue STORM_CHASE_Y;
@@ -277,19 +277,19 @@ public final class ServerConfig {
         STORM_GROWTH_PER_SECOND = BUILDER
                 .comment("Members the storm generates per second while below stormMaxCount (growth runs on the server tick regardless of whether any player is in range). New members spawn on a ring just outside the visible envelope and fly to their storm positions. 0 disables growth (storms spawn at their initial count and never grow).")
                 .defineInRange("stormGrowthPerSecond", 20.0, 0.0, 2048.0);
-        STORM_HELIX_CHANCE=BUILDER.comment("Independent storm-level helix probability. 双螺旋独立发动概率。").defineInRange("stormHelixChance",.5,0,1);
-        STORM_HELIX_INTERVAL_MIN=BUILDER.comment("Minimum seconds between independent storm-level helix draws. A uniform random interval is sampled on initialization and after every opportunity, including failed draws. Reversed bounds are sorted; equal bounds give a fixed interval. Changes apply to the next sampled interval.").defineInRange("stormHelixIntervalMin",30.,5.,600.);
-        STORM_HELIX_INTERVAL_MAX=BUILDER.comment("Maximum seconds between storm-level helix draws; see stormHelixIntervalMin.").defineInRange("stormHelixIntervalMax",60.,5.,600.);
-        STORM_DOME_INTERVAL_MIN=BUILDER.comment("Minimum seconds between independent storm-level dome draws. A uniform random interval is sampled on initialization and after every opportunity, including failed draws. Reversed bounds are sorted; equal bounds give a fixed interval. Changes apply to the next sampled interval.").defineInRange("stormDomeIntervalMin",60.,5.,600.);
-        STORM_DOME_INTERVAL_MAX=BUILDER.comment("Maximum seconds between storm-level dome draws; see stormDomeIntervalMin.").defineInRange("stormDomeIntervalMax",90.,5.,600.);
-        STORM_DOME_CHANCE = BUILDER.comment("Independent storm-level dome probability. 天穹独立发动概率。").defineInRange("stormDomeChance", .5, 0, 1);
+        STORM_HELIX_CHANCE=BUILDER.comment("Helix probability per eligible player and opportunity. 每名合格玩家独立发动概率。").defineInRange("stormHelixChance",.5,0,1);
+        STORM_HELIX_INTERVAL_MIN=BUILDER.comment("Minimum seconds between helix opportunities for one eligible player. A uniform random interval is sampled on first qualification and after every opportunity, including failed draws. Reversed bounds are sorted; equal bounds give a fixed interval. Changes apply to the next sampled interval.").defineInRange("stormHelixIntervalMin",30.,5.,600.);
+        STORM_HELIX_INTERVAL_MAX=BUILDER.comment("Maximum seconds between helix opportunities for one eligible player; see stormHelixIntervalMin.").defineInRange("stormHelixIntervalMax",60.,5.,600.);
+        STORM_DOME_INTERVAL_MIN=BUILDER.comment("Minimum seconds between dome opportunities for one eligible player. A uniform random interval is sampled on first qualification and after every opportunity, including failed draws. Reversed bounds are sorted; equal bounds give a fixed interval. Changes apply to the next sampled interval.").defineInRange("stormDomeIntervalMin",60.,5.,600.);
+        STORM_DOME_INTERVAL_MAX=BUILDER.comment("Maximum seconds between dome opportunities for one eligible player; see stormDomeIntervalMin.").defineInRange("stormDomeIntervalMax",90.,5.,600.);
+        STORM_DOME_CHANCE = BUILDER.comment("Dome probability per eligible player and opportunity. 每名合格玩家独立发动概率。").defineInRange("stormDomeChance", .5, 0, 1);
         STORM_STARFALL_INTERVAL=BUILDER.comment("Independent regional star rain opportunity interval in seconds per eligible player.").defineInRange("stormStarfallInterval",.5,.05,60);
         STORM_STARFALL_CHANCE=BUILDER.comment("Independent probability per eligible player and opportunity.").defineInRange("stormStarfallChance",.5,0,1);
         STORM_STARFALL_ACTIVE=BUILDER.comment("Maximum concurrent independent starfall columns, including their return flight. Engine ceiling is 64.").defineInRange("stormStarfallMaxActiveColumns",64,1,64);
-        STORM_MANA_RING_INTERVAL=BUILDER.comment("Seconds between Mana Beam ring opportunities per eligible player.").defineInRange("stormManaRingInterval",.5,.05,60);
-        STORM_MANA_RING_CHANCE=BUILDER.comment("Probability of a Mana Beam ring per eligible player and opportunity.").defineInRange("stormManaRingChance",.5,0,1);
-        STORM_MANA_RING_ACTIVE=BUILDER.comment("Maximum active Mana Beam rings per storm. Engine ceiling is 64.").defineInRange("stormManaRingMaxActive",64,1,64);
-        STORM_MANA_BEAM_DAMAGE=BUILDER.comment("Direct Mana Beam damage in HP, before the separate vanilla explosion.").defineInRange("stormManaBeamDamage",4.,0,2048);
+        STORM_RING_INTERVAL=BUILDER.comment("Seconds between Mana Beam ring opportunities per eligible player.").defineInRange("stormManaRingInterval",.5,.05,60);
+        STORM_RING_CHANCE=BUILDER.comment("Probability of a Mana Beam ring per eligible player and opportunity.").defineInRange("stormManaRingChance",.5,0,1);
+        STORM_RING_ACTIVE=BUILDER.comment("Maximum active Mana Beam rings per storm. Engine ceiling is 64.").defineInRange("stormManaRingMaxActive",64,1,64);
+        STORM_RING_BEAM_DAMAGE=BUILDER.comment("Direct Mana Beam damage in HP, before the separate vanilla explosion.").defineInRange("stormManaBeamDamage",4.,0,2048);
         STORM_WAVE_DAMAGE = BUILDER
                 .comment("Damage per starfall contact. Fixed (no variance). Routed through player.hurt with the createmanaindustry:storm_peck damage type, so vanilla invulnerability frames, armor, absorption and totems all apply — concurrent divers cannot burst through the 10-tick i-frame window.")
                 .defineInRange("stormWaveDamage", 7.0, 0.0, 40.0);
@@ -528,8 +528,8 @@ public final class ServerConfig {
     public static double stormHelixIntervalMin=30,stormHelixIntervalMax=60,stormDomeIntervalMin=60,stormDomeIntervalMax=90;
     public static double stormStarfallInterval=.5, stormStarfallChance=.5;
     public static int stormStarfallMaxActiveColumns=64;
-    public static double stormManaRingInterval=.5, stormManaRingChance=.5, stormManaBeamDamage=4;
-    public static int stormManaRingMaxActive=64;
+    public static double stormRingInterval=.5, stormRingChance=.5, stormRingBeamDamage=4;
+    public static int stormRingMaxActive=64;
     public static double stormWaveDamage = 7.0;
     public static double stormWaveRange = 96.0;
     public static int stormChaseY = 128;
@@ -623,10 +623,10 @@ public final class ServerConfig {
             stormDomeChance=STORM_DOME_CHANCE.get();
             stormStarfallInterval=STORM_STARFALL_INTERVAL.get();stormStarfallChance=STORM_STARFALL_CHANCE.get();
             stormStarfallMaxActiveColumns=STORM_STARFALL_ACTIVE.get();
-            stormManaRingInterval=STORM_MANA_RING_INTERVAL.get();
-            stormManaRingChance=STORM_MANA_RING_CHANCE.get();
-            stormManaRingMaxActive=STORM_MANA_RING_ACTIVE.get();
-            stormManaBeamDamage=STORM_MANA_BEAM_DAMAGE.get();
+            stormRingInterval=STORM_RING_INTERVAL.get();
+            stormRingChance=STORM_RING_CHANCE.get();
+            stormRingMaxActive=STORM_RING_ACTIVE.get();
+            stormRingBeamDamage=STORM_RING_BEAM_DAMAGE.get();
             stormWaveDamage = STORM_WAVE_DAMAGE.get();
             stormWaveRange = STORM_WAVE_RANGE.get();
             stormChaseY = STORM_CHASE_Y.get();

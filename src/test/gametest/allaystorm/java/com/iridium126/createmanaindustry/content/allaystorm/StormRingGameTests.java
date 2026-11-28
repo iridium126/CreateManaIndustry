@@ -26,7 +26,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 
 @GameTestHolder("createmanaindustry")
 @PrefixGameTestTemplate(false)
-public final class StormManaBeamGameTests {
+public final class StormRingGameTests {
     private static final Vec3 EAST = new Vec3(1, 0, 0);
 
     @GameTest(template="storm_combat_test", timeoutTicks=40)
@@ -45,7 +45,7 @@ public final class StormManaBeamGameTests {
             first.setPos(origin.add(2, -.5, 0));
             second.setPos(origin.add(6, -.5, 0));
             long start = level.getGameTime();
-            var beam = new StormManaBeam(level, origin, EAST, start);
+            var beam = new StormRingBeam(level, origin, EAST, start);
             helper.assertTrue(beam.shot.distance()==48, "Open beam lost its 48-block range");
             var removed = new ArrayList<BlockPos>();
             beam.advance(level, start+1, removed);
@@ -78,7 +78,7 @@ public final class StormManaBeamGameTests {
         level.setBlockAndUpdate(wall, Blocks.WHITE_WOOL.defaultBlockState());
         Vec3 origin = Vec3.atCenterOf(wall.west(5));
         long now = level.getGameTime();
-        var beam = new StormManaBeam(level, origin, EAST, now);
+        var beam = new StormRingBeam(level, origin, EAST, now);
         helper.assertTrue(beam.shot.face()==net.minecraft.core.Direction.WEST && Math.abs(beam.shot.distance()-4.5)<.01,
                 "Beam did not clip to the first collision face");
         var blasts = new int[1];
@@ -181,30 +181,29 @@ public final class StormManaBeamGameTests {
         var origin=helper.absolutePos(new BlockPos(3,36,4));
         var first=player(level,"StormFirstRing");
         var second=player(level,"StormSecondRing");
-        var config=com.iridium126.createmanaindustry.infrastructure.config.ServerConfig.stormManaRingChance;
         try {
             first.setPos(Vec3.atCenterOf(origin));second.setPos(Vec3.atCenterOf(origin.east()));
             var data=AllayStormData.create(origin,128,level.getGameTime(),17);
             var center=Vec3.atCenterOf(origin.above(30));
             var reserved=new BitSet();reserved.set(0,5);
-            var attacks=new StormManaRings();
+            var attacks=new StormRings();
             var nextId=new java.util.concurrent.atomic.AtomicInteger();
             var players=List.<net.minecraft.server.level.ServerPlayer>of(first,second);
             var packets=new ArrayList<com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormRingPacket>();
-            com.iridium126.createmanaindustry.infrastructure.config.ServerConfig.stormManaRingChance=1;
-            attacks.tick(level,data,center,players,players,reserved,StormNearbyRoster.lazy(data,center,level.getGameTime()+4,reserved),
+            attacks.tick(level,data,center,players,players,reserved,(m,point,margin)->{},
+                    StormNearbyRoster.lazy(data,center,level.getGameTime()+4,reserved),
                     nextId::incrementAndGet,packets::add,packet->{});
             helper.assertTrue(attacks.active()==2&&reserved.cardinality()==37&&packets.getFirst().frames().size()==2,
                     "Both independent rings should reserve disjoint 16-member groups");
             int member=packets.getFirst().frames().getFirst().roster()[0];
             attacks.dead(member,reserved);
             helper.assertTrue(reserved.cardinality()==36&&!reserved.get(member),"Dead ring member did not release");
-            attacks.tick(level,data,center,List.of(),List.of(),reserved,()->{throw new AssertionError("No candidate search expected");},
+            attacks.tick(level,data,center,List.of(),List.of(),reserved,(m,point,margin)->{},
+                    ()->{throw new AssertionError("No candidate search expected");},
                     nextId::incrementAndGet,packets::add,packet->{});
             helper.assertTrue(attacks.active()==0&&reserved.cardinality()==5&&packets.getLast().frames().size()==2,
                     "Target departure did not release only the two ring rosters");
         } finally {
-            com.iridium126.createmanaindustry.infrastructure.config.ServerConfig.stormManaRingChance=config;
             level.removePlayerImmediately(first,Entity.RemovalReason.DISCARDED);
             level.removePlayerImmediately(second,Entity.RemovalReason.DISCARDED);
         }

@@ -35,7 +35,7 @@ public final class StormRingClient {
     private static final int FRAME_OFFSET = MEMBER_LIMIT * 4, FRAME_BYTES = 64;
     private static final int READY_OFFSET = FRAME_OFFSET + CAPACITY * FRAME_BYTES;
     private static final int READY_BYTES = CAPACITY * 4;
-    private static final int FULL = (1 << MEMBERS) - 1;
+    private static final int READY_MEMBERS = MEMBERS * 3 / 4;
 
     private final Slot[] slots = new Slot[CAPACITY];
     private final long[] lastPacketTick = new long[CAPACITY];
@@ -185,7 +185,7 @@ public final class StormRingClient {
     }
 
     private static boolean waiting(Frame frame) {
-        return frame.phase() == GATHER || frame.phase() == HOLDING;
+        return frame.phase() == HOLDING;
     }
 
     private void pack(Slot slot) {
@@ -257,7 +257,7 @@ public final class StormRingClient {
             Slot slot = slots[i];
             if (frame == null || !waiting(frame) || slot == null || slot.id != frame.id()
                     || slot.frame.phase() != frame.phase()) continue;
-            if (!completed || samples.getInt(i * 4) != FULL) {
+            if (!completed || Integer.bitCount(samples.getInt(i * 4)) < READY_MEMBERS) {
                 slot.streak = 0;
                 continue;
             }

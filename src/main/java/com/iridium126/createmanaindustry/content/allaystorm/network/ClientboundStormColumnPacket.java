@@ -40,7 +40,7 @@ public record ClientboundStormColumnPacket(ResourceLocation dimension,long epoch
         if(f[1]<=f[0]||f[2]<=f[1]||f[3]<f[2]+StarfallColumnRules.BLOOM||f[4]<=f[3]||f[4]-f[0]>600||f[8]<=f[6]+3||f[11]<2||f[11]>64)
             throw new DecoderException("Invalid column geometry or schedule");
         if(Math.hypot(f[5]-f[9],f[7]-f[10])>f[11]+.01)throw new DecoderException("Column outside storm");
-        int[] roster=new int[64];BitSet seen=new BitSet();for(int i=0;i<64;i++){int m=b.readVarInt();if(m<0||m>=AllayStarfall.MAX_MEMBERS||seen.get(m))throw new DecoderException("Invalid column roster");seen.set(m);roster[i]=m;}
+        int[] roster=new int[64];BitSet seen=new BitSet();for(int i=0;i<64;i++){int m=b.readVarInt();if(m<0||m>=StormAttackMembers.MAX_MEMBERS||seen.get(m))throw new DecoderException("Invalid column roster");seen.set(m);roster[i]=m;}
         return new ClientboundStormColumnPacket(dim,epoch,id,false,seed,f[0],f[1],f[2],f[3],f[4],f[5],f[6],f[7],f[8],f[9],f[10],f[11],roster,resume);
     }
     @Override public Type<? extends CustomPacketPayload> type(){return TYPE;}

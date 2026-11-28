@@ -1,7 +1,7 @@
 package com.iridium126.createmanaindustry.client.allaystorm;
 
 import com.iridium126.createmanaindustry.client.gpu.state.GpuBindings;
-import com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall;
+import com.iridium126.createmanaindustry.content.allaystorm.StormAttackMembers;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayDome;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayHelix;
 import com.iridium126.createmanaindustry.content.allaystorm.network.ClientboundStormWavePacket;
@@ -160,12 +160,11 @@ public final class StarfallGpuBuffers implements AutoCloseable {
    put(b+24,p.centerX(),p.centerY(),p.centerZ(),p.dome()?AllayDome.closeSeconds(p.crownRadius()):0);
    put(b+28,centerPrevious[ci],centerPrevious[ci+1],centerPrevious[ci+2],p.centerSec());
    for(int i=0;i<p.path().length/3;i++)put(b+32+i*4,p.path()[i*3],p.path()[i*3+1],p.path()[i*3+2],1);
-   for(int c=0;c<p.columns();c++){
-    int l=c*4,cb=b+56+c*8,first=c==0?0:p.groupEnds()[c-1],size=p.groupEnds()[c]-first;
-    float warn=p.dome()?AllayDome.warningStart(p.lockSec(),p.crownRadius(),c):p.lockSec()+c*AllayStarfall.COLUMN_GAP;
-    float begin=warn+(p.dome()?0:AllayStarfall.WARNING);
-    put(cb,p.landings()[l],p.landings()[l+1],p.landings()[l+2],begin);
-    put(cb+4,begin+(p.dome()?AllayDome.closeSeconds(p.crownRadius()):p.landings()[l+3]),size,1.2f,warn);
+   if(p.dome())for(int c=0;c<p.columns();c++){
+    int first=c==0?0:p.groupEnds()[c-1],size=p.groupEnds()[c]-first,cb=b+56+c*8;
+    float warn=AllayDome.warningStart(p.lockSec(),p.crownRadius(),c),close=AllayDome.closeSeconds(p.crownRadius());
+    put(cb,p.landings()[c*4],p.landings()[c*4+1],p.landings()[c*4+2],warn);
+    put(cb+4,warn+close,size,1.2f,warn);
    }
    if(p.column()){
     put(b+20,3,p.phase(),0,0);
@@ -217,7 +216,7 @@ public final class StarfallGpuBuffers implements AutoCloseable {
     while(rank>=p.groupEnds()[group])group++;
     int first=group==0?0:p.groupEnds()[group-1];
     if(finished!=null&&finished.get(rank))continue;
-    words[HEADER+p.members()[rank]]=p.column()?com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.assignment(slot,rank):AllayStarfall.pack(slot,group,rank-first);
+    words[HEADER+p.members()[rank]]=p.column()?com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.assignment(slot,rank):StormAttackMembers.pack(slot,group,rank-first);
    }
   }completed.keySet().removeIf(id->{for(var p:waves)if(p!=null&&p.waveId()==id)return false;return true;});version++;
  }

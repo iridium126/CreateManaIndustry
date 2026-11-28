@@ -44,23 +44,19 @@ public final class StormMajorAttackGameTests {
         var level=h.getLevel();var ground=h.absolutePos(new BlockPos(2,30,2));level.setBlockAndUpdate(ground,Blocks.STONE.defaultBlockState());level.setBlockAndUpdate(ground.offset(4,4,0),Blocks.STONE.defaultBlockState());
         var player=new FakePlayer(level,new GameProfile(UUID.randomUUID(),"StormMajor"));player.setGameMode(GameType.SURVIVAL);player.setPos(Vec3.atBottomCenterOf(ground.above()));
         var data=new AllayStormData();data.active=true;data.count=members;data.stormSeed=123;data.createdAtGameTime=level.getGameTime();level.setData(com.iridium126.createmanaindustry.CMIAttachments.STORM_DATA.get(),data);
-        Object runtime=call("runtime",level);((List<?>)field(runtime,"waves")).clear();((MajorAttackSchedule)field(runtime,"schedule")).reset();((BitSet)field(runtime,"waveReserved")).clear();
+        Object runtime=call("runtime",level);((List<?>)field(runtime,"waves")).clear();((StormAttackDraw)field(runtime,"draw")).reset();((BitSet)field(runtime,"waveReserved")).clear();
         var tracks=(Map<UUID,Object>)field(runtime,"tracks");tracks.clear();
         try{Class<?> track=Class.forName(AllayStormManager.class.getName()+"$Track");var constructor=track.getDeclaredConstructor();constructor.setAccessible(true);var value=constructor.newInstance();set(value,"active",true);set(value,"authority",true);tracks.put(player.getUUID(),value);}catch(ReflectiveOperationException e){throw new IllegalStateException(e);}
         set(runtime,"chaseX",player.getX()-12);set(runtime,"chaseZ",player.getZ()-12);
         if(evidence!=null&&kind==StormAttack.DOME){player.setPos(player.getX(),ServerConfig.stormChaseY-40-player.getBbHeight()/2.,player.getZ());set(runtime,"chaseX",player.getX());set(runtime,"chaseZ",player.getZ());}
-        double dome=ServerConfig.stormDomeChance,helix=ServerConfig.stormHelixChance;
-        try{
-            ServerConfig.stormDomeChance=kind==StormAttack.DOME?1:0;ServerConfig.stormHelixChance=kind==StormAttack.HELIX?1:0;
-            ((MajorAttackSchedule)field(runtime,"schedule")).due(kind,level.getGameTime()-600,30,30,()->0);
-            long begin=System.nanoTime();call("tryMajor",level,runtime,data,List.of(player),kind);
-            com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("Storm planner kind={} members={} wallMicros={}",kind,members,(System.nanoTime()-begin)/1000);
-        }finally{ServerConfig.stormDomeChance=dome;ServerConfig.stormHelixChance=helix;}
+        long begin=System.nanoTime();
+        call("tryMajor",level,runtime,data,List.of(player),kind==StormAttack.HELIX?StormAttackKind.HELIX:StormAttackKind.DOME);
+        com.iridium126.createmanaindustry.CreateManaIndustry.LOGGER.info("Storm planner kind={} members={} wallMicros={}",kind,members,(System.nanoTime()-begin)/1000);
         var waves=(List<?>)field(runtime,"waves");
         if(members<16384){h.assertTrue(waves.isEmpty(),"Original member thresholds were removed");return null;}
         h.assertTrue(waves.size()==1,"Eligible forced major attack did not START: "+AllayStormManager.attackStatus(level));Object wave=waves.getFirst();
         h.assertTrue((int)field(wave,"kind")==kind,"Wrong major attack selected");
-        var start=(ClientboundStormWavePacket)call("wavePacket",wave,AllayStarfall.START,true,player.getId());
+        var start=(ClientboundStormWavePacket)call("wavePacket",wave,StormAttack.EVENT_START,true,player.getId());
         h.assertTrue(start.event()==0&&start.members().length>0,"START omitted roster");
         if(evidence!=null&&kind==StormAttack.DOME)h.assertTrue(DomeGatherRules.durationTicks(start.startSec(),start.assembleSec())==627,"Lifecycle replay did not use the GPU scene's production deadline");
         if(kind==StormAttack.HELIX){
@@ -102,7 +98,7 @@ public final class StormMajorAttackGameTests {
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domeBodyOverlapIsRejectedBeforeSelectionAndReservation(GameTestHelper helper){
         var scene=launch(helper,StormAttack.DOME,65536,null,true);var runtime=scene.runtime();var player=scene.player();var waves=(List<?>)field(runtime,"waves");var reserved=(BitSet)field(runtime,"waveReserved");waves.clear();reserved.clear();set(runtime,"chaseX",0.);set(runtime,"chaseZ",0.);player.setPos(0,ServerConfig.stormChaseY-16-player.getBbHeight()/2.,0);
         int counter=(int)field(runtime,"waveIdCounter");var track=((Map<?,?>)field(runtime,"tracks")).get(player.getUUID());int[] roster=java.util.stream.IntStream.range(0,12288).toArray();helper.assertTrue(!(boolean)call("launchDome",helper.getLevel(),runtime,scene.data(),player,helper.getLevel().getGameTime(),37,roster,track),"Direct Dome launch bypassed overlap rejection");
-        double chance=ServerConfig.stormDomeChance;try{ServerConfig.stormDomeChance=1;var schedule=(MajorAttackSchedule)field(runtime,"schedule");schedule.reset();schedule.due(StormAttack.DOME,helper.getLevel().getGameTime()-600,30,30,()->0);call("tryMajor",helper.getLevel(),runtime,scene.data(),List.of(player),StormAttack.DOME);helper.assertTrue(waves.isEmpty()&&reserved.isEmpty()&&(int)field(runtime,"waveIdCounter")==counter,"Overlapping Dome consumed a slot, attack ID, or reservation");helper.assertTrue(((StormAttackStats)field(runtime,"stats")).get(StormAttackStats.Reason.BODY_OVERLAP)>0,"Overlap rejection was not diagnosable");player.setPos(0,ServerConfig.stormChaseY-64-player.getBbHeight()/2.,0);call("tryMajor",helper.getLevel(),runtime,scene.data(),List.of(player),StormAttack.DOME);helper.assertTrue(waves.isEmpty(),"Skipped opportunity retried without its schedule");schedule.reset();schedule.due(StormAttack.DOME,helper.getLevel().getGameTime()-600,30,30,()->0);call("tryMajor",helper.getLevel(),runtime,scene.data(),List.of(player),StormAttack.DOME);helper.assertTrue(waves.size()==1&&reserved.cardinality()==12288,"Clear Dome gathering volume was rejected");}finally{ServerConfig.stormDomeChance=chance;}helper.succeed();
+        call("tryMajor",helper.getLevel(),runtime,scene.data(),List.of(player),StormAttackKind.DOME);helper.assertTrue(waves.isEmpty()&&reserved.isEmpty()&&(int)field(runtime,"waveIdCounter")==counter,"Overlapping Dome consumed a slot, attack ID, or reservation");helper.assertTrue(((StormAttackStats)field(runtime,"stats")).get(StormAttackStats.Reason.BODY_OVERLAP)>0,"Overlap rejection was not diagnosable");player.setPos(0,ServerConfig.stormChaseY-64-player.getBbHeight()/2.,0);call("tryMajor",helper.getLevel(),runtime,scene.data(),List.of(player),StormAttackKind.DOME);helper.assertTrue(waves.size()==1&&reserved.cardinality()==12288,"Clear Dome gathering volume was rejected");helper.succeed();
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domePrestartPauseCannotLaunchOrExtendItsBudget(GameTestHelper helper){
         var scene=launch(helper,StormAttack.DOME,16384,null,true);var wave=scene.wave();float deadline=(float)field(wave,"assemble");var identity=StormIdentity.of(helper.getLevel(),scene.data());var times=new float[66];Arrays.fill(times,-1);times[0]=0;var flows=new DomeGatherState(times);var ready=new BitSet();ready.set(0,12288);
@@ -210,12 +206,11 @@ public final class StormMajorAttackGameTests {
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void majorMemberThresholdsRemain(GameTestHelper h){launch(h,StormAttack.DOME,32);launch(h,StormAttack.HELIX,32);h.succeed();}
     @SuppressWarnings("unchecked")
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void independentMajorsCanShareOneTarget(GameTestHelper h){
-        var scene=launch(h,StormAttack.HELIX,65536);var rt=scene.runtime();double saved=ServerConfig.stormDomeChance;try{
-            ServerConfig.stormDomeChance=1;((MajorAttackSchedule)field(rt,"schedule")).due(StormAttack.DOME,h.getLevel().getGameTime()-600,30,30,()->0);
-            call("tryMajor",h.getLevel(),rt,scene.data(),List.of(scene.player()),StormAttack.DOME);
+        var scene=launch(h,StormAttack.HELIX,65536);var rt=scene.runtime();{
+            call("tryMajor",h.getLevel(),rt,scene.data(),List.of(scene.player()),StormAttackKind.DOME);
             var waves=(List<?>)field(rt,"waves");h.assertTrue(waves.size()==2,"Independent draws suppressed a second attack on the same player");
             var seen=new BitSet();for(var w:waves){int[] members=(int[])field(w,"members");var completed=(BitSet)field(w,"completed");for(int rank=0;rank<members.length;rank++)if(!completed.get(rank)){int member=members[rank];h.assertTrue(!seen.get(member),"Active major attacks shared a reserved member");seen.set(member);}}
-        }finally{ServerConfig.stormDomeChance=saved;}h.succeed();
+        }h.succeed();
     }
     @SuppressWarnings("unchecked")
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void oldCompletionCannotReleaseReassignedMember(GameTestHelper h){
@@ -330,7 +325,11 @@ public final class StormMajorAttackGameTests {
     }
     @SuppressWarnings("unchecked")
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void dome12287AvailableSkipsBut12288Launches(GameTestHelper h){
-        var scene=launch(h,StormAttack.DOME,16384);var rt=scene.runtime();var waves=(List<?>)field(rt,"waves");waves.clear();var reserved=(BitSet)field(rt,"waveReserved");reserved.set(0,16384);reserved.clear(0,12287);double saved=ServerConfig.stormDomeChance;try{ServerConfig.stormDomeChance=1;var schedule=(MajorAttackSchedule)field(rt,"schedule");schedule.reset();schedule.due(StormAttack.DOME,h.getLevel().getGameTime()-600,30,30,()->0);call("tryMajor",h.getLevel(),rt,scene.data(),List.of(scene.player()),StormAttack.DOME);h.assertTrue(waves.isEmpty(),"12287 available members launched Dome");reserved.clear(12287);schedule.reset();schedule.due(StormAttack.DOME,h.getLevel().getGameTime()-600,30,30,()->0);call("tryMajor",h.getLevel(),rt,scene.data(),List.of(scene.player()),StormAttack.DOME);h.assertTrue(waves.size()==1&&((int[])field(waves.getFirst(),"members")).length==12288,"12288 available members did not launch");}finally{ServerConfig.stormDomeChance=saved;}h.succeed();
+        var scene=launch(h,StormAttack.DOME,16384);var rt=scene.runtime();var waves=(List<?>)field(rt,"waves");waves.clear();var reserved=(BitSet)field(rt,"waveReserved");reserved.set(0,16384);reserved.clear(0,12287);{
+            call("tryMajor",h.getLevel(),rt,scene.data(),List.of(scene.player()),StormAttackKind.DOME);h.assertTrue(waves.isEmpty(),"12287 available members launched Dome");
+            reserved.clear(12287);
+            call("tryMajor",h.getLevel(),rt,scene.data(),List.of(scene.player()),StormAttackKind.DOME);h.assertTrue(waves.size()==1&&((int[])field(waves.getFirst(),"members")).length==12288,"12288 available members did not launch");
+        }h.succeed();
     }
     @SuppressWarnings("unchecked")
     @GameTest(template="storm_combat_test",timeoutTicks=40) public static void domeHitsOtherPlayersOnceAndKeepsVanillaInvulnerability(GameTestHelper h){

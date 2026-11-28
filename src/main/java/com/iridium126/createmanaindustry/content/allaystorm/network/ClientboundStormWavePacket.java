@@ -1,6 +1,6 @@
 package com.iridium126.createmanaindustry.content.allaystorm.network;
 
-import com.iridium126.createmanaindustry.content.allaystorm.AllayStarfall;
+import com.iridium126.createmanaindustry.content.allaystorm.StormAttackMembers;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayDome;
 import com.iridium126.createmanaindustry.content.allaystorm.DomeGatherState;
 import com.iridium126.createmanaindustry.content.allaystorm.AllayHelix;
@@ -38,27 +38,19 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
  private static final ClientPayloadHandler<ClientboundStormWavePacket> CLIENT_HANDLER=new ClientPayloadHandler<>();
  public static final Type<ClientboundStormWavePacket> TYPE=new Type<>(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("createmanaindustry","storm_wave"));
  public static final StreamCodec<RegistryFriendlyByteBuf,ClientboundStormWavePacket> STREAM_CODEC=StreamCodec.of(ClientboundStormWavePacket::encode,ClientboundStormWavePacket::decode);
- /** Source compatibility for starfall fixtures; the version 3 wire is always explicit. */
- public ClientboundStormWavePacket(int id,long epoch,int event,int seed,int target,int tier,int columns,int per,
-   float start,float assemble,float lock,float end,float x,float y,float z,float radius,int[] members,float[] path,float[] landings){
-  this(id,epoch,event,seed,target,tier,columns,per,start,assemble,lock,end,x,y,z,radius,members,path,landings,
-   AllayDome.STARFALL,event==AllayStarfall.LOCK?3:event==AllayStarfall.ABORT?6:1,
-   AllayDome.columns(members.length>0?members.length:columns*per,Math.max(1,per)),0,0,0,0,1,start,0);
- }
  public ClientboundStormWavePacket(int id,long epoch,int event,int seed,int target,int tier,int columns,int per,
   float start,float assemble,float lock,float end,float x,float y,float z,float radius,int[] members,float[] path,float[] landings,
   int kind,int phase,int[] ends,float cx,float cy,float cz,float orientation,int direction,float centerSec,int fallback){
   this(id,epoch,event,seed,target,tier,columns,per,start,assemble,lock,end,x,y,z,radius,members,path,landings,kind,phase,ends,cx,cy,cz,orientation,direction,centerSec,fallback,null);
  }
  public boolean helixAttack(){return attackType==StormAttack.HELIX;}
- public boolean starfall(){return attackType==StormAttack.STARFALL||column();}
  public boolean column(){return attackType==com.iridium126.createmanaindustry.content.allaystorm.StarfallColumnRules.COLUMN_KIND;}
- public static ClientboundStormWavePacket abort(int id,long epoch){return new ClientboundStormWavePacket(id,epoch,3,0,0,0,0,0,0,0,0,0,0,0,0,0,new int[0],new float[0],new float[0]);}
+ public static ClientboundStormWavePacket abort(int id,long epoch){return new ClientboundStormWavePacket(id,epoch,StormAttack.EVENT_ABORT,0,0,0,0,0,0,0,0,0,0,0,0,0,new int[0],new float[0],new float[0],StormAttack.NONE,1,new int[0],0,0,0,0,1,0,0);}
  public static ClientboundStormWavePacket abort(int id,long epoch,int reason){return abort(id,epoch).reason(reason);}
  public ClientboundStormWavePacket reason(int value){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lockSec,diveUntilSec,crownX,crownY,crownZ,crownRadius,members,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,value,helix,completedRanks,gatherFlows,gatherFrames);}
- public boolean abort(){return event==AllayStarfall.ABORT;}
+ public boolean abort(){return event==StormAttack.EVENT_ABORT;}
  public boolean locked(){return phase>=3&&phase<=5;}
- public boolean dome(){return attackType==AllayDome.DOME;}
+ public boolean dome(){return attackType==StormAttack.DOME;}
  public ClientboundStormWavePacket withMembers(int[] roster){return copy(event,phase,lockSec,diveUntilSec,roster);}
  public ClientboundStormWavePacket copy(int event,int phase,float lock,float end,int[] roster){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lock,end,crownX,crownY,crownZ,crownRadius,roster,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,fallbackReason,helix,completedRanks,gatherFlows,gatherFrames);}
  public ClientboundStormWavePacket withGatherFlows(DomeGatherState flows){return new ClientboundStormWavePacket(waveId,epoch,event,waveSeed,targetEntityId,swordTier,columns,perColumn,startSec,assembleSec,lockSec,diveUntilSec,crownX,crownY,crownZ,crownRadius,members,path,landings,attackType,phase,groupEnds,centerX,centerY,centerZ,orientation,direction,centerSec,fallbackReason,helix,completedRanks,flows,gatherFrames);}
@@ -76,27 +68,28 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
   if(p.dome()||p.helixAttack())b.writeLongArray(p.completedRanks);
  }
  private static ClientboundStormWavePacket decode(RegistryFriendlyByteBuf b){
-  int id=b.readVarInt();long epoch=b.readLong();int event=b.readUnsignedByte();if(id<=0||event>3)throw new DecoderException("Invalid attack event");if(event==3){int reason=b.readUnsignedByte();if(reason>9)throw new DecoderException("Invalid abort reason");return abort(id,epoch,reason);}
+  int id=b.readVarInt();long epoch=b.readLong();int event=b.readUnsignedByte();if(id<=0||event>StormAttack.EVENT_ABORT)throw new DecoderException("Invalid attack event");if(event==StormAttack.EVENT_ABORT){int reason=b.readUnsignedByte();if(reason>9)throw new DecoderException("Invalid abort reason");return abort(id,epoch,reason);}
   int kind=b.readUnsignedByte(),phase=b.readUnsignedByte(),seed=b.readVarInt(),target=b.readVarInt(),tier=b.readUnsignedByte(),columns=b.readUnsignedByte(),per=b.readVarInt();
-  if(kind>2||phase<1||phase>5||columns<1||columns>32||per<1||per>12288||tier<1||tier>6||(kind==1&&(columns!=1||per!=12288))||(kind==2&&columns!=2))throw new DecoderException("Invalid attack dimensions");
-  if(event==AllayStarfall.LOCK&&phase<3||event==AllayStarfall.UPDATE&&phase>=3)throw new DecoderException("Invalid attack phase");
+  if(kind!=StormAttack.DOME&&kind!=StormAttack.HELIX||phase<1||phase>5||columns<1||columns>32||per<1||per>12288||tier<1||tier>6
+      ||(kind==StormAttack.DOME&&(columns!=1||per!=12288))||(kind==StormAttack.HELIX&&columns!=2))
+   throw new DecoderException("Invalid attack dimensions");
+  if(event==StormAttack.EVENT_LOCK&&phase<3||event==StormAttack.EVENT_UPDATE&&phase>=3)throw new DecoderException("Invalid attack phase");
   float[] f=new float[13];for(int i=0;i<f.length;i++)f[i]=finite(b);
   int direction=b.readByte(),fallback=b.readUnsignedByte();if(Math.abs(direction)!=1||fallback>5)throw new DecoderException("Invalid attack orientation");
-  int[] ends=new int[columns];int previous=0;for(int g=0;g<columns;g++){ends[g]=b.readVarInt();if(ends[g]<=previous||ends[g]-previous>(kind==1?12288:4096)||ends[g]>AllayStarfall.MAX_MEMBERS)throw new DecoderException("Invalid attack groups");previous=ends[g];}
-  if(kind==1&&previous!=12288)throw new DecoderException("Invalid dome roster size");
-  if(kind==2&&(previous!=4096||ends[0]!=2048))throw new DecoderException("Invalid helix roster");
-  int count=b.readVarInt();if(count<0||count>AllayStarfall.MAX_MEMBERS||(count!=0&&count!=previous)||(event==0&&count==0))throw new DecoderException("Invalid attack roster");
-  if(kind==0&&!java.util.Arrays.equals(ends,AllayDome.columns(previous,per)))throw new DecoderException("Invalid starfall groups");
-  if(kind==1&&!java.util.Arrays.equals(ends,AllayDome.groups(previous)))throw new DecoderException("Invalid dome groups");
-  int[] members=new int[count];java.util.BitSet seen=new java.util.BitSet();for(int i=0;i<count;i++){int m=b.readVarInt();if(m<0||m>=AllayStarfall.MAX_MEMBERS||seen.get(m))throw new DecoderException("Invalid attack member");seen.set(m);members[i]=m;}
+  int[] ends=new int[columns];int previous=0;for(int g=0;g<columns;g++){ends[g]=b.readVarInt();if(ends[g]<=previous||ends[g]-previous>(kind==StormAttack.DOME?12288:4096)||ends[g]>StormAttackMembers.MAX_MEMBERS)throw new DecoderException("Invalid attack groups");previous=ends[g];}
+  if(kind==StormAttack.DOME&&previous!=AllayDome.MAX_MEMBERS)throw new DecoderException("Invalid dome roster size");
+  if(kind==StormAttack.HELIX&&(previous!=4096||ends[0]!=2048))throw new DecoderException("Invalid helix roster");
+  int count=b.readVarInt();if(count<0||count>StormAttackMembers.MAX_MEMBERS||(count!=0&&count!=previous)||(event==StormAttack.EVENT_START&&count==0))throw new DecoderException("Invalid attack roster");
+  if(kind==StormAttack.DOME&&!java.util.Arrays.equals(ends,AllayDome.groups(previous)))throw new DecoderException("Invalid dome groups");
+  int[] members=new int[count];java.util.BitSet seen=new java.util.BitSet();for(int i=0;i<count;i++){int m=b.readVarInt();if(m<0||m>=StormAttackMembers.MAX_MEMBERS||seen.get(m))throw new DecoderException("Invalid attack member");seen.set(m);members[i]=m;}
   int points=b.readUnsignedByte();if(points<2||points>6)throw new DecoderException("Invalid attack route");float[] path=new float[points*3];for(int i=0;i<path.length;i++)path[i]=finite(b);
   float[] land=new float[columns*4];for(int i=0;i<land.length;i++)land[i]=finite(b);
-  if(f[7]<=0||f[7]>128||(kind==1&&f[7]!=32))throw new DecoderException("Invalid attack radius");
+  if(f[7]<=0||f[7]>128||(kind==StormAttack.DOME&&f[7]!=32))throw new DecoderException("Invalid attack radius");
   if(f[1]<f[0]||f[2]<f[1]||f[3]<f[2]||f[3]-f[0]>600)throw new DecoderException("Invalid attack schedule");
-  if(kind==1&&b.readVarInt()!=com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.VERSION)throw new DecoderException("Unknown dome template");
-  DomeGatherState gatherFlows=kind==1?DomeGatherState.read(b):DomeGatherState.EMPTY;
+  if(kind==StormAttack.DOME&&b.readVarInt()!=com.iridium126.createmanaindustry.content.allaystorm.DomeTemplate.VERSION)throw new DecoderException("Unknown dome template");
+  DomeGatherState gatherFlows=kind==StormAttack.DOME?DomeGatherState.read(b):DomeGatherState.EMPTY;
   AllayHelix.Flight helix=null;
-  if(kind==2){
+  if(kind==StormAttack.HELIX){
    if(b.readVarInt()!=com.iridium126.createmanaindustry.content.allaystorm.HelixTemplate.VERSION)throw new DecoderException("Unknown helix template");
    int a=b.readUnsignedByte(),other=b.readUnsignedByte();float[] h=new float[12];for(int i=0;i<h.length;i++)h[i]=finite(b);
    int controlCount=b.readUnsignedByte();if(a>2||other!=a+3||controlCount<2||controlCount>6||h[0]!=64||h[1]!=32||h[2]!=com.iridium126.createmanaindustry.content.allaystorm.StormMotion.HELIX_LIMIT||h[3]!=com.iridium126.createmanaindustry.content.allaystorm.StormMotion.HELIX_THRUST||h[7]<0||h[7]>1/(4*h[1]))throw new DecoderException("Invalid helix geometry");
@@ -107,8 +100,8 @@ public record ClientboundStormWavePacket(int waveId,long epoch,int event,int wav
    if(previousArc<=0||previousArc>1024||h[8]<-32||h[8]>=previousArc||h[4]<f[1]||h[5]<h[4]||h[6]<=h[5]||h[6]>f[3])throw new DecoderException("Invalid helix schedule");
    helix=new AllayHelix.Flight(a,other,h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],h[8],controls,samples,h[9],h[10],h[11]);
   }
-  HelixGatherFrame[] frames=new HelixGatherFrame[0];if(kind==2){int size=b.readUnsignedByte();if(size>9)throw new DecoderException("Helix reference history");frames=new HelixGatherFrame[size];for(int i=0;i<size;i++){frames[i]=HelixGatherFrame.read(b);if(i>0&&(frames[i].version()!=frames[i-1].version()+1||Math.abs(frames[i].seconds()-frames[i-1].seconds()-.25f)>.001))throw new DecoderException("Helix reference order");}}
-  long[] completed=kind==1||kind==2?b.readLongArray(new long[0],192):new long[0];if(java.util.BitSet.valueOf(completed).length()>previous)throw new DecoderException("Invalid finished roster");
+  HelixGatherFrame[] frames=new HelixGatherFrame[0];if(kind==StormAttack.HELIX){int size=b.readUnsignedByte();if(size>9)throw new DecoderException("Helix reference history");frames=new HelixGatherFrame[size];for(int i=0;i<size;i++){frames[i]=HelixGatherFrame.read(b);if(i>0&&(frames[i].version()!=frames[i-1].version()+1||Math.abs(frames[i].seconds()-frames[i-1].seconds()-.25f)>.001))throw new DecoderException("Helix reference order");}}
+  long[] completed=b.readLongArray(new long[0],192);if(java.util.BitSet.valueOf(completed).length()>previous)throw new DecoderException("Invalid finished roster");
   return new ClientboundStormWavePacket(id,epoch,event,seed,target,tier,columns,per,f[0],f[1],f[2],f[3],f[4],f[5],f[6],f[7],members,path,land,kind,phase,ends,f[8],f[9],f[10],f[11],direction,f[12],fallback,helix,completed,gatherFlows,frames);
  }
  private static float finite(RegistryFriendlyByteBuf b){float f=b.readFloat();if(!Float.isFinite(f))throw new DecoderException("Nonfinite attack parameter");return f;}

@@ -1166,7 +1166,7 @@ public final class ParticleRuntime implements com.iridium126.createmanaindustry.
             // the last fully-committed generation persists one more frame.
             ParticleRuntime.this.committedGeneration++;
             ParticleRuntime.this.gpu.commitPopulation(ParticleRuntime.this.committedGeneration);
-            AllayStormRuntime.INSTANCE.commitStarfall();
+            AllayStormRuntime.INSTANCE.commitWaves();
             if(nativeStorm!=null)stormProjection.commit(nativeStorm);
             if(spatial!=null){spatial.publish(gpu.particleReadBufferId(),gpu.counterBufferId(slot),gpu,committedGeneration);gpu.beginBindings();}
             if (createsParticles) {

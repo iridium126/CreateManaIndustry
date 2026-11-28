@@ -56,7 +56,7 @@ public final class StarfallColumnGameTests {
         var engine=new StarfallColumns();var reserved=new BitSet();engine.reserve(packet,reserved);
         Vec3 contact=center.add(.5,StarfallColumnRules.height(.5),0);
         var trigger=player(level,"ColumnTrigger",center.add(0,0,1));var other=player(level,"ColumnOther",center.add(1,0,0));
-        var f=new Fixture(engine,data,identity,packet,trigger,other,contact,reserved);f.tick(List.of(trigger,other));return f;
+        var f=new Fixture(engine,data,identity,packet,trigger,other,contact,reserved);f.tick(List.of());return f;
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40)
     public static void actualEarlyTouchdownDoesNotWaitForNominalArrival(GameTestHelper h){
@@ -74,7 +74,7 @@ public final class StarfallColumnGameTests {
     }
     @GameTest(template="storm_combat_test",timeoutTicks=40)
     public static void regionalBloomSurvivesTriggerDepartureAndDeduplicates(GameTestHelper h){
-        var f=fixture(h);f.tick(List.of(f.other));
+        var f=fixture(h);f.tick(List.of());
         h.assertTrue(f.columns.snapshots().size()==1,"Trigger departure cancelled regional column");
         h.assertTrue(f.hit(f.other),"Other nearby player could not receive bloom contact");
         h.assertTrue(Math.abs(f.other.getHealth()-13)<.01,"Regional hit did not use server-configured damage");
@@ -143,17 +143,20 @@ public final class StarfallColumnGameTests {
     public static void irregularGroundDoesNotAbortRegionalColumn(GameTestHelper h){
         var f=fixture(h);var uneven=BlockPos.containing(f.contact).offset(3,0,0);h.getLevel().setBlockAndUpdate(uneven.above(),Blocks.STONE.defaultBlockState());
         h.assertTrue(StarfallColumns.terrain(h.getLevel(),f.packet.x(),f.packet.z(),f.packet.gatherY(),f.packet.y()),"Rough terrain blocked column generation");
-        f.tick(List.of(f.other));h.assertTrue(f.columns.snapshots().size()==1,"Terrain edits cancelled a whole column");h.succeed();
+        f.tick(List.of());h.assertTrue(f.columns.snapshots().size()==1,"Terrain edits cancelled a whole column");h.succeed();
     }
     @GameTest(template="storm_combat_test",timeoutTicks=50)
     public static void schedulerHonorsTenTickOpportunitiesFrozenXZAndSpacing(GameTestHelper h){
         var f=fixture(h);f.columns.clear();f.reserved.clear();f.data.count=4096;
         var sent=new ArrayList<ClientboundStormColumnPacket>();var ids=new java.util.concurrent.atomic.AtomicInteger(200);
         var chance=new java.util.concurrent.atomic.AtomicReference<>(1.0);
+        var draw=new StormAttackDraw();
         Runnable attempt=()->{
             double oldChance=ServerConfig.stormStarfallChance,oldInterval=ServerConfig.stormStarfallInterval;
             try{ServerConfig.stormStarfallChance=chance.get();ServerConfig.stormStarfallInterval=.5;
-                f.columns.tick(h.getLevel(),f.data,f.packet.centerX(),f.packet.centerZ(),List.of(f.other),f.reserved,ids::incrementAndGet,sent::add);
+                long tick=h.getLevel().getGameTime();
+                var due=draw.due(StormAttackKind.COLUMNS,List.<net.minecraft.server.level.ServerPlayer>of(f.other),net.minecraft.server.level.ServerPlayer::getUUID,tick,()->0.0,new StormAttackStats());
+                f.columns.tick(h.getLevel(),f.data,f.packet.centerX(),f.packet.centerZ(),due,f.reserved,ids::incrementAndGet,sent::add);
             }finally{ServerConfig.stormStarfallChance=oldChance;ServerConfig.stormStarfallInterval=oldInterval;}
         };
         attempt.run();h.assertTrue(sent.size()==1,"First eligible opportunity did not create one column");
@@ -175,10 +178,14 @@ public final class StarfallColumnGameTests {
         var f=fixture(h);f.columns.clear();f.reserved.clear();f.data.count=16384;
         f.trigger.setPos(f.packet.centerX()-7,f.trigger.getY(),f.packet.centerZ());f.other.setPos(f.packet.centerX()+7,f.other.getY(),f.packet.centerZ());
         var ids=new java.util.concurrent.atomic.AtomicInteger(300);
+        var draw=new StormAttackDraw();
+        var candidates=List.<net.minecraft.server.level.ServerPlayer>of(f.trigger,f.other);
         Runnable attempt=()->{
             double oldChance=ServerConfig.stormStarfallChance,oldInterval=ServerConfig.stormStarfallInterval;int oldCapacity=ServerConfig.stormStarfallMaxActiveColumns;
             try{ServerConfig.stormStarfallChance=1;ServerConfig.stormStarfallInterval=.5;ServerConfig.stormStarfallMaxActiveColumns=1;
-                f.columns.tick(h.getLevel(),f.data,f.packet.centerX(),f.packet.centerZ(),List.of(f.trigger,f.other),f.reserved,ids::incrementAndGet,p->{});
+                long tick=h.getLevel().getGameTime();
+                var due=f.data.active?draw.due(StormAttackKind.COLUMNS,candidates,net.minecraft.server.level.ServerPlayer::getUUID,tick,()->0.0,new StormAttackStats()):List.<net.minecraft.server.level.ServerPlayer>of();
+                f.columns.tick(h.getLevel(),f.data,f.packet.centerX(),f.packet.centerZ(),due,f.reserved,ids::incrementAndGet,p->{});
             }finally{ServerConfig.stormStarfallChance=oldChance;ServerConfig.stormStarfallInterval=oldInterval;ServerConfig.stormStarfallMaxActiveColumns=oldCapacity;}
         };
         attempt.run();h.assertTrue(f.columns.snapshots().size()==1,"Capacity one admitted multiple columns");var first=f.columns.snapshots().getFirst();

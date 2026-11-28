@@ -87,7 +87,7 @@ class ParticleRenderLifecycleContractTest {
         assertFalse(calls(method(command,"status"),"com/iridium126/createmanaindustry/client/gpu/profile/GpuBudgetLedger","snapshot"));
         assertTrue(calls(method(command,"showProfile"),"com/iridium126/createmanaindustry/client/gpu/profile/GpuBudgetLedger","snapshot"));
         String storm="com/iridium126/createmanaindustry/client/allaystorm/AllayStormRuntime";
-        assertFalse(calls(method(command,"status"),storm,"starfallStatus"),"Basic status must not include the full storm diagnostic report, even with profiling enabled");
+        assertFalse(calls(method(command,"status"),storm,"attackStatus"),"Basic status must not include the full storm diagnostic report, even with profiling enabled");
         var status=method(command,"status");
         String output="com/iridium126/createmanaindustry/infrastructure/output/CMICommandOutput";
         int reports=0;
@@ -97,8 +97,8 @@ class ParticleRenderLifecycleContractTest {
                 "status must send exactly one structured particle summary through CMICommandOutput");
         assertTrue(calls(method(command,"status"),command.name,"engine"),
                 "Basic status must keep the shared engine availability guard");
-        assertTrue(calls(method(command,"showProfile"),storm,"starfallStatus"));
-        assertFalse(calls(method(read(storm),"starfallStatus"),"com/iridium126/createmanaindustry/client/allaystorm/StormCollisionRuntime","status"),"Detailed reports must not append the old unformatted collision dump");
+        assertTrue(calls(method(command,"showProfile"),storm,"attackStatus"));
+        assertFalse(calls(method(read(storm),"attackStatus"),"com/iridium126/createmanaindustry/client/allaystorm/StormCollisionRuntime","status"),"Detailed reports must not append the old unformatted collision dump");
         var scene=read(SCENE+"ClientGpuScene");
         assertTrue(calls(method(scene,"enterLevelFrame"),SCENE+"ClientGpuScene","measurementBoundary"));
         assertTrue(calls(method(scene,"measurementBoundary"),ENGINE+"ParticleDiagnostics","applyRequestedState"));
@@ -187,7 +187,7 @@ class ParticleRenderLifecycleContractTest {
         for(int i=0;i<promotion.instructions.size();i++)if(promotion.instructions.get(i) instanceof MethodInsnNode call){
             if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("swap"))swap=i;
             if(call.owner.equals(ENGINE+"ParticleBuffers")&&call.name.equals("commitPopulation"))population=i;
-            if(call.owner.endsWith("/AllayStormRuntime")&&call.name.equals("commitStarfall"))storm=i;
+            if(call.owner.endsWith("/AllayStormRuntime")&&call.name.equals("commitWaves"))storm=i;
         }
         assertTrue(swap>=0&&population>swap&&storm>population);
         assertFalse(calls(promotion,"com/iridium126/createmanaindustry/client/particles/interaction/ModelInteractionRuntime","commitInputs"));

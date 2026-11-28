@@ -6,8 +6,9 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class StormWaveSlotsTest {
     private ClientboundStormWavePacket start(int id,float end) {
-        return new ClientboundStormWavePacket(id,87,0,123,5,5,1,512,0,4,10,end,1,12,2,4,
-                new int[]{id*10,id*10+1},new float[]{1,12,2,3,10,4},new float[]{3,.5f,4,3.5f});
+        return new ClientboundStormWavePacket(id,87,StormAttack.EVENT_START,123,5,5,1,512,0,4,10,end,1,12,2,4,
+                new int[]{id*10,id*10+1},new float[]{1,12,2,3,10,4},new float[]{3,.5f,4,3.5f},
+                StormAttack.DOME,1,new int[]{2},1,12,2,0,1,0,0);
     }
     private StormWaveSlots full() {
         var slots=new StormWaveSlots();

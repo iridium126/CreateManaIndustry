@@ -39,24 +39,24 @@ public final class StarfallColumnRules {
         Vec3 top=gather(origin,rank,seed,assembleAge),foot=bloom(landing,rank,seed,0);
         return new Vec3(landing.x+Math.cos(angle)*r,top.y*(1-s)+foot.y*s,landing.z+Math.sin(angle)*r);
     }
-    public static float earliestTouch(float assemble,float gatherY,float groundY,int rank){return assemble+(float)Math.max(0,(gatherY+gatherOffset(rank)-groundY-.2)/AllayStarfall.SPEED);}
+    public static float earliestTouch(float assemble,float gatherY,float groundY,int rank){return assemble+(float)Math.max(0,(gatherY+gatherOffset(rank)-groundY-.2)/StormAttackMembers.SPEED);}
     public static float renderSeconds(long gameTime,float partialTick){return (float)(((gameTime&((1<<21)-1))+Math.clamp(partialTick,0,1))/20.0);}
     public static Vec3 bridge(Vec3 origin,Vec3 velocity,Vec3 destination,double age,double duration) {
         double u=Math.clamp(age/duration,0,1);
         return origin.lerp(destination,smooth(u)).add(velocity.scale(duration*u*Math.pow(1-u,3)));
     }
-    public static float descentSeconds(double height) { return (float)Math.max(2, 2.1*Math.max(0,height)/AllayStarfall.SPEED); }
+    public static float descentSeconds(double height) { return (float)Math.max(2, 2.1*Math.max(0,height)/StormAttackMembers.SPEED); }
     public static int assignment(int slot, int rank) {
         if(slot<4||slot>=GPU_SLOTS||rank<0||rank>=MEMBERS)throw new IllegalArgumentException("Column assignment");
         return COLUMN_BIT|1|((slot-4)<<1)|(rank<<8);
     }
-    public static int slot(int assignment) { return (assignment&COLUMN_BIT)!=0?4+((assignment>>>1)&63):AllayStarfall.slot(assignment); }
+    public static int slot(int assignment) { return (assignment&COLUMN_BIT)!=0?4+((assignment>>>1)&63):StormAttackMembers.slot(assignment); }
 
     /** Search order is stable: outward, then alternating 15-degree offsets on each integer ring. */
     public static Vec3 landing(double x,double z,double centerX,double centerZ,double radius,int seed,
                                List<Vec3> occupied,BiPredicate<Double,Double> terrain) {
         centerX=(float)centerX;centerZ=(float)centerZ;
-        double heading=x==centerX&&z==centerZ?(AllayStarfall.mix(seed)&0xffff)*(Math.PI*2/65536):Math.atan2(z-centerZ,x-centerX);
+        double heading=x==centerX&&z==centerZ?(StormAttackMembers.mix(seed)&0xffff)*(Math.PI*2/65536):Math.atan2(z-centerZ,x-centerX);
         if(available((float)x,(float)z,centerX,centerZ,radius,occupied,terrain))return new Vec3((float)x,0,(float)z);
         for(int ring=1;ring<=Math.ceil(radius*2);ring++)for(int step=0;step<24;step++) {
             int offset=step==0?0:(step+1)/2*(step%2==1?1:-1);
